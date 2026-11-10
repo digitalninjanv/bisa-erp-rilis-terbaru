@@ -10,6 +10,7 @@ import { d, toDb } from "@/lib/money";
 import { getAccountMap, postJournal } from "@/server/accounting";
 import { getCompanySettingsRow } from "@/server/settings";
 import { writeAudit } from "@/server/audit";
+import { claimIdempotencyKey } from "@/server/idempotency";
 import { todayISO } from "@/lib/format";
 
 function uniqueViolationConstraint(error: unknown): string | null {
@@ -201,8 +202,19 @@ export async function cashDrawerMovement(
     type: "deposit" | "withdrawal";
     amount: string | number;
     notes?: string;
+    idempotencyKey?: string;
   },
 ) {
+  if (input.idempotencyKey) {
+    const claimed = await claimIdempotencyKey(tx, {
+      companyId: input.companyId,
+      key: input.idempotencyKey,
+      scope: "pos.cash_movement",
+    });
+    if (!claimed) {
+      throw new AppError("CONFLICT", "Mutasi kas dengan kunci ini sedang diproses.");
+    }
+  }
   // POS-SES-01: drawer movements are likewise limited to the actor's
   // own session; a foreign session reads as "not active", like a closed
   // or missing one.

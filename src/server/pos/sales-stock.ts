@@ -4,9 +4,9 @@
 // A-26 Q8b: helper stok penjualan — flag pelacakan & pemulihan
 // batch baris penjualan (dipakai void & retur).
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { products } from "@/db/schema";
+import { products, stockMovements } from "@/db/schema";
 import { d, Decimal, MoneyInput } from "@/lib/money";
 import { applyBatchDelta, planBatchRestore } from "@/server/batches";
 import { applyStockMovement } from "@/server/inventory";
@@ -15,36 +15,87 @@ import { applyStockMovement } from "@/server/inventory";
  * Stock-tracking flags for the given products. Only an explicit
  * trackStock=false skips stock movements; a product row that no longer
  * exists defaults to tracked (the historical behavior for old sales).
+ * POS-003: Mendukung saleId untuk membaca jejak gerakan aktual saat penjualan.
  */
-
-
 export async function trackStockFlags(
   tx: Tx,
   companyId: string,
   productIds: string[],
+  saleId?: string,
 ): Promise<Map<string, boolean>> {
   if (productIds.length === 0) return new Map();
-  const rows = await tx
-    .select({ id: products.id, trackStock: products.trackStock })
-    .from(products)
-    .where(and(eq(products.companyId, companyId), inArray(products.id, productIds)));
-  return new Map(rows.map((row) => [row.id, row.trackStock]));
+  const result = new Map<string, boolean>();
+
+  if (saleId) {
+    const saleMovements = await tx
+      .select({ productId: stockMovements.productId })
+      .from(stockMovements)
+      .where(
+        and(
+          eq(stockMovements.companyId, companyId),
+          eq(stockMovements.referenceId, saleId),
+          inArray(stockMovements.productId, productIds),
+          eq(stockMovements.movementType, "sale"),
+        ),
+      );
+    const moved = new Set(saleMovements.map((m) => m.productId));
+    for (const pid of productIds) {
+      if (moved.has(pid)) result.set(pid, true);
+    }
+  }
+
+  const missing = productIds.filter((id) => !result.has(id));
+  if (missing.length > 0) {
+    const rows = await tx
+      .select({ id: products.id, trackStock: products.trackStock })
+      .from(products)
+      .where(and(eq(products.companyId, companyId), inArray(products.id, missing)));
+    for (const row of rows) {
+      result.set(row.id, saleId ? false : row.trackStock);
+    }
+  }
+  return result;
 }
 
 /** Batch-tracking flags (G8/D-7); missing products default to untracked. */
-
-
 export async function batchTrackFlags(
   tx: Tx,
   companyId: string,
   productIds: string[],
+  saleId?: string,
 ): Promise<Map<string, boolean>> {
   if (productIds.length === 0) return new Map();
-  const rows = await tx
-    .select({ id: products.id, trackBatch: products.trackBatch })
-    .from(products)
-    .where(and(eq(products.companyId, companyId), inArray(products.id, productIds)));
-  return new Map(rows.map((row) => [row.id, row.trackBatch]));
+  const result = new Map<string, boolean>();
+
+  if (saleId) {
+    const batchMovements = await tx
+      .select({ productId: stockMovements.productId })
+      .from(stockMovements)
+      .where(
+        and(
+          eq(stockMovements.companyId, companyId),
+          eq(stockMovements.referenceId, saleId),
+          inArray(stockMovements.productId, productIds),
+          isNotNull(stockMovements.batchId),
+        ),
+      );
+    const moved = new Set(batchMovements.map((m) => m.productId));
+    for (const pid of productIds) {
+      if (moved.has(pid)) result.set(pid, true);
+    }
+  }
+
+  const missing = productIds.filter((id) => !result.has(id));
+  if (missing.length > 0) {
+    const rows = await tx
+      .select({ id: products.id, trackBatch: products.trackBatch })
+      .from(products)
+      .where(and(eq(products.companyId, companyId), inArray(products.id, missing)));
+    for (const row of rows) {
+      result.set(row.id, saleId ? false : row.trackBatch);
+    }
+  }
+  return result;
 }
 
 /**

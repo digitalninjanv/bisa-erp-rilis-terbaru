@@ -292,7 +292,7 @@ export const idempotencyKeys = pgTable(
     resultRef: text("result_ref"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("idempotency_keys_company_key_uq").on(t.companyId, t.key)],
+  (t) => [uniqueIndex("idempotency_keys_company_scope_key_uq").on(t.companyId, t.scope, t.key)],
 );
 export const documentSequences = pgTable(
   "document_sequences",

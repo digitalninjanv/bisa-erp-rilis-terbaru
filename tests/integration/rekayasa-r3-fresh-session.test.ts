@@ -159,7 +159,12 @@ describe("K-5 — titik sensitif bernama", () => {
       reason: "Uji kesegaran sesi segar",
     });
     expect(closed.ok).toBe(true);
-    const reopened = await setPeriodStatusAction({ year: YEAR, month: 3, status: "open" });
+    const reopened = await setPeriodStatusAction({
+      year: YEAR,
+      month: 3,
+      status: "open",
+      reason: "Buka kembali untuk uji kesegaran sesi",
+    });
     expect(reopened.ok).toBe(true);
 
     const role = await updateUserRoleAction({ userId: TARGET_ID, role: "viewer" });

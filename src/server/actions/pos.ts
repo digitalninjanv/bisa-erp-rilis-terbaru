@@ -361,6 +361,7 @@ export async function holdAction(input: z.input<typeof holdSchema>) {
         notes: data.notes,
         lines: data.lines,
         canDiscount: can(ctx, "pos.discount"),
+        idempotencyKey: data.idempotencyKey,
       }),
     );
     revalidatePath("/app/pos/ditahan");
@@ -498,7 +499,13 @@ export async function createReturnAction(input: {
             }),
           )
           .min(1),
-      }),
+      }).refine(
+        (val) => (val.type === "exchange" ? val.refundMethod === "exchange" : val.refundMethod !== "exchange"),
+        {
+          message: "Tipe retur dan metode pengembalian harus konsisten: tukar barang wajib menggunakan metode exchange.",
+          path: ["refundMethod"],
+        },
+      ),
       input,
     );
     const result = await withCompany(ctx.company.id, (tx) =>
@@ -790,6 +797,7 @@ export async function cashMovementAction(input: {
   type: "deposit" | "withdrawal";
   amount: string | number;
   notes?: string;
+  idempotencyKey?: string;
 }) {
   return guard(async () => {
     const ctx = await requirePermissionInModule("pos.session", "pos");
@@ -799,6 +807,7 @@ export async function cashMovementAction(input: {
         type: z.enum(["deposit", "withdrawal"]),
         amount: z.union([z.string(), z.number()]),
         notes: z.string().max(300).optional(),
+        idempotencyKey: z.string().min(8).max(128).optional(),
       }),
       input,
     );
@@ -810,6 +819,7 @@ export async function cashMovementAction(input: {
         type: data.type,
         amount: data.amount,
         notes: data.notes,
+        idempotencyKey: data.idempotencyKey,
       }),
     );
     revalidatePath("/app/pos/sesi");

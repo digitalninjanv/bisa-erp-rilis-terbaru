@@ -1,6 +1,7 @@
 import { and, asc, count, desc, eq, gt, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
 import {
+  auditLog,
   products,
   stockDocumentLines,
   stockDocuments,
@@ -19,7 +20,7 @@ import {
 import { todayISO } from "@/lib/format";
 import { d, toDb, type MoneyInput } from "@/lib/money";
 import { nextDocumentNumber } from "@/server/sequences";
-
+import { writeAudit } from "@/server/audit";
 import { getCompanySettingsRow } from "@/server/settings";
 /**
  * SIM-2 S7B-2 Batch 4 — Reservasi stok.
@@ -343,6 +344,82 @@ export async function consumeReservationForSale(
       ),
     );
   return { consumedQty: consumed, fulfilled };
+}
+
+/**
+ * POS-005: Pulihkan kuantitas reservasi yang pernah dikonsumsi oleh penjualan yang dibatalkan (void).
+ */
+export async function restoreReservationForVoidSale(
+  tx: Tx,
+  input: {
+    companyId: string;
+    userId: string;
+    saleId: string;
+    saleNumber: string;
+  },
+): Promise<boolean> {
+  const [consumeAudit] = await tx
+    .select({ reservationId: auditLog.entityId, payload: auditLog.after })
+    .from(auditLog)
+    .where(
+      and(
+        eq(auditLog.companyId, input.companyId),
+        eq(auditLog.action, "stock_reservation.consume"),
+        sql`${auditLog.after}->>'saleNumber' = ${input.saleNumber}`,
+      ),
+    )
+    .limit(1);
+
+  if (!consumeAudit || !consumeAudit.reservationId) return false;
+
+  const payload = consumeAudit.payload as { consumedQty?: string } | null;
+  const consumedQty = d(payload?.consumedQty ?? "0");
+  if (!consumedQty.gt(0)) return false;
+
+  const [res] = await tx
+    .select()
+    .from(stockReservations)
+    .where(
+      and(
+        eq(stockReservations.companyId, input.companyId),
+        eq(stockReservations.id, consumeAudit.reservationId),
+      ),
+    )
+    .limit(1)
+    .for("update");
+
+  if (!res) return false;
+
+  const nextQty = d(res.qty).plus(consumedQty);
+  await tx
+    .update(stockReservations)
+    .set({
+      qty: toDb(nextQty),
+      status: "active",
+      releasedBy: null,
+      releasedAt: null,
+    })
+    .where(
+      and(
+        eq(stockReservations.companyId, input.companyId),
+        eq(stockReservations.id, res.id),
+      ),
+    );
+
+  await writeAudit(tx, {
+    companyId: input.companyId,
+    userId: input.userId,
+    action: "stock_reservation.restore_void",
+    entityType: "stock_reservation",
+    entityId: res.id,
+    after: {
+      saleNumber: input.saleNumber,
+      restoredQty: toDb(consumedQty),
+      totalQty: toDb(nextQty),
+    },
+  });
+
+  return true;
 }
 
 export async function listReservations(tx: Tx, companyId: string) {

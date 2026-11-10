@@ -71,18 +71,24 @@ export async function setPeriodStatusAction(input: {
       // periode kini dianggap TERTUTUP — lihat assertPeriodOpen; tahun di
       // luar jendela otomatis dibuat eksplisit lewat
       // seedMissingPeriodsAction.)
-      const unlocking = current.status === "locked" && data.status !== "locked";
-      if (unlocking) {
+      // AK-P2-01 & WF-001: membuka kembali periode yang sudah DITUTUP atau DIKUNCI
+      // memerlukan izin pemilik (owner) dan alasan tertulis yang terekam di jejak audit.
+      const reopening =
+        (current.status === "locked" && data.status !== "locked") ||
+        (current.status === "closed" && data.status === "open");
+      if (reopening) {
         if (ctx.role !== "owner") {
           throw new AppError(
             "FORBIDDEN",
-            "Periode yang sudah dikunci hanya dapat dibuka kembali oleh pemilik (owner).",
+            current.status === "locked"
+              ? "Periode yang sudah dikunci hanya dapat dibuka kembali oleh pemilik (owner)."
+              : "Periode yang sudah ditutup hanya dapat dibuka kembali oleh pemilik (owner).",
           );
         }
         if (!data.reason) {
           throw new AppError(
             "VALIDATION",
-            "Alasan membuka kembali periode yang dikunci wajib diisi (minimal 3 karakter).",
+            "Alasan membuka kembali periode wajib diisi (minimal 3 karakter).",
           );
         }
       }
@@ -113,7 +119,7 @@ export async function setPeriodStatusAction(input: {
           year: data.year,
           month: data.month,
           status: data.status,
-          ...(unlocking ? { previousStatus: current.status, reason: data.reason } : {}),
+          ...(reopening ? { previousStatus: current.status, reason: data.reason } : {}),
         },
       });
     });

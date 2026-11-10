@@ -157,6 +157,11 @@ describe("AK5-04/AK1-05 — tutup buku tahunan", () => {
       { accountId: A.beban, debit: "1500000" },
       { accountId: A.kas, credit: "1500000" },
     ]);
+    // WF-002: Periode bulanan tahun Y ditutup sebelum tutup buku tahunan diposting
+    await adminDb
+      .update(fiscalPeriods)
+      .set({ status: "closed" })
+      .where(and(eq(fiscalPeriods.companyId, ORG), eq(fiscalPeriods.year, Y)));
   });
 
   it("pratinjau menghitung total pendapatan, beban, dan laba bersih tahun itu", async () => {

@@ -159,7 +159,11 @@ export async function applySaleStockMovements(
   sale: { id: string; number: string },
   settings: SaleSettings,
 ) {
-  for (const line of quote.lines) {
+  // POS-009: urutkan garis penjualan berdasarkan productId ASC untuk
+  // memastikan urutan perolehan kunci fisik (stockOnHand / stockBatches)
+  // seragam pada transaksi konkuren dan mencegah circular wait (deadlock).
+  const sortedLines = [...quote.lines].sort((a, b) => a.productId.localeCompare(b.productId));
+  for (const line of sortedLines) {
     // Non-stock products (services) are sold without touching the stock
     // ledger; moving them would pile up negative on-hand balances for goods
     // that do not exist (and fail checkout outright when negative stock is

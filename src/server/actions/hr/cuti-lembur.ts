@@ -91,6 +91,7 @@ export async function decideOvertimeRequestAction(input: {
       await decideOvertimeRequest(tx, {
         companyId: ctx.company.id,
         userId: ctx.user.id,
+        userRole: ctx.role,
         id: data.id,
         approve: data.approve,
         note: data.note ?? null,
@@ -290,6 +291,7 @@ export async function decideLeaveRequestAction(input: {
       await decideLeaveRequest(tx, {
         companyId: ctx.company.id,
         userId: ctx.user.id,
+        userRole: ctx.role,
         id: data.id,
         approve: data.approve,
         note: data.note ?? null,

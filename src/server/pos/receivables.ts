@@ -92,7 +92,7 @@ export async function payReceivable(
     const [claim] = await tx
       .insert(idempotencyKeys)
       .values({ companyId: input.companyId, key: input.idempotencyKey, scope: "pos.ar_payment" })
-      .onConflictDoNothing({ target: [idempotencyKeys.companyId, idempotencyKeys.key] })
+      .onConflictDoNothing({ target: [idempotencyKeys.companyId, idempotencyKeys.scope, idempotencyKeys.key] })
       .returning({ id: idempotencyKeys.id });
     if (!claim) {
       const winner = await findPaymentClaim();

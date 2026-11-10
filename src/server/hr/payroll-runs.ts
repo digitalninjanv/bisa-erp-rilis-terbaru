@@ -23,7 +23,14 @@ import { restoreComponentDrafts } from "./drafts";
 
 export async function payPayrollRun(
   tx: Tx,
-  input: { companyId: string; userId: string; runId: string; accountId: string; date: string },
+  input: {
+    companyId: string;
+    userId: string;
+    userRole?: string | null;
+    runId: string;
+    accountId: string;
+    date: string;
+  },
 ) {
   const [run] = await tx
     .select()
@@ -33,6 +40,19 @@ export async function payPayrollRun(
   if (!run) throw new AppError("NOT_FOUND", "Payroll tidak ditemukan.");
   if (run.status === "paid") throw new AppError("INVALID_STATE", "Payroll sudah dibayar.");
   if (run.status !== "posted") throw new AppError("INVALID_STATE", "Payroll belum berstatus posted.");
+
+  // WF-022: Maker-checker — pembuat payroll run tidak dapat melakukan pembayaran gaji sendiri (Four-Eyes Principle)
+  if (
+    input.userId &&
+    run.createdBy &&
+    run.createdBy === input.userId &&
+    input.userRole !== "owner"
+  ) {
+    throw new AppError(
+      "FORBIDDEN",
+      "Prinsip Maker-Checker (Four-Eyes Principle): Pembayaran gaji harus dieksekusi atau disahkan oleh pengguna selain pembuat draft run payroll.",
+    );
+  }
 
   const map = await getAccountMap(tx, input.companyId);
   const amount = d(run.totalNet);
@@ -67,7 +87,7 @@ export async function payPayrollRun(
 
 export async function voidPayrollRun(
   tx: Tx,
-  input: { companyId: string; userId: string; id: string; reason: string },
+  input: { companyId: string; userId: string; userRole?: string | null; id: string; reason: string },
 ) {
   const [run] = await tx
     .select()
@@ -87,6 +107,19 @@ export async function voidPayrollRun(
   }
   if (run.status !== "posted") {
     throw new AppError("INVALID_STATE", "Hanya payroll berstatus posted yang bisa dibatalkan.");
+  }
+
+  // WF-022: Maker-checker — pembatalan payroll diproses atau disahkan oleh selain pembuat run
+  if (
+    input.userId &&
+    run.createdBy &&
+    run.createdBy === input.userId &&
+    input.userRole !== "owner"
+  ) {
+    throw new AppError(
+      "FORBIDDEN",
+      "Prinsip Maker-Checker (Four-Eyes Principle): Pembatalan (void) payroll harus disahkan oleh pengguna selain pembuat draft run payroll.",
+    );
   }
   // Penjaga kedua: jurnal pembayaran gaji yang masih posted juga menolak,
   // seandainya status run tidak sinkron dengan buku besar.

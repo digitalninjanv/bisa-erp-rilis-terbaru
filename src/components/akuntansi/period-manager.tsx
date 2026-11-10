@@ -45,9 +45,8 @@ export function PeriodManager({
 
   function requestStatus(month: number, status: "open" | "closed" | "locked", currentStatus?: string) {
     if (status === "open") {
-      // G1 (FRM-02): membuka periode TERKUNCI wajib alasan tertulis —
-      // dikumpulkan lewat dialog bersama, bukan lagi window.prompt.
-      if (currentStatus === "locked") {
+      // WF-001: membuka kembali periode tertutup/terkunci wajib izin owner & alasan tertulis
+      if (currentStatus === "locked" || currentStatus === "closed") {
         setReopening(month);
         return;
       }
@@ -221,7 +220,7 @@ export function PeriodManager({
       <ConfirmDialog
         open={reopening !== null}
         title={reopening !== null ? `Buka kembali periode ${MONTHS[reopening - 1]} ${year}?` : ""}
-        description="Periode ini sudah dikunci. Membukanya kembali hanya untuk koreksi yang disetujui owner, dan alasannya tercatat."
+        description="Periode ini sudah ditutup/dikunci. Membukanya kembali memerlukan otorisasi pemilik (owner), dan alasan tertulis tercatat dalam riwayat audit."
         confirmLabel="Buka periode"
         danger
         busy={busy !== null}

@@ -45,13 +45,40 @@ export async function serialTrackFlags(
   tx: Tx,
   companyId: string,
   productIds: string[],
+  saleId?: string,
 ): Promise<Map<string, boolean>> {
   if (productIds.length === 0) return new Map();
-  const rows = await tx
-    .select({ id: products.id, trackSerial: products.trackSerial })
-    .from(products)
-    .where(and(eq(products.companyId, companyId), inArray(products.id, productIds)));
-  return new Map(rows.map((row) => [row.id, row.trackSerial]));
+  const result = new Map<string, boolean>();
+
+  if (saleId) {
+    const movements = await tx
+      .select({ productId: stockSerialMovements.productId })
+      .from(stockSerialMovements)
+      .where(
+        and(
+          eq(stockSerialMovements.companyId, companyId),
+          eq(stockSerialMovements.referenceId, saleId),
+          inArray(stockSerialMovements.productId, productIds),
+          eq(stockSerialMovements.kind, "out"),
+        ),
+      );
+    const moved = new Set(movements.map((m) => m.productId));
+    for (const pid of productIds) {
+      if (moved.has(pid)) result.set(pid, true);
+    }
+  }
+
+  const missing = productIds.filter((id) => !result.has(id));
+  if (missing.length > 0) {
+    const rows = await tx
+      .select({ id: products.id, trackSerial: products.trackSerial })
+      .from(products)
+      .where(and(eq(products.companyId, companyId), inArray(products.id, missing)));
+    for (const row of rows) {
+      result.set(row.id, saleId ? false : row.trackSerial);
+    }
+  }
+  return result;
 }
 
 async function recordSerialMovement(
@@ -294,9 +321,19 @@ export async function restoreSerialsForSale(
     referenceNumber: string;
   },
 ) {
+  // POS-004: inner join dengan stockSerials berstatus "out" sebelum membatasi limit
+  // agar retur bertahap tidak mengambil gerakan yang serialnya sudah pernah dipulihkan.
   const outMovements = await tx
     .select({ serialId: stockSerialMovements.serialId })
     .from(stockSerialMovements)
+    .innerJoin(
+      stockSerials,
+      and(
+        eq(stockSerials.companyId, stockSerialMovements.companyId),
+        eq(stockSerials.id, stockSerialMovements.serialId),
+        eq(stockSerials.status, "out"),
+      ),
+    )
     .where(
       and(
         eq(stockSerialMovements.companyId, input.companyId),

@@ -22,6 +22,7 @@ import { applyStockMovement } from "./movements";
 type ReceiveTransferInput = {
   companyId: string;
   userId: string;
+  userRole?: string | null;
   documentId: string;
   date: string;
   lines?: { productId: string; receivedQty: MoneyInput; serialNumbers?: string[] }[];
@@ -74,6 +75,19 @@ export async function receiveTransfer(tx: Tx, input: ReceiveTransferInput) {
   }
   if (!doc.toWarehouseId) throw new AppError("VALIDATION", "Transfer tidak memiliki gudang tujuan.");
   const toWarehouseId = doc.toWarehouseId;
+
+  // WF-023: Pembuat dokumen transfer (pengirim) tidak dapat menerima transfer sendiri (Maker-Checker / Four-Eyes Principle)
+  if (
+    input.userId &&
+    doc.createdBy &&
+    doc.createdBy === input.userId &&
+    input.userRole !== "owner"
+  ) {
+    throw new AppError(
+      "FORBIDDEN",
+      "Prinsip Maker-Checker (Four-Eyes Principle): Pembuat dokumen transfer tidak dapat menerima transfer barang itu sendiri di gudang tujuan.",
+    );
+  }
 
   // FIX-GDG Tahap 2 (GDG3-02): tanggal penerimaan adalah tanggal
   // gerakan stoknya — periode tertutup menolaknya seperti dokumen lain.

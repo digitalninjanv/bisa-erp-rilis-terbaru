@@ -157,6 +157,7 @@ export async function postSupplierReturnAction(input: z.input<typeof returnIdSch
       postSupplierReturn(tx, {
         companyId: ctx.company.id,
         userId: ctx.user.id,
+        userRole: ctx.role,
         returnId: data.returnId,
       }),
     );

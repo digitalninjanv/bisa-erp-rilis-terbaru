@@ -25,7 +25,7 @@ export async function claimIdempotencyKey(
   const [claim] = await tx
     .insert(idempotencyKeys)
     .values({ companyId: input.companyId, key: input.key, scope: input.scope })
-    .onConflictDoNothing({ target: [idempotencyKeys.companyId, idempotencyKeys.key] })
+    .onConflictDoNothing({ target: [idempotencyKeys.companyId, idempotencyKeys.scope, idempotencyKeys.key] })
     .returning({ id: idempotencyKeys.id });
   return Boolean(claim);
 }

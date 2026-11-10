@@ -304,13 +304,25 @@ async function postReturnJournal(
  */
 export async function postSupplierReturn(
   tx: Tx,
-  input: { companyId: string; userId: string; returnId: string },
+  input: { companyId: string; userId: string; userRole?: string | null; returnId: string },
 ) {
   const header = await lockSupplierReturn(tx, input.companyId, input.returnId);
   if (header.status !== "draft") {
     throw new AppError(
       "INVALID_STATE",
       `Retur ${header.number} berstatus ${header.status} dan tidak dapat diposting ulang.`,
+    );
+  }
+  // WF-021: Maker-checker (Four-Eyes Principle) — pembuat draft retur pemasok tidak dapat memposting sendiri
+  if (
+    input.userId &&
+    header.createdBy &&
+    header.createdBy === input.userId &&
+    input.userRole !== "owner"
+  ) {
+    throw new AppError(
+      "FORBIDDEN",
+      "Prinsip Maker-Checker (Four-Eyes Principle): Retur pemasok harus diverifikasi dan diposting oleh pengguna selain pembuat draft retur.",
     );
   }
   await assertPeriodOpen(tx, input.companyId, header.date);

@@ -174,6 +174,7 @@ export async function disposeFixedAssetAction(input: z.input<typeof disposeSchem
       const disposed = await disposeFixedAsset(tx, {
         companyId: ctx.company.id,
         userId: ctx.user.id,
+        userRole: ctx.role,
         assetId: data.assetId,
         date: data.date,
         proceeds: data.proceeds,

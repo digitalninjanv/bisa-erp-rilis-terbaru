@@ -43,8 +43,15 @@ export async function postStockAdjustment(
     .select()
     .from(stockDocuments)
     .where(and(eq(stockDocuments.companyId, input.companyId), eq(stockDocuments.id, input.documentId)))
-    .limit(1);
+    .limit(1)
+    .for("update");
   if (!doc) throw new AppError("NOT_FOUND", "Dokumen penyesuaian tidak ditemukan.");
+  if (doc.status === "posted") {
+    throw new AppError("CONFLICT", `Dokumen ${doc.number} sudah pernah diposting.`);
+  }
+  if (doc.status !== "draft" && doc.status !== "pending") {
+    throw new AppError("INVALID_STATE", `Dokumen ${doc.number} berstatus ${doc.status} tidak dapat diposting.`);
+  }
   if (!doc.warehouseId) {
     throw new AppError("INVALID_STATE", `Dokumen ${doc.number} tidak memiliki gudang asal.`);
   }

@@ -8,6 +8,7 @@ import { saleLines, sales } from "@/db/schema";
 import { AppError } from "@/lib/errors";
 import { toDb } from "@/lib/money";
 import { writeAudit } from "@/server/audit";
+import { claimIdempotencyKey } from "@/server/idempotency";
 import { nextDocumentNumber } from "@/server/sequences";
 import { quoteCart } from "./quote";
 import type { CartLineInput } from "./quote";
@@ -27,9 +28,20 @@ export async function holdSale(
     notes?: string;
     lines: CartLineInput[];
     canDiscount?: boolean;
+    idempotencyKey?: string;
   },
 ) {
   if (!input.label.trim()) throw new AppError("VALIDATION", "Nama pesanan wajib diisi.");
+  if (input.idempotencyKey) {
+    const claimed = await claimIdempotencyKey(tx, {
+      companyId: input.companyId,
+      key: input.idempotencyKey,
+      scope: "pos.hold",
+    });
+    if (!claimed) {
+      throw new AppError("CONFLICT", "Pesanan ditahan dengan kunci yang sama sedang diproses.");
+    }
+  }
   const quote = await quoteCart(tx, {
     companyId: input.companyId,
     warehouseId: input.warehouseId,

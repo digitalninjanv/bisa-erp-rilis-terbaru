@@ -68,11 +68,43 @@ export async function decideOvertimeRequest(
   input: {
     companyId: string;
     userId: string | null;
+    userRole?: string | null;
     id: string;
     approve: boolean;
     note?: string | null;
   },
 ): Promise<void> {
+  const [request] = await tx
+    .select({
+      id: overtimeRequests.id,
+      status: overtimeRequests.status,
+      createdBy: overtimeRequests.createdBy,
+    })
+    .from(overtimeRequests)
+    .where(and(eq(overtimeRequests.companyId, input.companyId), eq(overtimeRequests.id, input.id)))
+    .limit(1);
+
+  if (!request) {
+    throw new AppError("NOT_FOUND", "Pengajuan lembur tidak ditemukan.");
+  }
+  if (request.status !== "pending") {
+    throw new AppError("INVALID_STATE", "Pengajuan lembur sudah diputuskan.");
+  }
+
+  // WF-004: Maker-checker (Four-Eyes Principle) — pembuat pengajuan lembur tidak dapat mengesahkan sendiri
+  if (
+    input.approve &&
+    input.userId &&
+    request.createdBy &&
+    request.createdBy === input.userId &&
+    input.userRole !== "owner"
+  ) {
+    throw new AppError(
+      "FORBIDDEN",
+      "Prinsip Maker-Checker (Four-Eyes Principle): Pengajuan lembur tidak dapat disahkan oleh pembuat pengajuan itu sendiri.",
+    );
+  }
+
   const [row] = await tx
     .update(overtimeRequests)
     .set({

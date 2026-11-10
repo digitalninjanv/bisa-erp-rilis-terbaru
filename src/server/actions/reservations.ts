@@ -3,11 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { withCompany } from "@/db/tenant";
-import { guard } from "@/lib/errors";
+import { AppError, guard } from "@/lib/errors";
 import { amountField, isoDateField, parseInput } from "@/lib/action-validation";
 import { todayISO } from "@/lib/format";
 import { requirePermission } from "@/lib/session";
 import { writeAudit } from "@/server/audit";
+import { claimIdempotencyKey } from "@/server/idempotency";
 import { receiveTransfer } from "@/server/inventory";
 import { createReservation, releaseReservation } from "@/server/reservations";
 
@@ -23,6 +24,7 @@ const createSchema = z.object({
   date: isoDateField.optional(),
   expiresAt: z.string().datetime().nullish(),
   reason: z.string().max(300).optional(),
+  idempotencyKey: z.string().min(8).max(128).optional(),
 });
 
 export async function createReservationAction(input: z.input<typeof createSchema>) {
@@ -30,6 +32,16 @@ export async function createReservationAction(input: z.input<typeof createSchema
     const ctx = await requirePermission("inventory.manage");
     const data = parseInput(createSchema, input);
     const row = await withCompany(ctx.company.id, async (tx) => {
+      if (data.idempotencyKey) {
+        const claimed = await claimIdempotencyKey(tx, {
+          companyId: ctx.company.id,
+          key: data.idempotencyKey,
+          scope: "inventory.reservation",
+        });
+        if (!claimed) {
+          throw new AppError("CONFLICT", "Reservasi dengan kunci ini sedang diproses.");
+        }
+      }
       const created = await createReservation(tx, {
         companyId: ctx.company.id,
         userId: ctx.user.id,
@@ -115,6 +127,7 @@ export async function receiveTransferAction(input: z.input<typeof receiveSchema>
       const received = await receiveTransfer(tx, {
         companyId: ctx.company.id,
         userId: ctx.user.id,
+        userRole: ctx.role,
         documentId: data.documentId,
         date: data.date ?? todayISO(),
         lines: data.lines,

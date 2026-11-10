@@ -644,6 +644,7 @@ export async function payPayrollAction(input: { runId: string; accountId: string
       const paid = await payPayrollRun(tx, {
         companyId: ctx.company.id,
         userId: ctx.user.id,
+        userRole: ctx.role,
         runId: data.runId,
         accountId: data.accountId,
         date: data.date,
@@ -668,6 +669,7 @@ export async function voidPayrollRunAction(input: { id: string; reason: string }
       voidPayrollRun(tx, {
         companyId: ctx.company.id,
         userId: ctx.user.id,
+        userRole: ctx.role,
         id: data.id,
         reason: data.reason,
       }),

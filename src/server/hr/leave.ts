@@ -281,6 +281,7 @@ export async function decideLeaveRequest(
   input: {
     companyId: string;
     userId: string | null;
+    userRole?: string | null;
     id: string;
     approve: boolean;
     note?: string | null;
@@ -294,6 +295,19 @@ export async function decideLeaveRequest(
   if (!request) throw new AppError("NOT_FOUND", "Pengajuan cuti tidak ditemukan.");
   if (request.status !== "pending") {
     throw new AppError("INVALID_STATE", "Pengajuan cuti sudah diputuskan.");
+  }
+  // WF-003: Maker-checker (Four-Eyes Principle) — pembuat pengajuan cuti tidak dapat mengesahkan sendiri
+  if (
+    input.approve &&
+    input.userId &&
+    request.createdBy &&
+    request.createdBy === input.userId &&
+    input.userRole !== "owner"
+  ) {
+    throw new AppError(
+      "FORBIDDEN",
+      "Prinsip Maker-Checker (Four-Eyes Principle): Pengajuan cuti tidak dapat disahkan oleh pembuat pengajuan itu sendiri.",
+    );
   }
   if (input.approve) {
     // Saldo diperiksa ulang saat pengesahan: persetujuan lain dapat

@@ -552,6 +552,7 @@ export async function disposeFixedAsset(
   input: {
     companyId: string;
     userId: string;
+    userRole?: string | null;
     assetId: string;
     date: string;
     proceeds: MoneyInput;
@@ -567,6 +568,19 @@ export async function disposeFixedAsset(
     .for("update");
   if (!asset) throw new AppError("NOT_FOUND", "Aset tidak ditemukan.");
   if (asset.status !== "active") throw new AppError("CONFLICT", "Aset ini sudah dilepas.");
+
+  // WF-024: Maker-checker pelepasan aset — pembuat aset tidak dapat melepas asetnya sendiri
+  if (
+    input.userId &&
+    asset.createdBy &&
+    asset.createdBy === input.userId &&
+    input.userRole !== "owner"
+  ) {
+    throw new AppError(
+      "FORBIDDEN",
+      "Prinsip Maker-Checker (Four-Eyes Principle): Pelepasan aset tetap harus disahkan atau dilakukan oleh pengguna selain pendaftar aset tersebut.",
+    );
+  }
   const proceeds = d(input.proceeds);
   if (proceeds.lt(0)) throw new AppError("VALIDATION", "Hasil pelepasan tidak boleh negatif.");
   if (proceeds.gt(0)) {

@@ -11,8 +11,10 @@ import { D, d, toDb } from "@/lib/money";
 import { reverseJournalEntry, reverseSourceJournal } from "@/server/accounting";
 import { writeAudit } from "@/server/audit";
 import { applyStockMovement } from "@/server/inventory";
+import { restoreReservationForVoidSale } from "@/server/reservations";
 import { restoreSerialsForSale, serialTrackFlags } from "@/server/serials";
 import { todayISO } from "@/lib/format";
+import { restorePartyCreditUsage, voidOriginPartyCredit } from "@/server/party-credits";
 import { batchTrackFlags, restoreSaleLineBatches, trackStockFlags } from "./sales-stock";
 
 export async function voidSale(tx: Tx, input: VoidSaleInput) {
@@ -34,6 +36,14 @@ export async function voidSale(tx: Tx, input: VoidSaleInput) {
   const { cashTotal, refundSessionId, refundSessionSource } = await recordVoidCashRefund(tx, input, sale);
 
   await restoreVoidedSaleCredit(tx, input, sale);
+
+  // POS-005: Pulihkan alokasi reservasi yang pernah dikonsumsi saat checkout penjualan ini
+  await restoreReservationForVoidSale(tx, {
+    companyId: input.companyId,
+    userId: input.userId,
+    saleId: sale.id,
+    saleNumber: sale.number,
+  });
 
   // FIX-P1 (AK3-01): paidTotal diturunkan sebesar penerimaan piutang
   // yang baru dibatalkan di atas, dan paymentStatus dihitung ulang —
@@ -158,9 +168,9 @@ async function restoreVoidedSaleStock(tx: Tx, input: VoidSaleInput, sale: SaleRo
     .where(eq(saleLines.saleId, sale.id));
 
   const lineProductIds = [...new Set(lines.map((line) => line.productId))];
-  const trackStock = await trackStockFlags(tx, input.companyId, lineProductIds);
-  const trackBatch = await batchTrackFlags(tx, input.companyId, lineProductIds);
-  const trackSerial = await serialTrackFlags(tx, input.companyId, lineProductIds);
+  const trackStock = await trackStockFlags(tx, input.companyId, lineProductIds, sale.id);
+  const trackBatch = await batchTrackFlags(tx, input.companyId, lineProductIds, sale.id);
+  const trackSerial = await serialTrackFlags(tx, input.companyId, lineProductIds, sale.id);
 
   for (const line of lines) {
     // Service/non-stock lines were never moved out at checkout, so there is
@@ -276,6 +286,15 @@ async function reverseVoidedSaleReceivables(tx: Tx, input: VoidSaleInput, sale: 
       .update(partyPayments)
       .set({ status: "void" })
       .where(and(eq(partyPayments.companyId, input.companyId), eq(partyPayments.id, payment.id)));
+
+    // WF-006: pulihkan saldo pemakaian kredit pelanggan dan batalkan kredit yang lahir dari penerimaan ini
+    await restorePartyCreditUsage(tx, { companyId: input.companyId, userId: input.userId, payment });
+    await voidOriginPartyCredit(tx, {
+      companyId: input.companyId,
+      userId: input.userId,
+      paymentId: payment.id,
+    });
+
     reversedArTotal = reversedArTotal.plus(d(payment.amount));
   }
   return { reversedArTotal, reversedArCount: arPayments.length };
@@ -314,7 +333,8 @@ async function recordVoidCashRefund(tx: Tx, input: VoidSaleInput, sale: SaleRow)
         .select({ status: cashSessions.status })
         .from(cashSessions)
         .where(and(eq(cashSessions.companyId, input.companyId), eq(cashSessions.id, sale.sessionId)))
-        .limit(1);
+        .limit(1)
+        .for("update");
       if (originSession?.status === "open") {
         refundSessionId = sale.sessionId;
         refundSessionSource = "origin";
@@ -332,7 +352,8 @@ async function recordVoidCashRefund(tx: Tx, input: VoidSaleInput, sale: SaleRow)
           ),
         )
         .orderBy(sql`${cashSessions.openedAt} DESC`)
-        .limit(1);
+        .limit(1)
+        .for("update");
       if (openSession) {
         refundSessionId = openSession.id;
         refundSessionSource = "processor";

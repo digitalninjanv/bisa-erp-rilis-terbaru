@@ -134,7 +134,7 @@ export async function createSaleReturn(tx: Tx, input: CreateSaleReturnInput) {
 
   // FIX-R2 Tahap 3 (RV2-01): peringatan penjaga saldo kas/bank (mode
   // warn) untuk jurnal refund tunai retur ini.
-  return { id: ret.id, number: ret.number, total: refundDue.toNumber(), warnings: returnJournal.warnings };
+  return { id: ret.id, number: ret.number, total: refundDue.toNumber(), warnings: returnJournal?.warnings ?? [] };
 }
 
 
@@ -240,8 +240,8 @@ async function loadReturnOrigin(tx: Tx, input: CreateSaleReturnInput): Promise<R
     originalByProduct.set(line.productId, list);
   }
   const returnProductIds = [...new Set(input.lines.map((line) => line.productId))];
-  const trackStock = await trackStockFlags(tx, input.companyId, returnProductIds);
-  const trackBatch = await batchTrackFlags(tx, input.companyId, returnProductIds);
+  const trackStock = await trackStockFlags(tx, input.companyId, returnProductIds, sale.id);
+  const trackBatch = await batchTrackFlags(tx, input.companyId, returnProductIds, sale.id);
 
   const map = await getAccountMap(tx, input.companyId);
   const alreadyReturned = await tx
@@ -551,7 +551,7 @@ async function restoreReturnedStock(
       }
     }
   }
-  const trackSerialReturn = await serialTrackFlags(tx, input.companyId, returnProductIds);
+  const trackSerialReturn = await serialTrackFlags(tx, input.companyId, returnProductIds, sale.id);
   for (const line of restoreLines) {
     if (!line.tracked) continue;
     if (trackSerialReturn.get(line.productId)) {
@@ -659,9 +659,18 @@ async function postSaleReturnJournal(
     ...(roundingPortion.lt(0)
       ? [{ accountId: map.rounding_loss, credit: roundingPortion.abs(), description: "Pembalik selisih pembulatan" }]
       : []),
-    { accountId: map.inventory, debit: costPortion, description: "Persediaan kembali" },
-    { accountId: map.cogs, credit: costPortion, description: "Pembalik HPP" },
+    ...(costPortion.gt(0)
+      ? [
+          { accountId: map.inventory, debit: costPortion, description: "Persediaan kembali" },
+          { accountId: map.cogs, credit: costPortion, description: "Pembalik HPP" },
+        ]
+      : []),
   ];
+
+  const activeLines = lines.filter((l) => (l.debit && d(l.debit).gt(0)) || (l.credit && d(l.credit).gt(0)));
+  if (activeLines.length === 0) {
+    return null;
+  }
 
   const returnJournal = await postJournal(tx, {
     companyId: input.companyId,
@@ -671,7 +680,7 @@ async function postSaleReturnJournal(
     sourceId: ret.id,
     createdBy: input.userId,
     idempotencyKey: `sale_return:${ret.id}`,
-    lines,
+    lines: activeLines,
   });
   return returnJournal;
 }

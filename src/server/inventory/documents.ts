@@ -5,6 +5,7 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 import type { Tx } from "@/db";
 import {
+  opnameTasks,
   products,
   stockDocumentLines,
   stockDocuments,
@@ -261,6 +262,17 @@ export async function voidStockDocument(
       fromWarehouseId: doc.warehouseId,
       toWarehouseId: doc.toWarehouseId ?? null,
     });
+  }
+
+  // WF-025: reset tugas opname yang tertaut ke dokumen ini agar riwayat penugasan tidak menunjuk dokumen batal.
+  if (doc.type === "opname") {
+    await tx
+      .update(opnameTasks)
+      .set({
+        status: "cancelled",
+        documentId: null,
+      })
+      .where(and(eq(opnameTasks.companyId, input.companyId), eq(opnameTasks.documentId, doc.id)));
   }
 
   await tx

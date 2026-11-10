@@ -216,6 +216,25 @@ export async function postYearEndClosing(
     );
   }
 
+  // WF-002: Tutup buku tahunan mensyaratkan tidak ada periode bulanan yang masih open
+  const openPeriods = await tx
+    .select({ month: fiscalPeriods.month })
+    .from(fiscalPeriods)
+    .where(
+      and(
+        eq(fiscalPeriods.companyId, input.companyId),
+        eq(fiscalPeriods.year, year),
+        eq(fiscalPeriods.status, "open"),
+      ),
+    );
+  if (openPeriods.length > 0) {
+    const months = openPeriods.map((p) => p.month).join(", ");
+    throw new AppError(
+      "CONFLICT",
+      `Tutup buku tahun ${year} tidak dapat diposting karena masih ada periode bulanan yang berstatus open (Bulan: ${months}). Tutup atau kunci seluruh periode tersebut terlebih dahulu.`,
+    );
+  }
+
   const balances = (await pnlBalances(tx, input.companyId, year)).filter((row) => !row.signed.isZero());
   if (balances.length === 0) {
     throw new AppError(

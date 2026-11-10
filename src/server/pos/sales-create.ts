@@ -179,7 +179,7 @@ async function claimSaleIdempotency(tx: Tx, input: CreateSaleInput) {
   const [claim] = await tx
     .insert(idempotencyKeys)
     .values({ companyId: input.companyId, key: input.idempotencyKey, scope: "pos.sale" })
-    .onConflictDoNothing({ target: [idempotencyKeys.companyId, idempotencyKeys.key] })
+    .onConflictDoNothing({ target: [idempotencyKeys.companyId, idempotencyKeys.scope, idempotencyKeys.key] })
     .returning({ id: idempotencyKeys.id });
   if (!claim) {
     const winner = await findExisting();

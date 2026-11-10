@@ -226,7 +226,12 @@ export async function ensureFiscalPeriods(tx: Tx, companyId: string, year: numbe
     });
 }
 
-export async function assertPeriodOpen(tx: Tx, companyId: string, date: string): Promise<void> {
+export async function assertPeriodOpen(
+  tx: Tx,
+  companyId: string,
+  date: string,
+  options?: { allowClosingEntry?: boolean },
+): Promise<void> {
   const parsed = new Date(`${date}T00:00:00Z`);
   const year = parsed.getUTCFullYear();
   const month = parsed.getUTCMonth() + 1;
@@ -278,6 +283,10 @@ export async function assertPeriodOpen(tx: Tx, companyId: string, date: string):
     );
   }
   if (period.status !== "open") {
+    if (options?.allowClosingEntry && period.status === "closed") {
+      // Jurnal penutup tahunan (year_end_closing) dan pembaliknya diizinkan diposting ke periode berstatus closed
+      return;
+    }
     throw new AppError(
       "PERIOD_CLOSED",
       `Periode ${String(month).padStart(2, "0")}/${year} sudah ${period.status === "locked" ? "dikunci" : "ditutup"}.`,
@@ -418,7 +427,11 @@ export async function postJournal(
         accountRows,
       );
 
-  await assertPeriodOpen(tx, input.companyId, input.date);
+  await assertPeriodOpen(tx, input.companyId, input.date, {
+    allowClosingEntry:
+      input.sourceType === "year_end_closing" ||
+      input.sourceType === "year_end_closing_reversal",
+  });
   const number = await nextDocumentNumber(tx, input.companyId, "JOURNAL", input.date);
 
   const [entry] = await tx
