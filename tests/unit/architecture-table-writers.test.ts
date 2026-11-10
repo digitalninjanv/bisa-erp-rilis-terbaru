@@ -72,7 +72,14 @@ const FROZEN: Record<string, string[]> = {
     "server/actions/settings/kelompok-harga.ts",
     "server/import/commit.ts",
   ],
+  expenses: [
+    "server/expenses.ts",
+    "server/master-data/merge.ts",
+    "server/party-writeoffs.ts",
+    "server/payables.ts",
+  ],
   idempotencyKeys: ["server/idempotency.ts", "server/pos/receivables.ts", "server/pos/sales-create.ts"],
+  partyCredits: ["server/master-data/merge.ts", "server/party-credits.ts"],
   partyOpeningBalances: [
     "server/master-data/merge.ts",
     "server/opening-balances/documents.ts",
@@ -103,6 +110,7 @@ const FROZEN: Record<string, string[]> = {
     "server/master-data/bulk-edit.ts",
     "server/master-data/merge.ts",
   ],
+  purchaseAdvances: ["server/master-data/merge.ts", "server/purchase-advances.ts"],
   purchaseOrders: ["server/master-data/merge.ts", "server/purchasing.ts"],
   sales: [
     "server/actions/pos.ts",

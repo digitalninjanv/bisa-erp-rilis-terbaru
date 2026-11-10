@@ -145,50 +145,12 @@ export async function quickAddCustomerAction(input: { name: string; phone?: stri
     const result = await withCompany(ctx.company.id, async (tx) => {
       // MD-023: Quick add pelanggan kasir tetap harus diaudit
       if (data.phone) {
-        const [existing] = await tx
-          .select({ id: customers.id, name: customers.name })
-          .from(customers)
-          .where(and(eq(customers.companyId, ctx.company.id), eq(customers.phone, data.phone)))
-          .limit(1);
-        if (existing) {
-          throw new AppError(
-            "CONFLICT",
-            `Nomor telepon ${data.phone} sudah terdaftar atas nama pelanggan "${existing.name}".`,
-          );
-        }
+        const [existing] = await tx.select({ id: customers.id, name: customers.name }).from(customers).where(and(eq(customers.companyId, ctx.company.id), eq(customers.phone, data.phone))).limit(1);
+        if (existing) throw new AppError("CONFLICT", `Nomor telepon ${data.phone} sudah terdaftar atas nama pelanggan "${existing.name}".`);
       }
       const code = `CUST-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
-      const [created] = await tx
-        .insert(customers)
-        .values({
-          companyId: ctx.company.id,
-          code,
-          name: data.name,
-          phone: data.phone || null,
-          creditLimit: "0",
-        })
-        .returning({
-          id: customers.id,
-          code: customers.code,
-          name: customers.name,
-          phone: customers.phone,
-          creditLimit: customers.creditLimit,
-        });
-
-      await writeAudit(tx, {
-        companyId: ctx.company.id,
-        userId: ctx.user.id,
-        action: "customer.quick_add",
-        entityType: "customer",
-        entityId: created.id,
-        after: {
-          code: created.code,
-          name: created.name,
-          phone: created.phone,
-          creditLimit: created.creditLimit,
-        },
-      });
-
+      const [created] = await tx.insert(customers).values({ companyId: ctx.company.id, code, name: data.name, phone: data.phone || null, creditLimit: "0" }).returning({ id: customers.id, code: customers.code, name: customers.name, phone: customers.phone, creditLimit: customers.creditLimit });
+      await writeAudit(tx, { companyId: ctx.company.id, userId: ctx.user.id, action: "customer.quick_add", entityType: "customer", entityId: created.id, after: { code: created.code, name: created.name, phone: created.phone, creditLimit: created.creditLimit } });
       return { ...created, creditLimit: d(created.creditLimit).toNumber() };
     });
     revalidatePath("/app/gudang/pelanggan");
@@ -689,31 +651,11 @@ export async function voidReceivablePaymentAction(input: { paymentId: string; re
         .where(and(eq(sales.companyId, ctx.company.id), eq(sales.id, sale.id)));
 
       // POS-002: Jika penerimaan piutang memiliki mutasi kas ke laci sesi, catat pengembalian dana
-      const [existingCashMovement] = await tx
-        .select()
-        .from(cashMovements)
-        .where(
-          and(
-            eq(cashMovements.companyId, ctx.company.id),
-            eq(cashMovements.referenceType, "payment"),
-            eq(cashMovements.referenceId, payment.id),
-          ),
-        )
-        .limit(1);
-
+      const [existingCashMovement] = await tx.select().from(cashMovements).where(and(eq(cashMovements.companyId, ctx.company.id), eq(cashMovements.referenceType, "payment"), eq(cashMovements.referenceId, payment.id))).limit(1);
       if (existingCashMovement) {
         const processorSession = await getOpenCashSession(tx, ctx.company.id, ctx.user.id);
         if (processorSession) {
-          await tx.insert(cashMovements).values({
-            companyId: ctx.company.id,
-            sessionId: processorSession.id,
-            type: "refund",
-            amount: toDb(d(existingCashMovement.amount).neg()),
-            referenceType: "payment_void",
-            referenceId: payment.id,
-            notes: `Pembatalan penerimaan piutang ${payment.number} — ${data.reason}`,
-            createdBy: ctx.user.id,
-          });
+          await tx.insert(cashMovements).values({ companyId: ctx.company.id, sessionId: processorSession.id, type: "refund", amount: toDb(d(existingCashMovement.amount).neg()), referenceType: "payment_void", referenceId: payment.id, notes: `Pembatalan penerimaan piutang ${payment.number} — ${data.reason}`, createdBy: ctx.user.id });
         }
       }
 

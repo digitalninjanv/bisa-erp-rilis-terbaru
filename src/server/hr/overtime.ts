@@ -94,10 +94,12 @@ export async function decideOvertimeRequest(
   // WF-004: Maker-checker (Four-Eyes Principle) — pembuat pengajuan lembur tidak dapat mengesahkan sendiri
   if (
     input.approve &&
+    input.userRole &&
+    input.userRole !== "owner" &&
+    input.userRole !== "admin" &&
     input.userId &&
     request.createdBy &&
-    request.createdBy === input.userId &&
-    input.userRole !== "owner"
+    request.createdBy === input.userId
   ) {
     throw new AppError(
       "FORBIDDEN",

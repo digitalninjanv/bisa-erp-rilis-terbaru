@@ -13,13 +13,8 @@ import { withCompany } from "@/db/tenant";
 import {
   accountMappings,
   accounts,
-  bankTransfers,
   customerGroups,
-  employeeAdvances,
-  employeeLoans,
-  expenses,
   journalLines,
-  partyPayments,
   paymentMethods,
 } from "@/db/schema";
 import {
@@ -425,16 +420,10 @@ export async function saveAccountAction(input: z.input<typeof accountSchema>) {
 
         // MD-015: saldo normal dan kelompok laporan (section) tidak dapat diubah jika sudah ada baris jurnal
         if (existing.normalBalance !== data.normalBalance && impact.journalLineCount > 0) {
-          throw new AppError(
-            "CONFLICT",
-            `Saldo normal akun ${existing.code} (${existing.normalBalance.toUpperCase()}) tidak dapat diubah menjadi ${data.normalBalance.toUpperCase()} karena akun sudah memiliki ${impact.journalLineCount} baris jurnal; mengubah saldo normal akan membalik perhitungan saldo riwayat laporan.`,
-          );
+          throw new AppError("CONFLICT", `Saldo normal akun ${existing.code} (${existing.normalBalance.toUpperCase()}) tidak dapat diubah menjadi ${data.normalBalance.toUpperCase()} karena akun sudah memiliki ${impact.journalLineCount} baris jurnal.`);
         }
         if (existing.section !== effectiveSection && impact.journalLineCount > 0) {
-          throw new AppError(
-            "CONFLICT",
-            `Kelompok laporan (section) akun ${existing.code} tidak dapat diubah dari ${existing.section} menjadi ${effectiveSection} karena akun sudah memiliki ${impact.journalLineCount} baris jurnal; mengubah kelompok laporan akan mereklasifikasi akun pada seluruh laporan keuangan historis.`,
-          );
+          throw new AppError("CONFLICT", `Kelompok laporan akun ${existing.code} tidak dapat diubah dari ${existing.section} menjadi ${effectiveSection} karena akun sudah memiliki ${impact.journalLineCount} baris jurnal.`);
         }
 
         // (F-05): penonaktifan setara penjaga hapus utk ikatan
@@ -630,70 +619,32 @@ export async function deleteAccountAction(id: string) {
       }
 
       // MD-016 & WF-019: tolak jika akun terikat pada transfer bank, akun kontra, biaya, pembayaran, atau pinjaman/uang muka
-      const [contraUse] = await tx
-        .select({ value: sql<number>`count(*)::int` })
-        .from(accounts)
-        .where(and(eq(accounts.companyId, ctx.company.id), eq(accounts.contraOf, accountId)));
-      if ((contraUse?.value ?? 0) > 0) {
-        throw new AppError(
-          "CONFLICT",
-          "Akun masih menjadi target akun kontra dari akun lain. Lepaskan relasi kontra akun terlebih dahulu.",
-        );
+      const [usageCheck] = (await tx.execute(sql`
+        SELECT
+          (SELECT count(*)::int FROM accounts WHERE company_id = ${ctx.company.id} AND contra_of = ${accountId}) AS contra,
+          (SELECT count(*)::int FROM bank_transfers WHERE company_id = ${ctx.company.id} AND (from_account_id = ${accountId} OR to_account_id = ${accountId})) AS bank_transfer,
+          (SELECT count(*)::int FROM expenses WHERE company_id = ${ctx.company.id} AND expense_account_id = ${accountId}) AS expense,
+          (SELECT count(*)::int FROM party_payments WHERE company_id = ${ctx.company.id} AND account_id = ${accountId}) AS party_payment,
+          (SELECT count(*)::int FROM employee_advances WHERE company_id = ${ctx.company.id} AND account_id = ${accountId}) AS advance,
+          (SELECT count(*)::int FROM employee_loans WHERE company_id = ${ctx.company.id} AND account_id = ${accountId}) AS loan
+      `)) as unknown as { contra: number; bank_transfer: number; expense: number; party_payment: number; advance: number; loan: number }[];
+      if ((Number(usageCheck?.contra) || 0) > 0) {
+        throw new AppError("CONFLICT", "Akun masih menjadi target akun kontra dari akun lain. Lepaskan relasi kontra akun terlebih dahulu.");
       }
-      const [bankTransferUse] = await tx
-        .select({ value: sql<number>`count(*)::int` })
-        .from(bankTransfers)
-        .where(
-          and(
-            eq(bankTransfers.companyId, ctx.company.id),
-            sql`(${bankTransfers.fromAccountId} = ${accountId} OR ${bankTransfers.toAccountId} = ${accountId})`,
-          ),
-        );
-      if ((bankTransferUse?.value ?? 0) > 0) {
-        throw new AppError(
-          "CONFLICT",
-          "Akun memiliki riwayat transfer antar-bank. Nonaktifkan akun alih-alih menghapus.",
-        );
+      if ((Number(usageCheck?.bank_transfer) || 0) > 0) {
+        throw new AppError("CONFLICT", "Akun memiliki riwayat transfer antar-bank. Nonaktifkan akun alih-alih menghapus.");
       }
-      const [expenseUse] = await tx
-        .select({ value: sql<number>`count(*)::int` })
-        .from(expenses)
-        .where(and(eq(expenses.companyId, ctx.company.id), eq(expenses.expenseAccountId, accountId)));
-      if ((expenseUse?.value ?? 0) > 0) {
-        throw new AppError(
-          "CONFLICT",
-          "Akun sudah dipakai pada transaksi pengeluaran beban/biaya. Nonaktifkan akun alih-alih menghapus.",
-        );
+      if ((Number(usageCheck?.expense) || 0) > 0) {
+        throw new AppError("CONFLICT", "Akun sudah dipakai pada transaksi pengeluaran beban/biaya. Nonaktifkan akun alih-alih menghapus.");
       }
-      const [partyPaymentUse] = await tx
-        .select({ value: sql<number>`count(*)::int` })
-        .from(partyPayments)
-        .where(and(eq(partyPayments.companyId, ctx.company.id), eq(partyPayments.accountId, accountId)));
-      if ((partyPaymentUse?.value ?? 0) > 0) {
-        throw new AppError(
-          "CONFLICT",
-          "Akun sudah dipakai pada transaksi pembayaran piutang/hutang. Nonaktifkan akun alih-alih menghapus.",
-        );
+      if ((Number(usageCheck?.party_payment) || 0) > 0) {
+        throw new AppError("CONFLICT", "Akun sudah dipakai pada transaksi pembayaran piutang/hutang. Nonaktifkan akun alih-alih menghapus.");
       }
-      const [advanceUse] = await tx
-        .select({ value: sql<number>`count(*)::int` })
-        .from(employeeAdvances)
-        .where(and(eq(employeeAdvances.companyId, ctx.company.id), eq(employeeAdvances.accountId, accountId)));
-      if ((advanceUse?.value ?? 0) > 0) {
-        throw new AppError(
-          "CONFLICT",
-          "Akun sudah dipakai pada pencairan kasbon/uang muka karyawan. Nonaktifkan akun alih-alih menghapus.",
-        );
+      if ((Number(usageCheck?.advance) || 0) > 0) {
+        throw new AppError("CONFLICT", "Akun sudah dipakai pada pencairan kasbon/uang muka karyawan. Nonaktifkan akun alih-alih menghapus.");
       }
-      const [loanUse] = await tx
-        .select({ value: sql<number>`count(*)::int` })
-        .from(employeeLoans)
-        .where(and(eq(employeeLoans.companyId, ctx.company.id), eq(employeeLoans.accountId, accountId)));
-      if ((loanUse?.value ?? 0) > 0) {
-        throw new AppError(
-          "CONFLICT",
-          "Akun sudah dipakai pada pencairan pinjaman karyawan. Nonaktifkan akun alih-alih menghapus.",
-        );
+      if ((Number(usageCheck?.loan) || 0) > 0) {
+        throw new AppError("CONFLICT", "Akun sudah dipakai pada pencairan pinjaman karyawan. Nonaktifkan akun alih-alih menghapus.");
       }
 
       await tx

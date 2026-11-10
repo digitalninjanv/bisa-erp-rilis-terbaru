@@ -644,4 +644,13 @@
     size: A4;
     margin: 12mm;
   }
+
+  /* REP-001/REP-003: Zero-margin thermal roll printing (58mm/80mm) */
+  .receipt,
+  [data-slot="receipt-thermal"],
+  .print-doc[data-paper="thermal58"],
+  .print-doc[data-paper="thermal80"] {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
 }

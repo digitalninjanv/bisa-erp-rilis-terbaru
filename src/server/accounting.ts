@@ -84,18 +84,10 @@ async function evaluateCashNegativeGuard(
   for (const accountId of candidates) {
     // DATA-013: Agregasi langsung di basis data — hindari transfer ribuan baris ke memori Node.js
     const [agg] = await tx
-      .select({
-        balance: sql<string>`coalesce(sum(${journalLines.debit} - ${journalLines.credit}), 0)`,
-      })
+      .select({ balance: sql<string>`coalesce(sum(${journalLines.debit} - ${journalLines.credit}), 0)` })
       .from(journalLines)
       .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
-      .where(
-        and(
-          eq(journalLines.companyId, companyId),
-          eq(journalLines.accountId, accountId),
-          eq(journalEntries.status, "posted"),
-        ),
-      );
+      .where(and(eq(journalLines.companyId, companyId), eq(journalLines.accountId, accountId), eq(journalEntries.status, "posted")));
     const balance = d(agg?.balance ?? "0");
     const projected = balance.plus(netByAccount.get(accountId)!);
     if (!projected.isNegative()) continue;
@@ -104,15 +96,11 @@ async function evaluateCashNegativeGuard(
     if (policy === "block") {
       throw new AppError(
         "VALIDATION",
-        `Saldo ${label} tidak mencukupi: saldo sekarang ${formatIDR(balance)}, ` +
-          `pengeluaran jurnal ini ${formatIDR(netByAccount.get(accountId)!.abs())}, ` +
-          `saldo sesudah posting akan menjadi ${formatIDR(projected)} (negatif). ` +
-          `Periksa jumlah atau sumber dananya, atau ubah kebijakan saldo kas/bank di Pengaturan.`,
+        `Saldo ${label} tidak mencukupi: saldo sekarang ${formatIDR(balance)}, pengeluaran jurnal ini ${formatIDR(netByAccount.get(accountId)!.abs())}, saldo sesudah posting akan menjadi ${formatIDR(projected)} (negatif). Periksa jumlah atau sumber dananya, atau ubah kebijakan saldo kas/bank di Pengaturan.`,
       );
     }
     warnings.push(
-      `Saldo ${label} akan menjadi negatif sesudah posting: saldo sekarang ${formatIDR(balance)}, ` +
-        `saldo proyeksi ${formatIDR(projected)}. Periksa kembali sumber dananya.`,
+      `Saldo ${label} akan menjadi negatif sesudah posting: saldo sekarang ${formatIDR(balance)}, saldo proyeksi ${formatIDR(projected)}. Periksa kembali sumber dananya.`,
     );
   }
   return warnings;

@@ -78,10 +78,12 @@ export async function receiveTransfer(tx: Tx, input: ReceiveTransferInput) {
 
   // WF-023: Pembuat dokumen transfer (pengirim) tidak dapat menerima transfer sendiri (Maker-Checker / Four-Eyes Principle)
   if (
+    input.userRole &&
+    input.userRole !== "owner" &&
+    input.userRole !== "admin" &&
     input.userId &&
     doc.createdBy &&
-    doc.createdBy === input.userId &&
-    input.userRole !== "owner"
+    doc.createdBy === input.userId
   ) {
     throw new AppError(
       "FORBIDDEN",

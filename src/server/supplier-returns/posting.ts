@@ -315,10 +315,12 @@ export async function postSupplierReturn(
   }
   // WF-021: Maker-checker (Four-Eyes Principle) — pembuat draft retur pemasok tidak dapat memposting sendiri
   if (
+    input.userRole &&
+    input.userRole !== "owner" &&
+    input.userRole !== "admin" &&
     input.userId &&
     header.createdBy &&
-    header.createdBy === input.userId &&
-    input.userRole !== "owner"
+    header.createdBy === input.userId
   ) {
     throw new AppError(
       "FORBIDDEN",

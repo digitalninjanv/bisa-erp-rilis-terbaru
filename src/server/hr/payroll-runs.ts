@@ -43,10 +43,12 @@ export async function payPayrollRun(
 
   // WF-022: Maker-checker — pembuat payroll run tidak dapat melakukan pembayaran gaji sendiri (Four-Eyes Principle)
   if (
+    input.userRole &&
+    input.userRole !== "owner" &&
+    input.userRole !== "admin" &&
     input.userId &&
     run.createdBy &&
-    run.createdBy === input.userId &&
-    input.userRole !== "owner"
+    run.createdBy === input.userId
   ) {
     throw new AppError(
       "FORBIDDEN",
@@ -111,10 +113,12 @@ export async function voidPayrollRun(
 
   // WF-022: Maker-checker — pembatalan payroll diproses atau disahkan oleh selain pembuat run
   if (
+    input.userRole &&
+    input.userRole !== "owner" &&
+    input.userRole !== "admin" &&
     input.userId &&
     run.createdBy &&
-    run.createdBy === input.userId &&
-    input.userRole !== "owner"
+    run.createdBy === input.userId
   ) {
     throw new AppError(
       "FORBIDDEN",

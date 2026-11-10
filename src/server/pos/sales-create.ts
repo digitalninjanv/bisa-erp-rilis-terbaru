@@ -242,6 +242,7 @@ async function prepareSaleQuote(tx: Tx, input: CreateSaleInput) {
     canDiscount: input.canDiscount,
     frozenPrices: input.frozenPrices,
     reservationId: input.reservationId ?? null,
+    allowInactiveProducts: input.allowInactiveProducts,
   });
 
   const settings = await getCompanySettingsRow(tx, input.companyId);

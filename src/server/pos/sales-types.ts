@@ -57,4 +57,6 @@ export type CreateSaleInput = {
   // FIX-GDG Tahap 2 (GDG1-09): reservasi yang dipenuhi penjualan ini
   // (lihat QuoteContext.reservationId); dikonsumsi atomik di ekor.
   reservationId?: string | null;
+  /** Mengizinkan produk non-aktif untuk sinkronisasi transaksi offline historis (POS-008). */
+  allowInactiveProducts?: boolean;
 };

@@ -13,6 +13,7 @@ import {
   user,
 } from "@/db/schema";
 import { withCompany, withCompanyReadOnly } from "@/db/tenant";
+import { AppError } from "@/lib/errors";
 import { toPrintSettings } from "@/components/print/types";
 import type { OfflineSalePayload, OfflineSyncItemResult } from "@/lib/pos-offline";
 import {
@@ -742,6 +743,12 @@ export async function syncPosDeviceItems(
     items.map((item) => item.cashierId),
   );
   const actorEntitlement = await resolveOriginEntitlement(device.companyId, device.userId);
+  if (!actorEntitlement?.canSell) {
+    throw new AppError(
+      "FORBIDDEN",
+      "Perangkat POS tidak memiliki izin penjualan (pos.sell). Hubungi administrator.",
+    );
+  }
   const results: OfflineSyncItemResult[] = [];
   for (const item of items) {
     const result = await withCompany(device.companyId, (tx) =>

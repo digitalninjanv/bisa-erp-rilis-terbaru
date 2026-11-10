@@ -348,6 +348,7 @@ export async function processOfflineSaleItem(
       lines: mapLines(item),
       asOfDate: dates.postingDate,
       canDiscount: originCanDiscount,
+      allowInactiveProducts: true,
     });
     currentTotal = quote.total;
   } catch (error) {
@@ -386,6 +387,7 @@ export async function processOfflineSaleItem(
         idempotencyKey: item.clientKey,
         canDiscount: originCanDiscount,
         sessionId: targetSessionId,
+        allowInactiveProducts: true,
         notes: dates.shifted
           ? `Transaksi offline tanggal ${item.date}; diposting ${dates.postingDate} karena periode asal tertutup.`
           : undefined,
@@ -638,6 +640,7 @@ export async function postOfflineReviewItem(
       sessionId: targetSession.id,
       offlineSettlement: closedSettlement ? { overageLimit } : undefined,
       frozenPrices: hasFrozenPrices || undefined,
+      allowInactiveProducts: true,
       notes: `Penyelesaian offline dari peninjauan: transaksi asli ${item.date} oleh kasir asal; diposting ${dates.postingDate} oleh peninjau.`,
     }),
   );

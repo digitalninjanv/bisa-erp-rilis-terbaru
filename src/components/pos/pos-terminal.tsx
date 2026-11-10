@@ -31,18 +31,34 @@ import type { TerminalShortcutAction } from "@/lib/pos/terminal-shortcuts";
 import { defaultDueDate, useTerminalCheckout } from "@/components/pos/terminal/use-terminal-checkout";
 import { ProductCatalog } from "@/components/pos/terminal/product-catalog";
 import {
-  addCartLine,
-  changeCartLinePackaging,
-  setCartLineDiscount,
-  setCartLineQty,
-  setCartLineSerial,
+  addCartLine, changeCartLinePackaging, setCartLineDiscount, setCartLineQty, setCartLineSerial,
 } from "@/components/pos/terminal/cart-lines";
 import { MobilePayBar } from "@/components/pos/terminal/mobile-pay-bar";
 
-// FIX-ARS Tahap 5 (ARS2-01): tipe reservasi tetap diekspor dari modul
-// ini seperti sebelumnya; definisinya kini tinggal di terminal-types.
 export type { TerminalReservation };
 
+type PosTerminalProps = {
+  companyId: string;
+  userId: string;
+  companyName: string;
+  warehouseId: string;
+  warehouses: { id: string; name: string; code: string }[];
+  methods: Method[];
+  creditMethod: { id: string; name: string } | null;
+  debtMethod: { id: string; name: string } | null;
+  initialProducts: ProductOption[];
+  qrisImage: string | null;
+  groups: { id: string; name: string; roundingStep: number; roundingDirection: string; roundCashTotal: boolean }[];
+  sessionOpen: boolean;
+  sessionId?: string | null;
+  heldCount: number;
+  resumeId: string | null;
+  posOfflineEnabled?: boolean;
+  offlineTaxRate?: number;
+  offlineRoundingMode?: string;
+  receivableDefaultTermDays?: number;
+  reservations?: TerminalReservation[];
+};
 
 export function PosTerminal({
   companyId,
@@ -65,42 +81,7 @@ export function PosTerminal({
   offlineRoundingMode = "none",
   receivableDefaultTermDays = 7,
   reservations = [],
-}: {
-  companyId: string;
-  userId: string;
-  companyName: string;
-  warehouseId: string;
-  warehouses: { id: string; name: string; code: string }[];
-  methods: Method[];
-  creditMethod: { id: string; name: string } | null;
-  // POS-1 (D-19): metode bertipe credit perusahaan, ditampilkan khusus
-  // sebagai pilihan "Utang"; null bila perusahaan belum punya metode
-  // kredit aktif (pilihan utang tidak ditampilkan).
-  debtMethod: { id: string; name: string } | null;
-  initialProducts: ProductOption[];
-  qrisImage: string | null;
-  groups: { id: string; name: string; roundingStep: number; roundingDirection: string; roundCashTotal: boolean }[];
-  sessionOpen: boolean;
-  /** FIX-POS Tahap 2 (POS3-02): id sesi kas terbuka milik kasir ini —
-   *  dicatat sebagai sesi ASAL pada setiap penjualan antrean offline. */
-  sessionId?: string | null;
-  heldCount: number;
-  resumeId: string | null;
-  /** SIM-2 S7B-2 Batch 6: saklar mode offline per perusahaan (D-25). */
-  posOfflineEnabled?: boolean;
-  /** A-24 T6 (T6-01): tarif pajak efektif & mode pembulatan tunai
-   *  perusahaan — bahan quote LOKAL offline (lib/pos-offline.ts);
-   *  hanya dipakai saat quote server tak terjangkau dan saklar
-   *  offline aktif. Quote server tetap otoritas saat terjangkau. */
-  offlineTaxRate?: number;
-  offlineRoundingMode?: string;
-  /** FIX-P1 Tahap 5 (AK3-07): termin bawaan piutang dari Pengaturan. */
-  receivableDefaultTermDays?: number;
-  /** FIX-GDG Tahap 4 (butir b; domain GDG1-09): reservasi stok AKTIF
-   *  perusahaan — kasir dapat menautkan penjualan ke reservasi gudang
-   *  yang dipilih; opsional dan tidak mengubah alur tanpa reservasi. */
-  reservations?: TerminalReservation[];
-}) {
+}: PosTerminalProps) {
   // T3R-5: kunci snapshot keranjang milik kasir ini di perusahaan ini.
   const storageKey = cartStorageKey(companyId, userId);
   const [cart, setCart] = useState<CartItem[]>([]);

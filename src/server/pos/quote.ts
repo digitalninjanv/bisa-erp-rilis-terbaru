@@ -162,6 +162,8 @@ export type QuoteContext = {
   // stoknya tidak mengurangi ketersediaan untuk keranjang ini, dan
   // alokasinya dikonsumsi createSale sesudah penjualan terposting.
   reservationId?: string | null;
+  /** Mengizinkan produk non-aktif untuk sinkronisasi transaksi offline historis (POS-008). */
+  allowInactiveProducts?: boolean;
 };
 
 /** Cash-rounding view of a company RoundingMode (SET-RND-01). */
@@ -592,7 +594,9 @@ function priceQuoteLines(
     const line = ctx.lines[lineIndex];
     const product = productMap.get(line.productId);
     if (!product) throw new AppError("VALIDATION", "Produk tidak ditemukan atau sudah dihapus.");
-    if (!product.isActive) throw new AppError("VALIDATION", `${product.name} sedang tidak aktif.`);
+    if (!product.isActive && !ctx.allowInactiveProducts) {
+      throw new AppError("VALIDATION", `${product.name} sedang tidak aktif.`);
+    }
     // S4: qty baris adalah qty INPUT (dalam kemasan terpilih, atau
     // satuan dasar); seluruh aritmetika di bawah berjalan pada qty
     // SATUAN DASAR hasil konversi tunggal di titik ini.

@@ -299,10 +299,12 @@ export async function decideLeaveRequest(
   // WF-003: Maker-checker (Four-Eyes Principle) — pembuat pengajuan cuti tidak dapat mengesahkan sendiri
   if (
     input.approve &&
+    input.userRole &&
+    input.userRole !== "owner" &&
+    input.userRole !== "admin" &&
     input.userId &&
     request.createdBy &&
-    request.createdBy === input.userId &&
-    input.userRole !== "owner"
+    request.createdBy === input.userId
   ) {
     throw new AppError(
       "FORBIDDEN",

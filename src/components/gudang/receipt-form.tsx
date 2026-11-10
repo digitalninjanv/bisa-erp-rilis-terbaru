@@ -577,15 +577,8 @@ export function ReceiptForm({
                   {isPurchase && canPrice ? (
                     <div className="flex items-center pt-5">
                       <label className="inline-flex cursor-pointer items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={updateCatalogSalePrices}
-                          onChange={(event) => setUpdateCatalogSalePrices(event.target.checked)}
-                          className="size-3.5 rounded border-input"
-                        />
-                        <span className="text-[11px] text-muted-foreground">
-                          Perbarui harga jual master produk
-                        </span>
+                        <input type="checkbox" checked={updateCatalogSalePrices} onChange={(e) => setUpdateCatalogSalePrices(e.target.checked)} className="size-3.5 rounded border-input" />
+                        <span className="text-[11px] text-muted-foreground">Perbarui harga jual master produk</span>
                       </label>
                     </div>
                   ) : null}
@@ -786,23 +779,13 @@ export function ReceiptForm({
                     const diff = row.confirmed.minus(row.expected);
                     return (
                       <li key={row.name}>
-                        <span className="font-medium text-foreground">{row.name}</span> —
-                        diminta {formatQty(row.expected)}, diterima {formatQty(row.confirmed)},{" "}
-                        {diff.eq(0)
-                          ? "pas"
-                          : diff.lt(0)
-                            ? `kurang ${formatQty(diff.negated())}`
-                            : row.expected.eq(0)
-                              ? "baris di luar PO"
-                              : `lebih ${formatQty(diff)}`}
+                        <span className="font-medium text-foreground">{row.name}</span> — diminta {formatQty(row.expected)}, diterima {formatQty(row.confirmed)}, {diff.eq(0) ? "pas" : diff.lt(0) ? `kurang ${formatQty(diff.negated())}` : row.expected.eq(0) ? "baris di luar PO" : `lebih ${formatQty(diff)}`}
                       </li>
                     );
                   })}
                 </ul>
                 <p>
-                  Kekurangan berarti penerimaan SEBAGIAN: PO tetap terbuka untuk sisa yang
-                  belum tiba. Kelebihan di atas sisa PO ditolak server. Baris di luar PO
-                  diterima sebagai penerimaan tanpa tautan pesanan.
+                  Kekurangan berarti penerimaan SEBAGIAN: PO tetap terbuka untuk sisa yang belum tiba. Kelebihan di atas sisa PO ditolak server. Baris di luar PO diterima sebagai penerimaan tanpa tautan pesanan.
                 </p>
               </div>
             }

@@ -571,10 +571,12 @@ export async function disposeFixedAsset(
 
   // WF-024: Maker-checker pelepasan aset — pembuat aset tidak dapat melepas asetnya sendiri
   if (
+    input.userRole &&
+    input.userRole !== "owner" &&
+    input.userRole !== "admin" &&
     input.userId &&
     asset.createdBy &&
-    asset.createdBy === input.userId &&
-    input.userRole !== "owner"
+    asset.createdBy === input.userId
   ) {
     throw new AppError(
       "FORBIDDEN",

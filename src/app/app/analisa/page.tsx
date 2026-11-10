@@ -166,6 +166,7 @@ export default async function AnalisaPage({
             <Link
               key={preset.key}
               href={`/app/analisa?from=${preset.from}&to=${preset.to}&view=${view}`}
+              scroll={false}
               className={
                 activePreset?.key === preset.key
                   ? "inline-flex h-7 items-center rounded-full bg-foreground px-2.5 text-[11px] font-medium text-background"
@@ -259,6 +260,7 @@ export default async function AnalisaPage({
                   <Link
                     key={item.key}
                     href={tabHref(item.key)}
+                    scroll={false}
                     className={
                       view === item.key
                         ? "inline-flex h-7 items-center gap-1 rounded-full bg-foreground px-2.5 text-[11px] font-medium text-background"
