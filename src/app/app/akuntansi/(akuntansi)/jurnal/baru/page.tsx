@@ -1,0 +1,58 @@
+import Link from "next/link";
+import { asc, eq } from "drizzle-orm";
+import { ArrowLeft } from "lucide-react";
+import { withCompanyReadOnly } from "@/db/tenant";
+import { fiscalPeriods } from "@/db/schema";
+import { getAccountMap, listPostableAccounts } from "@/server/accounting";
+import { listCustomers, listSuppliers } from "@/server/catalog";
+import { requirePermissionPage } from "@/lib/session";
+import { todayISO } from "@/lib/format";
+import { PageHeader } from "@/components/blocks/page-header";
+import { JournalEntryForm } from "@/components/akuntansi/journal-entry-form";
+
+export const metadata = { title: "Jurnal baru" };
+export const dynamic = "force-dynamic";
+
+export default async function NewJournalPage() {
+  const ctx = await requirePermissionPage("accounting.post");
+  const { accounts, mappedAccounts, periods, customers, suppliers } = await withCompanyReadOnly(ctx.company.id, async (tx) => {
+    const [postable, mappings, customerRows, supplierRows, periodRows] = await Promise.all([
+      listPostableAccounts(tx, ctx.company.id),
+      getAccountMap(tx, ctx.company.id),
+      // A-21 (R3-09): daftar pihak untuk pemilih tag baris jurnal.
+      listCustomers(tx, ctx.company.id),
+      listSuppliers(tx, ctx.company.id),
+      // FIX-P1 Tahap 5 (AK5-03): status periode dimuat dari server agar
+      // formulir bisa memperingatkan SEBELUM submit, bukan sesudahnya
+      // lewat toast error PERIOD_CLOSED.
+      tx
+        .select({ year: fiscalPeriods.year, month: fiscalPeriods.month, status: fiscalPeriods.status })
+        .from(fiscalPeriods)
+        .where(eq(fiscalPeriods.companyId, ctx.company.id))
+        .orderBy(asc(fiscalPeriods.year), asc(fiscalPeriods.month)),
+    ]);
+    return { accounts: postable, mappedAccounts: mappings, periods: periodRows, customers: customerRows, suppliers: supplierRows };
+  });
+
+  return (
+    <div>
+      <Link href="/app/akuntansi/jurnal" className="mb-3 inline-flex min-h-8 items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground">
+        <ArrowLeft className="size-3.5" /> Kembali ke jurnal
+      </Link>
+      <PageHeader
+        eyebrow="Akuntansi"
+        title="Jurnal baru"
+        description="Formulir mulai dengan tiga baris. Isi debit atau kredit; baris berdekatan yang akunnya sudah dipilih terisi otomatis sebagai penyeimbang. Keterangan opsional."
+      />
+      <JournalEntryForm
+        accounts={accounts.map((row) => ({ id: row.id, code: row.code, name: row.name, type: row.type }))}
+        today={todayISO()}
+        mappedAccounts={mappedAccounts}
+        periods={periods}
+        currentYear={new Date().getFullYear()}
+        customers={customers}
+        suppliers={suppliers}
+      />
+    </div>
+  );
+}

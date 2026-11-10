@@ -1,0 +1,2 @@
+ALTER TABLE "company_settings" ADD COLUMN "payable_default_term_days" integer DEFAULT 30 NOT NULL;--> statement-breakpoint
+ALTER TABLE "company_settings" ADD COLUMN "receivable_default_term_days" integer DEFAULT 7 NOT NULL;

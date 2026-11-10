@@ -1,0 +1,26 @@
+# Konfigurasi backup otomatis Bisa ERP — salin ke /etc/bisa-erp/backup.conf
+# (deploy/install.sh memasangnya; sunting di sana, bukan di contoh ini).
+# Satu-satunya tempat pengaturan retensi & tujuan backup produksi.
+
+# Folder berkas cadangan (di luar folder rilis agar aman saat update).
+BACKUP_DIR=/var/backups/bisa-erp
+
+# Retensi: simpan N cadangan harian terbaru, ditambah cadangan terbaru
+# dari masing-masing M minggu terakhir. Sisanya dihapus otomatis.
+RETENTION_DAILY=14
+RETENTION_WEEKLY=4
+
+# Folder bin PostgreSQL bila pg_dump/pg_restore tidak ada di PATH
+# (mis. instalasi PG manual). Kosongkan bila dari paket sistem.
+PG_BIN=
+
+# Frasa sandi enkripsi untuk cadangan yang MENINGGALKAN mesin ini.
+# Sangat disarankan terisi bila OFFSITE_CMD dipakai. Kosong = tidak
+# terenkripsi (hanya aman selama berkas tetap di mesin ini).
+BACKUP_PASSPHRASE=
+
+# Salinan ke luar mesin (MATI secara bawaan). Perintah dijalankan
+# sesudah backup lokal sukses, dengan variabel $NEWFILE = berkas terbaru.
+# Contoh rsync ke NAS pemilik:
+# OFFSITE_CMD='rsync -a "$NEWFILE" nas-toko:/backup/bisa-erp/'
+OFFSITE_CMD=

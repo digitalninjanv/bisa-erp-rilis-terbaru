@@ -1,0 +1,1 @@
+ALTER TABLE "sales" ADD COLUMN "due_date" date;

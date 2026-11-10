@@ -1,0 +1,3 @@
+// A-24 Tahap T4B: berkas kompatibilitas — implementasi pindah ke
+// ./reports/ mengikuti jahitan domain; jalur impor ini tidak berubah.
+export * from "./reports/index";

@@ -1,0 +1,1 @@
+ALTER TABLE "company_settings" ADD COLUMN "expiry_warning_days" integer DEFAULT 30 NOT NULL;

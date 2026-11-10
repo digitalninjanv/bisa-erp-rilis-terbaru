@@ -1,0 +1,13 @@
+{
+  "mode": "concurrent",
+  "scale": "A",
+  "companyId": "01900000-0000-7000-8000-00000000bea1",
+  "workers": 10,
+  "seconds": 30.152,
+  "completed": 1416,
+  "failed": 0,
+  "throughputPerSec": 47,
+  "p50": 99.03898900000058,
+  "p95": 703.2909920000002,
+  "p99": 891.1137990000007
+}

@@ -1,0 +1,3 @@
+// FIX-ARS Tahap 4: berkas kompatibilitas — implementasi pindah ke
+// ./inventory/ mengikuti jahitan domain; jalur impor ini tidak berubah.
+export * from "./inventory/index";

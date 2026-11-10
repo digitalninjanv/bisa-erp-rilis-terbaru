@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "bank_statement_lines_matched_journal_line_uq" ON "bank_statement_lines" USING btree ("matched_journal_line_id") WHERE "bank_statement_lines"."matched_journal_line_id" is not null;

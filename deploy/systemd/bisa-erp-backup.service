@@ -1,0 +1,10 @@
+# A-24 T5 — one production backup run (see deploy/backup-run.sh).
+# Triggered daily by bisa-erp-backup.timer; may also be started by hand:
+#   systemctl start bisa-erp-backup.service
+[Unit]
+Description=Backup database Bisa ERP
+After=network.target postgresql.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/bisa-erp/current/deploy/backup-run.sh

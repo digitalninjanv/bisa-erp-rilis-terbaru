@@ -1,0 +1,1 @@
+ALTER TABLE "party_payments" ADD COLUMN "reference" text;

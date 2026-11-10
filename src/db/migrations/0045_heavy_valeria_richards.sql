@@ -1,0 +1,1 @@
+ALTER TABLE "company_settings" ALTER COLUMN "adjustment_approval_threshold" SET DEFAULT '1000000';

@@ -1,0 +1,640 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-inter);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  /* A-25 U1: utilitas token permukaan cangkang (kepala/item/kaki
+     sidebar). Nilai runtime per lingkup ada di :root (warna lama —
+     sejak A-25 U8 hanya hidup di permukaan luar aplikasi:
+     login/landing) dan .theme-erp (gaya terang, semua modul). */
+  --color-shell-logo: var(--shell-logo-bg);
+  --color-shell-logo-foreground: var(--shell-logo-fg);
+  --color-shell-title: var(--shell-title);
+  --color-shell-muted: var(--shell-muted);
+  --color-shell-label: var(--shell-label);
+  --color-shell-item: var(--shell-item);
+  --color-shell-hover: var(--shell-hover-bg);
+  --color-shell-hover-foreground: var(--shell-hover-fg);
+  --color-shell-active: var(--shell-active-bg);
+  --color-shell-active-foreground: var(--shell-active-fg);
+  --color-shell-track: var(--shell-track);
+  --color-shell-switch-active: var(--shell-switch-active-bg);
+  --color-shell-switch-active-foreground: var(--shell-switch-active-fg);
+  --color-shell-footer: var(--shell-footer);
+  --color-shell-divider: var(--shell-divider);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-tone-plum: var(--tone-plum);
+  --color-tone-plum-soft: var(--tone-plum-soft);
+  --color-tone-teal: var(--tone-teal);
+  --color-tone-teal-soft: var(--tone-teal-soft);
+  --color-tone-amber: var(--tone-amber);
+  --color-tone-amber-soft: var(--tone-amber-soft);
+  --color-tone-red: var(--tone-red);
+  --color-tone-red-soft: var(--tone-red-soft);
+  --color-tone-green: var(--tone-green);
+  --color-tone-green-soft: var(--tone-green-soft);
+  /* A-25 U0: token baru arah desain — variabel runtime-nya hanya
+     terdefinisi di dalam .theme-erp (lihat blok di bawah), jadi
+     utilitas ini tidak mengubah permukaan di luar lingkup tema baru
+     (permukaan luar aplikasi seperti login/landing). */
+  --color-tone-blue: var(--tone-blue);
+  --color-tone-blue-soft: var(--tone-blue-soft);
+  --color-primary-soft: var(--primary-soft);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  /* G1 (UX4-08): skala radius diselaraskan ke hierarki ARAH-DESAIN-A25
+     §2.3 di tingkat TOKEN, bukan per halaman. Sebelumnya rounded-md
+     terkomputasi 7,04px (0,8 × basis) dan rounded-lg 8,8px — dua basis
+     yang berdekatan tetapi tidak sama hidup berdampingan di permukaan
+     yang sama. Kini: md = basis penuh (±9px, field & tombol), lg =
+     1,4 × basis (12,32px, kartu & panel ≥12px), xl = 1,8 × basis
+     (15,84px ≈ 16px, dialog). Kelas permukaan de-facto tidak berubah
+     ejaannya (field rounded-md, kartu rounded-lg, dialog rounded-xl);
+     yang berubah hanya nilai terkomputasinya. */
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) * 1.4);
+  --radius-xl: calc(var(--radius) * 1.8);
+  --radius-2xl: calc(var(--radius) * 2.2);
+  --radius-3xl: calc(var(--radius) * 2.6);
+  --radius-4xl: calc(var(--radius) * 3);
+}
+
+:root {
+  --background: #f7f5f2;
+  --foreground: #241f1b;
+  --card: #ffffff;
+  --card-foreground: #241f1b;
+  --popover: #ffffff;
+  --popover-foreground: #241f1b;
+  --primary: #714b67;
+  --primary-foreground: #ffffff;
+  --secondary: #efeae4;
+  --secondary-foreground: #322b25;
+  --muted: #f1ede8;
+  --muted-foreground: #6f675f;
+  --accent: #e8f2ef;
+  --accent-foreground: #0d6b60;
+  --destructive: #b42318;
+  --border: #e4ded7;
+  --input: #ddd6cd;
+  --ring: #714b67;
+  --chart-1: #714b67;
+  --chart-2: #0e9384;
+  --chart-3: #c28b36;
+  --chart-4: #5b6f91;
+  --chart-5: #9a5b4f;
+  /* FIX-R2 Tahap 2 (RD2U-06): nada status/metrik resmi — sebelumnya
+     pasangan hex ini disalin mentah ke StatCard, StatusBadge, dan
+     puluhan pemakaian inline di halaman akuntansi. Nilai sengaja
+     identik dengan hex lama agar tampilan tidak berubah; yang berubah
+     hanya sumbernya: satu token, bukan salinan. */
+  --tone-plum: #714b67;
+  --tone-plum-soft: #f1e8ee;
+  --tone-teal: #0d6b60;
+  --tone-teal-soft: #e6f4f1;
+  --tone-amber: #8a5a12;
+  --tone-amber-soft: #fbf0dd;
+  --tone-red: #a3362a;
+  --tone-red-soft: #fbe9e7;
+  --tone-green: #256b3a;
+  --tone-green-soft: #e7f3ea;
+  --radius: 0.55rem;
+  --sidebar: #2c1e28;
+  --sidebar-foreground: #f3ede8;
+  --sidebar-primary: #ffffff;
+  --sidebar-primary-foreground: #2c1e28;
+  --sidebar-accent: #3b2a36;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #443140;
+  --sidebar-ring: #a8839c;
+  /* A-25 U1: token permukaan cangkang. Nilai :root di sini adalah
+     PERSIS warna yang sebelumnya terkode keras di komponen shell
+     (module-shell/sidebar-nav/mobile-nav), dipindah ke token agar
+     satu markup melayani dua lingkup. A-25 U8: seluruh cangkang
+     modul (termasuk POS) memakai .theme-erp; nilai :root ini hanya
+     tersisa sebagai bawaan permukaan tanpa kelas tema. */
+  --shell-logo-bg: #f3ede8;
+  --shell-logo-fg: #2c1e28;
+  --shell-title: #ffffff;
+  --shell-muted: #a8839c;
+  --shell-label: #9f8b98;
+  --shell-item: #d9ccd4;
+  /* Warna alfa ditulis sebagai color-mix — bentuk yang sama dengan
+     utilitas Tailwind lama (bg-white/8, bg-white/10, bg-black/20)
+     agar kompositnya di atas sidebar gelap identik piksel. */
+  --shell-hover-bg: color-mix(in oklab, #ffffff 8%, transparent);
+  --shell-hover-fg: #ffffff;
+  --shell-active-bg: color-mix(in oklab, #ffffff 10%, transparent);
+  --shell-active-fg: #ffffff;
+  --shell-active-bar: #c7a4bd;
+  --shell-track: color-mix(in oklab, #000000 20%, transparent);
+  --shell-switch-active-bg: color-mix(in oklab, #ffffff 12%, transparent);
+  --shell-switch-active-fg: #ffffff;
+  --shell-switch-hover-bg: color-mix(in oklab, #ffffff 5%, transparent);
+  --shell-footer: #c7b3c1;
+  --shell-divider: color-mix(in oklab, #ffffff 10%, transparent);
+}
+
+/* A-25 U0 — Fondasi tema berlingkup (keputusan Pemimpin RENCANA A-25
+   butir 1; nilai persis ARAH-DESAIN-A25 §2). Token desain baru TIDAK
+   menimpa :root: ia hidup sebagai kelas .theme-erp yang dipasang
+   cangkang modul (gudang/akuntansi/hr/pengaturan + beranda).
+   A-25 U8: pengguna mencabut pembekuan POS — cangkang POS kini ikut
+   memasang kelas ini, jadi utang konsistensi tema lama TUTUP; nilai
+   :root lama hanya melayani permukaan luar aplikasi (login/landing)
+   yang memang di luar lingkup tema modul.
+   (U0 membiarkan token sidebar; U1 mengisinya di blok ini bersama
+   penulisan ulang markup cangkang berbasis token --shell-*.) */
+.theme-erp {
+  --background: #f4f5f7;
+  --foreground: #1d2129;
+  --card: #ffffff;
+  --card-foreground: #1d2129;
+  --popover: #ffffff;
+  --popover-foreground: #1d2129;
+  --primary: #714b67;
+  --primary-foreground: #ffffff;
+  --primary-hover: #5e3d55;
+  --primary-soft: #f3eaf1;
+  --secondary: #eceff3;
+  --secondary-foreground: #2a2f38;
+  --muted: #eef0f3;
+  --muted-foreground: #5b6472;
+  --accent: #e8f2ef;
+  --accent-foreground: #0d6b60;
+  --destructive: #b42318;
+  --border: #e2e5ea;
+  --input: #c9d0d9;
+  --ring: #714b67;
+  --tone-plum-soft: #f3eaf1;
+  --tone-blue: #175cd3;
+  --tone-blue-soft: #eaf1fe;
+  --shadow-card: 0 1px 2px rgb(29 33 41 / 0.05);
+  --shadow-pop: 0 8px 24px -6px rgb(29 33 41 / 0.12), 0 2px 6px rgb(29 33 41 / 0.06);
+  --radius: 0.55rem;
+  /* A-25 U1: sidebar TERANG (ARAH-DESAIN-A25 §2.1 & §2.5) — hanya
+     berlaku di dalam lingkup .theme-erp (sejak U8: semua modul,
+     termasuk POS). Item aktif = pill --primary-soft dengan teks
+     --primary dan bilah kiri --primary. */
+  --sidebar: #ffffff;
+  --sidebar-foreground: #2a2f38;
+  --sidebar-primary: #714b67;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f3eaf1;
+  --sidebar-accent-foreground: #714b67;
+  --sidebar-border: #e2e5ea;
+  --sidebar-ring: #714b67;
+  --shell-logo-bg: #714b67;
+  --shell-logo-fg: #ffffff;
+  --shell-title: #1d2129;
+  --shell-muted: #5b6472;
+  --shell-label: #5b6472;
+  --shell-item: #2a2f38;
+  --shell-hover-bg: #eef0f3;
+  --shell-hover-fg: #1d2129;
+  --shell-active-bg: #f3eaf1;
+  --shell-active-fg: #714b67;
+  --shell-active-bar: #714b67;
+  --shell-track: #eef0f3;
+  --shell-switch-active-bg: #ffffff;
+  --shell-switch-active-fg: #714b67;
+  --shell-switch-hover-bg: #e2e5ea;
+  --shell-footer: #5b6472;
+  --shell-divider: #e2e5ea;
+  --shell-sidebar-width: 248px;
+}
+
+/* Skala tipografi & kedalaman arah desain, ditegakkan sebagai aturan
+   berlingkup di atas penanda komponen bersama — BUKAN dengan mengubah
+   kelas utilitas bersama yang juga dipakai POS:
+   - judul halaman PageHeader 20px (dari 22px);
+   - nilai StatCard ukuran bawaan 24px (dari 20px) + bayangan kartu;
+   - label form (.field-label dari blocks/field-classes) 13px/500
+     sentence case, menggantikan mikro 10px uppercase;
+   - tinggi field form diatur SATU sumber di fieldClass (h-9/36px —
+     Validasi 3 F-01 menghapus penaikan tema .field-control yang
+     dulu tinggal di sini); textarea dikecualikan — tingginya
+     mengikuti rows. */
+.theme-erp .page-header h1 {
+  font-size: 20px;
+  letter-spacing: -0.01em;
+}
+.theme-erp .stat-card {
+  box-shadow: var(--shadow-card);
+}
+.theme-erp .stat-card[data-size="default"] .stat-value {
+  font-size: clamp(15px, 2.4vw, 24px);
+}
+.theme-erp .field-label {
+  font-size: 13px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: normal;
+}
+/* Validasi 3 (F-01): tinggi field TIDAK lagi dinaikkan tema di sini —
+   satu sumber kebenaran adalah kelas h-9 pada fieldClass bersama
+   (36px di semua lingkup). Aturan height .field-control dihapus agar
+   tidak ada sumber kedua; yang tersisa hanya pengecualian textarea
+   (tingginya mengikuti rows, bukan token field). */
+.theme-erp textarea.field-control {
+  height: auto;
+}
+/* Validasi 3 (T-03): override kepadatan .data-list DIHAPUS — kepadatan
+   kini token tunggal pada .data-table dasar (13px, py-2.5) di
+   @layer components di bawah; tabel yang sama tidak lagi berubah
+   kepadatan karena dibungkus DataList atau tidak. */
+
+.dark {
+  --background: #1c1714;
+  --foreground: #f4efe9;
+  --card: #26201c;
+  --card-foreground: #f4efe9;
+  --popover: #26201c;
+  --popover-foreground: #f4efe9;
+  --primary: #c7a4bd;
+  --primary-foreground: #2c1e28;
+  --secondary: #332c27;
+  --secondary-foreground: #f4efe9;
+  --muted: #332c27;
+  --muted-foreground: #b3a99f;
+  --accent: #27403b;
+  --accent-foreground: #d6f3ed;
+  --destructive: #ff8a80;
+  --border: #403830;
+  --input: #4a4139;
+  --ring: #c7a4bd;
+  --sidebar: #211820;
+  --sidebar-foreground: #f4efe9;
+  --sidebar-accent: #33262f;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #3d2f39;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+  .num {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+  ::selection {
+    background: #e3d3de;
+    color: #2c1e28;
+  }
+}
+
+/* Odoo-like compact data surfaces.
+   FIX-R2 Tahap 2 (RD2U-17): kelas .sheet/.sheet-header/.sheet-body
+   DIHAPUS — terdefinisi sejak lama tetapi dipakai 0 berkas, sementara
+   permukaan kartu de-facto `rounded-lg border border-border bg-card`
+   dipakai di mana-mana (termasuk StatCard bersama). Satu sistem
+   permukaan yang hidup mengalahkan dua yang setengah mati; radius
+   resmi kartu adalah rounded-lg. G1 (UX4-08): token --radius-lg kini
+   terkomputasi 12,32px (1,4 × basis 0,55rem), sehingga ejaan kartu
+   rounded-lg ini memenuhi hierarki ARAH-DESAIN-A25 §2.3 (kartu 12px)
+   tanpa mengubah satu pun kelas pemanggil.
+
+   Validasi 3 (T-01/T-02/T-03/T-04): seluruh blok .data-table kini
+   hidup di @layer components. Sebelumnya blok ini TANPA layer,
+   sehingga dalam kaskade Tailwind v4 ia mengalahkan utilitas
+   (@layer utilities) — `text-left` pada thead th membungkam 208
+   pemakaian `text-right` dan SETIAP header kolom numerik ter-render
+   rata kiri di atas angka rata kanan (55/55 kolom terukur). Di dalam
+   layer, aturan di sini adalah BAWAAN: utilitas per kolom
+   (text-right/text-center) menang sebagaimana mestinya.
+   - T-02: th/td nowrap — tabel lebar tidak lagi runtuh menjadi
+     baris 89–91px; kontraknya setiap tabel berada di wadah
+     overflow-x-auto. Kolom teks panjang yang memang harus membungkus
+     memakai pengecualian .cell-wrap pada selnya.
+   - T-03: kepadatan TUNGGAL — 13px + py-2.5 untuk semua tabel
+     daftar (menyerap varian nyaman DataList A-25 U2 sebagai satu-
+     satunya standar; override .data-list dihapus). Varian padat
+     resmi untuk tabel editor baris form adalah .data-table-dense.
+   - T-04: kolom TERAKHIR selebar isinya (width 1%) — kolom aksi
+     (konvensi: selalu terakhir) tidak lagi menyerap sisa lebar
+     tabel (terukur sampai 317px); kolom data terakhir (saldo,
+     status, tanggal) ikut ramping ke isinya karena nowrap. */
+@layer components {
+  .data-table {
+    @apply w-full border-collapse text-[13px];
+  }
+  .data-table thead th {
+    @apply whitespace-nowrap border-b border-border bg-muted/60 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground;
+  }
+  .data-table tbody td {
+    @apply whitespace-nowrap border-b border-border/70 px-3 py-2.5 align-middle;
+  }
+  .data-table tfoot td,
+  .data-table tfoot th {
+    @apply whitespace-nowrap px-3 py-2.5 align-middle;
+  }
+  .data-table thead th:last-child,
+  .data-table tbody td:last-child,
+  .data-table tfoot td:last-child,
+  .data-table tfoot th:last-child {
+    width: 1%;
+  }
+  .data-table .cell-wrap {
+    white-space: normal;
+  }
+  .data-table tbody tr {
+    /* FIX-R2 Tahap 2 (RD2U-07): hover baris tabel bersama bertransisi —
+       sebelumnya seluruh modul akuntansi memiliki nol transisi mikro. */
+    transition: background-color 120ms ease;
+  }
+  .data-table tbody tr:hover {
+    @apply bg-muted/40;
+  }
+  .data-table tbody tr:last-child td {
+    @apply border-b-0;
+  }
+  /* Varian PADAT resmi (T-03): tabel editor baris di dalam form
+     (editor baris dokumen, jurnal, opname) — 12px, padding 6px.
+     Konteksnya dinyatakan lewat kelas ini, bukan racikan per berkas. */
+  .data-table-dense {
+    @apply text-xs;
+  }
+  .data-table-dense thead th {
+    /* G4 (UX4-13): header editor baris naik ke lantai teks 11px — sebelumnya 10px. */
+    @apply px-2 py-1.5 text-[11px];
+  }
+  .data-table-dense tbody td {
+    @apply px-2 py-1.5;
+  }
+  .data-table-dense tfoot td,
+  .data-table-dense tfoot th {
+    @apply px-2 py-1.5;
+  }
+  /* G3 (UX4-09): varian kepadatan OPT-IN DataList (`density="compact"`).
+     Daftar utama yang terukur 53–57px pada Validasi UI/UX 4 beralih ke
+     langkah kompak skala ARAH-DESAIN-A25 §2.4 (py-1.5) TANPA mengubah
+     tipografi 13px .data-table. Ini bukan pengulangan override
+     menyeluruh yang dihapus T-03: kepadatan tetap token bersama, hanya
+     kini dinyatakan eksplisit per daftar lewat prop komponen bersama —
+     tidak ada racikan padding per halaman. Tinggi sisa sesudah varian
+     ini adalah konten sel (sel dua baris, tombol 32px), bukan padding. */
+  .data-list--compact .data-table thead th {
+    @apply py-1.5;
+  }
+  .data-list--compact .data-table tbody td,
+  .data-list--compact .data-table tfoot td,
+  .data-list--compact .data-table tfoot th {
+    @apply py-1.5;
+  }
+}
+
+.receipt {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 11px;
+  line-height: 1.35;
+  color: #000;
+}
+
+/* Print-template emphasis for the shared total bar (CT-20, D-18).
+   The shell exposes the accent as --print-accent; only the modern
+   template paints the bar, classic rules it, minimal hairlines it. */
+.print-doc--modern .print-total-bar {
+  background: var(--print-accent);
+  color: #fff;
+  padding: 4px 10px;
+  border-radius: 3px;
+}
+.print-doc--classic .print-total-bar {
+  border-top: 2.5px solid #000;
+  padding-top: 4px;
+  font-family: Georgia, "Times New Roman", Times, serif;
+}
+.print-doc--minimal .print-total-bar {
+  border-top: 1px solid rgba(0, 0, 0, 0.4);
+  padding-top: 4px;
+}
+
+/* FIX-R2 Tahap 1 — bahasa garis & struktur laporan formal.
+   Konvensi penyajian: subtotal/total bergaris tunggal di atasnya;
+   total akhir (grand total) bergaris tunggal di atas DAN garis ganda
+   di bawahnya — pembaca tahu angka mana hasil penjumlahan terakhir
+   tanpa membaca label. Berlaku di layar laporan & dokumen cetak. */
+.rule-total {
+  border-top: 1px solid currentColor;
+}
+.rule-final {
+  border-top: 1px solid currentColor;
+  border-bottom: 3px double currentColor;
+}
+
+/* Kelompok laporan utuh di kertas: judul + baris + subtotal tidak
+   terpotong di tengah dan subtotal tidak yatim di halaman berikut
+   (RD2-07). Hanya untuk kelompok pendek; tabel panjang mengandalkan
+   pengulangan thead. */
+.report-keep {
+  break-inside: avoid;
+}
+
+/* Header tabel laporan menempel saat menggulir daftar panjang di
+   layar (RD2-12) — latar solid agar baris yang lewat tidak tembus. */
+.sticky-head thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--card);
+}
+/* Zebra halus untuk tabel laporan layar: membantu mata melacak baris
+   antar-kolom angka yang lebar (RD2-12). */
+.zebra-rows tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--muted) 45%, transparent);
+}
+
+/* FIX-R2 Tahap 2 (RD2U-07): pengguna yang meminta gerak dikurangi
+   tidak menerima transisi/animasi mikro apa pun. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* Validasi 2 (V-01): mode ciut sidebar. Kepala & kartu pengguna
+   sidebar adalah komponen server, jadi penyesuaian tampilannya pada
+   mode ikon diatur di sini lewat atribut data-collapsed pada <aside>
+   (SidebarFrame): teks perusahaan & identitas pengguna hilang, logo
+   dan avatar berpusat, padding menyempit mengikuti lebar 64px.
+   Nav & pengalih aplikasi adalah komponen klien dan mengurus
+   tampilannya sendiri lewat konteks. */
+.module-sidebar[data-collapsed="true"] .sb-head {
+  padding-inline: 0.375rem;
+}
+.module-sidebar[data-collapsed="true"] .sb-head-row {
+  justify-content: center;
+  padding-inline: 0;
+}
+.module-sidebar[data-collapsed="true"] .sb-head-text,
+.module-sidebar[data-collapsed="true"] .sb-user-text {
+  display: none;
+}
+.module-sidebar[data-collapsed="true"] .sb-user-card {
+  padding-inline: 0.5rem;
+}
+.module-sidebar[data-collapsed="true"] .sb-user-row {
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+/* Print-only blocks (formal report heads, neutral empty-state lines):
+   hidden on screen, shown on paper. */
+.print-only {
+  display: none !important;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  /* POS-NOTA-01: toast Sonner adalah UI transien (position: fixed,
+     lapisan tertinggi) dan TIDAK pernah menjadi isi dokumen. Tanpa
+     aturan ini toast sukses "Transaksi … tersimpan" — yang masih
+     tampil saat autoprint nota POS terpicu 400ms sesudah Bayar —
+     ikut tercetak menimpa kop nota pada kertas thermal 58/80mm.
+     Berlaku untuk semua permukaan cetak, bukan hanya nota. */
+  [data-sonner-toaster],
+  [data-sonner-toast] {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  /* CT-18: reports must survive a black-and-white printer — the screen
+     palette (muted grays, hairline borders, meaning carried by color)
+     washes out on paper. Inside a report container: body text prints
+     near-black, muted text darkens, hairlines firm up, and key figures
+     (data-tone) are emphasised by weight instead of color. */
+  .report-print {
+    color: #000 !important;
+  }
+  .report-print .text-muted-foreground {
+    color: #3d3833 !important;
+  }
+  .report-print * {
+    border-color: #8f8880 !important;
+  }
+  .report-print [data-tone] {
+    color: #000 !important;
+    font-weight: 700;
+  }
+  /* CT-01: the application frame (sidebar, topbar, mobile nav) never
+     prints, at any layout width — the sidebar is only hidden below the
+     lg breakpoint on screen, which wide/landscape pages exceed. */
+  .module-sidebar,
+  .module-topbar {
+    display: none !important;
+  }
+  .module-shell {
+    display: block !important;
+    background: #fff !important;
+  }
+  /* PrintShell/@page already owns the paper margins. The app shell's
+     content padding must not shrink the printable width — without this,
+     a 58mm slip prints ~47mm wide while the preview shows 54mm. */
+  .module-shell main {
+    padding: 0 !important;
+  }
+  body {
+    background: #fff !important;
+  }
+  .print-area {
+    box-shadow: none !important;
+    border: 0 !important;
+    margin: 0 !important;
+    width: auto !important;
+    /* CT-09: the on-screen card padding must not shrink the document
+       below its paperSpec width. */
+    padding: 0 !important;
+    background: #fff !important;
+  }
+  /* POS-NOTA-02: the modern TOTAL bar is white text on an accent
+     background. Browsers drop that background by default ("Background
+     graphics" off), leaving the white total as a faint ghost on paper.
+     Pin the bar to exact colors so the printed receipt matches the
+     on-screen preview. */
+  .print-doc--modern .print-total-bar {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  html,
+  body,
+  .print-canvas,
+  .print-area,
+  .print-doc {
+    background: #fff !important;
+  }
+  .print-canvas {
+    min-height: 0 !important;
+    padding: 0 !important;
+  }
+  /* CT-05: table rows of print documents never split across pages. */
+  .print-doc tr {
+    break-inside: avoid;
+  }
+  /* FIX-R2 (RD2-07): judul kolom tabel laporan berulang di setiap
+     halaman kertas — halaman kedua neraca saldo tidak lagi kehilangan
+     konteks kolomnya. */
+  .print-doc thead {
+    display: table-header-group;
+  }
+  .print-doc tfoot {
+    display: table-footer-group;
+  }
+  /* CT-03 (D-18): application pages print on A4; PrintShell documents
+     override this with their own injected @page rule. */
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+}

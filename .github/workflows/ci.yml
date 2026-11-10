@@ -1,0 +1,175 @@
+# FIX-ARS Tahap 1 (ARS4-01): gerbang kualitas proyek, otomatis.
+#
+# Sebelum workflow ini, seluruh gerbang (test/typecheck/lint/build/e2e)
+# hanya berjalan bila manusia menjalankannya. Workflow ini menjalankan
+# gerbang yang SAMA seperti di mesin dev:
+#   quality — typecheck + lint (tanpa DB)
+#   test    — vitest (unit + integration) melawan PostgreSQL 18 sungguhan
+#   build   — next build
+#   e2e     — Playwright melawan build produksi + DB yang sama
+#
+# Cara test repo bekerja (bukan tebakan): vitest.config.mts memuat
+# .env.local lewat dotenv; tests/integration memakai perusahaan demo
+# dari seed; jadi job test/e2e menyiapkan DB persis seperti lokal —
+# service postgres:18, peran app_user dari docker/init.sql (default
+# privileges harus ada SEBELUM migrasi membuat tabel), lalu
+# `pnpm db:migrate` dan `pnpm db:seed`.
+#
+# Semua kredensial di bawah KHUSUS CI: sandi owner acak-lemah sekali
+# pakai untuk service container, dan sandi app_user 'appdev' adalah
+# kredensial dev yang memang sudah terpublikasi di docker/init.sql.
+# Tidak ada satu pun yang dipakai di luar runner sementara ini.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Nilai khusus CI (lihat catatan di kepala berkas).
+  DATABASE_URL: postgres://app_user:appdev@localhost:5432/bisa
+  DIRECT_URL: postgres://erp:ci-owner-password@localhost:5432/bisa
+  BETTER_AUTH_SECRET: <redacted>
+  BETTER_AUTH_URL: http://localhost:3000
+  NEXT_PUBLIC_APP_NAME: "Bisa ERP"
+
+jobs:
+  quality:
+    name: Typecheck & lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+
+  test:
+    name: Test (vitest, PG 18)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: erp
+          POSTGRES_PASSWORD: <redacted>
+          POSTGRES_DB: bisa
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U erp -d bisa"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Seed membaca --env-file=.env.local dan vitest memuatnya via
+      # dotenv — tulis berkasnya dari env CI di atas.
+      - name: Write .env.local from CI env
+        run: |
+          {
+            echo "DATABASE_URL=$DATABASE_URL"
+            echo "DIRECT_URL=$DIRECT_URL"
+            echo "BETTER_AUTH_SECRET=$BETTER_AUTH_SECRET"
+            echo "BETTER_AUTH_URL=$BETTER_AUTH_URL"
+            echo "NEXT_PUBLIC_APP_NAME=$NEXT_PUBLIC_APP_NAME"
+          } > .env.local
+      # Peran app_user + default privileges, persis seperti volume
+      # docker lokal (docker/init.sql). Harus sebelum migrasi.
+      - name: Create app role (docker/init.sql)
+        run: >-
+          docker run --rm --network host
+          -v "${{ github.workspace }}/docker/init.sql:/init.sql:ro"
+          postgres:18-alpine
+          psql "$DIRECT_URL" -v ON_ERROR_STOP=1 -f /init.sql
+      - run: pnpm db:migrate
+      - run: pnpm db:seed
+      - run: pnpm test
+
+  build:
+    name: Build (next build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: erp
+          POSTGRES_PASSWORD: <redacted>
+          POSTGRES_DB: bisa
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U erp -d bisa"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Write .env.local from CI env
+        run: |
+          {
+            echo "DATABASE_URL=$DATABASE_URL"
+            echo "DIRECT_URL=$DIRECT_URL"
+            echo "BETTER_AUTH_SECRET=$BETTER_AUTH_SECRET"
+            echo "BETTER_AUTH_URL=$BETTER_AUTH_URL"
+            echo "NEXT_PUBLIC_APP_NAME=$NEXT_PUBLIC_APP_NAME"
+          } > .env.local
+      - name: Create app role (docker/init.sql)
+        run: >-
+          docker run --rm --network host
+          -v "${{ github.workspace }}/docker/init.sql:/init.sql:ro"
+          postgres:18-alpine
+          psql "$DIRECT_URL" -v ON_ERROR_STOP=1 -f /init.sql
+      - run: pnpm db:migrate
+      - run: pnpm db:seed
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      # webServer di playwright.config.ts hanya menjalankan
+      # `pnpm start`, jadi build produksi harus eksplisit lebih dulu.
+      - run: pnpm build
+      - run: pnpm test:e2e
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results
+          path: test-results/
+          if-no-files-found: ignore

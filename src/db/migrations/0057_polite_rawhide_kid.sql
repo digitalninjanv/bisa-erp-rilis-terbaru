@@ -1,0 +1,2 @@
+ALTER TABLE "company_settings" ADD COLUMN "pos_session_difference_tolerance" numeric(19, 4) DEFAULT '0' NOT NULL;--> statement-breakpoint
+ALTER TABLE "cash_sessions" ADD COLUMN "difference_reason" text;

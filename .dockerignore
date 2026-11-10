@@ -1,0 +1,18 @@
+# A-24 T5: keep the production build context small and free of secrets
+# and machine-local state. The builder stage needs source + manifests
+# only; node_modules comes from the deps stage.
+.git
+.local
+.next
+node_modules
+graphify-out
+dist-release
+backups
+.env.local
+.env.prod
+.env.*.local
+*.log
+coverage
+test-results
+playwright-report
+e2e/.auth

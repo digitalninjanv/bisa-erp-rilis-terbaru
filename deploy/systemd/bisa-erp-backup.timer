@@ -1,0 +1,13 @@
+# A-24 T5 — daily production backup. Retention and destinations live
+# in /etc/bisa-erp/backup.conf (defaults: 14 daily + 4 weekly).
+[Unit]
+Description=Backup harian Bisa ERP
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+RandomizedDelaySec=20m
+Persistent=true
+Unit=bisa-erp-backup.service
+
+[Install]
+WantedBy=timers.target

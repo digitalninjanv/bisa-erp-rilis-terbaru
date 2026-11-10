@@ -1,0 +1,2 @@
+ALTER TABLE "company_settings" ADD COLUMN "pos_discount_threshold_percent" numeric(5, 2) DEFAULT '10' NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "cash_sessions_one_open_per_user_uq" ON "cash_sessions" USING btree ("company_id","user_id") WHERE status = 'open';

@@ -1,0 +1,1 @@
+ALTER TABLE "company_settings" ADD COLUMN "document_numbering" jsonb;

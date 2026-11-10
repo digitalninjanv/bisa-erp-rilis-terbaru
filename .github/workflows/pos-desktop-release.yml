@@ -1,0 +1,85 @@
+# Rilis Bisa POS Desktop (POS Native Langkah 7, RENCANA-TAURI D4/D8).
+#
+# Jalur CI saat repo punya remote: matriks build bertanda tangan di
+# Ubuntu 22.04 (lantai WebKitGTK 4.1 = Safari 16) dan Windows.
+# Artefak hasil build diunggah sebagai artefak workflow DAN draft
+# GitHub Release; distribusi ke terminal BUKAN lewat latest.json
+# GitHub — operator menyalin artefak ke direktori rilis server
+# (BISA_POS_RELEASE_DIR) dengan nama kanonis lalu menetapkan versi
+# + rollout di web POS -> Terminal desktop. Lihat
+# docs/pos-native/RUNBOOK-RILIS.md.
+#
+# Secret yang WAJIB ada di repo (kustodi: ~/workspace/pos-native-keys/
+# di luar repo — lihat README-KUSTODI.md di folder itu):
+#   TAURI_SIGNING_PRIVATE_KEY           isi berkas kunci privat
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  kata sandi kunci privat
+# Kehilangan keduanya = armada tidak bisa diperbarui lagi.
+name: pos-desktop-release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "pos-v*"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-22.04
+            args: "--config src-tauri/tauri.linux.conf.json"
+          - platform: windows-latest
+            args: "--config src-tauri/tauri.windows.conf.json"
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pasang dependensi sistem Tauri (Ubuntu)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libgtk-3-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev \
+            libsoup-3.0-dev
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Pasang dependensi frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Build & tanda tangani bundel
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: .
+          args: ${{ matrix.args }}
+          # Draft saja: publikasi ke terminal diatur server kita
+          # (rollout per perusahaan), bukan GitHub Release.
+          releaseDraft: true
+          updaterJsonPreferNsis: true
+
+      - name: Unggah artefak bundel untuk direktori rilis server
+        uses: actions/upload-artifact@v4
+        with:
+          name: bisa-pos-${{ matrix.platform }}
+          path: |
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/appimage/*.sig
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/nsis/*.sig
+          if-no-files-found: warn

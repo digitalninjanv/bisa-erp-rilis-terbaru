@@ -1,0 +1,21 @@
+# A-28 Tahap 6 (H-X-01) — one scheduled restore drill (see
+# scripts/restore-drill.sh & docs/RUNBOOK-BACKUP-RESTORE.md).
+# Triggered weekly by bisa-erp-restore-drill.timer; may also be
+# started by hand:  systemctl start bisa-erp-restore-drill.service
+# The drill restores the newest backup into a throwaway database
+# named *restore_test*, verifies its contents against the source,
+# drops it, and records the outcome in restore-drill-manifest.json
+# next to the backups — the app surfaces it under
+# Pengaturan → Status sistem. A failed verification exits non-zero,
+# so the failure is visible in `systemctl status` / journal.
+[Unit]
+Description=Latihan restore database Bisa ERP (drill ke DB sekali pakai)
+After=network.target postgresql.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/bisa-erp/current
+# BACKUP_DIR & PG_BIN come from the one backup config (same file
+# deploy/backup-run.sh sources); '-' = tolerate its absence in dev.
+EnvironmentFile=-/etc/bisa-erp/backup.conf
+ExecStart=/opt/bisa-erp/current/scripts/restore-drill.sh

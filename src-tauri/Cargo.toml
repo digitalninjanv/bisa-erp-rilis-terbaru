@@ -1,0 +1,45 @@
+[package]
+name = "bisa-pos"
+version = "0.1.0"
+description = "Bisa POS — terminal kasir native (Tauri v2) untuk Bisa ERP"
+edition = "2021"
+
+[lib]
+name = "bisa_pos_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+# Langkah 7 (D4): plugin updater RESMI Tauri — dipakai HANYA glue
+# runtime untuk check/download/install; semua keputusan (URL
+# runtime, gerbang sesi, jadwal) hidup di modul murni updater.rs.
+# Penandatanganan minisign wajib: pubkey tertanam di
+# tauri.conf.json (plugins.updater.pubkey), kunci privat di CI /
+# brankas pemilik — TIDAK PERNAH di repo.
+tauri-plugin-updater = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# RENCANA-TAURI D3: lapisan DB lokal dimiliki Rust (bukan plugin-sql
+# dari JS) agar satu command = satu transaksi SQLite yang atomik.
+# `bundled` = SQLite ter-embed, tanpa dependensi .so sistem.
+rusqlite = { version = "0.32", features = ["bundled"] }
+uuid = { version = "1", features = ["v4"] }
+# Langkah 4 (D7): HTTP /api/pos/* berangkat dari Rust (transport.rs)
+# agar token perangkat tidak pernah masuk webview. ureq blocking +
+# rustls — drain berjalan di thread latar khusus.
+ureq = { version = "2", default-features = false, features = ["tls", "json"] }
+# Langkah 6 (D5): keychain OS untuk token perangkat — Windows
+# Credential Manager / Linux Secret Service. Fitur dipilih agar
+# backend deterministik: secret-service + rust-crypto di Linux,
+# Credential Manager di Windows (bukan mock bawaan paket);
+# `vendored` membangun libdbus dari sumber agar CI tidak butuh
+# libdbus-1-dev (layanan D-Bus/Secret Service tetap prasyarat
+# RUNTIME di mesin kasir — bila absen, device.rs jatuh ke
+# fallback berkas 0600 yang terlihat di UI).
+keyring = { version = "3", default-features = false, features = ["sync-secret-service", "crypto-rust", "windows-native", "vendored"] }
+
+[dev-dependencies]
+tempfile = "3"

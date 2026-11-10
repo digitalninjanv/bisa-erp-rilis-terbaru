@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "payroll_runs_company_period_uq" ON "payroll_runs" USING btree ("company_id","period") WHERE "payroll_runs"."status" <> 'void';

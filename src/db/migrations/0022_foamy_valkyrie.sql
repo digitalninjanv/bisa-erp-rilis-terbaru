@@ -1,0 +1,1 @@
+ALTER TABLE "company_settings" DROP COLUMN "receipt_width_mm";

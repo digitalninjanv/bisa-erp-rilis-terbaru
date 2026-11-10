@@ -1,0 +1,73 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+/test-results/
+/playwright-report/
+/e2e/.auth/
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+!.env.example
+
+# database dumps
+/backups/
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# local tooling / code graph index
+/.codegraph/
+
+# local infra (postgres binaries/data for testing)
+/.local/
+
+# POS Native Tauri: keluaran build desktop (sumber tetap dilacak)
+pos-desktop/.next/
+pos-desktop/out/
+src-tauri/target/
+
+# Graphify (artefak tergenerasi; bangun ulang: graphify update .)
+graphify-out/
+
+# A-24 T5: artefak rilis & env produksi lokal
+dist-release/
+.env.prod
+
+# POS Native Langkah 7 (D4): material kunci penandatanganan updater
+# TIDAK PERNAH masuk repo — kustodi di ~/workspace/pos-native-keys/
+# (di luar repo) dan secret CI. Baris ini pertahanan kedua.
+*.key
+*.key.password
+pos-native-keys/

@@ -1,0 +1,16 @@
+# A-28 Tahap 6 (H-X-01) — weekly restore drill. The runbook's bar is
+# "quarterly tested restores"; weekly gives margin, and the drill is
+# cheap (throwaway database, verified, dropped). Freshness shown in
+# the app goes stale after BISA_RESTORE_DRILL_MAX_AGE_DAYS (default
+# 92 days) without a successful drill.
+[Unit]
+Description=Latihan restore mingguan Bisa ERP
+
+[Timer]
+OnCalendar=Sun *-*-* 03:30:00
+RandomizedDelaySec=20m
+Persistent=true
+Unit=bisa-erp-restore-drill.service
+
+[Install]
+WantedBy=timers.target

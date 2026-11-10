@@ -1,0 +1,1 @@
+ALTER TABLE "sale_returns" ADD COLUMN "credit_used" numeric(19, 4) DEFAULT '0' NOT NULL;

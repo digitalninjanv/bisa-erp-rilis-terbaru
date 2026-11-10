@@ -1,0 +1,1 @@
+ALTER TABLE "company_settings" ADD COLUMN "cash_negative_policy" text DEFAULT 'warn' NOT NULL;

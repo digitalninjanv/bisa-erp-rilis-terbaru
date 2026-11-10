@@ -1,0 +1,1 @@
+{"description":"Frontend POS-only untuk aplikasi desktop Tauri (ekspor statis Next). Dependensi memakai instalasi repo induk — folder ini sengaja tanpa node_modules sendiri.","name":"bisa-pos-desktop","private":true,"scripts":{"build":"next build","dev":"next dev"},"version":"0.1.0"}

@@ -1,0 +1,477 @@
+{
+  "meta": {
+    "label": "final-B",
+    "scale": "B",
+    "companyId": "01900000-0000-7000-8000-00000000bea2",
+    "payrollMode": "batch",
+    "runs": 7,
+    "node": "v24.22.1",
+    "startedAt": "2026-11-04T04:43:24.026Z"
+  },
+  "context": {
+    "warehouseId": "01a1a4c2-27ac-7236-a941-454e43e1dbca",
+    "hotProductId": "01a1a4c2-2eeb-7e32-9138-d785392bb435",
+    "hotMovements": 4217,
+    "cashAccountId": "01a1a4c2-2802-77df-90f4-b2ed6b0c8065",
+    "barcode": "8990000000001",
+    "sampleNameWord": "Kopi"
+  },
+  "results": [
+    {
+      "name": "produk-daftar-halaman-1",
+      "runsMs": [
+        15.5,
+        15.4,
+        14.5,
+        15.1,
+        14.3,
+        22.5,
+        13.7
+      ],
+      "p50": 15.1,
+      "p95": 22.5,
+      "p99": 22.5,
+      "min": 13.7,
+      "max": 22.5,
+      "errors": 0,
+      "fingerprint": "total=100000"
+    },
+    {
+      "name": "produk-cari-kata",
+      "runsMs": [
+        402.8,
+        307.5,
+        308.4,
+        309.3,
+        309.7,
+        311.3,
+        315
+      ],
+      "p50": 309.7,
+      "p95": 402.8,
+      "p99": 402.8,
+      "min": 307.5,
+      "max": 402.8,
+      "errors": 0,
+      "fingerprint": "total=10000"
+    },
+    {
+      "name": "produk-daftar-halaman-dalam",
+      "runsMs": [
+        52.8,
+        53.9,
+        55.9,
+        53.9,
+        52.8,
+        51.5,
+        54.4
+      ],
+      "p50": 53.9,
+      "p95": 55.9,
+      "p99": 55.9,
+      "min": 51.5,
+      "max": 55.9,
+      "errors": 0,
+      "fingerprint": "total=100000;rows=25"
+    },
+    {
+      "name": "pos-cari-kosong",
+      "runsMs": [
+        2.5,
+        2.6,
+        2.9,
+        2.7,
+        2.9,
+        2.7,
+        2.6
+      ],
+      "p50": 2.7,
+      "p95": 2.9,
+      "p99": 2.9,
+      "min": 2.5,
+      "max": 2.9,
+      "errors": 0,
+      "fingerprint": "rows=24;first=BMB-010011"
+    },
+    {
+      "name": "pos-cari-kata",
+      "runsMs": [
+        178.3,
+        187.4,
+        180.9,
+        175,
+        177.8,
+        175.9,
+        175.6
+      ],
+      "p50": 177.8,
+      "p95": 187.4,
+      "p99": 187.4,
+      "min": 175,
+      "max": 187.4,
+      "errors": 0,
+      "fingerprint": "rows=24;first=BMB-000001"
+    },
+    {
+      "name": "pos-cari-barcode",
+      "runsMs": [
+        191.8,
+        208.2,
+        189.8,
+        181.3,
+        185.3,
+        185.1,
+        183.5
+      ],
+      "p50": 185.3,
+      "p95": 208.2,
+      "p99": 208.2,
+      "min": 181.3,
+      "max": 208.2,
+      "errors": 0,
+      "fingerprint": "rows=1;first=BMB-000001"
+    },
+    {
+      "name": "valuasi-halaman",
+      "runsMs": [
+        819.4,
+        821.8,
+        809.9,
+        811,
+        825.9,
+        821.6,
+        831.6
+      ],
+      "p50": 821.6,
+      "p95": 831.6,
+      "p99": 831.6,
+      "min": 809.9,
+      "max": 831.6,
+      "errors": 0,
+      "fingerprint": "total=80112574252000.0000;rows=50"
+    },
+    {
+      "name": "valuasi-penuh-ekspor",
+      "runsMs": [
+        2526.4,
+        2661.9,
+        2724.2,
+        2621.8,
+        3178.8,
+        3001,
+        2802.5
+      ],
+      "p50": 2724.2,
+      "p95": 3178.8,
+      "p99": 3178.8,
+      "min": 2526.4,
+      "max": 3178.8,
+      "errors": 0,
+      "fingerprint": "total=80112574252000.0000;csvBytes=8895950;hash=b531c9ee8ef4b0d6"
+    },
+    {
+      "name": "neraca-saldo-12-bulan",
+      "runsMs": [
+        5175.3,
+        5108.9,
+        5061,
+        4855.4,
+        4697.7,
+        5329.8,
+        5061.3
+      ],
+      "p50": 5061.3,
+      "p95": 5329.8,
+      "p99": 5329.8,
+      "min": 4697.7,
+      "max": 5329.8,
+      "errors": 0,
+      "fingerprint": "akun=39;dr=1249675960000.00;cr=1249675960000.00"
+    },
+    {
+      "name": "laba-rugi-12-bulan",
+      "runsMs": [
+        2442.6,
+        2174.6,
+        2322.8,
+        2284.8,
+        2397.3,
+        2340.4,
+        2325.7
+      ],
+      "p50": 2325.7,
+      "p95": 2442.6,
+      "p99": 2442.6,
+      "min": 2174.6,
+      "max": 2442.6,
+      "errors": 0,
+      "fingerprint": "hash=7ce0f953efdc70dc"
+    },
+    {
+      "name": "neraca-posisi-akhir-tahun",
+      "runsMs": [
+        5132.8,
+        4939.4,
+        4887,
+        4850.7,
+        4144.2,
+        3929.3,
+        3927.8
+      ],
+      "p50": 4850.7,
+      "p95": 5132.8,
+      "p99": 5132.8,
+      "min": 3927.8,
+      "max": 5132.8,
+      "errors": 0,
+      "fingerprint": "hash=ca25879788a55e41"
+    },
+    {
+      "name": "buku-besar-kas-halaman-1",
+      "runsMs": [
+        1110.1,
+        1123.7,
+        1091,
+        1168.2,
+        1093.9,
+        1224.3,
+        1022.9
+      ],
+      "p50": 1110.1,
+      "p95": 1224.3,
+      "p99": 1224.3,
+      "min": 1022.9,
+      "max": 1224.3,
+      "errors": 0,
+      "fingerprint": "closing=388634820000;dr=666662300000;cr=278027480000"
+    },
+    {
+      "name": "buku-besar-kas-penuh",
+      "runsMs": [
+        4902.5,
+        4928.8,
+        6208,
+        4937.1,
+        5237,
+        6072.5,
+        5707.7
+      ],
+      "p50": 5237,
+      "p95": 6208,
+      "p99": 6208,
+      "min": 4902.5,
+      "max": 6208,
+      "errors": 0,
+      "fingerprint": "closing=388634820000;dr=666662300000;cr=278027480000;rows=377778"
+    },
+    {
+      "name": "piutang-daftar-aging",
+      "runsMs": [
+        486.2,
+        530.2,
+        505.8,
+        486,
+        473.2,
+        470.1,
+        502.3
+      ],
+      "p50": 486.2,
+      "p95": 530.2,
+      "p99": 530.2,
+      "min": 470.1,
+      "max": 530.2,
+      "errors": 0,
+      "fingerprint": "dokumen=40500;saldo=75231135325.00"
+    },
+    {
+      "name": "utang-daftar-aging",
+      "runsMs": [
+        79,
+        73.7,
+        74.5,
+        76.2,
+        76.3,
+        72,
+        73.5
+      ],
+      "p50": 74.5,
+      "p95": 79,
+      "p99": 79,
+      "min": 72,
+      "max": 79,
+      "errors": 0,
+      "fingerprint": "dokumen=8500;saldo=41127780000.00"
+    },
+    {
+      "name": "kartu-stok-halaman-1",
+      "runsMs": [
+        6.6,
+        9.4,
+        7,
+        5.6,
+        5.4,
+        5.2,
+        5.3
+      ],
+      "p50": 5.6,
+      "p95": 9.4,
+      "p99": 9.4,
+      "min": 5.2,
+      "max": 9.4,
+      "errors": 0,
+      "fingerprint": "total=4217;rows=50"
+    },
+    {
+      "name": "kartu-stok-halaman-dalam",
+      "runsMs": [
+        8.1,
+        6.3,
+        7,
+        6.5,
+        6.3,
+        6.5,
+        6.6
+      ],
+      "p50": 6.5,
+      "p95": 8.1,
+      "p99": 8.1,
+      "min": 6.3,
+      "max": 8.1,
+      "errors": 0,
+      "fingerprint": "total=4217;rows=50;last=49328.0000"
+    },
+    {
+      "name": "jurnal-daftar",
+      "runsMs": [
+        62.8,
+        69.1,
+        63.7,
+        54.2,
+        54.5,
+        51.8,
+        54
+      ],
+      "p50": 54.5,
+      "p95": 69.1,
+      "p99": 69.1,
+      "min": 51.8,
+      "max": 69.1,
+      "errors": 0,
+      "fingerprint": "total=500000"
+    },
+    {
+      "name": "jurnal-cari-gaji",
+      "runsMs": [
+        838.6,
+        845.4,
+        867.3,
+        823.7,
+        911.1,
+        866.1,
+        826.5
+      ],
+      "p50": 845.4,
+      "p95": 911.1,
+      "p99": 911.1,
+      "min": 823.7,
+      "max": 911.1,
+      "errors": 0,
+      "fingerprint": "total=11111"
+    },
+    {
+      "name": "jurnal-cari-penjualan",
+      "runsMs": [
+        908.4,
+        961.5,
+        930,
+        985.2,
+        982.1,
+        908.2,
+        975.9
+      ],
+      "p50": 961.5,
+      "p95": 985.2,
+      "p99": 985.2,
+      "min": 908.2,
+      "max": 985.2,
+      "errors": 0,
+      "fingerprint": "total=266668"
+    },
+    {
+      "name": "penjualan-daftar",
+      "runsMs": [
+        38.9,
+        38,
+        38.4,
+        42.3,
+        45.7,
+        45.6,
+        38.2
+      ],
+      "p50": 38.9,
+      "p95": 45.7,
+      "p99": 45.7,
+      "min": 38,
+      "max": 45.7,
+      "errors": 0,
+      "fingerprint": "total=400000"
+    },
+    {
+      "name": "beban-daftar-bulanan",
+      "runsMs": [
+        14.7,
+        13.8,
+        14.3,
+        14.7,
+        15.2,
+        14.3,
+        13.5
+      ],
+      "p50": 14.3,
+      "p95": 15.2,
+      "p99": 15.2,
+      "min": 13.5,
+      "max": 15.2,
+      "errors": 0,
+      "fingerprint": "total=20000"
+    },
+    {
+      "name": "beranda-ringkasan",
+      "runsMs": [
+        5229.8,
+        5696.7,
+        5560.1,
+        4515.6,
+        4656.6,
+        4642.9,
+        4684.5
+      ],
+      "p50": 4684.5,
+      "p95": 5696.7,
+      "p99": 5696.7,
+      "min": 4515.6,
+      "max": 5696.7,
+      "errors": 0,
+      "fingerprint": "hash=081db6aa2d023965"
+    },
+    {
+      "name": "payroll-halaman-data",
+      "runsMs": [
+        19.4,
+        19,
+        18.8,
+        17.7,
+        29.9,
+        13.8,
+        13.5
+      ],
+      "p50": 18.8,
+      "p95": 29.9,
+      "p99": 29.9,
+      "min": 13.5,
+      "max": 29.9,
+      "errors": 0,
+      "fingerprint": "staff=300;runs=12;items=3600;usulan=8449c6406ebc5784"
+    }
+  ]
+}

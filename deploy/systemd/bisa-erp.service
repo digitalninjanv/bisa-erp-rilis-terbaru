@@ -1,0 +1,22 @@
+# A-24 T5 — Bisa ERP production service (Jalur 2: tanpa Docker).
+# Installed to /etc/systemd/system/bisa-erp.service by deploy/install.sh.
+[Unit]
+Description=Bisa ERP (server toko)
+After=network.target postgresql.service
+Wants=network.target
+
+[Service]
+Type=simple
+User=bisa
+Group=bisa
+WorkingDirectory=/opt/bisa-erp/current
+EnvironmentFile=/etc/bisa-erp/bisa-erp.env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node /opt/bisa-erp/current/server.js
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,80 @@
+# A-24 T5 — Jalur 1: Docker Compose PRODUKSI (server lokal di toko / cloud).
+#
+# Ini BUKAN docker-compose.yml (itu khusus pengembangan dan melarang
+# dirinya dipakai produksi). Berkas ini hanya memakai nilai dari
+# .env.prod yang dibuat oleh deploy/setup-env.sh — tidak ada sandi
+# bawaan di sini.
+#
+# Urutan pemasangan (lihat docs/RUNBOOK-INSTALASI-PRODUKSI.md):
+#   1. bash deploy/setup-env.sh --untuk docker      # membuat .env.prod
+#   2. docker compose -f docker-compose.prod.yml build
+#   3. docker compose -f docker-compose.prod.yml up -d db
+#   4. docker compose -f docker-compose.prod.yml --profile tools run --rm migrate
+#   5. docker compose -f docker-compose.prod.yml up -d
+name: bisa-erp
+
+services:
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: erp
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Jalankan deploy/setup-env.sh dulu}
+      POSTGRES_DB: bisa
+      # Dipakai docker/init-prod.sh untuk membuat peran app_user (RLS).
+      APP_USER_PASSWORD: ${APP_USER_PASSWORD:?Jalankan deploy/setup-env.sh dulu}
+    volumes:
+      - bisa_pgdata:/var/lib/postgresql
+      - ./docker/init-prod.sh:/docker-entrypoint-initdb.d/10-init.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U erp -d bisa"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  app:
+    image: bisa-erp:${BISA_VERSION:-0.1.0}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    # .env.prod berisi DATABASE_URL/DIRECT_URL/BETTER_AUTH_* produksi.
+    # Host database di dalam jaringan compose adalah "db".
+    env_file:
+      - .env.prod
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 4
+
+  # Langkah migrasi eksplisit sekali-jalan. TIDAK pernah jalan otomatis
+  # saat app boot; operator menjalankannya dan hasilnya tercatat di log
+  # compose. Memakai target `tools` dari Dockerfile yang sama.
+  migrate:
+    image: bisa-erp-tools:${BISA_VERSION:-0.1.0}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: tools
+    profiles: ["tools"]
+    env_file:
+      - .env.prod
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["pnpm", "db:migrate"]
+
+volumes:
+  bisa_pgdata:
+    name: bisa_pgdata

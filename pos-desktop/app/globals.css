@@ -1,0 +1,200 @@
+:root {
+  --plum: #714b67;
+  --plum-dark: #5b3a53;
+  --ink: #26221f;
+  --muted: #6f6a66;
+  --line: #e3ded9;
+  --bg: #f6f4f2;
+  --card: #ffffff;
+  --ok: #1c7c43;
+  --warn: #a15c07;
+  --bad: #b3261e;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: ui-sans-system, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--card);
+  border-bottom: 1px solid var(--line);
+}
+.topbar .brand { font-weight: 700; font-size: 15px; }
+.topbar .brand span { color: var(--plum); }
+.badge {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--bg);
+}
+.badge.on { color: var(--ok); border-color: var(--ok); }
+
+.layout {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 12px;
+  padding: 12px 16px;
+  align-items: start;
+}
+.panel {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+.panel h2 { font-size: 13px; margin: 0 0 8px; }
+.panel h3 { font-size: 12px; margin: 10px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.row + .row { margin-top: 8px; }
+label.field { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); flex: 1; min-width: 180px; }
+input, select {
+  font: inherit;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+}
+button {
+  font: inherit;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: #fff;
+  cursor: pointer;
+}
+button.primary { background: var(--plum); border-color: var(--plum); color: #fff; font-weight: 600; }
+button.primary:hover { background: var(--plum-dark); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+.product {
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  background: #fff;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.product:hover { border-color: var(--plum); }
+.product .name { font-weight: 600; }
+.product .price { color: var(--plum); font-weight: 700; }
+.product .meta { color: var(--muted); font-size: 11px; }
+.product-card { display: flex; flex-direction: column; gap: 4px; }
+.product-card .product { width: 100%; }
+.packs { display: flex; flex-wrap: wrap; gap: 4px; }
+.pack-chip {
+  font-size: 11px;
+  border: 1px dashed var(--plum);
+  color: var(--plum);
+  background: #fff;
+  border-radius: 999px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.pack-chip:hover { background: var(--bg); }
+
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+.status { font-size: 12px; padding: 8px 10px; border-radius: 6px; background: var(--bg); border: 1px solid var(--line); }
+.status.error { color: var(--bad); border-color: var(--bad); }
+.status.ok { color: var(--ok); border-color: var(--ok); }
+.muted { color: var(--muted); }
+.mono { font-family: ui-monospace, monospace; font-size: 11px; }
+.tag { font-size: 11px; border-radius: 4px; padding: 1px 6px; background: var(--bg); border: 1px solid var(--line); }
+.tag.held { color: var(--warn); border-color: var(--warn); }
+.tag.pending { color: var(--plum); border-color: var(--plum); }
+.total { font-size: 15px; font-weight: 700; }
+
+/* ------------------------------------------------------------------
+   Layar pelanggan (Langkah 8) — rute /display, jendela kedua.
+   Tipografi besar terbaca dari jarak antre; palet yang sama
+   dengan terminal, tanpa dekorasi tambahan.
+   ------------------------------------------------------------------ */
+.display-root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  color: var(--ink);
+  padding: 28px 36px;
+}
+.display-store {
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--plum-dark);
+  border-bottom: 3px solid var(--plum);
+  padding-bottom: 14px;
+}
+.display-center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  text-align: center;
+}
+.display-headline { font-size: 44px; font-weight: 700; }
+.display-sub { font-size: 22px; color: var(--muted); }
+.display-lines {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 0;
+  flex: 1;
+  overflow: hidden;
+}
+.display-lines li {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 24px;
+}
+.display-lines .d-name { flex: 1; font-weight: 600; }
+.display-lines .d-qty { color: var(--muted); white-space: nowrap; }
+.display-lines .d-total { font-weight: 700; white-space: nowrap; }
+.display-more { font-size: 20px; color: var(--muted); padding: 10px 0; }
+.display-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  border-top: 3px solid var(--plum);
+  padding-top: 16px;
+  margin-top: 12px;
+}
+.display-total .d-label { font-size: 26px; color: var(--muted); }
+.display-total .d-value { font-size: 58px; font-weight: 800; color: var(--plum-dark); }
+.display-paid-total { font-size: 64px; font-weight: 800; color: var(--plum-dark); }
+.display-preview-note {
+  position: fixed;
+  right: 12px;
+  bottom: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}

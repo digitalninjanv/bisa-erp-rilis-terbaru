@@ -1,0 +1,53 @@
+# ⚠️ PERINGATAN KEAMANAN (SIM-2 S6 / SEC-03): berkas ini untuk
+# PENGEMBANGAN LOKAL. Kredensial di bawah adalah nilai bawaan yang
+# TERPUBLIKASI di repo (erpdev / appdev / minio-dev) — JANGAN PERNAH
+# memakai compose ini apa adanya di produksi. Untuk deployment nyata:
+# ganti SEMUA sandi (POSTGRES_PASSWORD, peran app_user di
+# docker/init.sql, MINIO_ROOT_PASSWORD), sesuaikan DATABASE_URL /
+# DIRECT_URL di .env, dan set BETTER_AUTH_SECRET yang kuat & acak.
+# Lihat juga README bagian "Catatan deploy".
+services:
+  db:
+    image: postgres:18-alpine
+    container_name: bisa-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: erp
+      POSTGRES_PASSWORD: erpdev
+      POSTGRES_DB: bisa
+    ports:
+      - "5432:5432"
+    volumes:
+      - bisa_pgdata:/var/lib/postgresql
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U erp -d bisa"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: bisa-mail
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+  minio:
+    image: minio/minio:latest
+    container_name: bisa-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio-dev
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - bisa_minio:/data
+
+volumes:
+  bisa_pgdata:
+  bisa_minio:
