@@ -22,6 +22,7 @@ export function MoneyInput({
   onChange,
   onValidityChange,
   onBlur,
+  onKeyDown,
   id,
   className,
   placeholder = "0",
@@ -34,6 +35,7 @@ export function MoneyInput({
   /** Dipanggil setelah isi field diselesaikan (blur) — dipakai form
    * jurnal untuk mengisi baris penyeimbang tanpa mengganggu ketikan. */
   onBlur?: () => void;
+  onKeyDown?: (event: React.KeyboardEvent<HTMLInputElement>) => void;
   id?: string;
   className?: string;
   placeholder?: string;
@@ -120,6 +122,7 @@ export function MoneyInput({
         value={text}
         onChange={handleChange}
         onBlur={handleBlur}
+        onKeyDown={onKeyDown}
         inputMode="decimal"
         autoComplete="off"
         placeholder={placeholder}

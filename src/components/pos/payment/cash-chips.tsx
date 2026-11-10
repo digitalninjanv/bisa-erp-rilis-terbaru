@@ -7,9 +7,9 @@
 
 import { formatIDR } from "@/lib/money";
 
-const CASH_CHIPS = [10_000, 20_000, 50_000, 100_000];
+const CASH_CHIPS = [10_000, 20_000, 50_000, 100_000, 200_000, 500_000];
 
-/** POS-1: chip uang diterima cepat untuk metode tunai. */
+/** POS-1: chip uang diterima cepat untuk metode tunai (standar ergonomi kasir cepat). */
 export function CashChips({
   pasValue,
   disabled,
@@ -19,17 +19,16 @@ export function CashChips({
   disabled: boolean;
   onPick: (value: number) => void;
 }) {
-  // POS2-13/22: chip uang adalah kontrol berulang kasir — teks 11px
-  // dan area sentuh lebih tinggi dari chip lama (±21px).
+  // Ergonomi modern: tombol sentuh nyaman (h-7/28px), font-medium 11px/12px, border halus
   const chipClass =
-    "rounded-full border border-border bg-background px-2.5 py-1 text-[11px] font-medium hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40";
+    "inline-flex items-center justify-center rounded-md border border-border/80 bg-background px-2.5 py-1 text-[11px] font-medium transition-all hover:bg-muted hover:border-border active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 shadow-2xs";
   return (
-    <div className="flex flex-wrap gap-1">
+    <div className="flex flex-wrap gap-1.5 pt-0.5">
       <button
         type="button"
         disabled={disabled || pasValue <= 0}
         onClick={() => onPick(pasValue)}
-        className={chipClass}
+        className={`${chipClass} font-semibold text-primary border-primary/30 bg-primary-soft/40 hover:bg-primary-soft`}
       >
         Uang Pas
       </button>

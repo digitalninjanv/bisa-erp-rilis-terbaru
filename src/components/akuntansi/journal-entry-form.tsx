@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Plus, Save, Scale, Trash2 } from "lucide-react";
@@ -151,7 +151,7 @@ export function JournalEntryForm({
     setLines((current) => autoBalanceAdjacent(current, index, side));
   }
 
-  function applyBalancing() {
+  const applyBalancing = useCallback(() => {
     const fix = computeBalancing(lines);
     if (!fix) return;
     const patch =
@@ -171,6 +171,27 @@ export function JournalEntryForm({
       return [...next, { ...EMPTY_LINE, ...patch }];
     });
     toast.info("Nominal penyeimbang terisi — pastikan akun baris penyeimbang sudah dipilih.");
+  }, [lines]);
+
+  // Ergonomi keyboard enterprise: Alt+B untuk menyeimbangkan debit/kredit
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.altKey || (e.ctrlKey && e.shiftKey)) && (e.key === "b" || e.key === "B")) {
+        e.preventDefault();
+        applyBalancing();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [applyBalancing]);
+
+  function handleInputKeyDown(e: React.KeyboardEvent<HTMLInputElement>, index: number) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (index === lines.length - 1) {
+        setLines((current) => appendJournalLines(current));
+      }
+    }
   }
 
   async function submit() {
@@ -293,11 +314,12 @@ export function JournalEntryForm({
           type="button"
           onClick={applyBalancing}
           disabled={!balancing}
-          title={balancing ? "Isi nominal penyeimbang pada sisi yang kurang" : "Tidak ada selisih untuk disamakan"}
+          title={balancing ? "Isi nominal penyeimbang pada sisi yang kurang (Alt+B)" : "Tidak ada selisih untuk disamakan"}
           className="inline-flex h-8 items-center gap-1.5 rounded border border-border px-2.5 text-[11px] transition-colors hover:bg-muted disabled:opacity-40"
         >
           <Scale className="size-3.5" />
           {balancing ? `Samakan selisih ${formatIDR(balancing.amount)}` : "Samakan selisih"}
+          <span className="hidden sm:inline font-mono text-[10px] text-muted-foreground opacity-70 ml-0.5">(Alt+B)</span>
         </button>
       </div>
       <div className="flex flex-col items-end gap-1">
@@ -420,6 +442,7 @@ export function JournalEntryForm({
                       onChange={(debit) => update(index, { debit, credit: "" })}
                       onValidityChange={(valid) => trackValidity(`${index}-debit`, valid)}
                       onBlur={() => autoBalance(index, "debit")}
+                      onKeyDown={(event) => handleInputKeyDown(event, index)}
                       aria-label={`Debit baris ${index + 1}`}
                       className="h-9 w-full px-2 text-[12px]"
                     />
@@ -430,6 +453,7 @@ export function JournalEntryForm({
                       onChange={(credit) => update(index, { credit, debit: "" })}
                       onValidityChange={(valid) => trackValidity(`${index}-credit`, valid)}
                       onBlur={() => autoBalance(index, "credit")}
+                      onKeyDown={(event) => handleInputKeyDown(event, index)}
                       aria-label={`Kredit baris ${index + 1}`}
                       className="h-9 w-full px-2 text-[12px] text-destructive"
                     />
@@ -517,6 +541,7 @@ export function JournalEntryForm({
                       onChange={(debit) => update(index, { debit, credit: "" })}
                       onValidityChange={(valid) => trackValidity(`${index}-debit`, valid)}
                       onBlur={() => autoBalance(index, "debit")}
+                      onKeyDown={(event) => handleInputKeyDown(event, index)}
                       aria-label={`Debit baris ${index + 1}`}
                       className="h-9 px-1.5 text-[11px]"
                     />
@@ -528,6 +553,7 @@ export function JournalEntryForm({
                       onChange={(credit) => update(index, { credit, debit: "" })}
                       onValidityChange={(valid) => trackValidity(`${index}-credit`, valid)}
                       onBlur={() => autoBalance(index, "credit")}
+                      onKeyDown={(event) => handleInputKeyDown(event, index)}
                       aria-label={`Kredit baris ${index + 1}`}
                       className="h-9 px-1.5 text-[11px] text-destructive"
                     />
