@@ -19,6 +19,7 @@ import { d, formatIDR, formatQty } from "@/lib/money";
 import { labelClass, fieldClass } from "@/components/blocks/field-classes";
 import { DocumentForm, DocumentFormAdvanced } from "@/components/blocks/document-form";
 import { DateField } from "@/components/date-field";
+import { PercentInput } from "@/components/percent-input";
 import { ReceiptAdvanceField } from "@/components/gudang/receipt-advance-field";
 import { requireFilled } from "@/components/use-action-runner";
 
@@ -547,22 +548,13 @@ export function ReceiptForm({
                   {isPurchase ? (
                     <label className="space-y-1">
                       <span className={labelClass}>PPN (%)</span>
-                      <div className="relative max-w-36">
-                        <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          step="0.01"
+                      <div className="max-w-36">
+                        <PercentInput
                           value={taxPercent}
-                          onChange={(event) => setTaxPercent(event.target.value)}
-                          inputMode="decimal"
-                          aria-label="PPN (%)"
+                          onChange={setTaxPercent}
                           disabled={!taxInputMapped}
-                          className={`${fieldClass} num pr-7 text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+                          aria-label="PPN (%)"
                         />
-                        <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">
-                          %
-                        </span>
                       </div>
                       <span className="block text-[10px] text-muted-foreground">
                         {!taxInputMapped

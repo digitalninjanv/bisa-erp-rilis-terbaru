@@ -244,7 +244,7 @@ function StatementGroup({
       <div className="overflow-x-auto">
         <table className="mt-1 w-full text-[12px]">
           {comparative ? (
-            <thead className="text-[9px] uppercase tracking-wide text-muted-foreground">
+            <thead className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th />
                 <th className="py-1 text-right font-medium">Periode ini</th>

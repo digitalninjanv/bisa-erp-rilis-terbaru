@@ -9,6 +9,7 @@ import { LineEditor, docLineBaseQty, type DocLine } from "@/components/gudang/li
 import { d, formatIDR, formatQty } from "@/lib/money";
 import { labelClass, fieldClass } from "@/components/blocks/field-classes";
 import { DocumentForm, DocumentFormAdvanced } from "@/components/blocks/document-form";
+import { ConfirmDialog } from "@/components/blocks/confirm-dialog";
 import { DateField } from "@/components/date-field";
 
 export function PurchaseOrderForm({
@@ -30,6 +31,24 @@ export function PurchaseOrderForm({
   const [notes, setNotes] = useState("");
   const [lines, setLines] = useState<DocLine[]>([]);
   const [busy, setBusy] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
+
+  const isDirty = lines.length > 0 || notes.trim().length > 0;
+
+  function handleCancel() {
+    if (isDirty) {
+      setConfirmCancel(true);
+    } else {
+      setOpen(false);
+    }
+  }
+
+  function doDiscard() {
+    setConfirmCancel(false);
+    setOpen(false);
+    setLines([]);
+    setNotes("");
+  }
 
   async function submit() {
     if (!supplierId) {
@@ -171,7 +190,7 @@ export function PurchaseOrderForm({
             <div className="flex w-full flex-wrap items-center justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setOpen(false)}
+                onClick={handleCancel}
                 className="inline-flex h-8 items-center rounded-md border border-border px-3 text-[12px] transition-colors hover:bg-muted"
               >
                 Batal
@@ -192,6 +211,16 @@ export function PurchaseOrderForm({
           </div>
         </DocumentForm>
       ) : null}
+
+      <ConfirmDialog
+        open={confirmCancel}
+        title="Batalkan pembuatan pesanan pembelian?"
+        description="Daftar produk dan catatan yang sudah diisi akan dibuang."
+        confirmLabel="Buang isian"
+        danger
+        onConfirm={doDiscard}
+        onCancel={() => setConfirmCancel(false)}
+      />
     </div>
   );
 }

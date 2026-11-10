@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Inbox } from "lucide-react";
+import { Check, Inbox } from "lucide-react";
 import { toast } from "sonner";
 import {
   decideLeaveRequestAction,
@@ -103,6 +103,51 @@ export function ApprovalInbox({
   const [rows, setRows] = useState(items);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState<ApprovalItem | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+
+  function toggleAll() {
+    if (selectedIds.size === rows.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(rows.map((r) => r.id)));
+    }
+  }
+
+  function toggleOne(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function bulkApprove() {
+    if (selectedIds.size === 0) return;
+    setBulkBusy(true);
+    const toApprove = rows.filter((r) => selectedIds.has(r.id));
+    let successCount = 0;
+    const failedIds: string[] = [];
+    for (const item of toApprove) {
+      const res = await decideApproval(item, true, "");
+      if (res.ok) {
+        successCount++;
+      } else {
+        failedIds.push(item.id);
+      }
+    }
+    setBulkBusy(false);
+    if (successCount > 0) {
+      toast.success(`${successCount} pengajuan berhasil disetujui sekaligus.`);
+      setRows((current) => current.filter((r) => !selectedIds.has(r.id) || failedIds.includes(r.id)));
+      setSelectedIds(new Set(failedIds));
+      router.refresh();
+    }
+    if (failedIds.length > 0) {
+      toast.error(`${failedIds.length} pengajuan gagal diproses.`);
+    }
+  }
 
   async function run(item: ApprovalItem, approve: boolean, note: string) {
     setBusyId(item.id);
@@ -119,18 +164,73 @@ export function ApprovalInbox({
         : `${APPROVAL_KIND_LABELS[item.kind]} dari ${item.requester} ditolak.`,
     );
     setRows((current) => current.filter((row) => !(row.id === item.id && row.kind === item.kind)));
+    setSelectedIds((prev) => {
+      if (!prev.has(item.id)) return prev;
+      const next = new Set(prev);
+      next.delete(item.id);
+      return next;
+    });
     router.refresh();
   }
 
   return (
     <section className={cn("overflow-hidden rounded-lg border border-border bg-card", className)}>
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <h2 className="text-[13px] font-semibold">{title}</h2>
-        {rows.length > 0 ? (
-          <span className="num rounded-full bg-tone-amber-soft px-2 py-0.5 text-[11px] font-semibold text-tone-amber">
-            {rows.length} menunggu
-          </span>
-        ) : null}
+        {selectedIds.size > 0 ? (
+          <div className="flex w-full items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={selectedIds.size === rows.length && rows.length > 0}
+                onChange={toggleAll}
+                aria-label="Pilih semua pengajuan"
+                className="size-4 rounded border-border text-primary focus:ring-ring"
+              />
+              <span className="text-[12px] font-semibold text-primary">
+                {selectedIds.size} pengajuan dipilih
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedIds(new Set())}
+                disabled={bulkBusy}
+                className="inline-flex h-8 items-center rounded-md border border-border px-2.5 text-[11px] font-medium transition-colors hover:bg-muted"
+              >
+                Batal pilihan
+              </button>
+              <button
+                type="button"
+                onClick={() => void bulkApprove()}
+                disabled={bulkBusy}
+                className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+              >
+                <Check className="size-3.5" />
+                {bulkBusy ? "Memproses…" : `Setujui terpilih (${selectedIds.size})`}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center gap-2.5">
+              {rows.length > 0 ? (
+                <input
+                  type="checkbox"
+                  checked={false}
+                  onChange={toggleAll}
+                  aria-label="Pilih semua pengajuan"
+                  className="size-4 rounded border-border text-primary focus:ring-ring"
+                />
+              ) : null}
+              <h2 className="text-[13px] font-semibold">{title}</h2>
+            </div>
+            {rows.length > 0 ? (
+              <span className="num rounded-full bg-tone-amber-soft px-2 py-0.5 text-[11px] font-semibold text-tone-amber">
+                {rows.length} menunggu
+              </span>
+            ) : null}
+          </>
+        )}
       </div>
       {rows.length === 0 ? (
         <div className="p-3">
@@ -140,6 +240,13 @@ export function ApprovalInbox({
         <ul className="divide-y divide-border/70">
           {rows.map((item) => (
             <li key={`${item.kind}-${item.id}`} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
+              <input
+                type="checkbox"
+                checked={selectedIds.has(item.id)}
+                onChange={() => toggleOne(item.id)}
+                aria-label={`Pilih pengajuan ${item.requester}`}
+                className="size-4 shrink-0 rounded border-border text-primary focus:ring-ring"
+              />
               <span className="rounded-full bg-primary-soft px-2 py-0.5 text-[11px] font-semibold text-primary">
                 {APPROVAL_KIND_LABELS[item.kind]}
               </span>
