@@ -16,9 +16,12 @@ import type { Tx } from "@/db";
 import {
   auditLog,
   customers,
+  expenses,
+  partyCredits,
   partyOpeningBalances,
   partyPayments,
   products,
+  purchaseAdvances,
   purchaseOrders,
   sales,
   stockDocuments,
@@ -58,12 +61,16 @@ const SUPPLIER_MERGE_REFERENCES: MergeReference[] = [
   { key: "stockDocuments", label: "Dokumen stok" },
   { key: "partyPayments", label: "Pembayaran utang" },
   { key: "partyOpeningBalances", label: "Dokumen saldo awal" },
+  { key: "purchaseAdvances", label: "Uang muka pembelian" },
+  { key: "expenses", label: "Beban/biaya terutang" },
+  { key: "partyCredits", label: "Kredit pihak" },
 ];
 
 const CUSTOMER_MERGE_REFERENCES: MergeReference[] = [
   { key: "sales", label: "Penjualan" },
   { key: "partyPayments", label: "Penerimaan piutang" },
   { key: "partyOpeningBalances", label: "Dokumen saldo awal" },
+  { key: "partyCredits", label: "Kredit pelanggan" },
 ];
 
 async function countPartyReferences(
@@ -105,6 +112,18 @@ async function countPartyReferences(
         .from(stockDocuments)
         .where(and(eq(stockDocuments.companyId, companyId), eq(stockDocuments.supplierId, partyId))),
     );
+    counts.purchaseAdvances = await countOne(
+      tx
+        .select({ value: sql<number>`count(*)::int` })
+        .from(purchaseAdvances)
+        .where(and(eq(purchaseAdvances.companyId, companyId), eq(purchaseAdvances.supplierId, partyId))),
+    );
+    counts.expenses = await countOne(
+      tx
+        .select({ value: sql<number>`count(*)::int` })
+        .from(expenses)
+        .where(and(eq(expenses.companyId, companyId), eq(expenses.supplierId, partyId))),
+    );
   } else {
     const [row] = await tx
       .select({ value: sql<number>`count(*)::int` })
@@ -134,6 +153,17 @@ async function countPartyReferences(
       ),
     );
   counts.partyOpeningBalances = openings?.value ?? 0;
+  const [credits] = await tx
+    .select({ value: sql<number>`count(*)::int` })
+    .from(partyCredits)
+    .where(
+      and(
+        eq(partyCredits.companyId, companyId),
+        eq(partyCredits.partyType, kind),
+        eq(partyCredits.partyId, partyId),
+      ),
+    );
+  counts.partyCredits = credits?.value ?? 0;
   return counts;
 }
 
@@ -302,6 +332,20 @@ export async function mergeParties(
         .where(and(eq(stockDocuments.companyId, companyId), eq(stockDocuments.supplierId, duplicateId)))
         .returning({ id: stockDocuments.id })
     ).length;
+    references.purchaseAdvances = (
+      await tx
+        .update(purchaseAdvances)
+        .set({ supplierId: primaryId })
+        .where(and(eq(purchaseAdvances.companyId, companyId), eq(purchaseAdvances.supplierId, duplicateId)))
+        .returning({ id: purchaseAdvances.id })
+    ).length;
+    references.expenses = (
+      await tx
+        .update(expenses)
+        .set({ supplierId: primaryId })
+        .where(and(eq(expenses.companyId, companyId), eq(expenses.supplierId, duplicateId)))
+        .returning({ id: expenses.id })
+    ).length;
   } else {
     const updated = await tx
       .update(sales)
@@ -334,6 +378,18 @@ export async function mergeParties(
     )
     .returning({ id: partyOpeningBalances.id });
   references.partyOpeningBalances = openingRows.length;
+  const creditRows = await tx
+    .update(partyCredits)
+    .set({ partyId: primaryId })
+    .where(
+      and(
+        eq(partyCredits.companyId, companyId),
+        eq(partyCredits.partyType, kind),
+        eq(partyCredits.partyId, duplicateId),
+      ),
+    )
+    .returning({ id: partyCredits.id });
+  references.partyCredits = creditRows.length;
 
   const marker = `[Digabung ke ${primary.name} (${primary.code}) pada ${input.today}]`;
   const mergedNotes = duplicate.notes ? `${duplicate.notes}\n${marker}` : marker;

@@ -4,7 +4,7 @@
 
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { cashMovements, cashSessions } from "@/db/schema";
+import { branches, cashMovements, cashSessions } from "@/db/schema";
 import { AppError } from "@/lib/errors";
 import { d, toDb } from "@/lib/money";
 import { getAccountMap, postJournal } from "@/server/accounting";
@@ -30,6 +30,18 @@ export async function openCashSession(
   tx: Tx,
   input: { companyId: string; userId: string; branchId?: string | null; openingCash: string | number },
 ) {
+  // MD-006: validasi cabang milik perusahaan yang aktif
+  if (input.branchId) {
+    const [branch] = await tx
+      .select({ id: branches.id })
+      .from(branches)
+      .where(and(eq(branches.companyId, input.companyId), eq(branches.id, input.branchId)))
+      .limit(1);
+    if (!branch) {
+      throw new AppError("VALIDATION", "Cabang tidak ditemukan di perusahaan ini.");
+    }
+  }
+
   const [existing] = await tx
     .select({ id: cashSessions.id })
     .from(cashSessions)

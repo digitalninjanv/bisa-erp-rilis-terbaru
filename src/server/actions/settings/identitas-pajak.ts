@@ -3,11 +3,11 @@
 // A-26 Q8b: pecahan actions/settings.ts per topik (pola Q4) — identitas perusahaan, pajak & ambang, saklar fitur, dan kesiapan pengaturan.
 // Perilaku & nama aksi identik; pemanggil berpindah mekanis ke berkas ini.
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { withCompany } from "@/db/tenant";
-import { companySettings } from "@/db/schema";
+import { companySettings, warehouses } from "@/db/schema";
 import { writeAudit } from "@/server/audit";
 import { requirePermission } from "@/lib/session";
 import { AppError, guard } from "@/lib/errors";
@@ -154,6 +154,18 @@ export async function saveSettingsAction(input: z.input<typeof settingsSchema>) 
     const ctx = await requirePermission("settings.manage");
     const data = parseInput(settingsSchema, input);
     await withCompany(ctx.company.id, async (tx) => {
+      // MD-008: validasi gudang default milik perusahaan yang aktif
+      if (data.defaultWarehouseId) {
+        const [wh] = await tx
+          .select({ id: warehouses.id })
+          .from(warehouses)
+          .where(and(eq(warehouses.companyId, ctx.company.id), eq(warehouses.id, data.defaultWarehouseId)))
+          .limit(1);
+        if (!wh) {
+          throw new AppError("VALIDATION", "Gudang default tidak ditemukan di perusahaan ini.");
+        }
+      }
+
       await tx
         .update(companySettings)
         .set({

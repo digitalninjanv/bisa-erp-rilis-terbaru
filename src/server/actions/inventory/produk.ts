@@ -15,13 +15,22 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { withCompany } from "@/db/tenant";
 import {
+  categories,
   customerGroupPrices,
   products,
+  purchaseOrderLines,
+  purchaseRequestLines,
   saleLines,
+  saleReturnLines,
+  stockBatches,
   stockDocumentLines,
   stockMovements,
   stockOnHand,
   stockReceiptLines,
+  stockReservations,
+  stockSerials,
+  supplierReturnLines,
+  suppliers,
   units,
 } from "@/db/schema";
 import { getStock } from "@/server/inventory";
@@ -184,6 +193,32 @@ export async function saveProductAction(input: z.input<typeof productSchema>) {
         data.attributes,
       );
 
+      // MD-003: validasi kepemilikan relasi multi-tenant — cegah referensi kategori/satuan/pemasok asing
+      if (data.categoryId) {
+        const [cat] = await tx
+          .select({ id: categories.id })
+          .from(categories)
+          .where(and(eq(categories.companyId, ctx.company.id), eq(categories.id, data.categoryId)))
+          .limit(1);
+        if (!cat) throw new AppError("VALIDATION", "Kategori tidak ditemukan di perusahaan ini.");
+      }
+      if (data.unitId) {
+        const [u] = await tx
+          .select({ id: units.id })
+          .from(units)
+          .where(and(eq(units.companyId, ctx.company.id), eq(units.id, data.unitId)))
+          .limit(1);
+        if (!u) throw new AppError("VALIDATION", "Satuan tidak ditemukan di perusahaan ini.");
+      }
+      if (data.supplierId) {
+        const [s] = await tx
+          .select({ id: suppliers.id })
+          .from(suppliers)
+          .where(and(eq(suppliers.companyId, ctx.company.id), eq(suppliers.id, data.supplierId)))
+          .limit(1);
+        if (!s) throw new AppError("VALIDATION", "Pemasok tidak ditemukan di perusahaan ini.");
+      }
+
       const values = {
         companyId: ctx.company.id,
         name: data.name.trim(),
@@ -205,9 +240,23 @@ export async function saveProductAction(input: z.input<typeof productSchema>) {
       };
 
       if (data.id) {
+        // DATA-001 & MD-021: Jika produk sudah memiliki pergerakan stok,
+        // costPrice dikelola otoritatif oleh sistem Moving Average (AVCO)
+        // dan tidak boleh ditimpa dari formulir katalog master.
+        const [hasMovement] = await tx
+          .select({ id: stockMovements.id })
+          .from(stockMovements)
+          .where(and(eq(stockMovements.companyId, ctx.company.id), eq(stockMovements.productId, data.id)))
+          .limit(1);
+
+        const updatePayload = { ...values };
+        if (hasMovement) {
+          delete (updatePayload as { costPrice?: string }).costPrice;
+        }
+
         const [updated] = await tx
           .update(products)
-          .set(values)
+          .set(updatePayload)
           .where(and(eq(products.companyId, ctx.company.id), eq(products.id, data.id)))
           .returning({ id: products.id });
         if (!updated) throw new AppError("NOT_FOUND", "Produk tidak ditemukan.");
@@ -373,6 +422,78 @@ export async function deleteProductAction(id: string) {
         throw new AppError(
           "CONFLICT",
           "Produk masih memiliki aturan harga pada kelompok pelanggan. Hapus aturan harga tersebut terlebih dahulu.",
+        );
+      }
+
+      // MD-022: lengkapi penjaga hapus produk terhadap seluruh tabel transaksi & pelacakan
+      const [returnLines] = await tx
+        .select({ value: sql<number>`count(*)::int` })
+        .from(saleReturnLines)
+        .where(eq(saleReturnLines.productId, productId));
+      if ((returnLines?.value ?? 0) > 0) {
+        throw new AppError(
+          "CONFLICT",
+          "Produk sudah pernah tercatat pada retur penjualan. Nonaktifkan produk alih-alih menghapus.",
+        );
+      }
+      const [poLines] = await tx
+        .select({ value: sql<number>`count(*)::int` })
+        .from(purchaseOrderLines)
+        .where(and(eq(purchaseOrderLines.companyId, ctx.company.id), eq(purchaseOrderLines.productId, productId)));
+      if ((poLines?.value ?? 0) > 0) {
+        throw new AppError(
+          "CONFLICT",
+          "Produk tercatat pada pesanan pembelian (Purchase Order). Nonaktifkan produk alih-alih menghapus.",
+        );
+      }
+      const [prLines] = await tx
+        .select({ value: sql<number>`count(*)::int` })
+        .from(purchaseRequestLines)
+        .where(and(eq(purchaseRequestLines.companyId, ctx.company.id), eq(purchaseRequestLines.productId, productId)));
+      if ((prLines?.value ?? 0) > 0) {
+        throw new AppError(
+          "CONFLICT",
+          "Produk tercatat pada permintaan pembelian (Purchase Request). Nonaktifkan produk alih-alih menghapus.",
+        );
+      }
+      const [suppReturnLines] = await tx
+        .select({ value: sql<number>`count(*)::int` })
+        .from(supplierReturnLines)
+        .where(and(eq(supplierReturnLines.companyId, ctx.company.id), eq(supplierReturnLines.productId, productId)));
+      if ((suppReturnLines?.value ?? 0) > 0) {
+        throw new AppError(
+          "CONFLICT",
+          "Produk tercatat pada dokumen retur ke pemasok. Nonaktifkan produk alih-alih menghapus.",
+        );
+      }
+      const [reservations] = await tx
+        .select({ value: sql<number>`count(*)::int` })
+        .from(stockReservations)
+        .where(and(eq(stockReservations.companyId, ctx.company.id), eq(stockReservations.productId, productId)));
+      if ((reservations?.value ?? 0) > 0) {
+        throw new AppError(
+          "CONFLICT",
+          "Produk masih memiliki alokasi reservasi stok. Batalkan reservasi terlebih dahulu.",
+        );
+      }
+      const [batches] = await tx
+        .select({ value: sql<number>`count(*)::int` })
+        .from(stockBatches)
+        .where(and(eq(stockBatches.companyId, ctx.company.id), eq(stockBatches.productId, productId)));
+      if ((batches?.value ?? 0) > 0) {
+        throw new AppError(
+          "CONFLICT",
+          "Produk memiliki data nomor batch. Nonaktifkan produk alih-alih menghapus.",
+        );
+      }
+      const [serials] = await tx
+        .select({ value: sql<number>`count(*)::int` })
+        .from(stockSerials)
+        .where(and(eq(stockSerials.companyId, ctx.company.id), eq(stockSerials.productId, productId)));
+      if ((serials?.value ?? 0) > 0) {
+        throw new AppError(
+          "CONFLICT",
+          "Produk memiliki data nomor seri unit. Nonaktifkan produk alih-alih menghapus.",
         );
       }
 

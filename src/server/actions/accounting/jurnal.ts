@@ -19,6 +19,7 @@ import {
   suppliers,
 } from "@/db/schema";
 import {
+  getAccountMap,
   postJournal,
   reverseJournalEntry,
 } from "@/server/accounting";
@@ -214,6 +215,21 @@ export async function postManualJournalAction(input: {
           }
         }
       }
+
+      // DATA-014: larang jurnal manual memposting ke akun kontrol (piutang, persediaan, hutang dagang).
+      // Mutasi akun kontrol hanya boleh terjadi otomatis dari dokumen subledger (penjualan, penerimaan, pembayaran, dll).
+      const map = await getAccountMap(tx, ctx.company.id);
+      const controlAccountIds = new Set(
+        [map.receivable, map.payable, map.inventory].filter(Boolean),
+      );
+      const invalidLine = data.lines.find((l) => controlAccountIds.has(l.accountId));
+      if (invalidLine) {
+        throw new AppError(
+          "VALIDATION",
+          "Akun kontrol buku besar (Piutang Usaha, Hutang Usaha, dan Persediaan Barang) tidak boleh dimutasi lewat jurnal umum manual. Gunakan dokumen transaksi terkait (Faktur, Penerimaan Barang, atau Penyesuaian Stok) agar saldo GL dan kartu pembantu tetap sinkron.",
+        );
+      }
+
       return postJournal(tx, {
         companyId: ctx.company.id,
         date: data.date,

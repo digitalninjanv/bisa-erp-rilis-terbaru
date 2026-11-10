@@ -82,8 +82,11 @@ async function evaluateCashNegativeGuard(
   const accountById = new Map(accountRows.map((row) => [row.id, row]));
   const warnings: string[] = [];
   for (const accountId of candidates) {
-    const postedLines = await tx
-      .select({ debit: journalLines.debit, credit: journalLines.credit })
+    // DATA-013: Agregasi langsung di basis data — hindari transfer ribuan baris ke memori Node.js
+    const [agg] = await tx
+      .select({
+        balance: sql<string>`coalesce(sum(${journalLines.debit} - ${journalLines.credit}), 0)`,
+      })
       .from(journalLines)
       .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
       .where(
@@ -93,10 +96,7 @@ async function evaluateCashNegativeGuard(
           eq(journalEntries.status, "posted"),
         ),
       );
-    const balance = postedLines.reduce(
-      (acc, row) => acc.plus(row.debit).minus(row.credit),
-      d(0),
-    );
+    const balance = d(agg?.balance ?? "0");
     const projected = balance.plus(netByAccount.get(accountId)!);
     if (!projected.isNegative()) continue;
     const account = accountById.get(accountId);

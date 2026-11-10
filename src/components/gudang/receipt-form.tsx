@@ -152,6 +152,7 @@ export function ReceiptForm({
   // Nilai uang muka yang dipakai; field-nya mengurus saldo pemasok.
   const [advanceApplied, setAdvanceApplied] = useState("0");
   const [advanceResetKey, setAdvanceResetKey] = useState(0);
+  const [updateCatalogSalePrices, setUpdateCatalogSalePrices] = useState(false);
 
   const isPurchase = sourceChoice === "purchase_credit" || sourceChoice === "purchase_cash";
   const isCashPurchase = sourceChoice === "purchase_cash";
@@ -341,6 +342,7 @@ export function ReceiptForm({
           : undefined,
       advanceAmount:
         isPurchase && d(advanceApplied).gt(0) ? advanceApplied : undefined,
+      updateCatalogSalePrices: isPurchase && canPrice ? updateCatalogSalePrices : false,
       date,
       notes: notes || undefined,
       lines: lines.map((line) => ({
@@ -570,6 +572,22 @@ export function ReceiptForm({
                             : "Isi 0 bila tanpa PPN"}
                       </span>
                     </label>
+                  ) : null}
+
+                  {isPurchase && canPrice ? (
+                    <div className="flex items-center pt-5">
+                      <label className="inline-flex cursor-pointer items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={updateCatalogSalePrices}
+                          onChange={(event) => setUpdateCatalogSalePrices(event.target.checked)}
+                          className="size-3.5 rounded border-input"
+                        />
+                        <span className="text-[11px] text-muted-foreground">
+                          Perbarui harga jual master produk
+                        </span>
+                      </label>
+                    </div>
                   ) : null}
                 </div>
 

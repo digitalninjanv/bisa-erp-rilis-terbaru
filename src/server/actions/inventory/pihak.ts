@@ -5,17 +5,21 @@
 import {
   and,
   eq,
+  ne,
   sql,
 } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { withCompany } from "@/db/tenant";
 import {
+  customerGroups,
   customers,
   partyCredits,
   partyOpeningBalances,
   partyPayments,
   products,
+  purchaseAdvances,
+  purchaseOrders,
   sales,
   stockDocuments,
   stockReceipts,
@@ -72,6 +76,25 @@ export async function saveSupplierAction(input: z.input<typeof supplierSchema>) 
           .from(suppliers)
           .where(and(eq(suppliers.companyId, ctx.company.id), eq(suppliers.id, data.id)))
           .limit(1);
+      }
+
+      // MD-013: Validasi keunikan taxId/NPWP pemasok
+      if (data.taxId && data.taxId.trim()) {
+        const cleanTaxId = data.taxId.trim();
+        const [dup] = await tx
+          .select({ id: suppliers.id, name: suppliers.name, code: suppliers.code })
+          .from(suppliers)
+          .where(
+            and(
+              eq(suppliers.companyId, ctx.company.id),
+              eq(suppliers.taxId, cleanTaxId),
+              data.id ? ne(suppliers.id, data.id) : undefined,
+            ),
+          )
+          .limit(1);
+        if (dup) {
+          throw new AppError("CONFLICT", `NPWP/Tax ID ${cleanTaxId} sudah terdaftar untuk pemasok ${dup.name} (${dup.code}).`);
+        }
       }
       const attributes = await resolveCustomAttributes(
         tx,
@@ -226,6 +249,38 @@ export async function saveCustomerAction(input: z.input<typeof customerSchema>) 
           );
         }
       }
+
+      // MD-004: validasi kelompok pelanggan milik perusahaan yang aktif
+      if (data.groupId) {
+        const [group] = await tx
+          .select({ id: customerGroups.id })
+          .from(customerGroups)
+          .where(and(eq(customerGroups.companyId, ctx.company.id), eq(customerGroups.id, data.groupId)))
+          .limit(1);
+        if (!group) {
+          throw new AppError("VALIDATION", "Kelompok pelanggan tidak ditemukan di perusahaan ini.");
+        }
+      }
+
+      // MD-013: Validasi keunikan taxId/NPWP pelanggan
+      if (data.taxId && data.taxId.trim()) {
+        const cleanTaxId = data.taxId.trim();
+        const [dup] = await tx
+          .select({ id: customers.id, name: customers.name, code: customers.code })
+          .from(customers)
+          .where(
+            and(
+              eq(customers.companyId, ctx.company.id),
+              eq(customers.taxId, cleanTaxId),
+              data.id ? ne(customers.id, data.id) : undefined,
+            ),
+          )
+          .limit(1);
+        if (dup) {
+          throw new AppError("CONFLICT", `NPWP/Tax ID ${cleanTaxId} sudah terdaftar untuk pelanggan ${dup.name} (${dup.code}).`);
+        }
+      }
+
       const attributes = await resolveCustomAttributes(
         tx,
         ctx.company.id,
@@ -402,6 +457,26 @@ export async function deleteSupplierAction(id: string) {
         throw new AppError(
           "CONFLICT",
           "Pemasok memiliki saldo awal utang. Nonaktifkan pemasok alih-alih menghapus.",
+        );
+      }
+      const [pos] = await tx
+        .select({ value: sql<number>`count(*)::int` })
+        .from(purchaseOrders)
+        .where(and(eq(purchaseOrders.companyId, ctx.company.id), eq(purchaseOrders.supplierId, supplierId)));
+      if ((pos?.value ?? 0) > 0) {
+        throw new AppError(
+          "CONFLICT",
+          "Pemasok memiliki riwayat pesanan pembelian (Purchase Order). Nonaktifkan pemasok alih-alih menghapus.",
+        );
+      }
+      const [advances] = await tx
+        .select({ value: sql<number>`count(*)::int` })
+        .from(purchaseAdvances)
+        .where(and(eq(purchaseAdvances.companyId, ctx.company.id), eq(purchaseAdvances.supplierId, supplierId)));
+      if ((advances?.value ?? 0) > 0) {
+        throw new AppError(
+          "CONFLICT",
+          "Pemasok memiliki riwayat uang muka pembelian. Nonaktifkan pemasok alih-alih menghapus.",
         );
       }
       await tx

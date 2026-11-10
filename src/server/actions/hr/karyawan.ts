@@ -2,7 +2,7 @@
 
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { withCompany } from "@/db/tenant";
@@ -183,6 +183,41 @@ export async function saveEmployeeAction(input: z.input<typeof employeeSchema>) 
       ...(data.workRegionCode !== undefined ? { workRegionCode: data.workRegionCode || null } : {}),
     };
     const result = await withCompany(ctx.company.id, async (tx) => {
+      // MD-013 & MD-017: Validasi keunikan NIK dan NPWP per perusahaan
+      if (data.nik && data.nik.trim()) {
+        const cleanNik = data.nik.trim();
+        const [dupNik] = await tx
+          .select({ id: employees.id, name: employees.name, code: employees.code })
+          .from(employees)
+          .where(
+            and(
+              eq(employees.companyId, ctx.company.id),
+              eq(employees.nik, cleanNik),
+              data.id ? ne(employees.id, data.id) : undefined,
+            ),
+          )
+          .limit(1);
+        if (dupNik) {
+          throw new AppError("CONFLICT", `NIK ${cleanNik} sudah terdaftar untuk karyawan ${dupNik.name} (${dupNik.code}).`);
+        }
+      }
+      if (data.npwp && data.npwp.trim()) {
+        const cleanNpwp = data.npwp.trim();
+        const [dupNpwp] = await tx
+          .select({ id: employees.id, name: employees.name, code: employees.code })
+          .from(employees)
+          .where(
+            and(
+              eq(employees.companyId, ctx.company.id),
+              eq(employees.npwp, cleanNpwp),
+              data.id ? ne(employees.id, data.id) : undefined,
+            ),
+          )
+          .limit(1);
+        if (dupNpwp) {
+          throw new AppError("CONFLICT", `NPWP ${cleanNpwp} sudah terdaftar untuk karyawan ${dupNpwp.name} (${dupNpwp.code}).`);
+        }
+      }
       // SIM-2 S7B-1 (§6A): referensi organisasi divalidasi berada di
       // perusahaan yang sama; jabatan master menyinkronkan teks jabatan
       // bebas agar tampilan lama (daftar payroll, slip) tetap utuh.

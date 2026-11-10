@@ -7,7 +7,20 @@ import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { withCompany } from "@/db/tenant";
-import { branches, companySettings, sales, stockDocuments, stockMovements, stockOnHand, stockReceipts, warehouses } from "@/db/schema";
+import {
+  branches,
+  companySettings,
+  opnameTasks,
+  posTerminalSessionReviews,
+  posTerminals,
+  sales,
+  stockDocuments,
+  stockMovements,
+  stockOnHand,
+  stockReceipts,
+  stockReservations,
+  warehouses,
+} from "@/db/schema";
 import { writeAudit } from "@/server/audit";
 import { requirePermission } from "@/lib/session";
 import { AppError, guard } from "@/lib/errors";
@@ -28,6 +41,18 @@ export async function saveWarehouseAction(input: z.input<typeof warehouseSchema>
     const ctx = await requirePermission("settings.manage");
     const data = parseInput(warehouseSchema, input);
     const result = await withCompany(ctx.company.id, async (tx) => {
+      // MD-005: validasi cabang milik perusahaan yang aktif
+      if (data.branchId) {
+        const [branch] = await tx
+          .select({ id: branches.id })
+          .from(branches)
+          .where(and(eq(branches.companyId, ctx.company.id), eq(branches.id, data.branchId)))
+          .limit(1);
+        if (!branch) {
+          throw new AppError("VALIDATION", "Cabang tidak ditemukan di perusahaan ini.");
+        }
+      }
+
       const values = {
         branchId: data.branchId ?? null,
         code: data.code.toUpperCase(),
@@ -208,6 +233,58 @@ export async function deleteWarehouseAction(id: string) {
         throw new AppError(
           "CONFLICT",
           "Gudang sudah dipakai pada dokumen gudang (penerimaan/penyesuaian/transfer/opname). Nonaktifkan gudang alih-alih menghapus.",
+        );
+      }
+
+      // WF-018 & MD-002: cek referensi gudang tujuan transfer, terminal POS, review sesi, opname task, dan reservasi
+      const [destTransfer] = await tx
+        .select({ value: sql<number>`count(*)::int` })
+        .from(stockDocuments)
+        .where(and(eq(stockDocuments.companyId, ctx.company.id), eq(stockDocuments.toWarehouseId, warehouseId)));
+      if ((destTransfer?.value ?? 0) > 0) {
+        throw new AppError(
+          "CONFLICT",
+          "Gudang sudah menjadi tujuan transfer barang dari gudang lain. Nonaktifkan gudang alih-alih menghapus.",
+        );
+      }
+      const [terminals] = await tx
+        .select({ value: sql<number>`count(*)::int` })
+        .from(posTerminals)
+        .where(and(eq(posTerminals.companyId, ctx.company.id), eq(posTerminals.warehouseId, warehouseId)));
+      if ((terminals?.value ?? 0) > 0) {
+        throw new AppError(
+          "CONFLICT",
+          "Gudang terikat pada terminal POS. Lepaskan atau ubah gudang pada terminal terlebih dahulu.",
+        );
+      }
+      const [reviews] = await tx
+        .select({ value: sql<number>`count(*)::int` })
+        .from(posTerminalSessionReviews)
+        .where(and(eq(posTerminalSessionReviews.companyId, ctx.company.id), eq(posTerminalSessionReviews.warehouseId, warehouseId)));
+      if ((reviews?.value ?? 0) > 0) {
+        throw new AppError(
+          "CONFLICT",
+          "Gudang memiliki riwayat peninjauan sesi terminal kasir. Nonaktifkan gudang alih-alih menghapus.",
+        );
+      }
+      const [tasks] = await tx
+        .select({ value: sql<number>`count(*)::int` })
+        .from(opnameTasks)
+        .where(and(eq(opnameTasks.companyId, ctx.company.id), eq(opnameTasks.warehouseId, warehouseId)));
+      if ((tasks?.value ?? 0) > 0) {
+        throw new AppError(
+          "CONFLICT",
+          "Gudang memiliki penugasan stock opname. Selesaikan atau batalkan tugas terlebih dahulu.",
+        );
+      }
+      const [reservations] = await tx
+        .select({ value: sql<number>`count(*)::int` })
+        .from(stockReservations)
+        .where(and(eq(stockReservations.companyId, ctx.company.id), eq(stockReservations.warehouseId, warehouseId)));
+      if ((reservations?.value ?? 0) > 0) {
+        throw new AppError(
+          "CONFLICT",
+          "Gudang masih memiliki alokasi reservasi stok. Batalkan reservasi terlebih dahulu.",
         );
       }
 

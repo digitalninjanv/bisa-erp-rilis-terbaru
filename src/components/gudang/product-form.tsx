@@ -247,15 +247,20 @@ export function ProductForm({
                 <QtyInput value={form.minStock} onChange={(value) => setForm({ ...form, minStock: value })} aria-label="Stok minimum" className="h-9 px-2.5 text-[12px]" />
               </Field>
               {allowCost ? (
-                <Field label="Harga beli (HPP)">
+                <Field label={product?.id ? "HPP Sistem (Moving Average)" : "Harga beli awal (HPP)"}>
                   <MoneyInput
                     value={form.costPrice}
                     onChange={(value) => setForm({ ...form, costPrice: value })}
                     onValidityChange={markMoney("cost")}
-                    disabled={priceLocked}
+                    disabled={priceLocked || Boolean(product?.id)}
                     aria-label="Harga beli (HPP)"
                     className="h-9 px-2.5 text-[12px]"
                   />
+                  <span className="block text-[10px] leading-4 text-muted-foreground">
+                    {product?.id
+                      ? "Dihitung otomatis oleh mutasi stok Moving Average (AVCO). Nilai historis dijaga oleh sistem."
+                      : "Harga pokok awal produk sebelum ada mutasi penerimaan."}
+                  </span>
                 </Field>
               ) : null}
               <Field label="Harga jual">

@@ -53,6 +53,7 @@ const receiptSchema = z
     taxPercent: amountField("PPN (%)", "nonNegative").optional(),
     // Porsi total yang dipotong dari uang muka pemasok (FIFO).
     advanceAmount: amountField("Uang muka dipakai", "nonNegative").optional(),
+    updateCatalogSalePrices: z.boolean().optional(),
     date: isoDateField,
     notes: z.string().max(500).optional(),
     lines: z
@@ -162,6 +163,7 @@ export async function receiveStockAction(input: z.input<typeof receiptSchema>) {
         taxAmount: data.taxAmount ?? undefined,
         taxPercent: data.taxPercent ?? undefined,
         advanceAmount: data.advanceAmount ?? undefined,
+        updateCatalogSalePrices: data.updateCatalogSalePrices ?? false,
         date: data.date,
         notes: data.notes,
         lines: data.lines.map((line) => ({

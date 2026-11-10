@@ -71,6 +71,8 @@ type CreateReceiptInput = {
   taxPercent?: string | number;
   /** Porsi total yang dipotong dari uang muka pemasok (FIFO). */
   advanceAmount?: string | number;
+  /** DATA-002: konfirmasi eksplisit untuk memperbarui harga jual katalog master */
+  updateCatalogSalePrices?: boolean;
   date: string;
   notes?: string;
   lines: {
@@ -185,7 +187,13 @@ export async function createReceipt(tx: Tx, input: CreateReceiptInput) {
     advancePlan.allocations,
   );
   await applyReceiptStock(tx, input, receipt, effectiveLines, productById);
-  await applyReceiptSalePrices(tx, { companyId: input.companyId, source, lines: effectiveLines });
+  await applyReceiptSalePrices(tx, {
+    companyId: input.companyId,
+    userId: input.userId,
+    source,
+    updateCatalogSalePrices: input.updateCatalogSalePrices,
+    lines: effectiveLines,
+  });
 
   if (purchaseOrderContext) {
     await applyReceiptToPurchaseOrder(tx, {

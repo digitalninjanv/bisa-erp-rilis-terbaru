@@ -133,6 +133,18 @@ export async function createPosTerminal(
     createdBy: string;
   },
 ): Promise<{ id: string }> {
+  // MD-007: validasi gudang milik perusahaan yang aktif
+  if (input.warehouseId) {
+    const [wh] = await tx
+      .select({ id: warehouses.id })
+      .from(warehouses)
+      .where(and(eq(warehouses.companyId, input.companyId), eq(warehouses.id, input.warehouseId)))
+      .limit(1);
+    if (!wh) {
+      throw new AppError("VALIDATION", "Gudang tidak ditemukan di perusahaan ini.");
+    }
+  }
+
   const [row] = await tx
     .insert(posTerminals)
     .values({
@@ -164,7 +176,10 @@ export async function listPosTerminals(
       createdAt: posTerminals.createdAt,
     })
     .from(posTerminals)
-    .leftJoin(warehouses, eq(warehouses.id, posTerminals.warehouseId))
+    .leftJoin(
+      warehouses,
+      and(eq(warehouses.id, posTerminals.warehouseId), eq(warehouses.companyId, companyId)),
+    )
     .where(eq(posTerminals.companyId, companyId))
     .orderBy(desc(posTerminals.createdAt));
   return rows.map((row) => ({
