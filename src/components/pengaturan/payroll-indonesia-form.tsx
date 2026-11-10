@@ -616,6 +616,13 @@ function MinimumWageSection({ rows, refresh }: { rows: MinimumWageRow[]; refresh
                 <td className="text-[11px] text-muted-foreground">{row.decreeRef ?? "—"}</td>
               </tr>
             ))}
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="py-6 text-center text-[12px] text-muted-foreground">
+                  Belum ada konfigurasi upah minimum wilayah. Gunakan isian di bawah untuk mendaftarkan.
+                </td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </div>

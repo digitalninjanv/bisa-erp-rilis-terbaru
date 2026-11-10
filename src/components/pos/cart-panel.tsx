@@ -185,7 +185,7 @@ export function CartPanel(props: {
                           type="button"
                           onClick={() => setQty(key, 0)}
                           className="relative rounded p-1 text-muted-foreground after:absolute after:-inset-[11px] hover:bg-destructive/10 hover:text-destructive"
-                          aria-label="Hapus"
+                          aria-label={`Hapus ${line?.name ?? cached?.name ?? "item"} dari keranjang`}
                         >
                           <X className="size-3.5" />
                         </button>
@@ -234,7 +234,7 @@ export function CartPanel(props: {
                             type="button"
                             onClick={() => setQty(key, item.qty - 1)}
                             className="relative grid size-9 place-items-center after:absolute after:-inset-1 hover:bg-muted"
-                            aria-label="Kurangi"
+                            aria-label={`Kurangi jumlah ${line?.name ?? cached?.name ?? "item"}`}
                           >
                             <Minus className="size-4" />
                           </button>
@@ -255,7 +255,7 @@ export function CartPanel(props: {
                             onClick={() => setQty(key, item.qty + 1)}
                             disabled={tracked && baseQty >= stock}
                             className="relative grid size-9 place-items-center after:absolute after:-inset-1 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
-                            aria-label="Tambah"
+                            aria-label={`Tambah jumlah ${line?.name ?? cached?.name ?? "item"}`}
                           >
                             <Plus className="size-4" />
                           </button>

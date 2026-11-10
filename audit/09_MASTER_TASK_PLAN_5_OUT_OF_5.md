@@ -68,8 +68,8 @@ Riset mendalam menggunakan Exa AI menetapkan standar rekayasa software enterpris
   2. Di `src/app/login/page.tsx`, bungkus kotak "Akun demo" dengan kondisi lingkungan: hanya render jika `process.env.NODE_ENV === "development"`.
   3. Pastikan autocomplete kata sandi tidak mengekspos teks rahasia di DOM publik.
 - **Kriteria Penerimaan (DoD)**:
-  - [ ] Input email dan password kosong saat halaman login dibuka.
-  - [ ] Kredensial demo tidak muncul di environment produksi.
+  - [x] Input email dan password kosong saat halaman login dibuka.
+  - [x] Kredensial demo tidak muncul di environment produksi.
 
 #### Task 1.2: Pengaktifan Hook Barcode Scanner Global di Terminal POS
 - **ID**: `TASK-S1-02`
@@ -81,8 +81,8 @@ Riset mendalam menggunakan Exa AI menetapkan standar rekayasa software enterpris
   2. Pastikan buffer scanner menangkap ketukan keyboard berkecepatan tinggi (<40ms interval) dan otomatis menambahkan produk ke keranjang tanpa mengharuskan kasir mengklik input pencarian.
   3. Bersihkan warning ESLint `no-unused-vars` terkait impor hook tersebut.
 - **Kriteria Penerimaan (DoD)**:
-  - [ ] Scanner barcode fisik USB langsung menambahkan item ke keranjang belanja saat kursor berada di mana saja di layar POS.
-  - [ ] Warning ESLint pada `pos-terminal.tsx` berkurang.
+  - [x] Scanner barcode fisik USB langsung menambahkan item ke keranjang belanja saat kursor berada di mana saja di layar POS.
+  - [x] Warning ESLint pada `pos-terminal.tsx` berkurang.
 
 #### Task 1.3: Perbaikan Rekalkulasi `paidTotal` pada Void Penerimaan Piutang
 - **ID**: `TASK-S1-03`
@@ -95,8 +95,8 @@ Riset mendalam menggunakan Exa AI menetapkan standar rekayasa software enterpris
   2. Perbaiki rekalkulasi `paidTotal` pada penjualan terkait: jumlahkan `sale_payments` non-void ditambah `party_payments` non-void yang teralokasi ke invoice tersebut.
   3. Jalankan tes pembuktian: `pnpm vitest run tests/audit-repro/pos-paid-total-repro.test.ts`.
 - **Kriteria Penerimaan (DoD)**:
-  - [ ] `tests/audit-repro/pos-paid-total-repro.test.ts` berubah dari Gagal (`expected +0 to be 8000`) menjadi **Lulus (Green)**.
-  - [ ] Pembayaran tunai awal tidak hilang dari `sales.paidTotal` saat pembayaran cicilan piutang di-void.
+  - [x] `tests/audit-repro/pos-paid-total-repro.test.ts` berubah dari Gagal (`expected +0 to be 8000`) menjadi **Lulus (Green)**.
+  - [x] Pembayaran tunai awal tidak hilang dari `sales.paidTotal` saat pembayaran cicilan piutang di-void.
 
 #### Task 1.4: Pencatatan Mutasi Kas Laci pada Pembayaran Piutang Tunai POS
 - **ID**: `TASK-S1-04`
@@ -109,8 +109,8 @@ Riset mendalam menggunakan Exa AI menetapkan standar rekayasa software enterpris
   2. Jika ya, periksa sesi laci kasir yang sedang aktif milik aktor (`assertOpenCashSession`).
   3. Catat baris mutasi `cashMovements` dengan tipe `receivable_in` yang terikat ke `sessionId`.
 - **Kriteria Penerimaan (DoD)**:
-  - [ ] Pembayaran piutang tunai di kasir menambah nilai `expectedCash` pada sesi kasir berjalan.
-  - [ ] Tidak terjadi selisih kas fisik vs sistem saat kasir menutup shift.
+  - [x] Pembayaran piutang tunai di kasir menambah nilai `expectedCash` pada sesi kasir berjalan.
+  - [x] Tidak terjadi selisih kas fisik vs sistem saat kasir menutup shift.
 
 #### Task 1.5: Proteksi Izin & Pemisahan Akses Master Pelanggan di Gudang
 - **ID**: `TASK-S1-05`
@@ -124,8 +124,8 @@ Riset mendalam menggunakan Exa AI menetapkan standar rekayasa software enterpris
   3. Batasi pengubahan `creditLimit`: hanya boleh diubah jika pengguna memiliki izin `accounting.manage` atau peran manajer.
   4. Tambahkan `writeAudit` pada aksi pembuatan, pengeditan batas kredit, dan penghapusan pelanggan.
 - **Kriteria Penerimaan (DoD)**:
-  - [ ] Kasir dengan role `cashier` tidak dapat menaikkan credit limit atau menghapus data pelanggan via API.
-  - [ ] Staf gudang dapat mengelola alamat kirim pelanggan tanpa memerlukan izin kasir `pos.sell`.
+  - [x] Kasir dengan role `cashier` tidak dapat menaikkan credit limit atau menghapus data pelanggan via API.
+  - [x] Staf gudang dapat mengelola alamat kirim pelanggan tanpa memerlukan izin kasir `pos.sell`.
 
 #### Task 1.6: Validasi Izin Harga pada Edit Massal & Impor Produk
 - **ID**: `TASK-S1-06`
@@ -139,8 +139,8 @@ Riset mendalam menggunakan Exa AI menetapkan standar rekayasa software enterpris
   2. Di `commit-phases.ts:561-584`, tolak pengubahan kolom `costPrice`/`salePrice` via file impor jika aktor tidak memiliki izin `inventory.price`.
   3. Di `import-cells.ts:141`, ubah penanganan sel kosong: sel yang dikosongkan pada file impor **tidak boleh menimpa nilai database menjadi 0/null**, melainkan diabaikan (*skip/keep existing*).
 - **Kriteria Penerimaan (DoD)**:
-  - [ ] Staf gudang biasa tidak bisa mengubah harga jual secara massal.
-  - [ ] Mengunggah berkas pembaruan stok tidak merusak/mengosongkan harga dan barcode yang sudah ada.
+  - [x] Staf gudang biasa tidak bisa mengubah harga jual secara massal.
+  - [x] Mengunggah berkas pembaruan stok tidak merusak/mengosongkan harga dan barcode yang sudah ada.
 
 #### Task 1.7: Perbaikan Bug Nilai Bawaan Reaktivasi Master Entity
 - **ID**: `TASK-S1-07`
@@ -154,7 +154,7 @@ Riset mendalam menggunakan Exa AI menetapkan standar rekayasa software enterpris
   1. Cari seluruh pola `isActive: data.isActive ?? true` pada payload pembaruan master.
   2. Ganti dengan pengecekan eksplisit: hanya sertakan kolom `isActive` ke perintah `.set()` jika `data.isActive !== undefined`.
 - **Kriteria Penerimaan (DoD)**:
-  - [ ] Memperbarui nama gudang atau SKU produk non-aktif tidak sengaja mengaktifkan kembali entitas tersebut.
+  - [x] Memperbarui nama gudang atau SKU produk non-aktif tidak sengaja mengaktifkan kembali entitas tersebut.
 
 #### Task 1.8: Perbaikan Validasi UI, Feedback Spesifik, dan Dialog Konfirmasi
 - **ID**: `TASK-S1-08`
@@ -172,8 +172,8 @@ Riset mendalam menggunakan Exa AI menetapkan standar rekayasa software enterpris
   4. Pasang `ConfirmDialog` sebelum tombol "Posting Payroll" dieksekusi di `payroll-wizard.tsx`.
   5. Pasang `ConfirmDialog` pada tombol "Kosongkan Keranjang" di POS kasir.
 - **Kriteria Penerimaan (DoD)**:
-  - [ ] Semua input wajib memiliki tanda bintang visual dan tag ARIA.
-  - [ ] Posting gaji dan pengosongan kasir tidak dapat terjadi tanpa persetujuan dialog konfirmasi.
+  - [x] Semua input wajib memiliki tanda bintang visual dan tag ARIA.
+  - [x] Posting gaji dan pengosongan kasir tidak dapat terjadi tanpa persetujuan dialog konfirmasi.
 
 #### Task 1.9: Perbaikan Assertion Tes Rekonsiliasi Bank & Pembersihan Warning Lint
 - **ID**: `TASK-S1-09`
@@ -186,8 +186,8 @@ Riset mendalam menggunakan Exa AI menetapkan standar rekayasa software enterpris
   2. Jalankan `pnpm test` dan pastikan 2.207 tes lulus 100% (2.207/2.207 passed).
   3. Lengkapi *dependency array* pada React hooks (`useCallback`, `useEffect`) di `pos-terminal.tsx`, `use-cart-persistence.ts`, dan `use-held-sales.ts`.
 - **Kriteria Penerimaan (DoD)**:
-  - [ ] `pnpm test` menghasilkan exit code 0 (100% tes hijau).
-  - [ ] `pnpm lint` menghasilkan 0 error dan 0 warning.
+  - [x] `pnpm test` menghasilkan exit code 0 (100% tes hijau).
+  - [x] `pnpm lint` menghasilkan 0 error dan 0 warning.
 
 ---
 
@@ -211,8 +211,8 @@ Riset mendalam menggunakan Exa AI menetapkan standar rekayasa software enterpris
   4. **Retur Pemasok**: Tambahkan ambang batas otorisasi manajer untuk retur bernilai besar.
   5. **Pelepasan Aset**: Wajibkan otorisasi manajer keuangan untuk *asset disposal*.
 - **Kriteria Penerimaan (DoD)**:
-  - [ ] Pengguna tidak dapat menyetujui cuti, lembur, dan transfer gudang yang dibuat oleh dirinya sendiri.
-  - [ ] Transaksi payroll membutuhkan dua aktor berbeda (Pembuat Run vs Pembayar).
+  - [x] Pengguna tidak dapat menyetujui cuti, lembur, dan transfer gudang yang dibuat oleh dirinya sendiri.
+  - [x] Transaksi payroll membutuhkan dua aktor berbeda (Pembuat Run vs Pembayar).
 
 #### Task 2.2: Pengendalian Pembukaan Kembali Periode & Tutup Buku Tahunan
 - **ID**: `TASK-S2-02`
@@ -225,8 +225,8 @@ Riset mendalam menggunakan Exa AI menetapkan standar rekayasa software enterpris
   2. Wajibkan alur transisi bertahap: status tidak boleh langsung lompat dari `open` ke `locked` tanpa melalui `closed`.
   3. Pada fungsi `postYearEndClosing`, lakukan validasi: tolak tutup buku tahunan jika masih ada salah satu dari 12 periode bulanan dalam tahun tersebut yang berstatus `open`.
 - **Kriteria Penerimaan (DoD)**:
-  - [ ] Periode yang sudah ditutup tidak bisa dibuka oleh akuntan biasa tanpa izin owner dan alasan tertulis.
-  - [ ] Tutup buku tahunan ditolak jika ada bulan yang belum ditutup.
+  - [x] Periode yang sudah ditutup tidak bisa dibuka oleh akuntan biasa tanpa izin owner dan alasan tertulis.
+  - [x] Tutup buku tahunan ditolak jika ada bulan yang belum ditutup.
 
 #### Task 2.3: Pemulihan Kredit Pihak & Snapshot Tracking pada Void POS
 - **ID**: `TASK-S2-03`
@@ -241,8 +241,8 @@ Riset mendalam menggunakan Exa AI menetapkan standar rekayasa software enterpris
   3. Pada saat retur atau void, gunakan nilai dari snapshot tersebut untuk memulihkan stok, bukan membaca flag master produk terkini.
   4. Simpan `reservationId` pada tabel `sales`; pulihkan kuantiti reservasi saat penjualan bereservasi di-void.
 - **Kriteria Penerimaan (DoD)**:
-  - [ ] Mematikan flag lacak stok pada master produk setelah penjualan tidak merusak integritas stok saat transaksi tersebut di-void.
-  - [ ] Kredit pelanggan yang dipakai belanja pulih 100% saat penjualan di-void.
+  - [x] Mematikan flag lacak stok pada master produk setelah penjualan tidak merusak integritas stok saat transaksi tersebut di-void.
+  - [x] Kredit pelanggan yang dipakai belanja pulih 100% saat penjualan di-void.
 
 #### Task 2.4: Standardisasi Idempotensi Transaksi Berbasis Kunci Klien
 - **ID**: `TASK-S2-04`
@@ -260,8 +260,8 @@ Riset mendalam menggunakan Exa AI menetapkan standar rekayasa software enterpris
   3. Di `cashDrawerMovement`, hapus pembuatan `crypto.randomUUID()` internal; wajibkan kunci idempotensi yang dikirim dari frontend.
   4. Tambahkan kolom `idempotencyKey` pada tabel dokumen retur (`sale_returns`), saldo awal (`opening_balances`), PO, dan PR.
 - **Kriteria Penerimaan (DoD)**:
-  - [ ] Percobaan submit ganda / klik berulang pada kasir tidak menghasilkan pesanan ditahan atau mutasi laci ganda.
-  - [ ] Indeks unik idempotensi membedakan scope antar modul secara aman.
+  - [x] Percobaan submit ganda / klik berulang pada kasir tidak menghasilkan pesanan ditahan atau mutasi laci ganda.
+  - [x] Indeks unik idempotensi membedakan scope antar modul secara aman.
 
 #### Task 2.5: Pencegahan Deadlock & Serialisasi Kunci Basis Data
 - **ID**: `TASK-S2-05`
@@ -278,7 +278,7 @@ Riset mendalam menggunakan Exa AI menetapkan standar rekayasa software enterpris
   3. Kunci baris sesi kas dengan `.for("update")` saat memilih sesi kasir untuk pengembalian dana (*refund*).
   4. Lewati pemanggilan `postJournal` pada retur penjualan jika seluruh nilainya nol (`hasNonZeroLine === false`).
 - **Kriteria Penerimaan (DoD)**:
-  - [ ] Transaksi paralel kasir dan retur pada produk dan gudang yang sama berjalan tanpa memicu PostgreSQL lock deadlock (SQLSTATE 40P01).
+  - [x] Transaksi paralel kasir dan retur pada produk dan gudang yang sama berjalan tanpa memicu PostgreSQL lock deadlock (SQLSTATE 40P01).
 
 ---
 
@@ -301,8 +301,8 @@ Riset mendalam menggunakan Exa AI menetapkan standar rekayasa software enterpris
      - `purchasePrice`: Harga referensi beli dari pemasok untuk pembuatan PO baru (dapat diedit manual).
   2. Pada penerimaan barang pembelian (`receipt-prices.ts`), jangan menimpa harga jual master (`products.salePrice`) secara otomatis. Tambahkan checkbox eksplisit: *"Perbarui harga jual katalog master"* dan catat riwayat perubahannya ke `audit_log`.
 - **Kriteria Penerimaan (DoD)**:
-  - [ ] Mengedit produk di katalog tidak merusak saldo persediaan AVCO di General Ledger.
-  - [ ] Penerimaan barang tidak menimpa harga jual tanpa persetujuan eksplisit pengguna.
+  - [x] Mengedit produk di katalog tidak merusak saldo persediaan AVCO di General Ledger.
+  - [x] Penerimaan barang tidak menimpa harga jual tanpa persetujuan eksplisit pengguna.
 
 #### Task 3.2: Penegakan Isolasi Multi-Tenant & Komposit Foreign Key
 - **ID**: `TASK-S3-02`
@@ -319,8 +319,8 @@ Riset mendalam menggunakan Exa AI menetapkan standar rekayasa software enterpris
   2. Tambahkan composite unique index `(company_id, id)` pada tabel induk (`branches`, `warehouses`, `categories`, `customer_groups`).
   3. Tambahkan composite foreign key pada relasi anak untuk menjamin integritas di level basis data.
 - **Kriteria Penerimaan (DoD)**:
-  - [ ] Permintaan API dengan ID cabang atau gudang milik perusahaan lain ditolak dengan error 403 / DomainError.
-  - [ ] Daftar transaksi antar-cabang tidak membocorkan nama cabang perusahaan lain.
+  - [x] Permintaan API dengan ID cabang atau gudang milik perusahaan lain ditolak dengan error 403 / DomainError.
+  - [x] Daftar transaksi antar-cabang tidak membocorkan nama cabang perusahaan lain.
 
 #### Task 3.3: Penegakan Foreign Key & Penjaga Integritas Penghapusan Master
 - **ID**: `TASK-S3-03`
@@ -337,8 +337,8 @@ Riset mendalam menggunakan Exa AI menetapkan standar rekayasa software enterpris
   3. **Hapus Akun COA**: Tolak jika akun terikat pada transfer bank (`bankTransfers`) atau berstatus sebagai akun kontra (`contraOf`).
   4. Pasang migrasi skema penambahan foreign key bertahap dengan klausa `ON DELETE RESTRICT`.
 - **Kriteria Penerimaan (DoD)**:
-  - [ ] Tidak ada data anak yang menggantung (orphan records) saat entitas induk dihapus.
-  - [ ] Percobaan penghapusan entitas berelasi mengembalikan pesan edukatif bahasa Indonesia, bukan error mentah SQLSTATE 23503.
+  - [x] Tidak ada data anak yang menggantung (orphan records) saat entitas induk dihapus.
+  - [x] Percobaan penghapusan entitas berelasi mengembalikan pesan edukatif bahasa Indonesia, bukan error mentah SQLSTATE 23503.
 
 #### Task 3.4: Proteksi Akun Kontrol GL & Optimasi Query Saldo Kas
 - **ID**: `TASK-S3-04`
@@ -353,8 +353,8 @@ Riset mendalam menggunakan Exa AI menetapkan standar rekayasa software enterpris
      `SELECT COALESCE(SUM(debit - credit), 0) FROM journal_lines WHERE account_id = $1 AND status = 'posted'`.
   3. Di `akun-pemetaan.ts`, tolak pengubahan `normalBalance` atau `section` jika akun sudah memiliki transaksi jurnal bertanggal historis.
 - **Kriteria Penerimaan (DoD)**:
-  - [ ] GL dan subledger piutang/persediaan tidak bisa selisih akibat posting manual.
-  - [ ] Waktu respon posting jurnal kasir konstan (<50ms) terlepas dari jumlah riwayat ratusan ribu transaksi.
+  - [x] GL dan subledger piutang/persediaan tidak bisa selisih akibat posting manual.
+  - [x] Waktu respon posting jurnal kasir konstan (<50ms) terlepas dari jumlah riwayat ratusan ribu transaksi.
 
 #### Task 3.5: Deduplikasi Kunci Alami & Kelengkapan Jejak Audit Master Data
 - **ID**: `TASK-S3-05`
@@ -370,8 +370,8 @@ Riset mendalam menggunakan Exa AI menetapkan standar rekayasa software enterpris
   3. Pada fungsi merge pihak (`merge.ts`), sertakan pemindahan referensi `partyCredits`, `purchaseAdvances`, dan `expenses`.
   4. Tambahkan pemanggilan `writeAudit` komprehensif (mencatat nilai *before* dan *after*) pada seluruh operasi mutasi master karyawan, akun COA, gudang, grup harga, dan metode pembayaran.
 - **Kriteria Penerimaan (DoD)**:
-  - [ ] Tidak ada NPWP dan NIK kembar yang lolos pendaftaran.
-  - [ ] Seluruh perubahan data konfigurasi master tercatat lengkap di tabel `audit_log`.
+  - [x] Tidak ada NPWP dan NIK kembar yang lolos pendaftaran.
+  - [x] Seluruh perubahan data konfigurasi master tercatat lengkap di tabel `audit_log`.
 
 ---
 
@@ -398,9 +398,9 @@ Riset mendalam menggunakan Exa AI menetapkan standar rekayasa software enterpris
   3. Pasang paginasi server-side pada halaman Piutang & Utang (`/app/akuntansi/piutang-utang`).
   4. Ganti markup KPI manual di halaman Jurnal dengan komponen resmi `StatCard` dengan font label seragam minimal 11px.
 - **Kriteria Penerimaan (DoD)**:
-  - [ ] Tabel menampilkan 25–40 baris dengan nyaman dalam satu viewport desktop 1080p tanpa scrolling berlebih.
-  - [ ] Angka uang rata kanan dan sejajar secara visual antar-baris.
-  - [ ] Header tabel tetap terlihat saat daftar panjang di-scroll.
+  - [x] Tabel menampilkan 25–40 baris dengan nyaman dalam satu viewport desktop 1080p tanpa scrolling berlebih.
+  - [x] Angka uang rata kanan dan sejajar secara visual antar-baris.
+  - [x] Header tabel tetap terlihat saat daftar panjang di-scroll.
 
 #### Task 4.2: Standarisasi Pola Form CRUD (Slide-Over Sheet Drawer vs Modal)
 - **ID**: `TASK-S4-02`
@@ -418,8 +418,8 @@ Riset mendalam menggunakan Exa AI menetapkan standar rekayasa software enterpris
   4. Ganti overlay kustom POS Hold/Resume di `terminal-dialogs.tsx` dengan komponen dialog standar.
   5. Standarisasi skala z-index: Dialog `z-50`, Dropdown/Popover `z-60`, Toast `z-70`.
 - **Kriteria Penerimaan (DoD)**:
-  - [ ] Pengguna dapat melihat daftar tabel saat mengisi form produk/kontak baru di drawer kanan.
-  - [ ] Formulir akun rapi dan mudah discan per kelompok logis.
+  - [x] Pengguna dapat melihat daftar tabel saat mengisi form produk/kontak baru di drawer kanan.
+  - [x] Formulir akun rapi dan mudah discan per kelompok logis.
 
 #### Task 4.3: Perbaikan Aksesibilitas Keyboard, Focus Trap, dan Pola ARIA
 - **ID**: `TASK-S4-03`
@@ -437,8 +437,8 @@ Riset mendalam menggunakan Exa AI menetapkan standar rekayasa software enterpris
   4. Di `cart-panel.tsx`, beri nama aksesibilitas unik pada tombol baris keranjang kasir (contoh: `aria-label="Hapus item Kopi Susu"`).
   5. Di `kind-tabs.tsx`, dukung navigasi tombol panah keyboard (`ArrowLeft`/`ArrowRight`) sesuai standar WAI-ARIA tablist.
 - **Kriteria Penerimaan (DoD)**:
-  - [ ] Pengguna keyboard dapat bernavigasi tanpa mouse secara mulus tanpa fokus yang terlepas (*no keyboard trap*).
-  - [ ] Tombol Enter tidak sengaja mengeksekusi aksi destruktif saat dialog konfirmasi bahaya terbuka.
+  - [x] Pengguna keyboard dapat bernavigasi tanpa mouse secara mulus tanpa fokus yang terlepas (*no keyboard trap*).
+  - [x] Tombol Enter tidak sengaja mengeksekusi aksi destruktif saat dialog konfirmasi bahaya terbuka.
 
 #### Task 4.4: Glosarium Baku Bahasa Indonesia & Relokasi Pengaturan Tersembunyi
 - **ID**: `TASK-S4-04`
@@ -457,8 +457,8 @@ Riset mendalam menggunakan Exa AI menetapkan standar rekayasa software enterpris
   3. Petakan kode status mentah pada riwayat impor ke `StatusBadge` berbahasa Indonesia.
   4. Tambahkan `EmptyState` pada tabel upah minimum cabang di halaman pengaturan HR.
 - **Kriteria Penerimaan (DoD)**:
-  - [ ] Opsi stok negatif ditemukan dengan mudah di menu pengaturan gudang.
-  - [ ] Bahasa antarmuka konsisten 100% Bahasa Indonesia baku tanpa istilah asing yang campur aduk.
+  - [x] Opsi stok negatif ditemukan dengan mudah di menu pengaturan gudang.
+  - [x] Bahasa antarmuka konsisten 100% Bahasa Indonesia baku tanpa istilah asing yang campur aduk.
 
 ---
 

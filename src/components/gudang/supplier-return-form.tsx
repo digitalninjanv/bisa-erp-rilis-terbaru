@@ -15,6 +15,7 @@ import { labelClass, fieldClass } from "@/components/blocks/field-classes";
 import { DocumentForm } from "@/components/blocks/document-form";
 import { DateField } from "@/components/date-field";
 import { QtyInput } from "@/components/qty-input";
+import { ConfirmDialog } from "@/components/blocks/confirm-dialog";
 
 type LabelOption = { value: string; label: string };
 
@@ -102,8 +103,17 @@ export function SupplierReturnForm({
   const [resolutionNote, setResolutionNote] = useState("");
   const [lines, setLines] = useState<ReturnLine[]>([]);
   const [busy, setBusy] = useState<"" | "draft" | "post">("");
+  const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
   const infoSeq = useRef(0);
   const lineKey = useRef(0);
+
+  function handleCancelClick() {
+    if (lines.length > 0 || reasonDetail.trim().length > 0) {
+      setConfirmCancelOpen(true);
+    } else {
+      router.back();
+    }
+  }
 
   async function loadInfo(line: ReturnLine, forWarehouseId: string): Promise<ReturnLine> {
     const result = await supplierReturnProductInfoAction({
@@ -343,24 +353,49 @@ export function SupplierReturnForm({
         </ul>
       }
       actions={
-        <div className="flex w-full flex-wrap items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={() => submit("draft")}
-            disabled={busy !== ""}
-            className="inline-flex h-8 items-center rounded-md border border-border px-3 text-[12px] font-medium hover:bg-muted disabled:opacity-50"
-          >
-            {busy === "draft" ? "Menyimpan…" : "Simpan sebagai Draf"}
-          </button>
-          <button
-            type="button"
-            onClick={() => submit("post")}
-            disabled={busy !== ""}
-            className="inline-flex h-8 items-center rounded-md bg-primary px-4 text-[12px] font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-          >
-            {busy === "post" ? "Memposting…" : "Simpan & Posting"}
-          </button>
-        </div>
+        <>
+          <ConfirmDialog
+            open={confirmCancelOpen}
+            title="Buang draf retur pembelian?"
+            description="Data barang dan alasan yang sudah dimasukkan akan hilang dan tidak tersimpan."
+            confirmLabel="Ya, buang draf"
+            cancelLabel="Lanjutkan mengisi"
+            danger
+            onConfirm={() => {
+              setConfirmCancelOpen(false);
+              router.back();
+            }}
+            onCancel={() => setConfirmCancelOpen(false)}
+          />
+          <div className="flex w-full flex-wrap items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={handleCancelClick}
+              disabled={busy !== ""}
+              className="inline-flex h-8 items-center rounded-md border border-border px-3 text-[12px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+            >
+              Batal / Tutup
+            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => submit("draft")}
+                disabled={busy !== ""}
+                className="inline-flex h-8 items-center rounded-md border border-border px-3 text-[12px] font-medium hover:bg-muted disabled:opacity-50"
+              >
+                {busy === "draft" ? "Menyimpan…" : "Simpan sebagai Draf"}
+              </button>
+              <button
+                type="button"
+                onClick={() => submit("post")}
+                disabled={busy !== ""}
+                className="inline-flex h-8 items-center rounded-md bg-primary px-4 text-[12px] font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              >
+                {busy === "post" ? "Memposting…" : "Simpan & Posting"}
+              </button>
+            </div>
+          </div>
+        </>
       }
     >
       <div>

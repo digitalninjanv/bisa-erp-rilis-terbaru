@@ -392,6 +392,13 @@
   .data-table tbody tr:last-child td {
     @apply border-b-0;
   }
+  .data-table th.sticky-head,
+  .data-table thead.sticky-head th {
+    @apply sticky top-0 z-10 bg-card shadow-xs;
+  }
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
   /* Varian PADAT resmi (T-03): tabel editor baris di dalam form
      (editor baris dokumen, jurnal, opname) — 12px, padding 6px.
      Konteksnya dinyatakan lewat kelas ini, bukan racikan per berkas. */

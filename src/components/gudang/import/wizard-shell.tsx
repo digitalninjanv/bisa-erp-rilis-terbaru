@@ -247,6 +247,24 @@ export function ImportRowsPager(props: {
   );
 }
 
+function renderImportStatus(status: string) {
+  switch (status) {
+    case "committed":
+    case "completed":
+    case "success":
+      return <span className="inline-flex items-center rounded-full bg-tone-green-soft px-2 py-0.5 text-[10px] font-semibold text-tone-green">Selesai</span>;
+    case "preview":
+      return <span className="inline-flex items-center rounded-full bg-tone-amber-soft px-2 py-0.5 text-[10px] font-semibold text-tone-amber">Pratinjau</span>;
+    case "cancelled":
+      return <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">Dibatalkan</span>;
+    case "failed":
+    case "error":
+      return <span className="inline-flex items-center rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-semibold text-destructive">Gagal</span>;
+    default:
+      return <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground capitalize">{status}</span>;
+  }
+}
+
 /**
  * Tabel riwayat impor di bawah wizard. Sel aksi bawaan: tombol
  * batalkan untuk job berstatus preview; wizard produk meneruskan
@@ -285,7 +303,7 @@ export function ImportHistoryTable(props: {
                 <td className="num text-right text-[11px]">{formatNumber(job.totalRows)}</td>
                 <td className="num text-right text-[11px]">{formatNumber(job.successRows)}</td>
                 <td className="num text-right text-[11px]">{formatNumber(job.failedRows)}</td>
-                <td className="text-[11px]">{job.status}</td>
+                <td className="text-[11px]">{renderImportStatus(job.status)}</td>
                 <td className="text-[11px]">
                   {props.renderAction ? (
                     props.renderAction(job)

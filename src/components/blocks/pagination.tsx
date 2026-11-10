@@ -51,6 +51,7 @@ export function Pagination({
           href={href(Math.max(1, page - 1))}
           aria-label="Halaman sebelumnya"
           aria-disabled={page === 1}
+          tabIndex={page === 1 ? -1 : undefined}
           className={cn(
             // A-22 K6: target sentuh minimum h-8 (sebelumnya size-6 =
             // 24px, satu-satunya kontrol bersama di bawah lantai 28px).
@@ -67,6 +68,7 @@ export function Pagination({
           href={href(Math.min(pages, page + 1))}
           aria-label="Halaman berikutnya"
           aria-disabled={page === pages}
+          tabIndex={page === pages ? -1 : undefined}
           className={cn(
             "grid size-8 place-items-center rounded border border-border bg-card transition-colors hover:bg-muted",
             page === pages && "pointer-events-none opacity-40",

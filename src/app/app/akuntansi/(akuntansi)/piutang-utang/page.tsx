@@ -13,6 +13,7 @@ import { addDaysISO } from "@/lib/due-date";
 import { PageHeader } from "@/components/blocks/page-header";
 import { SummaryStrip } from "@/components/blocks/summary-strip";
 import { DataList, DataListToolbar } from "@/components/blocks/data-list";
+import { Pagination } from "@/components/blocks/pagination";
 import { FilterChips } from "@/components/blocks/search-form";
 import { EmptyState } from "@/components/blocks/empty-state";
 import { StatusBadge } from "@/components/blocks/status-badge";
@@ -66,7 +67,7 @@ function DuePill({ dueDate, today }: { dueDate: string | null; today: string }) 
 export default async function ReceivablePayablePage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; q?: string; status?: string }>;
+  searchParams: Promise<{ tab?: string; q?: string; status?: string; page?: string }>;
 }) {
   const params = await searchParams;
   const tab: Tab = params.tab === "utang" ? "utang" : "piutang";
@@ -141,6 +142,11 @@ export default async function ReceivablePayablePage({
 
   const baseHref = `/app/akuntansi/piutang-utang?tab=${tab}`;
   const paidCount = allRows.filter((row) => row.paymentStatus === "partial").length;
+
+  const page = Math.max(1, Number(params.page) || 1);
+  const pageSize = 40;
+  const total = rows.length;
+  const pagedRows = rows.slice((page - 1) * pageSize, page * pageSize);
 
   return (
     <div>
@@ -248,6 +254,15 @@ export default async function ReceivablePayablePage({
               }
             />
           }
+          pagination={
+            <Pagination
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              basePath="/app/akuntansi/piutang-utang"
+              params={{ tab, status, q: q || undefined }}
+            />
+          }
           footerNote={
             canPay
               ? "Pembayaran membuat jurnal otomatis dan mengurangi sisa dokumen. Kredit pihak dapat dipakai sebagai sumber dana. Write-off sisa hanya untuk pengguna dengan izin kelola akuntansi."
@@ -268,7 +283,7 @@ export default async function ReceivablePayablePage({
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row) => {
+                {pagedRows.map((row) => {
                   const isReceivable = tab === "piutang";
                   const partyId = row.partyId;
                   const partyKey = `${isReceivable ? "customer" : "supplier"}:${partyId ?? ""}`;

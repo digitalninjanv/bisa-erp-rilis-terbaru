@@ -255,265 +255,269 @@ export function AccountForm({
           onSubmit={() => void submit()}
           busy={busy}
         >
-            <div className="grid gap-2 sm:grid-cols-2">
-              <label className="space-y-1">
-                <span className={labelClass}>Kode</span>
-                {/* A-27 B4 (F-05/F-08): kode DAPAT diedit — jurnal &
-                    pemetaan merujuk id akun, bukan kode; penjaga unik
-                    + jejak audit ada di server. */}
-                <input value={code} onChange={(event) => setCode(event.target.value)} className={fieldClass} placeholder="1100" />
-                {account ? (
-                  <span className="block text-[10px] leading-tight text-muted-foreground">
-                    Dapat diubah — jurnal tetap merujuk akun ini; perubahan tercatat di riwayat akun.
-                  </span>
-                ) : null}
-              </label>
-              <label className="space-y-1">
-                <span className={labelClass}>Tipe</span>
-                <select
-                  value={type}
-                  onChange={(event) => {
-                    const next = event.target.value;
-                    setType(next);
-                    setNormalBalance(next === "asset" || next === "expense" || next === "cogs" ? "debit" : "credit");
-                    // A-27 B5: ganti tipe → tag mengikuti bawaan tipe
-                    // baru (kategori/sifat lama milik tipe lain tidak
-                    // dipertahankan; akuntan menyesuaikan sesudahnya).
-                    const nextTags = defaultPsak118Tags(next, section || null);
-                    setPsak118Category(nextTags.psak118Category ?? "");
-                    setExpenseNature(nextTags.expenseNature ?? "");
-                    setExpenseFunction(nextTags.expenseFunction ?? "");
-                  }}
-                  className={fieldClass}
-                >
-                  {TYPES.map((row) => (
-                    <option key={row.value} value={row.value}>{row.label}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="space-y-1 sm:col-span-2">
-                <span className={labelClass}>Nama akun</span>
-                <input value={name} onChange={(event) => setName(event.target.value)} className={fieldClass} />
-              </label>
-              <label className="space-y-1">
-                <span className={labelClass}>Saldo normal</span>
-                <select value={normalBalance} onChange={(event) => setNormalBalance(event.target.value)} className={fieldClass}>
-                  <option value="debit">Debit</option>
-                  <option value="credit">Kredit</option>
-                </select>
-              </label>
-              <label className="space-y-1">
-                <span className={labelClass}>Akun induk</span>
-                <select value={parentId} onChange={(event) => setParentId(event.target.value)} className={fieldClass}>
-                  <option value="">Tanpa induk (level atas)</option>
-                  {parents
-                    .filter((row) => row.id !== account?.id)
-                    .map((row) => (
-                      <option key={row.id} value={row.id}>{row.code} · {row.name}</option>
-                    ))}
-                </select>
-              </label>
-              <label className="space-y-1">
-                <span className={labelClass}>Kelompok laporan</span>
-                <select value={section} onChange={(event) => setSection(event.target.value)} className={fieldClass}>
-                  <option value="">Otomatis dari tipe & kode</option>
-                  {(Object.keys(ACCOUNT_SECTIONS) as AccountSection[]).map((key) => (
-                    <option key={key} value={key}>{ACCOUNT_SECTIONS[key]}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="space-y-1">
-                <span className={labelClass}>Arus kas</span>
-                <select value={cashFlowGroup} onChange={(event) => setCashFlowGroup(event.target.value)} className={fieldClass}>
-                  <option value="">Otomatis</option>
-                  {(Object.keys(CASH_FLOW_GROUPS) as CashFlowGroup[]).map((key) => (
-                    <option key={key} value={key}>{CASH_FLOW_GROUPS[key]}</option>
-                  ))}
-                </select>
-              </label>
-              {/* A-27 B3: kelas kas/bank adalah sifat akun — akun
-                  berkelas otomatis anggota himpunan kas/bank di
-                  seluruh aplikasi (Kas & bank, transfer, rekonsiliasi,
-                  metode pembayaran), tanpa merebut slot pemetaan. */}
-              <label className="space-y-1">
-                <span className={labelClass}>Kelas kas/bank</span>
-                <select
-                  value={cashBankKind}
-                  onChange={(event) => {
-                    const next = event.target.value;
-                    setCashBankKind(next);
-                    if (next && type !== "asset") {
-                      setType("asset");
-                      setNormalBalance("debit");
-                      setSection("current_asset");
-                    }
-                  }}
-                  className={fieldClass}
-                >
-                  {CASH_BANK_KINDS.map((row) => (
-                    <option key={row.value} value={row.value}>{row.label}</option>
-                  ))}
-                </select>
-              </label>
-              <div className="flex items-end pb-1 text-[11px] text-muted-foreground">
-                {cashBankKind
-                  ? "Akun ini tampil sebagai akun kas/bank di seluruh aplikasi."
-                  : "Hanya akun berkelas yang tampil sebagai kas/bank."}
-              </div>
-              {cashBankKind === "bank" ? (
-                <>
-                  <label className="space-y-1">
-                    <span className={labelClass}>Nama bank</span>
-                    <input value={bankName} onChange={(event) => setBankName(event.target.value)} className={fieldClass} placeholder="BCA, Mandiri, BRI…" />
-                  </label>
-                  <label className="space-y-1">
-                    <span className={labelClass}>Nomor rekening</span>
-                    <input value={bankAccountNumber} onChange={(event) => setBankAccountNumber(event.target.value)} className={fieldClass} placeholder="Nomor rekening" />
-                  </label>
-                  <label className="space-y-1">
-                    <span className={labelClass}>Cabang</span>
-                    <input value={bankBranch} onChange={(event) => setBankBranch(event.target.value)} className={fieldClass} placeholder="Opsional" />
-                  </label>
-                  <label className="space-y-1">
-                    <span className={labelClass}>Atas nama</span>
-                    <input value={bankAccountHolder} onChange={(event) => setBankAccountHolder(event.target.value)} className={fieldClass} placeholder="Nama pemilik rekening" />
-                  </label>
-                  <label className="space-y-1">
-                    <span className={labelClass}>Mata uang rekening</span>
-                    <select value={currency} onChange={(event) => setCurrency(event.target.value)} className={fieldClass}>
-                      {CURRENCIES.map((row) => (
-                        <option key={row} value={row}>{row}</option>
-                      ))}
-                    </select>
-                  </label>
-                </>
-              ) : null}
-              <label className="space-y-1 sm:col-span-2">
-                <span className={labelClass}>Deskripsi akun</span>
-                <input value={description} onChange={(event) => setDescription(event.target.value)} className={fieldClass} placeholder="Opsional" />
-              </label>
-              {/* A-27 B5: tagging PSAK 118 — hanya utk akun laba rugi.
-                  Ini kesiapan data: laporan saat ini belum membaca tag;
-                  kategori dipakai saat laporan berformat PSAK 118
-                  (berlaku 2027) disusun. Bawaan dari tipe dapat diubah:
-                  bunga deposito umumnya Investasi, bunga pinjaman
-                  Pendanaan, beban pajak penghasilan kategori tersendiri. */}
-              {isIncomeType ? (
-                <>
-                  <label className="space-y-1">
-                    <span className={labelClass}>Kategori PSAK 118</span>
-                    <select value={psak118Category} onChange={(event) => setPsak118Category(event.target.value)} className={fieldClass}>
-                      <option value="">Belum ditag</option>
-                      {(Object.keys(PSAK118_CATEGORIES) as Psak118Category[]).map((key) => (
-                        <option key={key} value={key}>{PSAK118_CATEGORIES[key]}</option>
-                      ))}
-                    </select>
-                  </label>
-                  {isExpenseType ? (
-                    <label className="space-y-1">
-                      <span className={labelClass}>Fungsi beban</span>
-                      <select value={expenseFunction} onChange={(event) => setExpenseFunction(event.target.value)} className={fieldClass}>
-                        <option value="">Belum ditag</option>
-                        {(Object.keys(EXPENSE_FUNCTIONS) as ExpenseFunction[]).map((key) => (
-                          <option key={key} value={key}>{EXPENSE_FUNCTIONS[key]}</option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : (
-                    <div className="flex items-end pb-1 text-[11px] text-muted-foreground">
-                      Kategori presentasi laba rugi PSAK 118 (berlaku 2027). Laporan saat ini belum memakai tag ini.
-                    </div>
-                  )}
-                  {isExpenseType ? (
-                    <label className="space-y-1 sm:col-span-2">
-                      <span className={labelClass}>Sifat beban</span>
-                      <select value={expenseNature} onChange={(event) => setExpenseNature(event.target.value)} className={fieldClass}>
-                        <option value="">Belum ditag</option>
-                        {(Object.keys(EXPENSE_NATURES) as ExpenseNature[]).map((key) => (
-                          <option key={key} value={key}>{EXPENSE_NATURES[key]}</option>
-                        ))}
-                      </select>
-                    </label>
+        <div className="space-y-4">
+            {/* Fieldset 1: Identitas Akun */}
+            <fieldset className="rounded-lg border border-border/70 p-3.5">
+              <legend className="px-1.5 text-xs font-semibold text-foreground">1 · Identitas Akun</legend>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <label className="space-y-1">
+                  <span className={labelClass}>Kode akun</span>
+                  <input value={code} onChange={(event) => setCode(event.target.value)} className={fieldClass} placeholder="1100" />
+                  {account ? (
+                    <span className="block text-[10px] leading-tight text-muted-foreground">
+                      Dapat diubah — jurnal tetap merujuk akun ini; perubahan tercatat di riwayat akun.
+                    </span>
                   ) : null}
-                </>
-              ) : null}
-              {/* A-27 B5: penanda kontra utk SEMUA tipe — status kontra
-                  dibaca dari data ini, bukan dari nama akun. Contoh:
-                  diskon & retur penjualan mengontra pendapatan
-                  penjualan; akumulasi penyusutan mengontra aset
-                  tetapnya; cadangan kerugian mengontra piutang. */}
-              <div className="space-y-1 sm:col-span-2">
-                <label className="flex items-center gap-2 text-[12px]">
-                  <input type="checkbox" checked={isContra} onChange={(event) => setIsContra(event.target.checked)} />
-                  Akun kontra (pengurang akun lain)
                 </label>
-                {isContra ? (
-                  <select value={contraOf} onChange={(event) => setContraOf(event.target.value)} className={fieldClass}>
-                    <option value="">— Akun yang dikontra belum ditentukan —</option>
+                <label className="space-y-1">
+                  <span className={labelClass}>Nama akun</span>
+                  <input value={name} onChange={(event) => setName(event.target.value)} className={fieldClass} />
+                </label>
+                <label className="space-y-1 sm:col-span-2">
+                  <span className={labelClass}>Deskripsi akun</span>
+                  <input value={description} onChange={(event) => setDescription(event.target.value)} className={fieldClass} placeholder="Opsional" />
+                </label>
+              </div>
+            </fieldset>
+
+            {/* Fieldset 2: Klasifikasi & Kategori */}
+            <fieldset className="rounded-lg border border-border/70 p-3.5">
+              <legend className="px-1.5 text-xs font-semibold text-foreground">2 · Klasifikasi & Kategori</legend>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <label className="space-y-1">
+                  <span className={labelClass}>Tipe</span>
+                  <select
+                    value={type}
+                    onChange={(event) => {
+                      const next = event.target.value;
+                      setType(next);
+                      setNormalBalance(next === "asset" || next === "expense" || next === "cogs" ? "debit" : "credit");
+                      const nextTags = defaultPsak118Tags(next, section || null);
+                      setPsak118Category(nextTags.psak118Category ?? "");
+                      setExpenseNature(nextTags.expenseNature ?? "");
+                      setExpenseFunction(nextTags.expenseFunction ?? "");
+                    }}
+                    className={fieldClass}
+                  >
+                    {TYPES.map((row) => (
+                      <option key={row.value} value={row.value}>{row.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-1">
+                  <span className={labelClass}>Saldo normal</span>
+                  <select value={normalBalance} onChange={(event) => setNormalBalance(event.target.value)} className={fieldClass}>
+                    <option value="debit">Debit</option>
+                    <option value="credit">Kredit</option>
+                  </select>
+                </label>
+                <label className="space-y-1">
+                  <span className={labelClass}>Akun induk</span>
+                  <select value={parentId} onChange={(event) => setParentId(event.target.value)} className={fieldClass}>
+                    <option value="">Tanpa induk (level atas)</option>
                     {parents
                       .filter((row) => row.id !== account?.id)
                       .map((row) => (
                         <option key={row.id} value={row.id}>{row.code} · {row.name}</option>
                       ))}
                   </select>
+                </label>
+                <label className="space-y-1">
+                  <span className={labelClass}>Kelompok laporan</span>
+                  <select value={section} onChange={(event) => setSection(event.target.value)} className={fieldClass}>
+                    <option value="">Otomatis dari tipe & kode</option>
+                    {(Object.keys(ACCOUNT_SECTIONS) as AccountSection[]).map((key) => (
+                      <option key={key} value={key}>{ACCOUNT_SECTIONS[key]}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-1 sm:col-span-2">
+                  <span className={labelClass}>Arus kas</span>
+                  <select value={cashFlowGroup} onChange={(event) => setCashFlowGroup(event.target.value)} className={fieldClass}>
+                    <option value="">Otomatis</option>
+                    {(Object.keys(CASH_FLOW_GROUPS) as CashFlowGroup[]).map((key) => (
+                      <option key={key} value={key}>{CASH_FLOW_GROUPS[key]}</option>
+                    ))}
+                  </select>
+                </label>
+
+                {isIncomeType ? (
+                  <>
+                    <label className="space-y-1">
+                      <span className={labelClass}>Kategori PSAK 118</span>
+                      <select value={psak118Category} onChange={(event) => setPsak118Category(event.target.value)} className={fieldClass}>
+                        <option value="">Belum ditag</option>
+                        {(Object.keys(PSAK118_CATEGORIES) as Psak118Category[]).map((key) => (
+                          <option key={key} value={key}>{PSAK118_CATEGORIES[key]}</option>
+                        ))}
+                      </select>
+                    </label>
+                    {isExpenseType ? (
+                      <label className="space-y-1">
+                        <span className={labelClass}>Fungsi beban</span>
+                        <select value={expenseFunction} onChange={(event) => setExpenseFunction(event.target.value)} className={fieldClass}>
+                          <option value="">Belum ditag</option>
+                          {(Object.keys(EXPENSE_FUNCTIONS) as ExpenseFunction[]).map((key) => (
+                            <option key={key} value={key}>{EXPENSE_FUNCTIONS[key]}</option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : (
+                      <div className="flex items-end pb-1 text-[11px] text-muted-foreground">
+                        Kategori presentasi laba rugi PSAK 118 (berlaku 2027). Laporan saat ini belum memakai tag ini.
+                      </div>
+                    )}
+                    {isExpenseType ? (
+                      <label className="space-y-1 sm:col-span-2">
+                        <span className={labelClass}>Sifat beban</span>
+                        <select value={expenseNature} onChange={(event) => setExpenseNature(event.target.value)} className={fieldClass}>
+                          <option value="">Belum ditag</option>
+                          {(Object.keys(EXPENSE_NATURES) as ExpenseNature[]).map((key) => (
+                            <option key={key} value={key}>{EXPENSE_NATURES[key]}</option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : null}
+                  </>
                 ) : null}
               </div>
-              <div className="flex flex-wrap items-center gap-4 sm:col-span-2">
-                <label className="flex items-center gap-2 text-[12px]">
-                  <input type="checkbox" checked={isPostable} onChange={(event) => setIsPostable(event.target.checked)} />
-                  Bisa dipakai posting
+            </fieldset>
+
+            {/* Fieldset 3: Pengaturan Kas / Bank */}
+            <fieldset className="rounded-lg border border-border/70 p-3.5">
+              <legend className="px-1.5 text-xs font-semibold text-foreground">3 · Pengaturan Kas / Bank</legend>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <label className="space-y-1">
+                  <span className={labelClass}>Kelas kas/bank</span>
+                  <select
+                    value={cashBankKind}
+                    onChange={(event) => {
+                      const next = event.target.value;
+                      setCashBankKind(next);
+                      if (next && type !== "asset") {
+                        setType("asset");
+                        setNormalBalance("debit");
+                        setSection("current_asset");
+                      }
+                    }}
+                    className={fieldClass}
+                  >
+                    {CASH_BANK_KINDS.map((row) => (
+                      <option key={row.value} value={row.value}>{row.label}</option>
+                    ))}
+                  </select>
                 </label>
-                <label className="flex items-center gap-2 text-[12px]">
-                  <input type="checkbox" checked={isActive} onChange={(event) => setIsActive(event.target.checked)} />
-                  Akun aktif
-                </label>
+                <div className="flex items-end pb-1 text-[11px] text-muted-foreground">
+                  {cashBankKind
+                    ? "Akun ini tampil sebagai akun kas/bank di seluruh aplikasi."
+                    : "Hanya akun berkelas yang tampil sebagai kas/bank."}
+                </div>
+                {cashBankKind === "bank" ? (
+                  <>
+                    <label className="space-y-1">
+                      <span className={labelClass}>Nama bank</span>
+                      <input value={bankName} onChange={(event) => setBankName(event.target.value)} className={fieldClass} placeholder="BCA, Mandiri, BRI…" />
+                    </label>
+                    <label className="space-y-1">
+                      <span className={labelClass}>Nomor rekening</span>
+                      <input value={bankAccountNumber} onChange={(event) => setBankAccountNumber(event.target.value)} className={fieldClass} placeholder="Nomor rekening" />
+                    </label>
+                    <label className="space-y-1">
+                      <span className={labelClass}>Cabang</span>
+                      <input value={bankBranch} onChange={(event) => setBankBranch(event.target.value)} className={fieldClass} placeholder="Opsional" />
+                    </label>
+                    <label className="space-y-1">
+                      <span className={labelClass}>Atas nama</span>
+                      <input value={bankAccountHolder} onChange={(event) => setBankAccountHolder(event.target.value)} className={fieldClass} placeholder="Nama pemilik rekening" />
+                    </label>
+                    <label className="space-y-1 sm:col-span-2">
+                      <span className={labelClass}>Mata uang rekening</span>
+                      <select value={currency} onChange={(event) => setCurrency(event.target.value)} className={fieldClass}>
+                        {CURRENCIES.map((row) => (
+                          <option key={row} value={row}>{row}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </>
+                ) : null}
               </div>
-              {/* A-27 B4: pratinjau dampak (getAccountImpact) — pengguna
-                  melihat ikatan akun SEBELUM menyimpan perubahan;
-                  penolakan server menamai ikatan yang sama. */}
-              {account && impact && !impact.partial ? (
-                <div className="rounded-md border border-border bg-muted/30 px-3 py-2 sm:col-span-2">
-                  <p className="text-[11px] font-semibold">Akun ini dipakai oleh</p>
-                  {impact.isSystem ? (
-                    <p className="mt-0.5 text-[11px] text-muted-foreground">
-                      Akun sistem — dirujuk pemetaan akun dan/atau metode pembayaran; penonaktifan & penghapusan mengikuti penjaga ikatan.
-                    </p>
-                  ) : null}
-                  {impactBindings.length > 0 ? (
-                    <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[11px] text-muted-foreground">
-                      {impactBindings.map((line) => (
-                        <li key={line}>{line}</li>
-                      ))}
-                    </ul>
-                  ) : null}
-                  {impact.journalLineCount !== null ? (
-                    <p className="mt-1 text-[11px] text-muted-foreground">
-                      {impact.journalLineCount} baris jurnal terposting · saldo terakhir {formatIDR(impact.balance)}
-                    </p>
-                  ) : null}
-                  {impactBindings.length === 0 && impact.journalLineCount === 0 ? (
-                    <p className="mt-0.5 text-[11px] text-muted-foreground">
-                      Belum dirujuk pemetaan, metode, kelompok harga, sub-akun, atau jurnal mana pun.
-                    </p>
+            </fieldset>
+
+            {/* Fieldset 4: Status & Kontra */}
+            <fieldset className="rounded-lg border border-border/70 p-3.5">
+              <legend className="px-1.5 text-xs font-semibold text-foreground">4 · Status & Kontra</legend>
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="flex items-center gap-2 text-[12px]">
+                    <input type="checkbox" checked={isContra} onChange={(event) => setIsContra(event.target.checked)} />
+                    Akun kontra (pengurang akun lain)
+                  </label>
+                  {isContra ? (
+                    <select value={contraOf} onChange={(event) => setContraOf(event.target.value)} className={fieldClass}>
+                      <option value="">— Akun yang dikontra belum ditentukan —</option>
+                      {parents
+                        .filter((row) => row.id !== account?.id)
+                        .map((row) => (
+                          <option key={row.id} value={row.id}>{row.code} · {row.name}</option>
+                        ))}
+                    </select>
                   ) : null}
                 </div>
-              ) : null}
-              {showBalanceConfirm ? (
-                <label className="flex items-start gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-[11px] leading-snug sm:col-span-2">
-                  <input
-                    type="checkbox"
-                    checked={confirmDeactivate}
-                    onChange={(event) => setConfirmDeactivate(event.target.checked)}
-                    className="mt-0.5"
-                  />
-                  <span>
-                    Saya paham akun ini masih bersaldo <strong>{formatIDR(impact!.balance)}</strong>
-                    {impact!.journalLineCount !== null ? <> dari {impact!.journalLineCount} baris jurnal</> : null}.
-                    Menonaktifkan <strong>tidak memindahkan saldo</strong> — akun hanya disembunyikan dari pemilih dan tidak dapat dipakai posting sampai diaktifkan kembali.
-                  </span>
-                </label>
-              ) : null}
-            </div>
+                <div className="flex flex-wrap items-center gap-4">
+                  <label className="flex items-center gap-2 text-[12px]">
+                    <input type="checkbox" checked={isPostable} onChange={(event) => setIsPostable(event.target.checked)} />
+                    Bisa dipakai posting
+                  </label>
+                  <label className="flex items-center gap-2 text-[12px]">
+                    <input type="checkbox" checked={isActive} onChange={(event) => setIsActive(event.target.checked)} />
+                    Akun aktif
+                  </label>
+                </div>
+                {account && impact && !impact.partial ? (
+                  <div className="rounded-md border border-border bg-muted/30 px-3 py-2">
+                    <p className="text-[11px] font-semibold">Akun ini dipakai oleh</p>
+                    {impact.isSystem ? (
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+                        Akun sistem — dirujuk pemetaan akun dan/atau metode pembayaran; penonaktifan & penghapusan mengikuti penjaga ikatan.
+                      </p>
+                    ) : null}
+                    {impactBindings.length > 0 ? (
+                      <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[11px] text-muted-foreground">
+                        {impactBindings.map((line) => (
+                          <li key={line}>{line}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    {impact.journalLineCount !== null ? (
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        {impact.journalLineCount} baris jurnal terposting · saldo terakhir {formatIDR(impact.balance)}
+                      </p>
+                    ) : null}
+                    {impactBindings.length === 0 && impact.journalLineCount === 0 ? (
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+                        Belum dirujuk pemetaan, metode, kelompok harga, sub-akun, atau jurnal mana pun.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+                {showBalanceConfirm ? (
+                  <label className="flex items-start gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-[11px] leading-snug">
+                    <input
+                      type="checkbox"
+                      checked={confirmDeactivate}
+                      onChange={(event) => setConfirmDeactivate(event.target.checked)}
+                      className="mt-0.5"
+                    />
+                    <span>
+                      Saya paham akun ini masih bersaldo <strong>{formatIDR(impact!.balance)}</strong>
+                      {impact!.journalLineCount !== null ? <> dari {impact!.journalLineCount} baris jurnal</> : null}.
+                      Menonaktifkan <strong>tidak memindahkan saldo</strong> — akun hanya disembunyikan dari pemilih dan tidak dapat dipakai posting sampai diaktifkan kembali.
+                    </span>
+                  </label>
+                ) : null}
+              </div>
+            </fieldset>
+          </div>
         </Modal>
       ) : null}
     </>

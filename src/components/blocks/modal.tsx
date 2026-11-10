@@ -15,7 +15,7 @@
  */
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 export function Modal({
   title,
@@ -50,9 +50,61 @@ export function Modal({
       Chrome dialog (latar, Escape, panel) tetap Modal bersama. */
   footer?: ReactNode;
 }) {
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const previouslyFocusedElementRef = useRef<HTMLElement | null>(null);
+
+  // Auto-focus input pertama saat terbuka dan pulihkan fokus saat modal ditutup (UI-001)
+  useEffect(() => {
+    previouslyFocusedElementRef.current = document.activeElement as HTMLElement | null;
+
+    const timer = window.setTimeout(() => {
+      if (!panelRef.current) return;
+      const focusable = panelRef.current.querySelectorAll<HTMLElement>(
+        'input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusable.length > 0) {
+        focusable[0].focus();
+      }
+    }, 40);
+
+    return () => {
+      window.clearTimeout(timer);
+      if (previouslyFocusedElementRef.current && typeof previouslyFocusedElementRef.current.focus === "function") {
+        previouslyFocusedElementRef.current.focus();
+      }
+    };
+  }, []);
+
+  // Keyboard navigation & Focus trap (UI-001, UI-006)
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape" && !busy) onClose();
+      if (event.key === "Escape" && !busy) {
+        onClose();
+        return;
+      }
+
+      if (event.key === "Tab" && panelRef.current) {
+        const focusables = Array.from(
+          panelRef.current.querySelectorAll<HTMLElement>(
+            'input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+          )
+        );
+        if (focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+
+        if (event.shiftKey) {
+          if (document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+          }
+        }
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -68,7 +120,10 @@ export function Modal({
         if (event.target === event.currentTarget && !busy) onClose();
       }}
     >
-      <div className={`w-full ${wide ? "max-w-2xl" : "max-w-xl"} rounded-xl border border-border bg-card shadow-xl`}>
+      <div
+        ref={panelRef}
+        className={`w-full ${wide ? "max-w-2xl" : "max-w-xl"} rounded-xl border border-border bg-card shadow-xl`}
+      >
         <div className="border-b border-border px-5 py-3">
           <h2 className="text-[14px] font-semibold">{title}</h2>
         </div>

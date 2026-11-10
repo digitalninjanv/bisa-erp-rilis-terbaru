@@ -342,10 +342,22 @@ export function SettingsForm({
       </SettingsSection>
       <SettingsSection id="alur-kerja" title="Alur kerja & stok" description="Saklar perilaku alur lintas modul.">
         <div className="grid gap-3 sm:grid-cols-2">
-        <label className="flex items-center gap-2 self-end pb-1 text-[12px] sm:col-span-2">
-          <input type="checkbox" checked={form.allowNegativeStock} onChange={(event) => setForm({ ...form, allowNegativeStock: event.target.checked })} />
-          Izinkan stok negatif (tidak disarankan)
-        </label>
+        <div className="rounded-lg border border-tone-amber/30 bg-tone-amber-soft/20 p-3 sm:col-span-2">
+          <label className="flex items-start gap-2.5 text-[12px] font-medium text-foreground">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={form.allowNegativeStock}
+              onChange={(event) => setForm({ ...form, allowNegativeStock: event.target.checked })}
+            />
+            <div>
+              <span>Izinkan stok gudang bernilai negatif (Kebijakan Gudang & Stok)</span>
+              <span className="mt-0.5 block text-[11px] font-normal leading-4 text-muted-foreground">
+                <strong>Peringatan Risiko Finansial:</strong> Mengizinkan penjualan atau pengeluaran barang tanpa fisik stok dapat mengakibatkan distorsi perhitungan Harga Pokok Penjualan (HPP / moving average AVCO) dan anomali saldo persediaan di Buku Besar saat barang masuk tercatat kemudian.
+              </span>
+            </div>
+          </label>
+        </div>
         <label className="flex items-start gap-2 self-end pb-1 text-[12px]">
           <input
             type="checkbox"

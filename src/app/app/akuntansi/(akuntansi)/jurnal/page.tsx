@@ -17,6 +17,7 @@ import { PageHeader } from "@/components/blocks/page-header";
 import { Pagination } from "@/components/blocks/pagination";
 import { DataList, DataListToolbar, dataListFilterClass, dataListFilterWideClass } from "@/components/blocks/data-list";
 import { EmptyState } from "@/components/blocks/empty-state";
+import { StatCard } from "@/components/blocks/stat-card";
 import { StatusBadge } from "@/components/blocks/status-badge";
 import { RowMenu } from "@/components/blocks/row-menu";
 import { DateRangeField } from "@/components/date-field";
@@ -114,31 +115,33 @@ export default async function JournalPage({
           informasi kerja akuntan, bukan dekorasi. */}
       <DataList density="compact"
         kpis={
-          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border lg:grid-cols-4">
-            <div className="bg-card px-4 py-3">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Jurnal</p>
-              <p className="num mt-1 text-[18px] font-semibold leading-none">{data.summary.entries}</p>
-              <p className="mt-1.5 text-[11px] text-muted-foreground">{data.summary.manual} manual</p>
-            </div>
-            <div className="bg-card px-4 py-3">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Total debit</p>
-              <p className="num mt-1 text-[18px] font-semibold leading-none">{formatIDR(data.summary.debit)}</p>
-              <p className="mt-1.5 text-[11px] text-muted-foreground">Periode terpilih</p>
-            </div>
-            <div className="bg-card px-4 py-3">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Total kredit</p>
-              <p className="num mt-1 text-[18px] font-semibold leading-none">{formatIDR(data.summary.credit)}</p>
-              <p className="mt-1.5 text-[11px] text-muted-foreground">Periode terpilih</p>
-            </div>
-            <div className="bg-card px-4 py-3">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Selisih</p>
-              <p className={`num mt-1 text-[18px] font-semibold leading-none ${Math.abs(data.summary.debit - data.summary.credit) < 0.01 ? "text-tone-green" : "text-destructive"}`}>
-                {formatIDR(data.summary.debit - data.summary.credit)}
-              </p>
-              <p className="mt-1.5 text-[11px] text-muted-foreground">
-                {Math.abs(data.summary.debit - data.summary.credit) < 0.01 ? "Seimbang" : "Periksa jurnal"}
-              </p>
-            </div>
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+            <StatCard
+              size="compact"
+              label="Jurnal"
+              value={String(data.summary.entries)}
+              hint={`${data.summary.manual} manual`}
+            />
+            <StatCard
+              size="compact"
+              label="Total debit"
+              value={formatIDR(data.summary.debit)}
+              hint="Periode terpilih"
+            />
+            <StatCard
+              size="compact"
+              label="Total kredit"
+              value={formatIDR(data.summary.credit)}
+              hint="Periode terpilih"
+            />
+            <StatCard
+              size="compact"
+              label="Selisih"
+              value={formatIDR(data.summary.debit - data.summary.credit)}
+              hint={Math.abs(data.summary.debit - data.summary.credit) < 0.01 ? "Seimbang" : "Periksa jurnal"}
+              tone={Math.abs(data.summary.debit - data.summary.credit) < 0.01 ? "green" : "red"}
+              valueClassName={Math.abs(data.summary.debit - data.summary.credit) < 0.01 ? "text-tone-green" : "text-destructive"}
+            />
           </div>
         }
         toolbar={
