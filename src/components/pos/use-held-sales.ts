@@ -101,7 +101,16 @@ export function useHeldSales(params: {
       setResumeOffer(null);
       toast.success("Pesanan ditahan dilanjutkan.");
     },
-    [resumeId],
+    [
+      resumeId,
+      resumeGuardRef,
+      setCart,
+      setGroupId,
+      setHeldSaleId,
+      setHeldTotal,
+      setSelectedWarehouse,
+      storedActiveRef,
+    ],
   );
 
   // POS2-02: batal/gagal resume — keranjang aktif dari snapshot
@@ -118,7 +127,17 @@ export function useHeldSales(params: {
       setHeldSaleId(stored.heldSaleId);
       setHeldTotal(stored.heldTotal);
     }
-  }, [warehouses, groups]);
+  }, [
+    warehouses,
+    groups,
+    resumeGuardRef,
+    setCart,
+    setGroupId,
+    setHeldSaleId,
+    setHeldTotal,
+    setSelectedWarehouse,
+    storedActiveRef,
+  ]);
 
   useEffect(() => {
     if (!resumeId) return;
@@ -158,7 +177,7 @@ export function useHeldSales(params: {
     return () => {
       cancelled = true;
     };
-  }, [resumeId, applyResume, restoreStoredActive, router]);
+  }, [resumeId, applyResume, restoreStoredActive, router, storedActiveRef]);
 
   async function hold() {
     if (cart.length === 0) {

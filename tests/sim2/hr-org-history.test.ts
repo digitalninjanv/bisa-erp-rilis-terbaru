@@ -9,7 +9,6 @@ import {
   employeeHistory,
   employees,
   hrParameters,
-  jobPositions,
   member,
   organization,
   user,

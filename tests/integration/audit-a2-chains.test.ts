@@ -116,7 +116,6 @@ const acc: Record<string, string> = {};
 let whMain = "";
 let whSecond = "";
 let methodCash = "";
-let methodBank = "";
 let methodQris = "";
 let mainSessionId = "";
 
@@ -236,7 +235,6 @@ async function bootstrap() {
     whSecond = w2.id;
     const methods = await tx.select().from(paymentMethods).where(eq(paymentMethods.companyId, ORG));
     methodCash = methods.find((m) => m.type === "cash")!.id;
-    methodBank = methods.find((m) => m.type === "bank")!.id;
     methodQris = methods.find((m) => m.type === "qris")!.id;
 
     const [open] = await tx.select().from(cashSessions)

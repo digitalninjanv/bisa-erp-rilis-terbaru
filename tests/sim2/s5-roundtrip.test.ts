@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { and, eq, sql } from "drizzle-orm";
-import { db } from "@/db";
 import { adminDb, adminSql } from "@/db/admin";
 import {
   account,
@@ -89,8 +88,6 @@ function addDays(iso: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 const DUE = addDays(TODAY, 14);
-
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 const F: Record<string, string> = {}; // id per perusahaan: `${org}:${key}`
 const key = (org: string, name: string) => `${org}:${name}`;

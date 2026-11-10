@@ -121,10 +121,9 @@ export function ProductForm({
   }
 
   async function submit() {
-    // G2 (FRM-05): validasi wajib-isi kini helper bersama.
-    if (!requireFilled(form.name, "Nama dan SKU wajib diisi.") || !requireFilled(form.sku, "Nama dan SKU wajib diisi.")) {
-      return;
-    }
+    // G2 & UI-008: Validasi spesifik per field agar pengguna tidak menebak
+    if (!requireFilled(form.name, "Nama produk wajib diisi.")) return;
+    if (!requireFilled(form.sku, "SKU produk wajib diisi.")) return;
     if (Object.values(invalidMoney).some(Boolean)) {
       toast.error("Harga belum terbaca — periksa kembali nominal harga.");
       return;

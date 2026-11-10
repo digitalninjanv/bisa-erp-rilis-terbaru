@@ -12,6 +12,9 @@ import { z } from "zod";
 import { withCompany } from "@/db/tenant";
 import {
   customers,
+  partyCredits,
+  partyOpeningBalances,
+  partyPayments,
   products,
   sales,
   stockDocuments,
@@ -22,6 +25,7 @@ import {
 import { type CustomFieldValues } from "@/lib/custom-fields";
 import { writeAudit } from "@/server/audit";
 import { requirePermissionInModule } from "@/lib/session";
+import { can } from "@/lib/permissions";
 
 import {
   AppError,
@@ -191,7 +195,8 @@ const customerSchema = z.object({
 
 export async function saveCustomerAction(input: z.input<typeof customerSchema>) {
   return guard(async () => {
-    const ctx = await requirePermissionInModule("pos.sell", "gudang");
+    // GDG-001 & MD-023: Master pelanggan dikelola dengan izin gudang inventory.manage
+    const ctx = await requirePermissionInModule("inventory.manage", "gudang");
     const data = parseInput(customerSchema, input);
     const result = await withCompany(ctx.company.id, async (tx) => {
       // S3 (§18I): snapshot penuh baris lama untuk audit before/after —
@@ -203,6 +208,23 @@ export async function saveCustomerAction(input: z.input<typeof customerSchema>) 
           .from(customers)
           .where(and(eq(customers.companyId, ctx.company.id), eq(customers.id, data.id)))
           .limit(1);
+      }
+
+      // MD-023: Pengubahan atau penetapan batas kredit memerlukan izin akuntansi atau owner/admin
+      if (data.creditLimit !== undefined) {
+        const requestedLimit = toDb(data.creditLimit);
+        const currentLimit = current?.creditLimit ?? "0";
+        if (
+          requestedLimit !== currentLimit &&
+          !can(ctx, "accounting.manage") &&
+          ctx.role !== "owner" &&
+          ctx.role !== "admin"
+        ) {
+          throw new AppError(
+            "FORBIDDEN",
+            "Pengubahan batas kredit (credit limit) memerlukan izin akuntansi atau peran pemilik/admin.",
+          );
+        }
       }
       const attributes = await resolveCustomAttributes(
         tx,
@@ -361,6 +383,27 @@ export async function deleteSupplierAction(id: string) {
           `Pemasok masih menjadi pemasok utama ${asMain!.value} produk. Ganti pemasok utama produk tersebut terlebih dahulu.`,
         );
       }
+      // MD-001 & WF-017: Penjaga saldo awal dan pembayaran utang
+      const [hasSupplierPayments] = await tx
+        .select({ value: sql<number>`count(*)::int` })
+        .from(partyPayments)
+        .where(and(eq(partyPayments.companyId, ctx.company.id), eq(partyPayments.partyId, supplierId)));
+      if ((hasSupplierPayments?.value ?? 0) > 0) {
+        throw new AppError(
+          "CONFLICT",
+          "Pemasok memiliki riwayat pembayaran utang. Nonaktifkan pemasok alih-alih menghapus.",
+        );
+      }
+      const [hasSupplierOpening] = await tx
+        .select({ value: sql<number>`count(*)::int` })
+        .from(partyOpeningBalances)
+        .where(and(eq(partyOpeningBalances.companyId, ctx.company.id), eq(partyOpeningBalances.partyId, supplierId)));
+      if ((hasSupplierOpening?.value ?? 0) > 0) {
+        throw new AppError(
+          "CONFLICT",
+          "Pemasok memiliki saldo awal utang. Nonaktifkan pemasok alih-alih menghapus.",
+        );
+      }
       await tx
         .delete(suppliers)
         .where(and(eq(suppliers.companyId, ctx.company.id), eq(suppliers.id, supplierId)));
@@ -381,7 +424,7 @@ export async function deleteSupplierAction(id: string) {
 
 export async function toggleCustomerAction(input: { id: string; isActive: boolean }) {
   return guard(async () => {
-    const ctx = await requirePermissionInModule("pos.sell", "gudang");
+    const ctx = await requirePermissionInModule("inventory.manage", "gudang");
     const data = parseInput(z.object({ id: z.string().uuid(), isActive: z.boolean() }), input);
     await withCompany(ctx.company.id, async (tx) => {
       const [updated] = await tx
@@ -406,7 +449,7 @@ export async function toggleCustomerAction(input: { id: string; isActive: boolea
 
 export async function deleteCustomerAction(id: string) {
   return guard(async () => {
-    const ctx = await requirePermissionInModule("pos.sell", "gudang");
+    const ctx = await requirePermissionInModule("inventory.manage", "gudang");
     const customerId = parseInput(z.string().uuid(), id);
     await withCompany(ctx.company.id, async (tx) => {
       const [customer] = await tx
@@ -423,6 +466,37 @@ export async function deleteCustomerAction(id: string) {
         throw new AppError(
           "CONFLICT",
           "Pelanggan sudah memiliki riwayat penjualan dan piutang. Nonaktifkan pelanggan alih-alih menghapus.",
+        );
+      }
+      // MD-001 & WF-017: Penjaga saldo awal, pembayaran piutang, dan kredit aktif
+      const [hasPayments] = await tx
+        .select({ value: sql<number>`count(*)::int` })
+        .from(partyPayments)
+        .where(and(eq(partyPayments.companyId, ctx.company.id), eq(partyPayments.partyId, customerId)));
+      if ((hasPayments?.value ?? 0) > 0) {
+        throw new AppError(
+          "CONFLICT",
+          "Pelanggan memiliki riwayat pembayaran piutang. Nonaktifkan pelanggan alih-alih menghapus.",
+        );
+      }
+      const [hasCredits] = await tx
+        .select({ value: sql<number>`count(*)::int` })
+        .from(partyCredits)
+        .where(and(eq(partyCredits.companyId, ctx.company.id), eq(partyCredits.partyId, customerId)));
+      if ((hasCredits?.value ?? 0) > 0) {
+        throw new AppError(
+          "CONFLICT",
+          "Pelanggan memiliki saldo atau riwayat kredit pelanggan. Nonaktifkan pelanggan alih-alih menghapus.",
+        );
+      }
+      const [hasOpening] = await tx
+        .select({ value: sql<number>`count(*)::int` })
+        .from(partyOpeningBalances)
+        .where(and(eq(partyOpeningBalances.companyId, ctx.company.id), eq(partyOpeningBalances.partyId, customerId)));
+      if ((hasOpening?.value ?? 0) > 0) {
+        throw new AppError(
+          "CONFLICT",
+          "Pelanggan memiliki saldo awal piutang. Nonaktifkan pelanggan alih-alih menghapus.",
         );
       }
       await tx

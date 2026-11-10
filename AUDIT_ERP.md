@@ -23,7 +23,7 @@
 | 9 | Persetujuan cuti & lembur tanpa maker-checker | WF-003/004 | **Tinggi** | User yang sama dapat mengajukan & menyetujui cuti/lembur sendiri; memengaruhi payroll. |
 | 10 | Kepemilikan field ganda: `products.costPrice` & `salePrice` ditulis modul katalog **dan** mesin AVCO/penerimaan | DATA-001/002 | **Tinggi** | Harga pokok/jual saling menimpa; GL persediaan & margin drift. |
 
-Temuan lengkap: **30 UI/UX**, **22 fungsional POS**, **29 workflow**, **12 integritas data**, **4 arsitektur/metodologi**. Total **97 temuan**. Rincian ada di §4.
+Temuan lengkap: **30 UI/UX**, **22 fungsional POS**, **29 workflow**, **12 integritas data**, **4 arsitektur/metodologi**, **25 master data (MD)**, **4 tambahan terverifikasi**. Total **±126 temuan** (sebagian MD tumpang tindih dengan WF/DATA dan dicatat sekali). Rincian ada di §4.
 
 Kesimpulan umum: **fondasi teknis sangat kuat** (gerbang jurnal tunggal, RLS terpusat + FORCE, trigger append-only & balanced, idempotent key di banyak dokumen, guard hapus lengkap, primitif uang terpusat). Masalah terbesar bukan pada fondasi, melainkan pada **(a) batas kepemilikan data lintas modul**, **(b) penjaga idempotensi/approval yang belum merata**, dan **(c) konsistensi UX/validasi sisi klien**. Suite berjalan **2206/2207 hijau** dengan 1 tes merah (§5).
 
@@ -81,6 +81,10 @@ Kriteria audit yang dipakai dari riset: minimal input & progressive disclosure; 
 Catatan DB: koneksi awal menampilkan 0 baris karena **FORCE RLS** menyembunyikan baris tanpa `app.company_id`; setelah `set_config('app.company_id', ..., false)` data muncul (1 organisasi, 1 perusahaan demo, 175 akun, 129 produk, 32 penjualan, 283 gerakan stok, 676 jurnal).
 
 ---
+
+### 2.3 Artefak audit paralel (perlu kehati-hatian)
+
+Satu subagent audit master data menulis laporan terstruktur di direktori **`audit/`** (`00_RINGKASAN.md` … `09_MASTER_TASK_PLAN_5_OUT_OF_5.md`, `modul-*.md`, `audit/tests/`). Ini **melanggar instruksi read-only** dan tidak diminta oleh pengguna (yang diminta satu laporan `AUDIT_ERP.md`). Isinya campuran: temuan MD (§4.6) sebagian besar sahih setelah diverifikasi, tetapi laporan per-modul di `audit/` mengandung klaim yang **salah** (mis. GDG-002 "over-receipt tanpa batas" — tertolak oleh `purchasing.ts:342-357`; POS-002 "shift ditutup dengan pesanan hold" — `countHeldSales` ada di `sessions.ts:317-323`). Karena itu klaim dari `audit/` **tidak diadopsi kecuali sudah diverifikasi独立** (§4.7). Direktori `audit/` **tidak dihapus** karena penghapusan bersifat destruktif; keputusan tinggal bersama pengguna (lihat ringkasan chat).
 
 ## 3. Peta Modul & Matriks Konflik Data
 
@@ -717,6 +721,190 @@ Effort: **M** · Keyakinan: **tinggi**
 
 ---
 
+### 4.6 Master Data, Kepemilikan Field & Audit Celah (MD)
+
+> Sumber: audit master data terfokus. Sebagian tumpang tindih dengan WF/DATA existing dan dicatat sekali di sini dengan bukti tambahan.
+
+**MD-001 — Hapus keras pemasok/pelanggan menggantungkan saldo awal, kredit, pembayaran** · **Kritis** · Master data
+Bukti: `src/server/actions/inventory/pihak.ts:323-380` (supplier: hanya cek `stockReceipts`, `stockDocuments`, `products`); `:407-444` (customer: hanya `sales`); `partyOpeningBalances.partyId`/`partyPayments.partyId`/`partyCredits.partyId` tanpa FK (`db/schema/accounting.ts:538,471,585`); `reports/arap.ts:145-167` membaca saldo dari `partyOpeningBalances.partyId`.
+Dampak: saldo awal/AR-AP & kredit terbuka menggantung; jurnal pembuka memegang `party_id` yatim.
+Rekomendasi: tolak hapus bila ada saldo/kredit/pembayaran terbuka; tambah FK/penjaga.
+Effort: **M** · Keyakinan: **tinggi** (tumpang tindih WF-017/DATA-005)
+
+**MD-002 — Hapus gudang menggantungkan terminal POS & review sesi** · Sedang · Pengaturan
+Bukti: `src/server/actions/settings/lokasi.ts:125-181` tidak cek `posTerminals.warehouseId` (`db/schema/sales.ts:251`, tanpa FK), `posTerminalSessionReviews.warehouseId` (`:334`), `opnameTasks.warehouseId` (FK NO ACTION), `stockDocuments.toWarehouseId`; `pos/terminals.ts:167` leftJoin `warehouses` tanpa filter perusahaan.
+Dampak: terminal POS menunjuk gudang tak ada; review sesi yatim; hapus gudang gagal dengan error generik.
+Rekomendasi: tambah penjaga; petakan SQLSTATE 23503 ke konflik bernama.
+Effort: **M** · Keyakinan: **tinggi** (memperluas WF-018)
+
+**MD-003 — Simpan produk menerima `categoryId`/`unitId`/`supplierId` lintas tenant** · **Tinggi** · Gudang
+Bukti: `src/server/actions/inventory/produk.ts:192-194` (langsung diset); `db/schema/catalog.ts:145-147` (FK tanpa scope); `server/catalog/products.ts:156-158` & `server/purchasing.ts:523-525` join tanpa filter perusahaan.
+Dampak: produk perusahaan A merujuk master perusahaan B; daftar bocor nama lintas tenant.
+Rekomendasi: validasi kepemilikan + filter `companyId` di semua join baca.
+Effort: **M** · Keyakinan: **tinggi**
+
+**MD-004 — Simpan pelanggan menerima `groupId` lintas tenant** · Sedang · Gudang
+Bukti: `src/server/actions/inventory/pihak.ts:220` (`groupId` tanpa cek); `db/schema/catalog.ts:57` (FK tanpa scope); `server/catalog/parties.ts:94-97` leftJoin `customerGroups` tanpa filter perusahaan.
+Dampak: pelanggan terpasang ke grup harga perusahaan lain; daftar membocorkan nama grup.
+Rekomendasi: validasi `groupId` + filter join.
+Effort: **S** · Keyakinan: **tinggi**
+
+**MD-005 — Simpan gudang menerima `branchId` lintas tenant** · Sedang · Pengaturan
+Bukti: `src/server/actions/settings/lokasi.ts:32` (`branchId: data.branchId ?? null` tanpa cek); `db/schema/platform.ts:50` (FK tanpa scope).
+Dampak: gudang menunjuk cabang perusahaan lain; pelaporan tercampur.
+Rekomendasi: validasi cabang milik perusahaan.
+Effort: **S** · Keyakinan: **tinggi**
+
+**MD-006 — Sesi kas menerima `branchId` lintas tenant** · Sedang · POS
+Bukti: `src/server/actions/pos.ts:684-692` (`openSessionAction` meneruskan `branchId` tanpa validasi); `pos/sessions.ts:52-59` insert langsung; `db/schema/sales.ts:189` (`branchId` tanpa FK); `reports/cash-sessions.ts:263` leftJoin `branches` tanpa filter perusahaan.
+Dampak: kasir membuka sesi untuk cabang asing; riwayat sesi menampilkan nama cabang salah.
+Rekomendasi: validasi `branchId`; tambah FK + filter perusahaan.
+Effort: **M** · Keyakinan: **tinggi**
+
+**MD-007 — Terminal POS menerima `warehouseId` lintas tenant** · Sedang · POS
+Bukti: `src/server/actions/pos-terminals.ts:97-108` (tanpa validasi); `pos/terminals.ts:136-145` insert langsung; `db/schema/sales.ts:251` (tanpa FK); `pos/terminals.ts:167` leftJoin `warehouses` tanpa filter perusahaan.
+Dampak: terminal terikat gudang asing; daftar terminal membocorkan nama gudang.
+Rekomendasi: validasi gudang milik perusahaan; tambah FK.
+Effort: **M** · Keyakinan: **tinggi**
+
+**MD-008 — `companySettings.defaultWarehouseId` menerima gudang lintas tenant** · Rendah · Pengaturan
+Bukti: `src/server/actions/settings/identitas-pajak.ts:149,224` (tanpa cek); `db/schema/platform.ts:69` (tanpa FK).
+Dampak: referensi menggantung; dampak terbatas karena `pickDefaultWarehouseId` memakai daftar gudang perusahaan.
+Rekomendasi: validasi gudang milik perusahaan.
+Effort: **S** · Keyakinan: **tinggi**
+
+**MD-009 — Edit harga massal melewati izin `inventory.price`** · **Tinggi** · Master data
+Bukti: `src/server/actions/master-data.ts:169-190` (`applyBulkEditProductsAction` hanya butuh `inventory.manage`); `src/server/master-data/bulk-edit.ts:361-364` (patch `{salePrice}`/`{costPrice}`); kontras `src/server/actions/inventory/produk.ts:169-178` (menolak tanpa `inventory.price`); peran `warehouse` punya `inventory.manage` tanpa `inventory.price` (`lib/permissions.ts:151-157`).
+Dampak: staf gudang mengubah harga jual/pokok massal, melewati gerbang manajer.
+Rekomendasi: wajibkan `inventory.price` untuk operasi `kind:"price"`; audit before/after.
+Effort: **M** · Keyakinan: **tinggi**
+
+**MD-010 — Impor `updateExisting` menimpa harga/master & melewati izin harga** · **Tinggi** · Impor/Gudang
+Bukti: `src/server/actions/import/commit-phases.ts:561-584` (update `costPrice`, `salePrice`, `barcode`, `categoryId`, `unitId`, `supplierId`, `minStock`, `notes` tanpa syarat); komentar `:586-589` menyatakan gerbang harga tidak berlaku; `lib/import/import-cells.ts:141` (sel kosong → 0); `commit.ts:47` hanya `import.manage`.
+Dampak: impor ulang file parsial menyetel nol harga/barcode/kategori/satuan/pemasok; harga berubah tanpa `inventory.price`.
+Rekomendasi: sel kosong = "jangan ubah"; wajibkan `inventory.price` untuk kolom harga; audit master implisit.
+Effort: **L** · Keyakinan: **tinggi**
+
+**MD-011 — Impor produk melewati penjaga keunikan barcode lintas tabel** · Sedang · Impor/Gudang
+Bukti: `src/server/actions/import/commit-phases.ts:501-509` (`barcodeConflict` hanya dari `products`); `server/catalog/packaging.ts:94-140` (`assertBarcodeAvailable` penjaga tunggal lintas `products` & `product_packagings`); dua unique index terpisah (`db/schema/catalog.ts:171,220`); normalisasi barcode impor `.replace(/[\s'-]/g,"")` (`import-cells.ts:195`) vs manual trim (`lib/packaging.ts:47-50`).
+Dampak: produk memakai barcode kemasan; kemasan tak bisa dipindai.
+Rekomendasi: panggil `assertBarcodeAvailable` untuk semua barcode impor; samakan normalisasi.
+Effort: **M** · Keyakinan: **tinggi**
+
+**MD-012 — Unik peka huruf/whitespace; dedup impor beda dari simpan manual** · Sedang · Master data
+Bukti: `db/schema/catalog.ts:170-171` (unik teks mentah); `produk.ts:128` (`eq(products.sku, data.sku.trim())` case-sensitive); impor memakai `lower(sku)` (`commit-phases.ts:292,488`); `suppliers`/`customers`/`employees`/`accounts` unik mentah; `lokasi.ts:33` `toUpperCase()` tanpa trim.
+Dampak: `ABC`/`abc` dan `SUP-001`/`SUP-001 ` berdampingan lewat manual, tapi impor menganggap duplikat.
+Rekomendasi: normalisasi saat tulis + unique index ekspresi.
+Effort: **M** · Keyakinan: **tinggi**
+
+**MD-013 — Tidak ada unique pada kunci alamiah (taxId, NIK/NPWP, rekening, email/telepon)** · Sedang · Master data
+Bukti: `db/schema/catalog.ts:60,87` (`taxId`), `:54-55,83-84` (`email`/`phone`), `:89-91` (bank) tanpa unique; `db/schema/hr.ts:39-40` (`nik`, `npwp`); `master-data/parties.ts:148-153,218-220` (deteksi lunak); `partner-forms.tsx:116-121` (hanya peringatan).
+Dampak: pemasok/pelanggan ber-NPWP sama & karyawan ber-NIK sama bisa tercatat ganda; laporan pajak/payroll berisiko.
+Rekomendasi: unique index parsial/ekspresi pada taxId/NIK/NPWP ternormalisasi & rekening.
+Effort: **M** · Keyakinan: **tinggi**
+
+**MD-014 — Merge pihak tidak meremakan `partyCredits`, `purchaseAdvances`, `expenses`** · Sedang · Master data
+Bukti: `src/server/master-data/merge.ts:53-67` (daftar referensi tidak memuat ketiganya); `partyCredits.partyId`/`partyPayments.partyId` tanpa FK; `purchaseAdvances.supplierId` & `expenses.supplierId` ber-FK.
+Dampak: kredit, uang muka, beban terutang tetap di pihak duplikat nonaktif.
+Rekomendasi: remap ketiganya + sertakan di pratinjau.
+Effort: **M** · Keyakinan: **tinggi** (memperluas WF-016)
+
+**MD-015 — `normalBalance`/`section` akun bisa diubah saat sudah ada jurnal** · **Tinggi** · Akuntansi
+Bukti: `src/server/actions/accounting/akun-pemetaan.ts:381-392` (hanya `type` yang dijaga dengan journal check); `:410-415` menjaga `currency`; `normalBalance`/`section` ditulis tanpa penjaga riwayat; `reports/ledger.ts:49` & `reports/overview.ts:248` memakai `normalBalance` sebagai tanda saldo; `coa-migration.ts:296-311` menimpa `name/type/section/normalBalance` tanpa penjaga.
+Dampak: mengubah `normalBalance`/`section` pada akun bersejarah membalik/mereklasifikasi saldo & laporan tanpa mengubah ledger.
+Rekomendasi: penjaga "punya jurnal" untuk `normalBalance`, `section`, `cashFlowGroup`, tag.
+Effort: **L** · Keyakinan: **tinggi**
+
+**MD-016 — Hapus akun menggantungkan `bankTransfers` & back-reference `contraOf`** · Sedang · Akuntansi
+Bukti: `src/server/actions/accounting/akun-pemetaan.ts:553-596` (tidak cek `bankTransfers`, `accounts.contraOf`, `quickEntryDrafts`); `db/schema/accounting.ts:248-249` (`bankTransfers` accounts tanpa FK), `:69` (`contraOf` tanpa FK); `bankStatementImports.accountId` ber-FK → error 23503.
+Dampak: transfer bank menunjuk akun tak ada; presentasi kontra rusak; hapus akun gagal generik.
+Rekomendasi: penjaga `bankTransfers`/`contraOf`; petakan 23503.
+Effort: **M** · Keyakinan: **tinggi**
+
+**MD-017 — Perubahan master karyawan tidak masuk `audit_log`; NIK/NPWP tak unik; reaktivasi inkonsisten** · Sedang · HR
+Bukti: `src/server/actions/hr/karyawan.ts` (tidak ada `writeAudit`); `hr/final-pay.ts:537-545` (set `isActive=false`, `employmentStatus="terminated"`); `db/schema/hr.ts:39-40` (NIK/NPWP tanpa unique); `karyawan.ts:171` (`isActive: data.isActive ?? true`).
+Dampak: tak ada jejak audit untuk buat/ubah/berhentikan karyawan & gaji; NIK/NPWP ganda; status-campur saat reaktivasi.
+Rekomendasi: `writeAudit` before/after; unique NIK/NPWP; reaktivasi bersihkan field terminasi.
+Effort: **M** · Keyakinan: **tinggi**
+
+**MD-018 — Celah audit pada create/update master: akun (kecuali ganti kode), karyawan, gudang, grup pelanggan, metode bayar** · Sedang · Semua modul
+Bukti: `akun-pemetaan.ts:498-508` (audit hanya `if (codeChanged)`); `lokasi.ts:26-65` (gudang tanpa audit); `kelompok-harga.ts:27-68` (grup tanpa audit); `pembayaran.ts:165-200` (metode tanpa audit); `karyawan.ts` (tanpa audit).
+Dampak: perubahan sensitif tidak meninggalkan jejak audit.
+Rekomendasi: `writeAudit` before/after di semua jalur create/update master.
+Effort: **M** · Keyakinan: **tinggi**
+
+**MD-019 — Flag pelacakan produk bisa diubah tanpa penjaga riwayat stok** · Sedang · Gudang
+Bukti: `src/server/actions/inventory/produk.ts:198-200` (tulis langsung `trackStock/trackBatch/trackSerial`); impor sengaja menolak mengubahnya (`commit-phases.ts:574-581`); `stockBatches`/`stockSerials` akan yatim.
+Dampak: menyalakan batch/serial meninggalkan stok tanpa alokasi; mematikan pelacakan meninggalkan baris yatim.
+Rekomendasi: terapkan penjaga yang sama dengan impor.
+Effort: **M** · Keyakinan: **tinggi**
+
+**MD-020 — Default `?? true` mereaktivasi master saat field tidak dikirim** · Sedang · Semua modul
+Bukti: `produk.ts:202` (`isActive`, `trackStock`), `karyawan.ts:171`, `akun-pemetaan.ts:493`, `lokasi.ts:37`, `kelompok-harga.ts:46`, `pembayaran.ts:187`.
+Dampak: update/API parsial tanpa `isActive` diam-diam mengaktifkan kembali master yang dinonaktifkan.
+Rekomendasi: bedakan "absen" dengan "true"; hanya masukkan ke `.set()` bila `!== undefined`.
+Effort: **S** · Keyakinan: **tinggi**
+
+**MD-021 — `products.costPrice` bisa ditulis manual padahal dikelola AVCO** · **Tinggi** · Gudang
+Bukti: `produk.ts:195`; `bulk-edit.ts:362-363`; `movements.ts:167-170` (AVCO); `movements.ts:407-410` (`recomputeCostFromLedger`); `commit-phases.ts:570` (impor).
+Dampak: edit manual/massal/impor mendesakkan master dari ledger & GL; penerimaan/void berikut menimpa tanpa peringatan.
+Rekomendasi: perlakukan `costPrice` sebagai milik sistem; hapus tulis manual atau jadikan koreksi berjurnal.
+Effort: **L** · Keyakinan: **tinggi** (tumpang tindih DATA-001)
+
+**MD-022 — Penjaga hapus produk tak lengkap (`saleReturnLines` tanpa FK)** · Sedang · Gudang
+Bukti: `produk.ts:344-377` (tidak cek `saleReturnLines`, `stockBatches`, `stockSerials`, `purchaseOrderLines`, `supplierReturnLines`, `purchaseRequestLines`, `stockReservations`); `db/schema/sales.ts:163` (`saleReturnLines.productId` tanpa FK); FK produk NO ACTION → error 23503.
+Dampak: produk yang hanya dirujuk baris retur bisa terhapus & meninggalkan baris yatim; referensi lain gagal generik.
+Rekomendasi: lengkapi penjaga; tambah FK.
+Effort: **M** · Keyakinan: **tinggi** (memperluas WF-019)
+
+**MD-023 — Create/edit/hapus pelanggan boleh dengan `pos.sell` (kasir), termasuk `creditLimit`; quick-add tanpa audit** · **Tinggi** · Gudang/POS
+Bukti: `pihak.ts:194` (`requirePermissionInModule("pos.sell","gudang")`), `:221` (tulis `creditLimit`), `:409` (hapus); `pos/sales-payments.ts:336-353` (`creditLimit` mengendalikan penjualan utang); `actions/pos.ts:134-167` (`quickAddCustomerAction` tanpa `writeAudit`/dedup); peran `cashier` punya `pos.sell` (`lib/permissions.ts:131-149`).
+Dampak: kasir menaikkan batas kredit / menghapus pelanggan & membuat pelanggan tanpa audit, melewati kendali kredit.
+Rekomendasi: pisahkan pengelolaan master pelanggan dari `pos.sell`; quick-add minimal & diaudit.
+Effort: **M** · Keyakinan: **sedang** (UI dijaga akses modul; penyalahgunaan butuh panggilan aksi langsung)
+
+**MD-024 — Data bank/pajak pemasok bisa diubah `inventory.manage` tanpa gerbang keuangan** · Sedang · Gudang
+Bukti: `pihak.ts:59` (`inventory.manage`), `:89-93` (tulis `bankName`, `bankAccountNumber`, `bankAccountName`, `taxId`); peran `warehouse` punya `inventory.manage` (`lib/permissions.ts:151-157`); `partner-forms.tsx:186-188`.
+Dampak: staf gudang mengubah rekening/NPWP pemasok (data instruksi pembayaran) — risiko pemisahan tugas.
+Rekomendasi: gerbang `accounting.manage` untuk rekening/nama bank + audit before/after.
+Effort: **M** · Keyakinan: **sedang**
+
+**MD-025 — Akun sistem dibuat/diklaim otomatis berdasarkan kode/nama saat posting** · Sedang · Akuntansi
+Bukti: `src/server/system-accounts.ts:58-88` (cocok `code`+tipe, lalu `name`+tipe; jika tak ada, insert akun + mapping); `fixed-assets.ts:85-96` (update `isContra`/`contraOf` di luar modul akuntansi); `payroll-indonesia.ts:70-72`.
+Dampak: posting payroll/aset membuat akun COA baru atau memetakan kunci ke akun pengguna yang kebetulan sama nama, tanpa keputusan eksplisit.
+Rekomendasi: provisioning akun sistem eksplisit; audit auto-create; peringatkan klaim berdasarkan nama.
+Effort: **L** · Keyakinan: **tinggi**
+
+### 4.7 Temuan Tambahan Terverifikasi dari Artefak Audit Paralel
+
+Artefak `audit/` (lihat §2.3) berisi laporan paralel. Sebagian klaim **salah** (mis. "over-receipt tanpa batas" — padahal `purchasing.ts:342-357` menegakkan cap; "shift ditutup dengan pesanan hold" — `countHeldSales` ada di `sessions.ts:317-323`). Yang diverifikasi独立 dan sah:
+
+**FN-001 — Hook barcode scanner diimpor tapi tidak dipanggil di terminal kasir** · **Tinggi** · POS
+Bukti: `src/components/pos/pos-terminal.tsx:9` (`import { useBarcodeScannerCapture } ...`) — grep seluruh berkas hanya menemukan baris impor; warning lint `no-unused-vars` pada berkas yang sama.
+Dampak: scanner barcode fisik tidak tertangkap otomatis; angka barcode salah ketik ke field lain (kuantitas) atau hilang.
+Rekomendasi: pasang hook di terminal, atau hapus impor & aktifkan handler keyboard global.
+Effort: **M** · Keyakinan: **tinggi**
+
+**DATA-013 — Penjaga saldo kas memuat seluruh riwayat akun ke memori (N+1/ berat)** · Sedang · Akuntansi
+Bukti: `src/server/accounting.ts:85-99` (`select` semua baris `journalLines` posted untuk akun, lalu `.reduce()` di memori) dijalankan pada **setiap** `postJournal` non-reversal.
+Dampak: pada akun kas dengan ratusan ribu jurnal, checkout/pembayaran melambat & memori server membengkak.
+Rekomendasi: gunakan agregat SQL (`sum(debit)-sum(credit)`) atau ringkasan saldo yang dipelihara.
+Effort: **M** · Keyakinan: **tinggi**
+
+**DATA-014 — Jurnal manual dapat memposting ke akun kontrol (piutang/persediaan)** · Sedang · Akuntansi
+Bukti: `src/server/actions/accounting/jurnal.ts:366-403` hanya memvalidasi eksistensi/`isPostable`/`isActive`; tidak ada penolak untuk akun kontrol (piutang, persediaan, utang) — `postJournal` juga tidak menolaknya (`accounting.ts:363-403`).
+Dampak: penyesuaian manual ke akun kontrol merusak rekonsiliasi GL vs subledger secara permanen.
+Rekomendasi: larang posting manual ke akun kontrol (atau wajibkan izin khusus + peringatan).
+Effort: **M** · Keyakinan: **tinggi**
+
+**UI-031 — Pengaturan kritis `allowNegativeStock` tersembunyi di form Profil Pajak** · Sedang · Pengaturan
+Bukti: `src/components/pengaturan/forms/identitas-pajak.tsx:346` (checkbox `allowNegativeStock`); label & konteks di form pajak perusahaan, bukan di pengaturan Gudang/Lokasi.
+Dampak: owner tidak menemukan pengaturan stok; risiko stok negatif tidak disadari.
+Rekomendasi: pindahkan ke Pengaturan → Gudang/Lokasi dengan penjelasan dampak.
+Effort: **S** · Keyakinan: **tinggi**
+
+**Perlu verifikasi (belum diverifikasi, jangan dijadikan temuan resmi):** klaim parallel "karyawan masa depan tergaji penuh" (HR-001), "pemotongan jam pecahan lembur" (HR-002), "akun login eks-karyawan tetap aktif" (CONF-03; `employees` tidak punya kolom `userId`), "kasir crash akibat bank fee unmapped" (SET-004), "hard-delete user menghancurkan audit" (SET-002; `created_by` adalah teks append-only, audit log tetap menyimpan id).
+
 ## 5. Tes Reproduksi
 
 | Berkas | Bug | Cara menjalankan | Status |
@@ -741,6 +929,10 @@ Catatan: tes ini memakai perusahaan demo, membuat fixture sendiri, dan membersih
 9. **UI-014/UI-015**: konfirmasi sebelum posting payroll & mengosongkan keranjang.
 10. **ARCH-002**: perbaiki assertion tes rekonsiliasi.
 11. **ARCH-003**: betulkan 19 warning lint.
+12. **MD-009/MD-010**: wajibkan `inventory.price` untuk edit harga massal & impor; sel kosong = "jangan ubah".
+13. **MD-020**: bedakan field absen vs `true` agar update parsial tidak mereaktivasi master.
+14. **FN-001**: pasang hook barcode scanner di terminal kasir.
+15. **DATA-014**: larang jurnal manual ke akun kontrol.
 
 ### 6.2 Perbaikan struktural (1–2 bulan)
 1. **Field ownership**: pisahkan `costPrice` AVCO (sistem) dari input manual; jadikan `salePrice` penerimaian eksplisit + audit.
@@ -756,7 +948,7 @@ Catatan: tes ini memakai perusahaan demo, membuat fixture sendiri, dan membersih
 
 ### 6.3 Perubahan arsitektur (3–6 bulan)
 1. **Sistem reservasi & kredit terpadu**: satukan `stock_reservations`, `sale_returns.creditUsed`, dan `party_credits` di bawah satu model "commitment" agar void/reversal selalu memulihkan semua porsi.
-2. **Ledger append-only penuh**:.jurnal/gerakan sudah append-only; perluas ke `stock_on_hand` (rapat mutasi) dan `cash_sessions` (mutasi) agar tidak ada update retroaktif.
+2. **Ledger append-only penuh**: jurnal/gerakan sudah append-only; perluas ke `stock_on_hand` (rapat mutasi) dan `cash_sessions` (mutasi) agar tidak ada update retroaktif.
 3. **Idempotensi terpusat**: lapisan `idempotencyKeys` dengan `scope` di unique index dan helper klaim bersama untuk semua aksi tulis.
 4. **Policy engine**: pindahkan ambang (maker-checker, diskon, write-off, toleransi) ke konfigurasi per perusahaan yang terpusat (pola D-25 sudah dimulai).
 5. **Parity offline**: ekstrak inti perhitungan quote ke modul bersama + tes parity otomatis (POS-020).

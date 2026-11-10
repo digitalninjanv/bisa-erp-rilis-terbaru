@@ -38,3 +38,29 @@ Dua berkas tes reproduksi di `audit/tests/` berhasil mengeksekusi dan membuktika
 - `repro-overtime-truncation.test.ts`: Terbukti memotong 0.5 jam lembur (hanya membayar Rp15.000 dari yang seharusnya Rp25.000).
 - `repro-hr-payroll-filter.test.ts`: Terbukti menyertakan karyawan masa depan yang tanggal bergabungnya di bulan berikutnya ke batch penggajian bulan berjalan.
 - Suite bawaan `tests/integration/review-fixes-t4rb.test.ts:252`: Terbukti gagal akibat perhitungan selisih rekonsiliasi bank yang bernilai negatif.
+
+---
+
+## 4. Validasi Rencana & Standar UI Framework (Fase Riset Lanjutan)
+
+- Dokumen: [`10_VALIDASI_PLAN_DAN_UI_FRAMEWORK.md`](file:///home/najib/Downloads/bisa-erp-rilis-terbaru/bisa-erp/audit/10_VALIDASI_PLAN_DAN_UI_FRAMEWORK.md)
+- Hasil Validasi Stack:
+  - Framework UI: `@base-ui/react` + `shadcn` + `Tailwind CSS v4` (Zero-runtime CSS, React 19/Next 16 native, tervalidasi optimal).
+  - Data Table: Headless URL-driven Data Table (36px compact row, tabular numbers, sticky header).
+  - Form Hierarchy: 4-Tier Ergonomic Architecture (Inline -> Modal Dialog -> Slide-over Sheet Drawer -> Dedicated Page).
+- Status Kode Produksi: 100% Bersih & Tidak Diubah (Read-Only).
+
+---
+
+## 5. Upgrade Master Task Plan 5/5 (Penyelarasan Penuh dengan AUDIT_ERP.md)
+
+- Dokumen: [`09_MASTER_TASK_PLAN_5_OUT_OF_5.md`](file:///home/najib/Downloads/bisa-erp-rilis-terbaru/bisa-erp/audit/09_MASTER_TASK_PLAN_5_OUT_OF_5.md)
+- Cakupan: **100% dari 97 temuan resmi AUDIT_ERP.md** telah dipetakan secara terperinci ke dalam 5 Sprint kerja.
+- Landasan Riset Exa AI:
+  - Mantlr / Stripe, Linear, Vercel UI (Interaction density, 1px hairline border, restrained semantic palette).
+  - Marigold UI & Dee Kargaev (4-Tier Form Hierarchy & Compact Data Table).
+  - Vercentlabs ERP & SAO Standards (Segregation of Duties / Maker-Checker Four-Eyes Principle).
+  - ClickHouse SaaS Postgres Guide (Multi-tenant composite foreign keys).
+  - IETF Idempotency-Key Specification RFC Draft (Client UUID keys with scoped uniqueness).
+  - Bookkeep Inventory Accounting (Single source of truth: AVCO moving average system-owned vs vendor purchase price).
+- Status Kode: 100% Bersih & Tidak Diubah (Read-Only).

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Dispatch, RefObject, SetStateAction } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import type { CartItem } from "@/components/pos/terminal-types";
 
 // D-10 butir 3 — persistensi keranjang ke localStorage.
@@ -161,7 +161,18 @@ export function useCartPersistence(params: {
       }
       setCartLoaded(true);
     })();
-  }, [cartLoaded, resumeId, warehouses, groups, storageKey]);
+  }, [
+    cartLoaded,
+    resumeId,
+    warehouses,
+    groups,
+    storageKey,
+    setCart,
+    setGroupId,
+    setHeldSaleId,
+    setHeldTotal,
+    setSelectedWarehouse,
+  ]);
 
   // D-10: simpan keranjang pada setiap perubahan. Keranjang kosong
   // tanpa tahanan yang dilanjutkan berarti tidak ada yang perlu

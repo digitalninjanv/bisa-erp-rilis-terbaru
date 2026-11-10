@@ -99,10 +99,9 @@ export function SupplierForm({
   const [dupWarnings, setDupWarnings] = useState<SimilarPartyMatch[] | null>(null);
 
   async function submit() {
-    // G2 (FRM-05): validasi wajib-isi kini helper bersama.
-    if (!requireFilled(form.code, "Kode dan nama pemasok wajib diisi.") || !requireFilled(form.name, "Kode dan nama pemasok wajib diisi.")) {
-      return;
-    }
+    // G2 & UI-008: Validasi spesifik per field
+    if (!requireFilled(form.code, "Kode pemasok wajib diisi.")) return;
+    if (!requireFilled(form.name, "Nama pemasok wajib diisi.")) return;
     if (dupWarnings === null) {
       setBusy(true);
       const check = await checkPartySimilarityAction({
@@ -247,9 +246,9 @@ export function CustomerForm({
   const [dupWarnings, setDupWarnings] = useState<SimilarPartyMatch[] | null>(null);
 
   async function submit() {
-    if (!requireFilled(form.code, "Kode dan nama pelanggan wajib diisi.") || !requireFilled(form.name, "Kode dan nama pelanggan wajib diisi.")) {
-      return;
-    }
+    // G2 & UI-008: Validasi spesifik per field
+    if (!requireFilled(form.code, "Kode pelanggan wajib diisi.")) return;
+    if (!requireFilled(form.name, "Nama pelanggan wajib diisi.")) return;
     if (!creditLimitValid) {
       toast.error("Limit kredit belum terbaca — periksa kembali nominalnya.");
       return;

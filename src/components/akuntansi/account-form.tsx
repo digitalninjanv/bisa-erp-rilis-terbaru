@@ -160,8 +160,13 @@ export function AccountForm({
     : [];
 
   async function submit() {
-    if (!code.trim() || name.trim().length < 2) {
-      toast.error("Kode dan nama akun wajib diisi.");
+    // UI-008 & UI-010: Validasi spesifik per field dan aturan panjang minimum
+    if (!code.trim()) {
+      toast.error("Kode akun wajib diisi.");
+      return;
+    }
+    if (name.trim().length < 2) {
+      toast.error("Nama akun wajib diisi (minimal 2 karakter).");
       return;
     }
     // A-27 B3: cerminan validasi server khusus kelas — kelas bank

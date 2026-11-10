@@ -49,8 +49,6 @@ const SALES = 25_000;
 const LINES_PER_SALE = 4;
 const YEAR = { from: "2025-01-01", to: "2025-12-31" };
 
-type Tx = Parameters<Parameters<typeof withCompany>[1]>[0];
-
 async function wipe() {
   await adminSql.begin(async (tx) => {
     await tx.unsafe("SET session_replication_role = replica");

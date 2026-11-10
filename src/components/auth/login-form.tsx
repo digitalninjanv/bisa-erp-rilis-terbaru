@@ -11,8 +11,8 @@ import { authClient } from "@/lib/auth-client";
 
 export function LoginForm() {
   const router = useRouter();
-  const [email, setEmail] = useState("owner@bisa.id");
-  const [password, setPassword] = useState("Bisa12345!");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 

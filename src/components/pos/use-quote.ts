@@ -38,7 +38,16 @@ export function useQuote(params: {
     companyRoundingMode: string;
   } | null;
 }) {
-  const { cart, selectedWarehouse, groupId, reservationId, cartSignature, serialIncomplete, setCache } = params;
+  const {
+    cart,
+    selectedWarehouse,
+    groupId,
+    reservationId,
+    cartSignature,
+    serialIncomplete,
+    setCache,
+    offlineQuote,
+  } = params;
   // FIX-POS Tahap 4 (POS2-01): hasil quote disimpan BERSAMA sidik
   // jari (signature) keadaan yang menghasilkannya. Quote hanya
   // berlaku bila signature-nya sama persis dengan keadaan saat ini —
@@ -95,7 +104,7 @@ export function useQuote(params: {
           // diantrekan; server menilai ulang harga/stok saat sinkron
           // dan selisih menjadi konflik peninjauan, bukan posting
           // senyap. Produk di luar katalog lokal → tetap gagal jujur.
-          const fallback = params.offlineQuote?.enabled
+          const fallback = offlineQuote?.enabled
             ? computeLocalOfflineQuote({
                 lines: cart.map((line) => ({
                   productId: line.productId,
@@ -106,7 +115,7 @@ export function useQuote(params: {
                   serialNumbers: line.serialNumbers?.filter((value) => value.trim()),
                 })),
                 catalog: Object.fromEntries(
-                  Object.entries(params.offlineQuote.catalog).map(([id, p]) => [
+                  Object.entries(offlineQuote.catalog).map(([id, p]) => [
                     id,
                     {
                       name: p.name,
@@ -125,9 +134,9 @@ export function useQuote(params: {
                     },
                   ]),
                 ),
-                group: params.offlineQuote.group,
-                taxRate: params.offlineQuote.taxRate,
-                companyRoundingMode: params.offlineQuote.companyRoundingMode,
+                group: offlineQuote.group,
+                taxRate: offlineQuote.taxRate,
+                companyRoundingMode: offlineQuote.companyRoundingMode,
               })
             : null;
           if (fallback) {
@@ -178,7 +187,17 @@ export function useQuote(params: {
       })();
     }, 180);
     return () => clearTimeout(timer);
-  }, [cart, selectedWarehouse, groupId, cartSignature, quoteNonce, serialIncomplete, reservationId]);
+  }, [
+    cart,
+    selectedWarehouse,
+    groupId,
+    cartSignature,
+    quoteNonce,
+    serialIncomplete,
+    reservationId,
+    offlineQuote,
+    setCache,
+  ]);
 
   const quote =
     cart.length === 0 || serialIncomplete || !quoteResult || quoteResult.signature !== cartSignature

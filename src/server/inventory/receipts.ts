@@ -414,16 +414,6 @@ async function resolveReceiptContext(tx: Tx, input: CreateReceiptInput): Promise
 }
 
 
-type ReceiptProductRow = {
-  id: string;
-  name: string;
-  sku: string;
-  trackBatch: boolean;
-  trackSerial: boolean;
-  costPrice: string;
-};
-
-
 /**
  * FIX-ARS Tahap 4: fase dari createReceipt — badan dipindah apa adanya;
  * resolusi produk & validasi per baris (qty/biaya, batch, seri,

@@ -6,6 +6,7 @@ import { and, eq, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
 import {
   accounts,
+  cashMovements,
   idempotencyKeys,
   partyPayments,
   paymentMethods,
@@ -22,6 +23,7 @@ import {
   resolvePartyCreditForUse,
   setPartyCreditJournal,
 } from "@/server/party-credits";
+import { getOpenCashSession } from "@/server/pos/sessions";
 import { nextDocumentNumber } from "@/server/sequences";
 
 export async function payReceivable(
@@ -185,6 +187,7 @@ export async function payReceivable(
   const map = await getAccountMap(tx, input.companyId);
   let fundingAccountId: string;
   let credit: Awaited<ReturnType<typeof resolvePartyCreditForUse>>["credit"] | null = null;
+  let receivingAccount: { cashBankKind: string | null } | null = null;
   if (input.creditId) {
     const resolved = await resolvePartyCreditForUse(tx, {
       companyId: input.companyId,
@@ -214,6 +217,7 @@ export async function payReceivable(
         id: accounts.id,
         code: accounts.code,
         name: accounts.name,
+        cashBankKind: accounts.cashBankKind,
         isPostable: accounts.isPostable,
         isActive: accounts.isActive,
       })
@@ -249,6 +253,7 @@ export async function payReceivable(
       );
     }
     fundingAccountId = input.accountId;
+    receivingAccount = account;
   }
   // A-21 Tahap R3-A (R3-01): fee dihitung dari BRUTO yang diterima —
   // kelebihan bayar (R3-B) dihitung dari porsi teralokasi bruto, fee
@@ -305,6 +310,23 @@ export async function payReceivable(
       createdBy: input.userId,
     })
     .returning({ id: partyPayments.id });
+
+  // POS-002: Catat mutasi kas ke sesi laci kasir yang sedang aktif jika penerimaan berupa kas
+  if (!credit && (receivingAccount?.cashBankKind === "cash" || fundingAccountId === map.cash)) {
+    const session = await getOpenCashSession(tx, input.companyId, input.userId);
+    if (session) {
+      await tx.insert(cashMovements).values({
+        companyId: input.companyId,
+        sessionId: session.id,
+        type: "sale", // atau receivable_in, masuk ke perhitungan expectedCash
+        amount: toDb(amount),
+        referenceType: "payment",
+        referenceId: payment.id,
+        notes: `Penerimaan piutang ${sale.number} (${number})`,
+        createdBy: input.userId,
+      });
+    }
+  }
 
   const customerParty = { partyType: "customer", partyId: customerId } as const;
   const journal = await postJournal(tx, {

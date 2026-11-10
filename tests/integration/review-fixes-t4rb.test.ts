@@ -249,7 +249,7 @@ describe("T4R-3b ringkasan rekonsiliasi memakai predikat live + batas tanggal", 
       // unreconciledTotal menyusut semu dan bisa negatif.
       expect(d(afterFuture.reconciledTotal).toFixed(4)).toBe(d(before.reconciledTotal).toFixed(4));
       expect(d(afterFuture.unreconciledTotal).toFixed(4)).toBe(d(before.unreconciledTotal).toFixed(4));
-      expect(d(afterFuture.unreconciledTotal).gte(0)).toBe(true);
+      expect(d(afterFuture.unreconciledTotal).gte(d(before.unreconciledTotal))).toBe(true);
 
       // Kontrol: jurnal hari ini yang tertaut menaikkan reconciledTotal
       // persis sebesar nominalnya.
@@ -291,7 +291,7 @@ describe("T4R-3b ringkasan rekonsiliasi memakai predikat live + batas tanggal", 
 
       const afterToday = await getReconciliationSummary(tx, ORG_ID, bank.id);
       expect(d(afterToday.reconciledTotal).minus(d(before.reconciledTotal)).toFixed(4)).toBe("7411003.0000");
-      expect(d(afterToday.unreconciledTotal).gte(0)).toBe(true);
+      expect(d(afterToday.unreconciledTotal).toFixed(4)).toBe(d(before.unreconciledTotal).toFixed(4));
     });
   });
 });

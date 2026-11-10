@@ -174,6 +174,16 @@ export async function savePaymentMethodAction(input: z.input<typeof methodSchema
     }
     assertFeeConfig(data);
     const result = await withCompany(ctx.company.id, async (tx) => {
+      // SET-004: Validasi ketersediaan akun bank_fee sebelum menyimpan metode ber-fee
+      if (data.feeEnabled && data.feeType && data.feeType !== "none" && Number(data.feeValue) > 0) {
+        const map = await getAccountMap(tx, ctx.company.id);
+        if (!map.bank_fee) {
+          throw new AppError(
+            "VALIDATION",
+            'Akun biaya bank ("bank_fee") belum dipetakan di Pengaturan > Pemetaan Akun. Atur akun Biaya Bank terlebih dahulu sebelum mengaktifkan fee pada metode pembayaran.',
+          );
+        }
+      }
       await assertMethodAccount(tx, ctx.company.id, data.type, data.accountId);
       const [row] = await tx
         .insert(paymentMethods)
@@ -191,6 +201,21 @@ export async function savePaymentMethodAction(input: z.input<typeof methodSchema
           feeValue: String(data.feeValue ?? "0"),
         })
         .returning({ id: paymentMethods.id });
+
+      await writeAudit(tx, {
+        companyId: ctx.company.id,
+        userId: ctx.user.id,
+        action: "payment_method.create",
+        entityType: "payment_method",
+        entityId: row.id,
+        after: {
+          code: data.code.toUpperCase(),
+          name: data.name,
+          type: data.type,
+          accountId: data.accountId,
+        },
+      });
+
       return row;
     });
     revalidatePath("/app/pengaturan");
@@ -229,6 +254,19 @@ export async function updatePaymentMethodAction(input: z.input<typeof methodUpda
         .where(and(eq(paymentMethods.companyId, ctx.company.id), eq(paymentMethods.id, data.id)))
         .limit(1);
       if (!existing) throw new AppError("NOT_FOUND", "Metode pembayaran tidak ditemukan.");
+      // SET-004: Validasi ketersediaan akun bank_fee sebelum menyimpan metode ber-fee
+      const isFeeActive = data.feeEnabled ?? existing.feeEnabled;
+      const feeType = data.feeType ?? existing.feeType;
+      const feeVal = Number(data.feeValue !== undefined ? data.feeValue : existing.feeValue);
+      if (isFeeActive && feeType !== "none" && feeVal > 0) {
+        const map = await getAccountMap(tx, ctx.company.id);
+        if (!map.bank_fee) {
+          throw new AppError(
+            "VALIDATION",
+            'Akun biaya bank ("bank_fee") belum dipetakan di Pengaturan > Pemetaan Akun. Atur akun Biaya Bank terlebih dahulu sebelum mengaktifkan fee pada metode pembayaran.',
+          );
+        }
+      }
       await assertMethodAccount(tx, ctx.company.id, data.type, data.accountId);
       const [row] = await tx
         .update(paymentMethods)

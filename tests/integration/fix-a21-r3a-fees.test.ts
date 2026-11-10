@@ -27,7 +27,6 @@ import { createSale } from "@/server/pos";
 import { payReceivable } from "@/server/pos/receivables";
 import { getPaymentBreakdown } from "@/server/reports";
 import { d } from "@/lib/money";
-import { todayISO } from "@/lib/format";
 import { makeRollbackTransaction } from "../helpers/rollback-transaction";
 
 // A-21 Tahap R3-A Bagian 1 — fee/MDR per metode pembayaran (R3-01,
@@ -453,7 +452,7 @@ describe("R3-A Bagian 1 — fee pada pembayaran utang & beban terutang", () => {
   it("pembayaran dari kredit pemasok tidak kena fee; fee eksplisit ditolak", async () => {
     await rollbackTransaction(async (tx) => {
       const supplier = await makeSupplier(tx);
-      const receipt = await makeReceipt(tx, supplier.id, "100000");
+      await makeReceipt(tx, supplier.id, "100000");
       await expect(
         resolvePaymentFee(tx, ORG, { accountId: acc["1000"], base: d(100000), explicitFee: "500" }),
       ).rejects.toThrow(/fee/i);

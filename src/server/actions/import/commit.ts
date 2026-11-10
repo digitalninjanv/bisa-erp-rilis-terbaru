@@ -12,7 +12,8 @@
 import { z } from "zod";
 import { withCompany } from "@/db/tenant";
 import { requirePermission } from "@/lib/session";
-import { guard } from "@/lib/errors";
+import { AppError, guard } from "@/lib/errors";
+import { can } from "@/lib/permissions";
 import { isoDateField, parseInput } from "@/lib/action-validation";
 import type { ImportField } from "@/lib/import-parse";
 import {
@@ -62,6 +63,15 @@ export async function commitImportBatchAction(input: z.input<typeof commitSchema
       const mapping = Object.fromEntries(
         Object.entries(data.mapping).filter(([, value]) => Boolean(value)),
       ) as Partial<Record<ImportField, string>>;
+
+      // MD-010: Impor yang memetakan kolom harga pokok/harga jual menuntut izin inventory.price
+      const priceMapped = Boolean(mapping.costPrice || mapping.salePrice);
+      if (priceMapped && !can(ctx, "inventory.price")) {
+        throw new AppError(
+          "FORBIDDEN",
+          "Impor berkas yang memetakan kolom harga pokok atau harga jual memerlukan izin Ubah harga produk ('inventory.price'). Hapus pemetaan kolom harga atau minta pengguna berizin yang mengeksekusi impor ini.",
+        );
+      }
 
       const rows = await loadPendingProductRows(tx, {
         companyId: ctx.company.id,

@@ -1,10 +1,10 @@
 "use server";
 
-import { and, eq, ilike, ne, or, sql } from "drizzle-orm";
+import { and, eq, ilike, or, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { withCompany, withCompanyReadOnly } from "@/db/tenant";
-import { customers, journalEntries, partyPayments, sales, warehouses } from "@/db/schema";
+import { cashMovements, customers, journalEntries, partyPayments, sales, warehouses } from "@/db/schema";
 import { reverseJournalEntry } from "@/server/accounting";
 import { writeAudit } from "@/server/audit";
 import {
@@ -18,6 +18,7 @@ import {
   closeCashSession,
   createSale,
   createSaleReturn,
+  getOpenCashSession,
   getReturnCredit,
   holdSale,
   openCashSession,
@@ -142,6 +143,20 @@ export async function quickAddCustomerAction(input: { name: string; phone?: stri
       input,
     );
     const result = await withCompany(ctx.company.id, async (tx) => {
+      // MD-023: Quick add pelanggan kasir tetap harus diaudit
+      if (data.phone) {
+        const [existing] = await tx
+          .select({ id: customers.id, name: customers.name })
+          .from(customers)
+          .where(and(eq(customers.companyId, ctx.company.id), eq(customers.phone, data.phone)))
+          .limit(1);
+        if (existing) {
+          throw new AppError(
+            "CONFLICT",
+            `Nomor telepon ${data.phone} sudah terdaftar atas nama pelanggan "${existing.name}".`,
+          );
+        }
+      }
       const code = `CUST-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
       const [created] = await tx
         .insert(customers)
@@ -159,6 +174,21 @@ export async function quickAddCustomerAction(input: { name: string; phone?: stri
           phone: customers.phone,
           creditLimit: customers.creditLimit,
         });
+
+      await writeAudit(tx, {
+        companyId: ctx.company.id,
+        userId: ctx.user.id,
+        action: "customer.quick_add",
+        entityType: "customer",
+        entityId: created.id,
+        after: {
+          code: created.code,
+          name: created.name,
+          phone: created.phone,
+          creditLimit: created.creditLimit,
+        },
+      });
+
       return { ...created, creditLimit: d(created.creditLimit).toNumber() };
     });
     revalidatePath("/app/gudang/pelanggan");
@@ -639,18 +669,10 @@ export async function voidReceivablePaymentAction(input: { paymentId: string; re
         paymentId: payment.id,
       });
 
-      // Hitung ulang terbayar dari penerimaan non-void saja.
-      const [paidRow] = await tx
-        .select({ total: sql<string>`coalesce(sum(${partyPayments.amount}), 0)` })
-        .from(partyPayments)
-        .where(
-          and(
-            eq(partyPayments.companyId, ctx.company.id),
-            eq(partyPayments.saleId, sale.id),
-            ne(partyPayments.status, "void"),
-          ),
-        );
-      const paid = d(paidRow?.total ?? "0");
+      // POS-001: Kurangi porsi pembayaran piutang yang dibatalkan dari paidTotal penjualan
+      // (mempertahankan porsi pembayaran awal/tunai saat checkout).
+      const diff = d(sale.paidTotal).minus(d(payment.amount));
+      const paid = diff.gt(0) ? diff : d(0);
       await tx
         .update(sales)
         .set({
@@ -658,6 +680,35 @@ export async function voidReceivablePaymentAction(input: { paymentId: string; re
           paymentStatus: paid.gte(d(sale.total)) ? "paid" : paid.gt(0) ? "partial" : "unpaid",
         })
         .where(and(eq(sales.companyId, ctx.company.id), eq(sales.id, sale.id)));
+
+      // POS-002: Jika penerimaan piutang memiliki mutasi kas ke laci sesi, catat pengembalian dana
+      const [existingCashMovement] = await tx
+        .select()
+        .from(cashMovements)
+        .where(
+          and(
+            eq(cashMovements.companyId, ctx.company.id),
+            eq(cashMovements.referenceType, "payment"),
+            eq(cashMovements.referenceId, payment.id),
+          ),
+        )
+        .limit(1);
+
+      if (existingCashMovement) {
+        const processorSession = await getOpenCashSession(tx, ctx.company.id, ctx.user.id);
+        if (processorSession) {
+          await tx.insert(cashMovements).values({
+            companyId: ctx.company.id,
+            sessionId: processorSession.id,
+            type: "refund",
+            amount: toDb(d(existingCashMovement.amount).neg()),
+            referenceType: "payment_void",
+            referenceId: payment.id,
+            notes: `Pembatalan penerimaan piutang ${payment.number} — ${data.reason}`,
+            createdBy: ctx.user.id,
+          });
+        }
+      }
 
       await writeAudit(tx, {
         companyId: ctx.company.id,

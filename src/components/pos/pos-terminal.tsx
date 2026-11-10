@@ -226,6 +226,24 @@ export function PosTerminal({
     setHeldTotal,
   });
 
+  const offlineQuotePayload = useMemo(() => {
+    if (!posOfflineEnabled) return null;
+    const g = groups.find((row) => row.id === groupId);
+    return {
+      enabled: true,
+      catalog: cache,
+      group: g
+        ? {
+            roundingStep: g.roundingStep,
+            roundingDirection: g.roundingDirection as "down" | "up" | "nearest",
+            roundCashTotal: g.roundCashTotal,
+          }
+        : null,
+      taxRate: offlineTaxRate,
+      companyRoundingMode: offlineRoundingMode,
+    };
+  }, [posOfflineEnabled, groups, groupId, cache, offlineTaxRate, offlineRoundingMode]);
+
   const {
     quote,
     quoting,
@@ -242,27 +260,7 @@ export function PosTerminal({
     cartSignature,
     serialIncomplete,
     setCache,
-    // A-24 T6 (T6-01): bahan quote lokal offline — aktif hanya bila
-    // saklar offline perusahaan menyala; dipakai useQuote semata saat
-    // panggilan quote server GAGAL total (lemparan transportasi).
-    offlineQuote: posOfflineEnabled
-      ? {
-          enabled: true,
-          catalog: cache,
-          group: (() => {
-            const g = groups.find((row) => row.id === groupId);
-            return g
-              ? {
-                  roundingStep: g.roundingStep,
-                  roundingDirection: g.roundingDirection as "down" | "up" | "nearest",
-                  roundCashTotal: g.roundCashTotal,
-                }
-              : null;
-          })(),
-          taxRate: offlineTaxRate,
-          companyRoundingMode: offlineRoundingMode,
-        }
-      : null,
+    offlineQuote: offlineQuotePayload,
   });
   const total = quote?.total ?? 0;
 
@@ -354,8 +352,32 @@ export function PosTerminal({
       setSearch("");
       searchRef.current?.focus();
     },
-    [],
+    [setSearch],
   );
+
+  const handleGlobalBarcodeScan = useCallback(
+    async (code: string) => {
+      const trimmed = code.trim();
+      if (!trimmed) return;
+      const product = await scanBarcode(trimmed);
+      if (!product) {
+        toast.error(`Produk dengan barcode/SKU "${trimmed}" tidak ditemukan.`);
+        return;
+      }
+      addProduct(product, product.matchedPackagingId ?? null);
+    },
+    [scanBarcode, addProduct],
+  );
+
+  useBarcodeScannerCapture({
+    enabled: sessionOpen && !holdOpen && !resumeOffer,
+    onScan: (code) => {
+      void handleGlobalBarcodeScan(code);
+    },
+    isIgnoredTarget: (target) => {
+      return target === searchRef.current;
+    },
+  });
 
   const applyReservation = useCallback(
     async (reservation: TerminalReservation) => {
@@ -455,7 +477,7 @@ export function PosTerminal({
   const setLinePackaging = (key: string, packagingId: string | null) =>
     setCart((current) => changeCartLinePackaging(current, key, packagingId));
 
-  const { mixedPlan, paidAmount, change, outstanding, mixedShortfall, debtEntryAmount, debtActive, debtAmount, nonCashNeedsConfirm } =
+  const { mixedPlan, change, outstanding, mixedShortfall, debtEntryAmount, debtActive, debtAmount, nonCashNeedsConfirm } =
     usePaymentPlan({ mode, entries, methodById, total, singleMethod, single, isCreditSingle, cashTendered, debtMethod });
 
   const credit = useReturnCredit({

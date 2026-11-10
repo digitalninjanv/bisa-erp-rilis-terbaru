@@ -15,7 +15,8 @@ import {
   type PartyKind,
 } from "@/server/master-data";
 import { requirePermissionInModule } from "@/lib/session";
-import { guard } from "@/lib/errors";
+import { AppError, guard } from "@/lib/errors";
+import { can } from "@/lib/permissions";
 import { parseInput } from "@/lib/action-validation";
 import { todayISO } from "@/lib/format";
 import type { Tx } from "@/db";
@@ -170,6 +171,13 @@ export async function applyBulkEditProductsAction(input: z.input<typeof applyBul
   return guard(async () => {
     const ctx = await requirePermissionInModule("inventory.manage", "gudang");
     const data = parseInput(applyBulkEditSchema, input);
+    // MD-009: Operasi perubahan harga massal wajib memiliki izin inventory.price
+    if (data.operation.kind === "price" && !can(ctx, "inventory.price")) {
+      throw new AppError(
+        "FORBIDDEN",
+        "Mengubah harga jual atau harga pokok massal memerlukan izin Ubah harga produk ('inventory.price') (peran manajer ke atas).",
+      );
+    }
     const result = await withCompany(ctx.company.id, async (tx) => {
       const warehouseId = await resolveWarehouseId(tx, ctx.company.id);
       return applyBulkEditProducts(tx, {

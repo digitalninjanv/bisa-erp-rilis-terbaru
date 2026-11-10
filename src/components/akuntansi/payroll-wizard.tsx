@@ -7,6 +7,7 @@ import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { MoneyInput } from "@/components/money-input";
 import { WizardSteps } from "@/components/blocks/wizard-steps";
+import { ConfirmDialog } from "@/components/blocks/confirm-dialog";
 import { d, formatIDR } from "@/lib/money";
 import { formatMonth } from "@/lib/format";
 import { runPayrollAction } from "@/server/actions/hr/payroll";
@@ -115,6 +116,7 @@ export function PayrollWizard({
   const [step, setStep] = useState(0);
   const [period, setPeriod] = useState(defaultPeriod);
   const [busy, setBusy] = useState(false);
+  const [confirmPosting, setConfirmPosting] = useState(false);
   const [posted, setPosted] = useState<{ id: string; number: string; totalNet: number; employees: number } | null>(null);
   const [deductions, setDeductions] = useState<Record<string, string>>(() =>
     Object.fromEntries(advanceProposals.map((row) => [row.employeeId, row.proposed])),
@@ -204,10 +206,10 @@ export function PayrollWizard({
         current={step}
         onNavigate={setStep}
         onBack={step > 0 ? () => setStep(step - 1) : undefined}
-        onNext={step < 2 ? () => setStep(step + 1) : () => void submit()}
+        onNext={step < 2 ? () => setStep(step + 1) : () => setConfirmPosting(true)}
         finishLabel="Posting payroll"
         busy={busy}
-        nextDisabled={step === 0 && (!/^\d{4}-\d{2}$/.test(period) || active.length === 0)}
+        nextDisabled={step === 0 && (!/^\d{4}-\d{2}$/.test(period) || active.length === 0 || Boolean(processedRun))}
       >
         {step === 0 ? (
           <div>
@@ -358,6 +360,31 @@ export function PayrollWizard({
           </div>
         ) : null}
       </WizardSteps>
+
+      <ConfirmDialog
+        open={confirmPosting}
+        title={`Posting Payroll Periode ${formatMonth(period)}?`}
+        description={
+          <div>
+            <p>
+              Proses ini akan membuat run payroll dan mencatat jurnal beban gaji serta utang gaji
+              untuk <strong>{active.length} karyawan</strong> dengan estimasi bersih{" "}
+              <strong>{formatIDR(totals.net.toFixed(4))}</strong>.
+            </p>
+            <p className="mt-2 text-muted-foreground">
+              Satu periode hanya bisa diproses satu kali. Pastikan seluruh rincian dan potongan kasbon sudah sesuai.
+            </p>
+          </div>
+        }
+        confirmLabel="Ya, Posting Payroll"
+        cancelLabel="Batal"
+        busy={busy}
+        onConfirm={() => {
+          setConfirmPosting(false);
+          void submit();
+        }}
+        onCancel={() => setConfirmPosting(false)}
+      />
     </div>
   );
 }

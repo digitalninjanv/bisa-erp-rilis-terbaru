@@ -365,7 +365,9 @@ export async function saveAccountAction(input: z.input<typeof accountSchema>) {
           .select({
             id: accounts.id,
             code: accounts.code,
+            name: accounts.name,
             type: accounts.type,
+            isPostable: accounts.isPostable,
             isActive: accounts.isActive,
             currency: accounts.currency,
             psak118Category: accounts.psak118Category,
@@ -489,23 +491,23 @@ export async function saveAccountAction(input: z.input<typeof accountSchema>) {
             isContra: nextIsContra,
             contraOf: nextContraOf,
             description: data.description ?? null,
-            isPostable: data.isPostable ?? true,
-            isActive: data.isActive ?? true,
+            isPostable: data.isPostable !== undefined ? data.isPostable : existing.isPostable,
+            isActive: data.isActive !== undefined ? data.isActive : existing.isActive,
           })
           .where(and(eq(accounts.companyId, ctx.company.id), eq(accounts.id, data.id)))
           .returning({ id: accounts.id });
         if (!row) throw new AppError("NOT_FOUND", "Akun tidak ditemukan.");
-        if (codeChanged) {
-          await writeAudit(tx, {
-            companyId: ctx.company.id,
-            userId: ctx.user.id,
-            action: "account.code_change",
-            entityType: "account",
-            entityId: data.id,
-            before: { code: existing.code },
-            after: { code: data.code },
-          });
-        }
+
+        // MD-018: Audit perubahan akun
+        await writeAudit(tx, {
+          companyId: ctx.company.id,
+          userId: ctx.user.id,
+          action: codeChanged ? "account.code_change" : "account.update",
+          entityType: "account",
+          entityId: data.id,
+          before: { code: existing.code, name: existing.name, isActive: existing.isActive },
+          after: { code: data.code, name: data.name, isActive: data.isActive !== undefined ? data.isActive : existing.isActive },
+        });
         return row;
       }
       await assertContraTarget(createContraOf);
@@ -531,6 +533,17 @@ export async function saveAccountAction(input: z.input<typeof accountSchema>) {
           isActive: data.isActive ?? true,
         })
         .returning({ id: accounts.id });
+
+      // MD-018: Audit pembuatan akun
+      await writeAudit(tx, {
+        companyId: ctx.company.id,
+        userId: ctx.user.id,
+        action: "account.create",
+        entityType: "account",
+        entityId: row.id,
+        after: { code: data.code, name: data.name, type: data.type },
+      });
+
       return row;
     });
     revalidatePath("/app/akuntansi/akun");

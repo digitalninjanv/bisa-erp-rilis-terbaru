@@ -43,19 +43,57 @@ export async function saveWarehouseAction(input: z.input<typeof warehouseSchema>
           .where(eq(warehouses.companyId, ctx.company.id));
       }
       if (data.id) {
+        const [current] = await tx
+          .select()
+          .from(warehouses)
+          .where(and(eq(warehouses.companyId, ctx.company.id), eq(warehouses.id, data.id)))
+          .limit(1);
+        if (!current) throw new AppError("NOT_FOUND", "Gudang tidak ditemukan.");
+
+        // MD-020: Jangan mengaktifkan kembali gudang non-aktif jika isActive tidak dikirim
+        const updateValues = {
+          branchId: data.branchId !== undefined ? (data.branchId ?? null) : current.branchId,
+          code: data.code ? data.code.toUpperCase() : current.code,
+          name: data.name ?? current.name,
+          type: data.type ?? current.type,
+          isDefault: data.isDefault ?? current.isDefault,
+          isActive: data.isActive !== undefined ? data.isActive : current.isActive,
+        };
+
         const [row] = await tx
           .update(warehouses)
-          .set(values)
+          .set(updateValues)
           .where(and(eq(warehouses.companyId, ctx.company.id), eq(warehouses.id, data.id)))
           .returning({ id: warehouses.id });
-        // P3-10: update yang tidak mengenai baris mana pun bukan sukses.
-        if (!row) throw new AppError("NOT_FOUND", "Gudang tidak ditemukan.");
+
+        // MD-018: Audit log perubahan gudang
+        await writeAudit(tx, {
+          companyId: ctx.company.id,
+          userId: ctx.user.id,
+          action: "warehouse.update",
+          entityType: "warehouse",
+          entityId: data.id,
+          before: { code: current.code, name: current.name, isActive: current.isActive },
+          after: { code: updateValues.code, name: updateValues.name, isActive: updateValues.isActive },
+        });
+
         return row;
       }
       const [row] = await tx
         .insert(warehouses)
         .values({ companyId: ctx.company.id, ...values })
         .returning({ id: warehouses.id });
+
+      // MD-018: Audit log pembuatan gudang
+      await writeAudit(tx, {
+        companyId: ctx.company.id,
+        userId: ctx.user.id,
+        action: "warehouse.create",
+        entityType: "warehouse",
+        entityId: row.id,
+        after: { code: values.code, name: values.name, isDefault: values.isDefault },
+      });
+
       return row;
     });
     revalidatePath("/app/pengaturan");

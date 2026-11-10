@@ -47,18 +47,58 @@ export async function saveCustomerGroupAction(input: z.input<typeof groupSchema>
         updatedAt: new Date(),
       };
       if (data.id) {
+        const [existing] = await tx
+          .select()
+          .from(customerGroups)
+          .where(and(eq(customerGroups.companyId, ctx.company.id), eq(customerGroups.id, data.id)))
+          .limit(1);
+        if (!existing) throw new AppError("NOT_FOUND", "Kelompok tidak ditemukan.");
+
+        // MD-020: Jangan mengaktifkan kembali kelompok non-aktif jika isActive tidak dikirim
+        const updateValues = {
+          name: data.name,
+          roundingStep: data.roundingStep,
+          roundingDirection: data.roundingDirection,
+          roundCashTotal: data.roundCashTotal,
+          discountAccountId: data.discountAccountId !== undefined ? (data.discountAccountId ?? null) : existing.discountAccountId,
+          isActive: data.isActive !== undefined ? data.isActive : existing.isActive,
+          updatedAt: new Date(),
+        };
+
         const [row] = await tx
           .update(customerGroups)
-          .set(values)
+          .set(updateValues)
           .where(and(eq(customerGroups.companyId, ctx.company.id), eq(customerGroups.id, data.id)))
           .returning({ id: customerGroups.id });
-        if (!row) throw new AppError("NOT_FOUND", "Kelompok tidak ditemukan.");
+
+        // MD-018: Audit perubahan kelompok harga
+        await writeAudit(tx, {
+          companyId: ctx.company.id,
+          userId: ctx.user.id,
+          action: "customer_group.update",
+          entityType: "customer_group",
+          entityId: data.id,
+          before: { name: existing.name, isActive: existing.isActive },
+          after: { name: updateValues.name, isActive: updateValues.isActive },
+        });
+
         return row;
       }
       const [row] = await tx
         .insert(customerGroups)
         .values({ companyId: ctx.company.id, ...values })
         .returning({ id: customerGroups.id });
+
+      // MD-018: Audit pembuatan kelompok harga
+      await writeAudit(tx, {
+        companyId: ctx.company.id,
+        userId: ctx.user.id,
+        action: "customer_group.create",
+        entityType: "customer_group",
+        entityId: row.id,
+        after: { name: values.name },
+      });
+
       return row;
     });
     revalidatePath("/app/pengaturan");

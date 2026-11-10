@@ -47,6 +47,7 @@ export function ConfirmDialog({
   const [reasonText, setReasonText] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
   const confirmRef = useRef<HTMLButtonElement | null>(null);
+  const cancelRef = useRef<HTMLButtonElement | null>(null);
 
   // Setiap pembukaan mulai dari alasan awal yang dinyatakan pemanggil —
   // penyesuaian state saat render (pola resmi React untuk state yang
@@ -57,15 +58,17 @@ export function ConfirmDialog({
     if (open) setReasonText(reason?.initialValue ?? "");
   }
 
-  // Fokus ke kolom alasan bila ada; selain itu ke tombol konfirmasi.
+  // Fokus ke kolom alasan bila ada; bila aksi berbahaya (danger), fokus tombol batal
+  // untuk mencegah enter tidak sengaja (UI-002); selain itu ke tombol konfirmasi.
   useEffect(() => {
     if (!open) return;
     const timer = window.setTimeout(() => {
       if (reason) inputRef.current?.focus();
+      else if (danger) cancelRef.current?.focus();
       else confirmRef.current?.focus();
     }, 30);
     return () => window.clearTimeout(timer);
-  }, [open, reason]);
+  }, [open, reason, danger]);
 
   useEffect(() => {
     if (!open) return;
@@ -119,6 +122,7 @@ export function ConfirmDialog({
         ) : null}
         <div className="flex justify-end gap-2 px-5 py-4">
           <button
+            ref={cancelRef}
             type="button"
             onClick={onCancel}
             disabled={busy}

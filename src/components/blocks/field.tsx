@@ -12,10 +12,23 @@
 import type { ReactNode } from "react";
 import { labelClass } from "@/components/blocks/field-classes";
 
-export function Field({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
+export function Field({
+  label,
+  children,
+  className,
+  required,
+}: {
+  label: string;
+  children: ReactNode;
+  className?: string;
+  required?: boolean;
+}) {
   return (
     <label className={`block space-y-1 ${className ?? ""}`}>
-      <span className={labelClass}>{label}</span>
+      <span className={labelClass}>
+        {label}
+        {required ? <span className="ml-0.5 text-rose-500 font-bold" aria-hidden="true">*</span> : null}
+      </span>
       {children}
     </label>
   );

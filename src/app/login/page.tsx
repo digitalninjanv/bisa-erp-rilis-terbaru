@@ -89,12 +89,14 @@ export default async function LoginPage() {
 
           <LoginForm />
 
-          <div className="mt-8 rounded-lg border border-dashed border-border bg-muted/40 px-4 py-3 text-xs leading-5 text-muted-foreground">
-            <p className="font-medium text-foreground">Akun demo</p>
-            <p className="mt-1">
-              <span className="num">owner@bisa.id</span> · <span className="num">Bisa12345!</span>
-            </p>
-          </div>
+          {process.env.NODE_ENV === "development" ? (
+            <div className="mt-8 rounded-lg border border-dashed border-border bg-muted/40 px-4 py-3 text-xs leading-5 text-muted-foreground">
+              <p className="font-medium text-foreground">Akun demo (Hanya Lingkungan Pengembangan)</p>
+              <p className="mt-1">
+                <span className="num">owner@bisa.id</span> · <span className="num">Bisa12345!</span>
+              </p>
+            </div>
+          ) : null}
         </div>
       </section>
     </main>

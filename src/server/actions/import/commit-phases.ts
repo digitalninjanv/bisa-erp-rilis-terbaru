@@ -559,28 +559,24 @@ export async function processProductBatch(
     }
 
     if (existing) {
+      // MD-010: Jangan menimpa field lama dengan null/nol jika kolom tidak dipetakan dalam file impor
+      const updateFields: Record<string, unknown> = {
+        name: value.name,
+        updatedAt: new Date(),
+      };
+      if (data.mapping.barcode && value.barcode) updateFields.barcode = value.barcode;
+      if (data.mapping.category && categoryId) updateFields.categoryId = categoryId;
+      if (data.mapping.unit && unitId) updateFields.unitId = unitId;
+      if (data.mapping.supplier && supplierId) updateFields.supplierId = supplierId;
+      if (data.mapping.costPrice && value.costPrice !== undefined) updateFields.costPrice = toDb(value.costPrice);
+      if (data.mapping.salePrice && value.salePrice !== undefined) updateFields.salePrice = toDb(value.salePrice);
+      if (data.mapping.minStock && value.minStock !== undefined) updateFields.minStock = toDb(value.minStock);
+      if (data.mapping.notes && value.notes !== undefined) updateFields.notes = value.notes;
+      if (data.mapping.activeStatus && value.isActive !== undefined) updateFields.isActive = value.isActive;
+
       await tx
         .update(products)
-        .set({
-          name: value.name,
-          barcode: value.barcode,
-          categoryId,
-          unitId,
-          supplierId,
-          costPrice: toDb(value.costPrice),
-          salePrice: toDb(value.salePrice),
-          minStock: toDb(value.minStock),
-          notes: value.notes,
-          // Status aktif hanya diperbarui bila berkas benar-benar
-          // membawa kolom status. Tanpa penjaga ini, impor ulang master
-          // tanpa kolom Status akan mengaktifkan kembali produk yang
-          // sengaja dinonaktifkan. Flag trackStock/trackSerial/
-          // trackBatch juga tidak diubah pada produk lama: mengubahnya
-          // di tengah riwayat stok dapat membuat ledger lama tidak lagi
-          // cocok.
-          ...(data.mapping.activeStatus ? { isActive: value.isActive } : {}),
-          updatedAt: new Date(),
-        })
+        .set(updateFields)
         .where(and(eq(products.companyId, companyId), eq(products.id, existing.id)));
       if (packagingSubmitted) {
         // Gerbang izin harga formulir tidak berlaku di sini: commit

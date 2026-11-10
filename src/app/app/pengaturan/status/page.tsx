@@ -96,7 +96,7 @@ function drillBadge(status: BackupStatus) {
 }
 
 export default async function SystemStatusPage() {
-  const ctx = await requirePermissionPage("settings.manage");
+  await requirePermissionPage("settings.manage");
   const status = await getBackupStatus();
   const { backup, drill } = status;
   const needsAttention =

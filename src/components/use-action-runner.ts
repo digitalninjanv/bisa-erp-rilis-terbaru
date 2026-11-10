@@ -60,12 +60,52 @@ export function useActionRunner() {
  * per form (`if (!x.trim()) { toast.error("…wajib diisi."); return; }`
  * di 11 titik audit). Mengembalikan true bila terisi; bila kosong,
  * toast ditampilkan di sini dan pemanggil cukup `return`.
- * Untuk pesan gabungan ("Kode dan nama … wajib diisi."), panggil
- * per field dengan pesan yang sama — toast tampil satu kali karena
- * rantai `||` berhenti di kegagalan pertama, sama seperti pola lama.
+ * Mendukung auto-scroll dan auto-focus ke elemen yang bermasalah (UI-009).
  */
-export function requireFilled(value: string, message: string): boolean {
+export function requireFilled(
+  value: string,
+  message: string,
+  element?: HTMLElement | string | null,
+): boolean {
   if (value.trim()) return true;
   toast.error(message);
+  if (typeof window !== "undefined") {
+    setTimeout(() => {
+      let target: HTMLElement | null = null;
+      if (typeof element === "string") {
+        target = document.querySelector<HTMLElement>(element);
+      } else if (element) {
+        target = element;
+      } else {
+        target = document.querySelector<HTMLElement>(
+          "[aria-invalid='true'], input:invalid, select:invalid, textarea:invalid, [data-invalid='true']",
+        );
+      }
+      if (target) {
+        target.scrollIntoView({ behavior: "smooth", block: "center" });
+        target.focus();
+      }
+    }, 50);
+  }
   return false;
+}
+
+/**
+ * UI-009: Auto-scroll dan auto-focus ke kontrol form yang tidak valid pertama kali.
+ */
+export function scrollToFirstError(container?: HTMLElement | string | null): void {
+  if (typeof window === "undefined") return;
+  setTimeout(() => {
+    const root =
+      typeof container === "string"
+        ? document.querySelector(container)
+        : container ?? document;
+    const target = root?.querySelector<HTMLElement>(
+      "[aria-invalid='true'], input:invalid, select:invalid, textarea:invalid, [data-invalid='true'], .border-destructive",
+    );
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      target.focus();
+    }
+  }, 50);
 }

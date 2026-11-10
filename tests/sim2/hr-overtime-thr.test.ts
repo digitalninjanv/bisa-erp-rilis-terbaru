@@ -16,7 +16,6 @@ import {
   payrollRuns,
   user,
 } from "@/db/schema";
-import { withCompany } from "@/db/tenant";
 import {
   runPayrollAction,
   voidPayrollRunAction,

@@ -21,7 +21,7 @@ describe("Audit Reproduction: HR-001 Premature Payroll Enrollment", () => {
       (emp) => emp.isActive === true && emp.joinedAt <= periodEnd,
     );
 
-    console.log("Karyawan yang terproses pada periode Nov 2026 (Aktual):", actualSelected.map((e) => e.name));
+    console.log(`Karyawan yang terproses pada periode ${payrollPeriod} (Aktual):`, actualSelected.map((e) => e.name));
     console.log("Karyawan yang seharusnya terproses (Normatif):", correctSelected.map((e) => e.name));
 
     // Membuktikan cacat logika: Siti yang baru bergabung 1 Des 2026 ikut terbayar di gaji Nov 2026!

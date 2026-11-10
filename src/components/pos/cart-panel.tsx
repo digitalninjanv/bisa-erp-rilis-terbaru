@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { formatIDR, formatQty } from "@/lib/money";
 import type { QuoteResultPublic } from "@/server/pos";
 import { QtyInput } from "@/components/qty-input";
+import { ConfirmDialog } from "@/components/blocks/confirm-dialog";
 import {
   cartLineIsi,
   cartLineKey,
@@ -73,6 +74,7 @@ export function CartPanel(props: {
     quoteBusy,
   } = props;
   const [discountFor, setDiscountFor] = useState<string | null>(null);
+  const [confirmClearCart, setConfirmClearCart] = useState(false);
   return (
         <div className="rounded-lg border border-border bg-card">
           <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2.5">
@@ -96,7 +98,7 @@ export function CartPanel(props: {
               {cart.length > 0 ? (
                 <button
                   type="button"
-                  onClick={() => setCart([])}
+                  onClick={() => setConfirmClearCart(true)}
                   className="rounded px-1.5 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-destructive"
                 >
                   Kosongkan
@@ -396,6 +398,20 @@ export function CartPanel(props: {
               <p className="text-right text-[11px] text-muted-foreground">Menghitung…</p>
             ) : null}
           </div>
+
+          <ConfirmDialog
+            open={confirmClearCart}
+            title="Kosongkan Keranjang?"
+            description={`Ada ${cart.length} item di dalam keranjang transaksi. Seluruh item yang telah dimasukkan akan dihapus.`}
+            confirmLabel="Ya, Kosongkan"
+            cancelLabel="Batal"
+            danger
+            onConfirm={() => {
+              setCart([]);
+              setConfirmClearCart(false);
+            }}
+            onCancel={() => setConfirmClearCart(false)}
+          />
         </div>
   );
 }

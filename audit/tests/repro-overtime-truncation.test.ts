@@ -13,8 +13,8 @@ describe("Audit Reproduction: HR-002 Pemotongan Jam Pecahan Lembur", () => {
       overtime_hourly_divisor: "173",
     },
     overtimeRules: [
-      { id: "1", dayType: "workday", hourFrom: 1, hourTo: 1, multiplier: "1.5" },
-      { id: "2", dayType: "workday", hourFrom: 2, hourTo: null, multiplier: "2.0" },
+      { dayType: "workday", hourFrom: 1, hourTo: 1, multiplier: "1.5" },
+      { dayType: "workday", hourFrom: 2, hourTo: null, multiplier: "2.0" },
     ],
   };
 

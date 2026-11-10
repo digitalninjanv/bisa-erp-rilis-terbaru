@@ -19,6 +19,7 @@ import {
 } from "@/lib/errors";
 import { parseInput } from "@/lib/action-validation";
 import { requirePermissionInModule } from "@/lib/session";
+import { writeAudit } from "@/server/audit";
 import {
   d,
   toDb,
@@ -247,16 +248,23 @@ export async function saveEmployeeAction(input: z.input<typeof employeeSchema>) 
           .limit(1);
         // AK-P2-10: update yang tidak mengenai baris mana pun bukan sukses.
         if (!before) throw new AppError("NOT_FOUND", "Karyawan tidak ditemukan.");
+
+        // MD-020: Jangan mengaktifkan kembali karyawan jika isActive tidak dikirim
+        const finalValues = {
+          ...allValues,
+          isActive: data.isActive !== undefined ? data.isActive : before.isActive,
+        };
+
         [row] = await tx
           .update(employees)
-          .set(allValues)
+          .set(finalValues)
           .where(and(eq(employees.companyId, ctx.company.id), eq(employees.id, data.id)))
           .returning({ id: employees.id });
         if (!row) throw new AppError("NOT_FOUND", "Karyawan tidak ditemukan.");
         // SIM-2 S7B-1 (§6A): perubahan jabatan/departemen/gaji/kontrak/
         // cabang/atasan/status tercatat sebagai riwayat before/after —
         // menimpa master tidak lagi menghapus jejak perubahan.
-        const after = { ...before, ...allValues } as typeof before;
+        const after = { ...before, ...finalValues } as typeof before;
         const drafts = await buildEmployeeHistoryDiff(tx, ctx.company.id, before, after);
         await recordEmployeeHistory(tx, {
           companyId: ctx.company.id,
@@ -264,11 +272,36 @@ export async function saveEmployeeAction(input: z.input<typeof employeeSchema>) 
           userId: ctx.user.id,
           drafts,
         });
+
+        // MD-017 & MD-018: Audit log perubahan karyawan
+        await writeAudit(tx, {
+          companyId: ctx.company.id,
+          userId: ctx.user.id,
+          action: "employee.update",
+          entityType: "employee",
+          entityId: data.id,
+          before: { code: before.code, name: before.name, isActive: before.isActive },
+          after: { code: finalValues.code, name: finalValues.name, isActive: finalValues.isActive },
+        });
       } else {
+        const createValues = {
+          ...allValues,
+          isActive: data.isActive ?? true,
+        };
         [row] = await tx
           .insert(employees)
-          .values({ companyId: ctx.company.id, ...allValues })
+          .values({ companyId: ctx.company.id, ...createValues })
           .returning({ id: employees.id });
+
+        // MD-017 & MD-018: Audit log pembuatan karyawan
+        await writeAudit(tx, {
+          companyId: ctx.company.id,
+          userId: ctx.user.id,
+          action: "employee.create",
+          entityType: "employee",
+          entityId: row.id,
+          after: { code: createValues.code, name: createValues.name, position: createValues.position },
+        });
       }
       // Kepesertaan program statutory per karyawan: hanya baris
       // pengecualian yang perlu disimpan, tetapi formulir mengirim
