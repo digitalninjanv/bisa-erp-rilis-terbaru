@@ -216,17 +216,21 @@ export async function postManualJournalAction(input: {
         }
       }
 
-      // DATA-014: larang jurnal manual memposting ke akun kontrol (piutang, persediaan, hutang dagang).
-      // Mutasi akun kontrol hanya boleh terjadi otomatis dari dokumen subledger (penjualan, penerimaan, pembayaran, dll).
+      // DATA-014: larang jurnal manual memposting ke akun kontrol tanpa atribut subledger
+      // Persediaan tidak pernah boleh dimutasi manual; Piutang/Hutang wajib menyertakan tag pihak.
       const map = await getAccountMap(tx, ctx.company.id);
-      const controlAccountIds = new Set(
-        [map.receivable, map.payable, map.inventory].filter(Boolean),
-      );
-      const invalidLine = data.lines.find((l) => controlAccountIds.has(l.accountId));
+      const invalidLine = data.lines.find((l) => {
+        if (l.accountId === map.inventory) return true;
+        if (l.accountId === map.receivable && (!l.partyType || !l.partyId)) return true;
+        if (l.accountId === map.payable && (!l.partyType || !l.partyId)) return true;
+        return false;
+      });
       if (invalidLine) {
         throw new AppError(
           "VALIDATION",
-          "Akun kontrol buku besar (Piutang Usaha, Hutang Usaha, dan Persediaan Barang) tidak boleh dimutasi lewat jurnal umum manual. Gunakan dokumen transaksi terkait (Faktur, Penerimaan Barang, atau Penyesuaian Stok) agar saldo GL dan kartu pembantu tetap sinkron.",
+          invalidLine.accountId === map.inventory
+            ? "Akun kontrol Persediaan Barang tidak boleh dimutasi lewat jurnal umum manual. Gunakan dokumen transaksi terkait (Penerimaan Barang atau Penyesuaian Stok)."
+            : "Akun kontrol Piutang Usaha dan Hutang Usaha wajib menyertakan tag pihak (pelanggan/pemasok) bila disesuaikan lewat jurnal manual agar sinkron dengan buku pembantu.",
         );
       }
 

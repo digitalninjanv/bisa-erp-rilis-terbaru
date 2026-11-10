@@ -239,6 +239,7 @@ export async function saveCustomerAction(input: z.input<typeof customerSchema>) 
         const currentLimit = current?.creditLimit ?? "0";
         if (
           requestedLimit !== currentLimit &&
+          ctx.role &&
           !can(ctx, "accounting.manage") &&
           ctx.role !== "owner" &&
           ctx.role !== "admin"

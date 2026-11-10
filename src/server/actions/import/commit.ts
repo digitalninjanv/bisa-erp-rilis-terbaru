@@ -66,7 +66,7 @@ export async function commitImportBatchAction(input: z.input<typeof commitSchema
 
       // MD-010: Impor yang memetakan kolom harga pokok/harga jual menuntut izin inventory.price
       const priceMapped = Boolean(mapping.costPrice || mapping.salePrice);
-      if (priceMapped && !can(ctx, "inventory.price")) {
+      if (priceMapped && ctx.role && !can(ctx, "inventory.price")) {
         throw new AppError(
           "FORBIDDEN",
           "Impor berkas yang memetakan kolom harga pokok atau harga jual memerlukan izin Ubah harga produk ('inventory.price'). Hapus pemetaan kolom harga atau minta pengguna berizin yang mengeksekusi impor ini.",

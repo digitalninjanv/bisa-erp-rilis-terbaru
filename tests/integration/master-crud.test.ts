@@ -72,7 +72,7 @@ async function cleanupFixtures() {
     const fixtureSkus = [SKU_USED_CATEGORY, SKU_STOCKED, SKU_MOVED, SKU_CLEAN];
     for (const sku of fixtureSkus) {
       const [product] = await tx
-        .select({ id: products.id })
+        .select({ id: products.id, sku: products.sku })
         .from(products)
         .where(and(eq(products.companyId, ORG_ID), eq(products.sku, sku)))
         .limit(1);
@@ -92,10 +92,12 @@ async function cleanupFixtures() {
           .from(stockMovements)
           .where(and(eq(stockMovements.companyId, ORG_ID), eq(stockMovements.productId, product.id)));
         if ((movementCount?.value ?? 0) > 0) {
-          await tx
-            .update(products)
-            .set({ sku: `${sku}-TERHAPUS-${product.id.slice(0, 8)}`, isActive: false })
-            .where(and(eq(products.companyId, ORG_ID), eq(products.id, product.id)));
+          if (!product.sku.includes("-TERHAPUS-")) {
+            await tx
+              .update(products)
+              .set({ sku: `${sku}-TERHAPUS-${product.id.slice(0, 8)}-${Date.now()}`, isActive: false })
+              .where(and(eq(products.companyId, ORG_ID), eq(products.id, product.id)));
+          }
         } else {
           await tx
             .delete(products)

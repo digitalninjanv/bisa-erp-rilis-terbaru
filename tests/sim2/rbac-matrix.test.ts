@@ -266,7 +266,8 @@ const CASES: Array<{
   { name: "POS retur penjualan", permission: "pos.return", allowed: ["owner", "admin", "manager", "cashier"] },
   { name: "POS sesi kas", permission: "pos.session", allowed: ["owner", "admin", "manager", "cashier"] },
   { name: "ubah/hapus produk", permission: "inventory.manage", allowed: ["owner", "admin", "manager", "warehouse"] },
-  { name: "bulk edit produk", permission: "inventory.manage", allowed: ["owner", "admin", "manager", "warehouse"] },
+  // MD-009: bulk edit harga produk wajib memiliki izin inventory.price (owner, admin, manager)
+  { name: "bulk edit harga produk", permission: "inventory.price", allowed: ["owner", "admin", "manager"] },
   { name: "merge pihak", permission: "inventory.manage", allowed: ["owner", "admin", "manager", "warehouse"] },
   { name: "jurnal manual", permission: "accounting.post", allowed: ["owner", "admin", "manager", "accountant"] },
   { name: "tutup periode", permission: "accounting.manage", allowed: ["owner", "admin", "accountant"] },
