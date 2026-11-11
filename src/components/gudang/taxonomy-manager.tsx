@@ -209,41 +209,45 @@ export function TaxonomyManager({
               </p>
             </div>
 
-            {/* FORM TAMBAH KATEGORI YANG BERSIH & RESPOMSIF */}
+            {/* FORM TAMBAH KATEGORI YANG BERSIH & RESPONSIF */}
             <form
               onSubmit={(e) => {
                 e.preventDefault();
                 void createCategory();
               }}
-              className="flex flex-col gap-2 border-b border-border bg-muted/10 p-3 sm:flex-row sm:items-center"
+              className="flex flex-col gap-2.5 border-b border-border bg-muted/15 p-3.5"
             >
-              <input
-                value={newCategory}
-                onChange={(e) => setNewCategory(e.target.value)}
-                placeholder="Nama kategori baru..."
-                className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-[12px] outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
-              />
-              <select
-                value={newCategoryParent}
-                onChange={(e) => setNewCategoryParent(e.target.value)}
-                className="h-9 w-full rounded-md border border-input bg-background px-2.5 text-[12px] outline-none focus:border-ring focus:ring-2 focus:ring-ring/20 sm:w-48"
-                aria-label="Kategori induk"
-              >
-                <option value="">Tanpa induk (Utama)</option>
-                {categoryTree.map((row) => (
-                  <option key={row.id} value={row.id}>
-                    {"— ".repeat(row.depth)}
-                    {row.name}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="submit"
-                disabled={busy || !newCategory.trim()}
-                className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md bg-primary px-3.5 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-              >
-                <Plus className="size-3.5" /> Tambah
-              </button>
+              <div className="w-full">
+                <input
+                  value={newCategory}
+                  onChange={(e) => setNewCategory(e.target.value)}
+                  placeholder="Nama kategori baru (contoh: Minuman Kemasan)..."
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-[12px] placeholder:text-muted-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
+                />
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <select
+                  value={newCategoryParent}
+                  onChange={(e) => setNewCategoryParent(e.target.value)}
+                  className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-2.5 text-[12px] outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
+                  aria-label="Kategori induk"
+                >
+                  <option value="">Tanpa induk (Kategori Utama)</option>
+                  {categoryTree.map((row) => (
+                    <option key={row.id} value={row.id}>
+                      {"— ".repeat(row.depth)}
+                      {row.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="submit"
+                  disabled={busy || !newCategory.trim()}
+                  className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md bg-primary px-4 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                >
+                  <Plus className="size-3.5" /> Tambah Kategori
+                </button>
+              </div>
             </form>
 
             {/* PENCARIAN KATEGORI */}
@@ -350,27 +354,31 @@ export function TaxonomyManager({
                 e.preventDefault();
                 void createUnit();
               }}
-              className="flex flex-col gap-2 border-b border-border bg-muted/10 p-3 sm:flex-row sm:items-center"
+              className="flex flex-col gap-2.5 border-b border-border bg-muted/15 p-3.5"
             >
-              <input
-                value={newUnitCode}
-                onChange={(e) => setNewUnitCode(e.target.value)}
-                placeholder="Kode (PCS)"
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-[12px] font-medium uppercase outline-none focus:border-ring focus:ring-2 focus:ring-ring/20 sm:w-28"
-              />
-              <input
-                value={newUnitName}
-                onChange={(e) => setNewUnitName(e.target.value)}
-                placeholder="Nama satuan (Pieces)..."
-                className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-[12px] outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
-              />
-              <button
-                type="submit"
-                disabled={busy || !newUnitName.trim()}
-                className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md bg-primary px-3.5 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-              >
-                <Plus className="size-3.5" /> Tambah
-              </button>
+              <div className="flex items-center gap-2">
+                <input
+                  value={newUnitCode}
+                  onChange={(e) => setNewUnitCode(e.target.value)}
+                  placeholder="Kode (PCS)"
+                  className="h-9 w-28 shrink-0 rounded-md border border-input bg-background px-3 text-[12px] font-semibold uppercase placeholder:text-muted-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
+                />
+                <input
+                  value={newUnitName}
+                  onChange={(e) => setNewUnitName(e.target.value)}
+                  placeholder="Nama satuan (contoh: Pieces, Kotak, Kilogram)..."
+                  className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-[12px] placeholder:text-muted-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
+                />
+              </div>
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={busy || !newUnitName.trim()}
+                  className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md bg-primary px-4 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                >
+                  <Plus className="size-3.5" /> Tambah Satuan
+                </button>
+              </div>
             </form>
 
             {/* PENCARIAN SATUAN */}

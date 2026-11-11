@@ -45,7 +45,7 @@ describe("TaxonomyManager Enterprise UI/UX", () => {
     expect(html).toContain("3"); // Mock length = 3
   });
 
-  it("merender form tambah kategori yang responsif (min-w-0 flex-1 dan tombol Tambah)", () => {
+  it("merender form tambah kategori yang responsif (lebar penuh w-full dan tombol Tambah Kategori)", () => {
     const html = renderToStaticMarkup(
       createElement(TaxonomyManager, {
         categories: mockCategories,
@@ -53,11 +53,11 @@ describe("TaxonomyManager Enterprise UI/UX", () => {
       }),
     );
 
-    expect(html).toContain("Nama kategori baru...");
-    expect(html).toContain("Tanpa induk (Utama)");
-    expect(html).toContain("Tambah");
-    // Memastikan kelas perbaikan flex responsif ada
-    expect(html).toContain("min-w-0 flex-1");
+    expect(html).toContain("Nama kategori baru (contoh: Minuman Kemasan)...");
+    expect(html).toContain("Tanpa induk (Kategori Utama)");
+    expect(html).toContain("Tambah Kategori");
+    // Memastikan input nama membentang selebar kartu (w-full)
+    expect(html).toContain("w-full");
   });
 
   it("merender hierarki kategori dengan simbol kurva pohon ↳ untuk subkategori", () => {

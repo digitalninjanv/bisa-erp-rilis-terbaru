@@ -34,7 +34,10 @@ export function TaxonomySheet({
       >
         <Shapes className="size-3.5" /> Kategori & satuan
       </SheetTrigger>
-      <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-2xl">
+      <SheetContent
+        side="right"
+        className="w-full gap-0 p-0 sm:max-w-xl data-[side=right]:sm:max-w-xl md:max-w-2xl data-[side=right]:md:max-w-2xl"
+      >
         <SheetHeader className="border-b border-border px-5 py-4">
           <SheetTitle>Kategori & satuan</SheetTitle>
           <SheetDescription>
