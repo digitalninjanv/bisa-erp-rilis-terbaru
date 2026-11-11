@@ -86,6 +86,7 @@ export default async function JournalPrintPage({
             companyName={settings?.legalName ?? "Bisa Minimarket"}
             address={settings?.address}
             phone={settings?.phone}
+            taxId={settings?.taxId}
             variant="document"
             title="Jurnal Umum"
             number={entry.number}

@@ -72,6 +72,7 @@ export default async function GoodsReceiptPrintPage({
           companyName={settings?.legalName ?? "Bisa Minimarket"}
           address={settings?.address}
           phone={settings?.phone}
+          taxId={settings?.taxId}
           variant="document"
           title="Bukti Penerimaan Barang"
           number={receipt.number}
@@ -189,7 +190,7 @@ export default async function GoodsReceiptPrintPage({
         ) : null}
 
         {receipt.status === "void" ? (
-          <p className="mt-3 text-center text-[13px] font-bold uppercase">
+          <p className="mt-3 border-y-2 border-double border-black py-1.5 text-center text-[13px] font-bold uppercase tracking-widest text-black">
             Dokumen dibatalkan — tidak berlaku
           </p>
         ) : null}

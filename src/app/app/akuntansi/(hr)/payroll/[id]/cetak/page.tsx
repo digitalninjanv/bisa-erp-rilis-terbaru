@@ -101,14 +101,15 @@ export default async function PayrollSlipsPrintPage({
             return (
               <section
                 key={item.itemId}
-                style={index < slips.length - 1 ? { pageBreakAfter: "always" } : undefined}
-                className="py-2"
+                style={index < slips.length - 1 ? { breakAfter: "page", pageBreakAfter: "always" } : undefined}
+                className={`py-2${index < slips.length - 1 ? " page-break-after-always" : ""}`}
               >
                 <PrintHeader
                   settings={printSettings}
                   companyName={settings?.legalName ?? "Perusahaan"}
                   address={settings?.address}
                   phone={settings?.phone}
+                  taxId={settings?.taxId}
                   variant="document"
                   title="Slip Gaji"
                   number={run.number}

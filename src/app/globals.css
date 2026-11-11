@@ -629,6 +629,31 @@
   .print-doc tr {
     break-inside: avoid;
   }
+  /* PRINT-AUDIT: cegah blok ringkasan, total bar, dan footer terpotong di perbatasan halaman */
+  .print-doc footer,
+  .print-footer,
+  .print-total-bar,
+  .print-summary {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  /* PRINT-AUDIT: cegah judul yatim (orphan headings) di dasar halaman */
+  .print-doc h1,
+  .print-doc h2,
+  .print-doc h3,
+  .print-doc h4 {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+  /* PRINT-AUDIT: pastikan tautan navigasi layar tidak meninggalkan artefak warna atau dekorasi saat dicetak */
+  a {
+    text-decoration: none !important;
+    color: inherit !important;
+  }
+  .page-break-after-always {
+    break-after: page;
+    page-break-after: always;
+  }
   /* FIX-R2 (RD2-07): judul kolom tabel laporan berulang di setiap
      halaman kertas — halaman kedua neraca saldo tidak lagi kehilangan
      konteks kolomnya. */

@@ -101,6 +101,7 @@ export default async function OpnameCountSheetPage({
             companyName={settings?.legalName ?? "Bisa Minimarket"}
             address={settings?.address}
             phone={settings?.phone}
+            taxId={settings?.taxId}
             variant="document"
             title="Lembar Hitung Stok Opname"
             number={reference}

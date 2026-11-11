@@ -232,7 +232,7 @@ export default async function SalesInvoicePage({
           </div>
 
           {sale.voidReason ? (
-            <p className="mt-3 text-center text-[13px] font-bold uppercase">
+            <p className="mt-3 border-y-2 border-double border-black py-1.5 text-center text-[13px] font-bold uppercase tracking-widest text-black">
               Dokumen dibatalkan — {sale.voidReason}
             </p>
           ) : null}

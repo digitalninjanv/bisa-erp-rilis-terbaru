@@ -248,7 +248,7 @@ export function PrintFooter({
       : []);
 
   return (
-    <footer>
+    <footer className="break-inside-avoid print:break-inside-avoid">
       <TemplateDivider settings={settings} dashed={variant === "receipt"} />
       {variant === "document" && settings.showSignature && signatureRows.length > 0 ? (
         <div

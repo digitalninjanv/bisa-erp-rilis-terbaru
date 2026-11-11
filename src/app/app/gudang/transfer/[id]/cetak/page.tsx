@@ -87,6 +87,7 @@ export default async function TransferDeliveryNotePage({
             companyName={settings?.legalName ?? "Bisa Minimarket"}
             address={settings?.address}
             phone={settings?.phone}
+            taxId={settings?.taxId}
             variant="document"
             title="Surat Jalan Transfer Antar Gudang"
             number={doc.number}
@@ -175,6 +176,12 @@ export default async function TransferDeliveryNotePage({
             Penerima wajib memeriksa isi kiriman terhadap fisik yang tiba sebelum menandatangani.
             Selisih dicatat pada form penerimaan transfer di sistem beserta alasannya.
           </p>
+
+          {doc.status === "void" ? (
+            <p className="mt-3 border-y-2 border-double border-black py-1.5 text-center text-[13px] font-bold uppercase tracking-widest text-black">
+              Dokumen dibatalkan — tidak berlaku
+            </p>
+          ) : null}
 
           <PrintFooter
             settings={printSettings}

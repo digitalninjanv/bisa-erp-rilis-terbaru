@@ -303,7 +303,9 @@ export default async function ReceiptPage({
           </div>
 
           {sale.voidReason ? (
-            <p className="mt-2 text-center font-bold uppercase">VOID — {sale.voidReason}</p>
+            <p className="mt-2 border-y-2 border-double border-black py-1 text-center font-bold uppercase tracking-wider">
+              VOID — {sale.voidReason}
+            </p>
           ) : null}
           <PrintFooter
             settings={printSettings}
