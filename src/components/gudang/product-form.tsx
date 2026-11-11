@@ -20,7 +20,14 @@ import type { CustomFieldDefinition } from "@/lib/custom-fields";
 import { sortCategoryTree } from "@/lib/categories";
 import { inputClass } from "@/components/blocks/field-classes";
 import { Field } from "@/components/blocks/field";
-import { Modal } from "@/components/blocks/modal";
+import { ConfirmDialog } from "@/components/blocks/confirm-dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 
 type Option = { id: string; name: string };
 // T5-3 (D-17): categories may be nested; the picker shows the tree.
@@ -71,6 +78,7 @@ export function ProductForm({
   const priceLocked = Boolean(product) && !allowPrice;
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   // G2 (FRM-05): busy + pemeriksaan hasil kini helper submit bersama.
   const { busy, run } = useActionRunner();
   const [form, setForm] = useState({
@@ -89,6 +97,16 @@ export function ProductForm({
     isActive: product?.isActive ?? true,
     notes: product?.notes ?? "",
   });
+  const isDirty =
+    form.name !== (product?.name ?? "") ||
+    form.sku !== (product?.sku ?? "") ||
+    form.barcode !== (product?.barcode ?? "") ||
+    form.categoryId !== (product?.categoryId ?? "") ||
+    form.unitId !== (product?.unitId ?? "") ||
+    form.supplierId !== (product?.supplierId ?? "") ||
+    form.costPrice !== (product?.costPrice ?? "0") ||
+    form.salePrice !== (product?.salePrice ?? "0") ||
+    form.notes !== (product?.notes ?? "");
   const [customValues, setCustomValues] = useState<Record<string, string>>(
     () => ({ ...(product?.attributes ?? {}) }),
   );
@@ -189,14 +207,25 @@ export function ProductForm({
         {product ? "Ubah produk" : "Tambah produk"}
       </button>
 
-      {open ? (
-        <Modal
-          title={product ? "Ubah produk" : "Produk baru"}
-          onClose={() => setOpen(false)}
-          onSubmit={() => void submit()}
-          busy={busy}
-          wide
-        >
+      <Sheet
+        open={open}
+        onOpenChange={(next) => {
+          if (!next && isDirty) {
+            setCancelConfirmOpen(true);
+          } else {
+            setOpen(next);
+          }
+        }}
+      >
+        <SheetContent side="right" className="flex h-full w-full flex-col gap-0 p-0 sm:max-w-2xl">
+          <SheetHeader className="border-b border-border px-5 py-4">
+            <SheetTitle>{product ? "Ubah produk" : "Produk baru"}</SheetTitle>
+            <SheetDescription>
+              Master data produk, SKU, barcode, harga jual, margin, dan pelacakan inventori.
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="min-h-0 flex-1 overflow-y-auto p-5">
             <p className="mb-3 text-[11px] text-muted-foreground">SKU dan barcode harus unik di perusahaan ini.</p>
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Nama produk" className="sm:col-span-2">
@@ -390,9 +419,49 @@ export function ProductForm({
                 Produk aktif
               </label>
             </div>
+          </div>
 
-        </Modal>
-      ) : null}
+          <div className="flex items-center justify-between gap-2 border-t border-border bg-card px-5 py-3">
+            <span className="text-[11px] text-muted-foreground">
+              {form.name ? form.name : "Draf produk baru"}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (isDirty) setCancelConfirmOpen(true);
+                  else setOpen(false);
+                }}
+                className="inline-flex h-8 items-center rounded-md border border-border px-3 text-[12px] font-medium transition-colors hover:bg-muted"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => void submit()}
+                disabled={busy}
+                className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              >
+                {busy ? "Menyimpan…" : product ? "Simpan perubahan" : "Simpan produk"}
+              </button>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      <ConfirmDialog
+        open={cancelConfirmOpen}
+        title="Batalkan perubahan produk?"
+        confirmLabel="Ya, buang perubahan"
+        cancelLabel="Lanjutkan mengedit"
+        danger
+        onCancel={() => setCancelConfirmOpen(false)}
+        onConfirm={() => {
+          setCancelConfirmOpen(false);
+          setOpen(false);
+        }}
+        description="Perubahan informasi produk yang sudah Anda ketik belum tersimpan dan akan hilang."
+      />
     </>
   );
 }

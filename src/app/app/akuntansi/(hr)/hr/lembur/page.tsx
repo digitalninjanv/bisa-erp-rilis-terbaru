@@ -7,6 +7,7 @@ import { formatDate, todayISO } from "@/lib/format";
 import { PageHeader } from "@/components/blocks/page-header";
 import { EmptyState } from "@/components/blocks/empty-state";
 import { DataList } from "@/components/blocks/data-list";
+import { FilterChips } from "@/components/blocks/search-form";
 import { StatusBadge } from "@/components/blocks/status-badge";
 import {
   OvertimeDecisionButtons,
@@ -31,10 +32,17 @@ const STATUS_LABELS: Record<string, string> = {
   rejected: "Ditolak",
 };
 
+const STATUS_FILTER_OPTIONS = [
+  { label: "Semua status", value: "" },
+  { label: "Menunggu", value: "pending" },
+  { label: "Disahkan", value: "approved" },
+  { label: "Ditolak", value: "rejected" },
+];
+
 export default async function OvertimeThrPage({
   searchParams,
 }: {
-  searchParams: Promise<{ period?: string }>;
+  searchParams: Promise<{ period?: string; status?: string }>;
 }) {
   const ctx = await requirePermissionPage("payroll.view");
   const manageable = can(ctx, "payroll.manage");
@@ -43,7 +51,8 @@ export default async function OvertimeThrPage({
   // payroll.salary/payroll.manage. Nominal lembur per pengajuan adalah
   // nominal dokumen lemburnya sendiri, tetap ranah payroll.view.
   const canSeeSalary = can(ctx, "payroll.salary") || manageable;
-  const { period: rawPeriod } = await searchParams;
+  const params = await searchParams;
+  const { period: rawPeriod } = params;
   const period = /^\d{4}-\d{2}$/.test(rawPeriod ?? "") ? (rawPeriod as string) : todayISO().slice(0, 7);
   const { start, end } = periodRange(period);
 
@@ -56,6 +65,10 @@ export default async function OvertimeThrPage({
     return { staff, requests, drafts };
   });
 
+  const filteredRequests = params.status
+    ? data.requests.filter((row) => row.status === params.status)
+    : data.requests;
+
   return (
     <div>
       <PageHeader
@@ -65,6 +78,7 @@ export default async function OvertimeThrPage({
           <form className="flex items-center gap-1.5" action="/app/akuntansi/hr/lembur">
             <label className="text-[12px] text-muted-foreground" htmlFor="period">Periode</label>
             <input id="period" type="month" name="period" defaultValue={period} className="h-9 rounded-md border border-input bg-background px-2 text-[12px]" />
+            {params.status ? <input type="hidden" name="status" value={params.status} /> : null}
             <button type="submit" className="h-8 rounded-md border border-border bg-card px-2.5 text-[12px] font-medium transition-colors hover:bg-muted">
               Tampilkan
             </button>
@@ -76,8 +90,26 @@ export default async function OvertimeThrPage({
 
       <h2 className="mb-2 mt-5 text-[13px] font-semibold">Pengajuan lembur periode {period}</h2>
       <DataList
-        isEmpty={data.requests.length === 0}
-        empty={<EmptyState title="Belum ada pengajuan" description="Belum ada pengajuan lembur pada periode ini." />}
+        headerActions={
+          <FilterChips
+            basePath="/app/akuntansi/hr/lembur"
+            param="status"
+            value={params.status}
+            params={{ period }}
+            options={STATUS_FILTER_OPTIONS}
+          />
+        }
+        isEmpty={filteredRequests.length === 0}
+        empty={
+          <EmptyState
+            title="Belum ada pengajuan"
+            description={
+              params.status
+                ? "Tidak ada pengajuan lembur dengan status ini pada periode terpilih."
+                : "Belum ada pengajuan lembur pada periode ini."
+            }
+          />
+        }
       >
         <div className="overflow-x-auto">
           <table className="data-table">
@@ -93,7 +125,7 @@ export default async function OvertimeThrPage({
               </tr>
             </thead>
             <tbody>
-              {data.requests.map((row) => (
+              {filteredRequests.map((row) => (
                 <tr key={row.id}>
                   <td className="num text-[11px]">{formatDate(row.date)}</td>
                   <td className="text-[12px] font-medium">{row.employeeName}</td>

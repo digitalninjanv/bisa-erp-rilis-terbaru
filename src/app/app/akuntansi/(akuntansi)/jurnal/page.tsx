@@ -231,7 +231,7 @@ export default async function JournalPage({
             <thead>
               <tr>
                 <th>Nomor</th>
-                <th>Tanggal</th>
+                <th aria-sort="descending">Tanggal</th>
                 <th>Keterangan</th>
                 <th>Sumber</th>
                 <th>Status</th>

@@ -146,7 +146,7 @@ export default async function KasbonPage() {
               <thead>
                 <tr>
                   <th>Nomor</th>
-                  <th>Tanggal</th>
+                  <th aria-sort="descending">Tanggal</th>
                   <th>Karyawan</th>
                   <th className="hidden lg:table-cell">Rencana potongan</th>
                   <th className="text-right">Jumlah</th>

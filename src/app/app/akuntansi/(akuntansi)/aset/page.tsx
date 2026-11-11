@@ -139,14 +139,14 @@ export default async function AsetTetapPage() {
           <EmptyState title="Belum ada aset tetap" description="Daftarkan aset pertama lewat tombol Daftarkan Aset." icon={<Building2 className="size-5" />} />
         }
       >
-          <div className="overflow-x-auto">
+          <div className="hidden overflow-x-auto lg:block">
             <table className="data-table">
               <thead>
                 <tr>
                   <th>Nomor</th>
                   <th>Aset</th>
                   <th>Kategori</th>
-                  <th>Perolehan</th>
+                  <th aria-sort="descending">Perolehan</th>
                   <th className="text-right">Harga</th>
                   <th className="text-right">Akumulasi</th>
                   <th className="text-right">Nilai buku</th>
@@ -221,6 +221,45 @@ export default async function AsetTetapPage() {
                 </tr>
               </tfoot>
             </table>
+          </div>
+          <div className="divide-y divide-border/70 lg:hidden">
+            {data.report.rows.map((row) => (
+              <div key={row.id} className="px-4 py-3">
+                <div className="flex items-baseline justify-between gap-2">
+                  <div>
+                    <span className="num text-[11px] text-muted-foreground">{row.number}</span>
+                    <h3 className="text-[13px] font-semibold text-foreground">{row.name}</h3>
+                  </div>
+                  <StatusBadge status={row.status} label={FIXED_ASSET_STATUS_LABELS[row.status]} />
+                </div>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                  {row.categoryName ?? "—"} · Perolehan {formatDate(row.acquisitionDate)} · Umur {row.usefulLifeMonths} bln
+                </p>
+                <div className="mt-2 grid grid-cols-3 gap-2 rounded border border-border/60 bg-muted/20 p-2 text-[11px]">
+                  <div>
+                    <span className="block text-[10px] text-muted-foreground">Harga</span>
+                    <span className="num font-medium">{formatIDR(row.cost)}</span>
+                  </div>
+                  <div>
+                    <span className="block text-[10px] text-muted-foreground">Akumulasi</span>
+                    <span className="num font-medium">{formatIDR(row.accumulated)}</span>
+                  </div>
+                  <div>
+                    <span className="block text-[10px] text-muted-foreground">Nilai Buku</span>
+                    <span className="num font-semibold text-primary">{formatIDR(row.bookValue)}</span>
+                  </div>
+                </div>
+                {canManage && row.status === "active" ? (
+                  <div className="mt-2 flex justify-end">
+                    <DisposeAssetButton
+                      assetId={row.id}
+                      number={row.number}
+                      accounts={data.sourceAccounts.map((account) => ({ id: account.id, label: `${account.code} · ${account.name}` }))}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            ))}
           </div>
       </DataList>
 

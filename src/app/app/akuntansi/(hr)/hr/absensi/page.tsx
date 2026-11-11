@@ -177,46 +177,82 @@ export default async function AttendancePage({
             />
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Karyawan</th>
-                  <th className="text-right">Hadir</th>
-                  <th className="hidden text-right sm:table-cell">Izin</th>
-                  <th className="hidden text-right sm:table-cell">Sakit</th>
-                  <th className="hidden text-right sm:table-cell">Cuti</th>
-                  <th className="text-right">Alpa</th>
-                  <th className="text-right">Terlambat</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.recap.map((row) => (
-                  <tr key={row.employeeId}>
-                    <td>
-                      <Link
-                        href={`/app/akuntansi/karyawan/${row.employeeId}`}
-                        className="text-[12px] font-medium transition-colors hover:underline"
-                      >
-                        {row.employeeName}
-                      </Link>
-                      <span className="num ml-1.5 text-[10px] text-muted-foreground">
-                        {row.employeeCode}
-                      </span>
-                    </td>
-                    <td className="num text-right text-[12px]">{row.counts.present}</td>
-                    <td className="num hidden text-right text-[12px] sm:table-cell">{row.counts.permit}</td>
-                    <td className="num hidden text-right text-[12px] sm:table-cell">{row.counts.sick}</td>
-                    <td className="num hidden text-right text-[12px] sm:table-cell">{row.counts.leave}</td>
-                    <td className="num text-right text-[12px]">{row.counts.absent}</td>
-                    <td className="num text-right text-[12px]">
-                      {row.totalLateMinutes > 0 ? `${row.totalLateMinutes} mnt` : "—"}
-                    </td>
+          <>
+            <div className="hidden overflow-x-auto sm:block">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Karyawan</th>
+                    <th className="text-right">Hadir</th>
+                    <th className="hidden text-right sm:table-cell">Izin</th>
+                    <th className="hidden text-right sm:table-cell">Sakit</th>
+                    <th className="hidden text-right sm:table-cell">Cuti</th>
+                    <th className="text-right">Alpa</th>
+                    <th className="text-right">Terlambat</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {data.recap.map((row) => (
+                    <tr key={row.employeeId}>
+                      <td>
+                        <Link
+                          href={`/app/akuntansi/karyawan/${row.employeeId}`}
+                          className="text-[12px] font-medium transition-colors hover:underline"
+                        >
+                          {row.employeeName}
+                        </Link>
+                        <span className="num ml-1.5 text-[10px] text-muted-foreground">
+                          {row.employeeCode}
+                        </span>
+                      </td>
+                      <td className="num text-right text-[12px]">{row.counts.present}</td>
+                      <td className="num hidden text-right text-[12px] sm:table-cell">{row.counts.permit}</td>
+                      <td className="num hidden text-right text-[12px] sm:table-cell">{row.counts.sick}</td>
+                      <td className="num hidden text-right text-[12px] sm:table-cell">{row.counts.leave}</td>
+                      <td className="num text-right text-[12px]">{row.counts.absent}</td>
+                      <td className="num text-right text-[12px]">
+                        {row.totalLateMinutes > 0 ? `${row.totalLateMinutes} mnt` : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="divide-y divide-border/70 sm:hidden">
+              {data.recap.map((row) => (
+                <div key={row.employeeId} className="px-4 py-3">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <Link
+                      href={`/app/akuntansi/karyawan/${row.employeeId}`}
+                      className="text-[13px] font-medium text-foreground hover:underline"
+                    >
+                      {row.employeeName}
+                    </Link>
+                    <span className="num text-[11px] text-muted-foreground">{row.employeeCode}</span>
+                  </div>
+                  <div className="mt-2 grid grid-cols-3 gap-2 rounded border border-border/60 bg-muted/20 p-2 text-[11px]">
+                    <div>
+                      <span className="block text-[10px] text-muted-foreground">Hadir</span>
+                      <span className="num font-semibold text-tone-green">{row.counts.present} hari</span>
+                    </div>
+                    <div>
+                      <span className="block text-[10px] text-muted-foreground">Izin / Sakit</span>
+                      <span className="num font-medium text-tone-amber">{row.counts.permit + row.counts.sick} hari</span>
+                    </div>
+                    <div>
+                      <span className="block text-[10px] text-muted-foreground">Cuti / Alpa</span>
+                      <span className="num font-medium">{row.counts.leave} / {row.counts.absent}</span>
+                    </div>
+                  </div>
+                  {row.totalLateMinutes > 0 ? (
+                    <p className="mt-1.5 text-[11px] font-medium text-tone-amber">
+                      Terlambat: {row.totalLateMinutes} menit
+                    </p>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </section>
 
@@ -233,7 +269,7 @@ export default async function AttendancePage({
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Tanggal</th>
+                  <th aria-sort="descending">Tanggal</th>
                   <th>Karyawan</th>
                   <th>Status</th>
                   <th>Masuk</th>

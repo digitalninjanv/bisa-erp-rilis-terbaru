@@ -3,6 +3,7 @@ import { formatIDRReport } from "@/lib/money";
 import { journalSourceLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { allStatementGroupsEmpty, visibleStatementLines } from "@/lib/report-visibility";
+import { EmptyState } from "@/components/blocks/empty-state";
 import type { getBalanceSheet, getCashFlow, getIncomeStatement } from "@/server/reports";
 
 /**
@@ -23,12 +24,11 @@ function priorMap(rows: { accountId: string; amount: number }[] | undefined) {
 
 function ReportAllEmpty() {
   return (
-    <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center">
-      <p className="text-[13px] font-medium">Tidak ada mutasi pada periode ini.</p>
-      <p className="mt-1 text-[12px] text-muted-foreground">
-        Semua kelompok laporan kosong untuk rentang ini.
-      </p>
-    </div>
+    <EmptyState
+      size="compact"
+      title="Tidak ada mutasi pada periode ini"
+      description="Semua kelompok laporan kosong untuk rentang ini."
+    />
   );
 }
 
@@ -160,9 +160,12 @@ export function CashFlow({
     <div>
       <SummaryRow label="Saldo kas awal" value={data.opening} />
       {groups.length === 0 ? (
-        <p className="mt-4 rounded-lg border border-dashed border-border px-4 py-6 text-center text-[12px] text-muted-foreground">
-          Tidak ada mutasi arus kas pada periode ini.
-        </p>
+        <EmptyState
+          size="compact"
+          title="Tidak ada mutasi arus kas pada periode ini"
+          description="Belum ada transaksi operasional, investasi, atau pendanaan yang tercatat pada rentang ini."
+          className="mt-4"
+        />
       ) : (
         <>
           {groups.map((group) => {

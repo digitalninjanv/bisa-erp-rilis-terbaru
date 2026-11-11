@@ -6,6 +6,7 @@ import { formatQty } from "@/lib/money";
 import { PageHeader } from "@/components/blocks/page-header";
 import { EmptyState } from "@/components/blocks/empty-state";
 import { DataList } from "@/components/blocks/data-list";
+import { FilterChips } from "@/components/blocks/search-form";
 import { StatusBadge } from "@/components/blocks/status-badge";
 import {
   LeaveDecisionButtons,
@@ -29,7 +30,19 @@ const STATUS_LABELS: Record<string, string> = {
   rejected: "Ditolak",
 };
 
-export default async function LeavePage() {
+const STATUS_FILTER_OPTIONS = [
+  { label: "Semua status", value: "" },
+  { label: "Menunggu", value: "pending" },
+  { label: "Disahkan", value: "approved" },
+  { label: "Ditolak", value: "rejected" },
+];
+
+export default async function LeavePage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ status?: string }>;
+} = {}) {
+  const params = searchParams ? await searchParams : {};
   const ctx = await requirePermissionPage("payroll.view");
   const manageable = can(ctx, "payroll.manage");
   const year = Number(todayISO().slice(0, 4));
@@ -45,6 +58,10 @@ export default async function LeavePage() {
     const balances = await listLeaveBalances(tx, ctx.company.id, year, staff, types);
     return { types, staff, requests, balances };
   });
+
+  const filteredRequests = params.status
+    ? data.requests.filter((row) => row.status === params.status)
+    : data.requests;
 
   return (
     <div>
@@ -110,8 +127,25 @@ export default async function LeavePage() {
 
       <h2 className="mb-2 mt-5 text-[13px] font-semibold">Pengajuan cuti</h2>
       <DataList
-        isEmpty={data.requests.length === 0}
-        empty={<EmptyState title="Belum ada pengajuan" description="Belum ada pengajuan cuti tercatat." />}
+        headerActions={
+          <FilterChips
+            basePath="/app/akuntansi/hr/cuti"
+            param="status"
+            value={params.status}
+            options={STATUS_FILTER_OPTIONS}
+          />
+        }
+        isEmpty={filteredRequests.length === 0}
+        empty={
+          <EmptyState
+            title="Belum ada pengajuan"
+            description={
+              params.status
+                ? "Tidak ada pengajuan cuti dengan status ini."
+                : "Belum ada pengajuan cuti tercatat."
+            }
+          />
+        }
         footerNote={
           manageable
             ? "Pengajuan yang menunggu juga terkumpul di halaman Persetujuan bersama lembur & klaim."
@@ -132,7 +166,7 @@ export default async function LeavePage() {
               </tr>
             </thead>
             <tbody>
-              {data.requests.map((row) => (
+              {filteredRequests.map((row) => (
                 <tr key={row.id}>
                   <td className="text-[12px] font-medium">{row.employeeName}</td>
                   <td className="text-[12px]">{row.typeName}</td>

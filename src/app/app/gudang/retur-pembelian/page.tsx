@@ -13,6 +13,7 @@ import { PageHeader } from "@/components/blocks/page-header";
 import { StatusBadge } from "@/components/blocks/status-badge";
 import { EmptyState } from "@/components/blocks/empty-state";
 import { Pagination } from "@/components/blocks/pagination";
+import { FilterChips } from "@/components/blocks/search-form";
 import { DataList, DataListToolbar, dataListFilterClass } from "@/components/blocks/data-list";
 
 export const metadata = { title: "Retur Pembelian" };
@@ -75,6 +76,15 @@ export default async function SupplierReturnsPage({
           hanya status; kata kunci q dari toolbar dipertahankan di URL
           tetapi belum menyaring sampai fungsi baca mendukungnya. */}
       <DataList
+        headerActions={
+          <FilterChips
+            basePath="/app/gudang/retur-pembelian"
+            param="status"
+            q={params.q}
+            value={params.status}
+            options={STATUS_FILTERS}
+          />
+        }
         toolbar={
           <DataListToolbar
             action="/app/gudang/retur-pembelian"

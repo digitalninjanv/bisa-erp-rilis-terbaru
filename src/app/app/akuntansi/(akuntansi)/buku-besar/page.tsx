@@ -199,7 +199,7 @@ export default async function LedgerPage({
               <table className="data-table sticky-head">
                 <thead>
                   <tr>
-                    <th className="w-[90px]">Tanggal</th>
+                    <th className="w-[90px]" aria-sort="ascending">Tanggal</th>
                     <th className="w-[116px]">No. jurnal</th>
                     <th>Keterangan</th>
                     <th className="w-[126px] text-right">Debit</th>

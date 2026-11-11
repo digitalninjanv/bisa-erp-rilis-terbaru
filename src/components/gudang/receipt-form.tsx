@@ -92,6 +92,19 @@ const SOURCE_OPTIONS: { value: SourceChoice; label: string; hint: string }[] = [
   },
 ];
 
+function StatRow({
+  label,
+  value,
+  valueClass = "font-medium",
+}: { label: string; value: React.ReactNode; valueClass?: string }) {
+  return (
+    <div className="flex justify-between gap-3">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className={valueClass}>{value}</dd>
+    </div>
+  );
+}
+
 export function ReceiptForm({
   warehouses,
   suppliers,
@@ -163,6 +176,15 @@ export function ReceiptForm({
   // A-24 T3 (pola G2): panduan diminta · terkonfirmasi · selisih saat
   // penerimaan tertaut PO — sisa PO adalah "diminta"-nya.
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  const isDirty = lines.length > 0 || notes.trim() !== "";
+  function handleCancel() {
+    if (isDirty) {
+      setCancelConfirmOpen(true);
+    } else {
+      setOpen(false);
+    }
+  }
   const pickedOrder = visibleOpenOrders.find((order) => order.id === purchaseOrderId) ?? null;
   const expectedByProduct: Record<string, string> | undefined = pickedOrder
     ? Object.fromEntries(pickedOrder.lines.map((line) => [line.productId, line.remainingQty]))
@@ -634,54 +656,25 @@ export function ReceiptForm({
                 </p>
                 <dl className="mt-2 space-y-1 text-[11px]">
                   {taxValue.gt(0) ? (
-                    <div className="flex justify-between gap-3">
-                      <dt className="text-muted-foreground">PPN ({taxPercent}%)</dt>
-                      <dd className="num text-right font-medium">{formatIDR(taxValue)}</dd>
-                    </div>
+                    <StatRow label={`PPN (${taxPercent}%)`} value={formatIDR(taxValue)} valueClass="num text-right font-medium" />
                   ) : null}
                   {d(advanceApplied).gt(0) ? (
                     <>
-                      <div className="flex justify-between gap-3">
-                        <dt className="text-muted-foreground">Uang muka</dt>
-                        <dd className="num text-right font-medium">{formatIDR(advanceApplied)}</dd>
-                      </div>
-                      <div className="flex justify-between gap-3">
-                        <dt className="text-muted-foreground">Sisa tagihan</dt>
-                        <dd className="num text-right font-medium">
-                          {formatIDR(grandTotal.minus(d(advanceApplied)))}
-                        </dd>
-                      </div>
+                      <StatRow label="Uang muka" value={formatIDR(advanceApplied)} valueClass="num text-right font-medium" />
+                      <StatRow label="Sisa tagihan" value={formatIDR(grandTotal.minus(d(advanceApplied)))} valueClass="num text-right font-medium" />
                     </>
                   ) : null}
-                  <div className="flex justify-between gap-3">
-                    <dt className="text-muted-foreground">Sumber</dt>
-                    <dd className="min-w-0 text-right font-medium">{activeSourceLabel ?? "—"}</dd>
-                  </div>
-                  <div className="flex justify-between gap-3">
-                    <dt className="text-muted-foreground">Gudang</dt>
-                    <dd className="min-w-0 text-right font-medium">{warehouseName ?? "—"}</dd>
-                  </div>
-                  <div className="flex justify-between gap-3">
-                    <dt className="text-muted-foreground">Baris produk</dt>
-                    <dd className="num font-medium">{formatQty(lines.length)}</dd>
-                  </div>
-                  <div className="flex justify-between gap-3">
-                    <dt className="text-muted-foreground">Total qty</dt>
-                    <dd className="num font-medium">{formatQty(totalQty)}</dd>
-                  </div>
+                  <StatRow label="Sumber" value={activeSourceLabel ?? "—"} valueClass="min-w-0 text-right font-medium" />
+                  <StatRow label="Gudang" value={warehouseName ?? "—"} valueClass="min-w-0 text-right font-medium" />
+                  <StatRow label="Baris produk" value={formatQty(lines.length)} valueClass="num font-medium" />
+                  <StatRow label="Total qty" value={formatQty(totalQty)} valueClass="num font-medium" />
+                  {pickedOrder ? <StatRow label="PO tertaut" value={pickedOrder.number} valueClass="num font-medium" /> : null}
                   {pickedOrder ? (
-                    <div className="flex justify-between gap-3">
-                      <dt className="text-muted-foreground">PO tertaut</dt>
-                      <dd className="num font-medium">{pickedOrder.number}</dd>
-                    </div>
-                  ) : null}
-                  {pickedOrder ? (
-                    <div className="flex justify-between gap-3">
-                      <dt className="text-muted-foreground">Selisih vs sisa PO</dt>
-                      <dd className={`font-medium ${receiptDiffs.length > 0 ? "text-tone-amber" : "text-tone-green"}`}>
-                        {receiptDiffs.length > 0 ? `${formatQty(receiptDiffs.length)} baris berselisih` : "Pas"}
-                      </dd>
-                    </div>
+                    <StatRow
+                      label="Selisih vs sisa PO"
+                      value={receiptDiffs.length > 0 ? `${formatQty(receiptDiffs.length)} baris berselisih` : "Pas"}
+                      valueClass={`font-medium ${receiptDiffs.length > 0 ? "text-tone-amber" : "text-tone-green"}`}
+                    />
                   ) : null}
                 </dl>
               </div>
@@ -706,7 +699,7 @@ export function ReceiptForm({
                 <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setOpen(false)}
+                  onClick={handleCancel}
                   className="inline-flex h-8 items-center rounded-md border border-border px-3 text-[12px] transition-colors hover:bg-muted"
                 >
                   Batal
@@ -781,6 +774,20 @@ export function ReceiptForm({
                 </p>
               </div>
             }
+          />
+
+          <ConfirmDialog
+            open={cancelConfirmOpen}
+            title="Batalkan penerimaan?"
+            confirmLabel="Ya, buang draf"
+            cancelLabel="Lanjutkan mengisi"
+            danger
+            onCancel={() => setCancelConfirmOpen(false)}
+            onConfirm={() => {
+              setCancelConfirmOpen(false);
+              setOpen(false);
+            }}
+            description="Perubahan dan baris barang yang sudah Anda masukkan belum disimpan dan akan hilang."
           />
         </>
       ) : null}
