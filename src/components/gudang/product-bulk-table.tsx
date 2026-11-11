@@ -19,6 +19,7 @@ import { formatMargin, marginPercent, marginToneClass } from "@/lib/margin";
 import { ProductRowActions } from "@/components/gudang/product-row-actions";
 import { fieldClass } from "@/components/blocks/field-classes";
 import { Modal } from "@/components/blocks/modal";
+import { DataTableFloatingBar } from "@/components/blocks/data-table";
 
 export type BulkTableRow = {
   id: string;
@@ -590,6 +591,38 @@ export function ProductBulkTable({
               )}
             </div>
         </Modal>
+      ) : null}
+
+      {canManage ? (
+        <DataTableFloatingBar
+          selectedCount={selectionCount}
+          totalCount={allFiltered ? totalFiltered : undefined}
+          onClearSelection={() => {
+            setSelected(new Set());
+            setAllFiltered(false);
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setPreview(null);
+              setDoneSummary(null);
+              setPanelOpen(true);
+            }}
+            className="inline-flex h-7 items-center rounded-md bg-primary px-2.5 text-[11px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            Ubah massal
+          </button>
+          {!allFiltered && totalFiltered > selected.size ? (
+            <button
+              type="button"
+              onClick={() => setAllFiltered(true)}
+              className="inline-flex h-7 items-center rounded-md border border-border bg-card px-2 text-[11px] font-medium text-foreground transition-colors hover:bg-muted"
+            >
+              Pilih semua filter ({totalFiltered})
+            </button>
+          ) : null}
+        </DataTableFloatingBar>
       ) : null}
     </>
   );
