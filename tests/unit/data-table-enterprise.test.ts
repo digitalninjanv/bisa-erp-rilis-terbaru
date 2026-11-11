@@ -38,7 +38,7 @@ function TestTableComponent({ data }: { data: TestRow[] }) {
     getCoreRowModel: getCoreRowModel(),
   });
 
-  return createElement(DataTable, { table, density: "compact" });
+  return createElement(DataTable<TestRow>, { table, density: "compact" });
 }
 
 describe("DATA-TABLE-ENTERPRISE: Floating Action Bar", () => {
