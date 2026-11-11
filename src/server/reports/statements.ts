@@ -14,6 +14,8 @@ import {
 } from "drizzle-orm";
 import type { Tx } from "@/db";
 import {
+  defaultSection,
+  INCOME_SECTIONS,
   resolveCashFlowGroup,
   resolveSection,
 } from "@/lib/accounting";
@@ -28,7 +30,13 @@ import {
   journalLines,
 } from "@/db/schema";
 import { listCashBankAccounts, signedBalance } from "@/server/accounting";
-import { accountTotalsInRange, cumulativeAccountTotals, previousDay, totalsOf } from "./shared";
+import {
+  accountTotalsInRange,
+  accountTotalsInRangeExcludingSources,
+  cumulativeAccountTotals,
+  previousDay,
+  totalsOf,
+} from "./shared";
 import type { CashFlowBucket, Range } from "./shared";
 
 export type TrialBalanceRow = {
@@ -83,7 +91,12 @@ export async function getTrialBalance(tx: Tx, companyId: string, range: Range): 
 
 export type StatementLine = { accountId: string; code: string; name: string; amount: number };
 
-export async function getIncomeStatement(tx: Tx, companyId: string, range: Range) {
+export async function getIncomeStatement(
+  tx: Tx,
+  companyId: string,
+  range: Range,
+  opts?: { excludeClosing?: boolean },
+) {
   // Left join from the chart of accounts (AK-P2-07): every postable P&L
   // account is returned, valued 0 when it has no posted movement in range.
   // The current and prior-year calls therefore share one account universe,
@@ -112,7 +125,11 @@ export async function getIncomeStatement(tx: Tx, companyId: string, range: Range
       ),
     )
     .orderBy(asc(accounts.code));
-  const rangeTotals = await accountTotalsInRange(tx, companyId, range.from, range.to);
+  const rangeTotals = opts?.excludeClosing
+    ? await accountTotalsInRangeExcludingSources(tx, companyId, range.from, range.to, [
+        "year_end_closing",
+      ])
+    : await accountTotalsInRange(tx, companyId, range.from, range.to);
   const rows = accountRows.map((row) => {
     const totals = totalsOf(rangeTotals, row.accountId);
     return { ...row, debit: toDb(totals.debit), credit: toDb(totals.credit) };
@@ -133,7 +150,15 @@ export async function getIncomeStatement(tx: Tx, companyId: string, range: Range
   const sumDec = (list: { dec: Decimal }[]) =>
     list.reduce((acc, l) => acc.plus(l.dec), d(0));
   const withSection = rows.map((row) => {
-    const section = resolveSection(row);
+    const resolved = resolveSection(row);
+    // Data lama/import bisa membawa section yang tidak sesuai tipe
+    // (mis. beban dengan section pendapatan). Jangan biarkan laporan
+    // laba rugi menampilkan beban sebagai pendapatan atau membuangnya:
+    // fallback ke kelompok bawaan tipe akun.
+    const section =
+      resolved && INCOME_SECTIONS.includes(resolved)
+        ? resolved
+        : (defaultSection(row.type) ?? "operating_expense");
     const dec =
       section === "revenue" || section === "other_income"
         ? d(row.credit).minus(row.debit)

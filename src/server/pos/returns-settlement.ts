@@ -324,7 +324,8 @@ export async function resolveReturnSettlement(
             ),
           )
           .orderBy(sql`${cashSessions.openedAt} DESC`)
-          .limit(1);
+          .limit(1)
+          .for("update");
         if (!openSession) {
           throw new AppError(
             "VALIDATION",

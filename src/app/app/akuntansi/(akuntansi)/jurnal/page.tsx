@@ -90,10 +90,10 @@ export default async function JournalPage({
         actions={
           <>
             <Link
-              href={`/api/export/journals?${exportParams.toString()}`}
+              href={`/api/export/journals?${exportParams.toString()}${exportParams.toString() ? "&" : ""}format=xlsx`}
               className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] font-medium transition-colors hover:bg-muted"
             >
-              <Download className="size-3.5" /> Ekspor CSV
+              <Download className="size-3.5" /> Ekspor Excel
             </Link>
             {can(ctx, "accounting.post") ? (
               <Link

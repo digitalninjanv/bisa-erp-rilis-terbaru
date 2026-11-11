@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { newUuid } from "@/lib/uuid";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus, X } from "lucide-react";
@@ -137,7 +138,7 @@ export function ReceiptForm({
   // GDG3-06: satu kunci idempotensi per pembukaan form — submit ulang
   // (klik ganda / retry jaringan) mengembalikan dokumen pertama.
   // Diperbarui sesudah submit berhasil agar dokumen berikutnya baru.
-  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
+  const [idempotencyKey, setIdempotencyKey] = useState(() => newUuid());
   const [sourceChoice, setSourceChoice] = useState<SourceChoice>("purchase_credit");
   const [warehouseId, setWarehouseId] = useState(defaultWarehouseId || warehouses[0]?.id || "");
   const [supplierId, setSupplierId] = useState(
@@ -389,7 +390,7 @@ export function ReceiptForm({
       return;
     }
     toast.success("Penerimaan barang tersimpan dan stok diperbarui.");
-    setIdempotencyKey(crypto.randomUUID());
+    setIdempotencyKey(newUuid());
     setLines([]);
     setNotes("");
     setSupplierInvoiceNumber("");

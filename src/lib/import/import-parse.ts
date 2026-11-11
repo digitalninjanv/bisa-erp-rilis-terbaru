@@ -1,6 +1,6 @@
 /** Helpers for importing Accurate.id exports (XLSX/CSV) without duplicates. */
 
-import { ACCOUNT_SECTIONS, type AccountSection } from "@/lib/accounting";
+import { ACCOUNT_SECTIONS, isAccountSectionAllowed, type AccountSection } from "@/lib/accounting";
 import {
   cellText,
   normalizeHeader,
@@ -8,6 +8,13 @@ import {
   termDaysCell,
   type ImportFieldDef,
 } from "./import-cells";
+import {
+  ACCOUNT_MAPPING_FIELDS,
+  CATEGORY_FIELDS,
+  UNIT_FIELDS,
+} from "./import-taxonomy";
+
+export * from "./import-taxonomy";
 import { IMPORT_FIELDS } from "./import-products";
 
 // Fasad kompatibilitas: permukaan produk tetap diekspor dari sini
@@ -30,6 +37,9 @@ export type ImportEntity =
   | "suppliers"
   | "customers"
   | "accounts"
+  | "categories"
+  | "units"
+  | "account_mappings"
   | "opening_stock"
   | "opening_payables"
   | "opening_receivables";
@@ -39,6 +49,9 @@ export const IMPORT_ENTITIES: ImportEntity[] = [
   "suppliers",
   "customers",
   "accounts",
+  "categories",
+  "units",
+  "account_mappings",
   "opening_stock",
   "opening_payables",
   "opening_receivables",
@@ -53,6 +66,9 @@ export const IMPORT_ENTITY_LABELS: Record<ImportEntity, string> = {
   suppliers: "Pemasok",
   customers: "Pelanggan",
   accounts: "Akun (Bagan Akun)",
+  categories: "Kategori Produk",
+  units: "Satuan",
+  account_mappings: "Pemetaan Akun",
   opening_stock: "Stok Awal",
   opening_payables: "Saldo Awal Utang",
   opening_receivables: "Saldo Awal Piutang",
@@ -173,6 +189,9 @@ export const ENTITY_FIELDS: Record<ImportEntity, ImportFieldDef[]> = {
   suppliers: SUPPLIER_FIELDS,
   customers: CUSTOMER_FIELDS,
   accounts: ACCOUNT_FIELDS,
+  categories: CATEGORY_FIELDS,
+  units: UNIT_FIELDS,
+  account_mappings: ACCOUNT_MAPPING_FIELDS,
   opening_stock: OPENING_STOCK_FIELDS,
   opening_payables: OPENING_PAYABLE_FIELDS,
   opening_receivables: OPENING_RECEIVABLE_FIELDS,
@@ -470,6 +489,11 @@ export function mapAccountRow(
     // lancar hanya karena defaultSection(type).
     section = inferSectionFromRawType(rawType, type);
   }
+  if (section && !isAccountSectionAllowed(type, section)) {
+    return {
+      error: `Bagian laporan "${section}" tidak sesuai untuk akun bertipe ${type}; pilih kelompok yang sesuai tipe akun`,
+    };
+  }
 
   return {
     value: {
@@ -659,6 +683,22 @@ export const IMPORT_SAMPLES: Record<ImportEntity, { fileName: string; csv: strin
       "6950,Beban Uji Impor,expense,debit,operating_expense,Contoh akun beban",
       "2950,Utang Uji Impor,liability,kredit,current_liability,Contoh akun liabilitas",
     ].join("\n"),
+  },
+  categories: {
+    fileName: "contoh-impor-kategori.csv",
+    csv: [
+      "Nama Kategori,Induk Kategori,Status",
+      "Minuman,,Aktif",
+      "Kopi & Teh,Minuman,Aktif",
+    ].join("\n"),
+  },
+  units: {
+    fileName: "contoh-impor-satuan.csv",
+    csv: ["Kode Satuan,Nama Satuan,Status", "PCS,Pieces,Aktif", "BOX,Box,Aktif"].join("\n"),
+  },
+  account_mappings: {
+    fileName: "contoh-impor-pemetaan-akun.csv",
+    csv: ["Kunci pemetaan,Kode akun", "cash,110101", "payable,210101"].join("\n"),
   },
   opening_stock: {
     fileName: "contoh-impor-stok-awal.csv",

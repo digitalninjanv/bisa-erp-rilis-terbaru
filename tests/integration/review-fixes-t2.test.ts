@@ -386,7 +386,7 @@ describe("Perbaikan review independen Tahap 2 (R-1 s.d. R-11, kecuali R-5)", () 
       const journal = await receiptJournal(tx, receipt.id);
       expect(journal).not.toBeNull();
       expect(accountTotal(journal!.lines, map.inventory, "debit").toFixed(2)).toBe("12000.00");
-      expect(accountTotal(journal!.lines, map.sales_return, "credit").toFixed(2)).toBe("12000.00");
+      expect(accountTotal(journal!.lines, map.cogs, "credit").toFixed(2)).toBe("12000.00");
       // The journal memo states the cost basis honestly.
       expect(journal!.entry.description).toMatch(/HPP berjalan/i);
     });

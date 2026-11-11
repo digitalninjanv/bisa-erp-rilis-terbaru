@@ -37,6 +37,40 @@ export const INCOME_SECTIONS: AccountSection[] = [
   "other_expense",
 ];
 
+export type AccountType = "asset" | "liability" | "equity" | "revenue" | "cogs" | "expense";
+
+/**
+ * Matriks tunggal tipe akun → kelompok laporan. Dipakai form akun, impor
+ * bagan akun, dan validasi pemetaan agar akun beban tidak bisa masuk
+ * kelompok pendapatan (sumber “beban tampil sebagai pendapatan”).
+ */
+export const ACCOUNT_TYPE_SECTIONS: Record<AccountType, readonly AccountSection[]> = {
+  asset: ["current_asset", "non_current_asset"],
+  liability: ["current_liability", "non_current_liability"],
+  equity: ["equity"],
+  revenue: ["revenue", "other_income"],
+  cogs: ["cogs"],
+  expense: ["operating_expense", "other_expense"],
+};
+
+export const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
+  asset: "Aset",
+  liability: "Liabilitas",
+  equity: "Ekuitas",
+  revenue: "Pendapatan",
+  cogs: "Harga Pokok Penjualan",
+  expense: "Beban",
+};
+
+export function isAccountSectionAllowed(
+  type: string,
+  section: string | null | undefined,
+): boolean {
+  if (!section) return true;
+  const allowed = ACCOUNT_TYPE_SECTIONS[type as AccountType];
+  return Boolean(allowed?.includes(section as AccountSection));
+}
+
 /**
  * FIX-R2 Tahap 3 (AK2-04): resolusi kelompok laporan TIDAK lagi menebak
  * dari rentang kode akun. Perbandingan string kode itu rapuh dan salah

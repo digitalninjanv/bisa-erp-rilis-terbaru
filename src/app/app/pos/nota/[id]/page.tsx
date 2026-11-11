@@ -100,7 +100,7 @@ export default async function ReceiptPage({
           >
             Kasir
           </Link>
-          <ReceiptPrint auto={query.autoprint === "1"} />
+          <ReceiptPrint auto={query.autoprint === "1"} returnTo={query.autoprint === "1" ? "/app/pos" : undefined} />
         </div>
       </div>
 

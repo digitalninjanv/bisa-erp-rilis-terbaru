@@ -131,6 +131,7 @@ describe("parseEnv — kegagalan wajib keras dan menyebut variabelnya", () => {
       ...VALID_PROD,
       BETTER_AUTH_URL: "http://localhost:3000",
       BISA_ALLOW_LOCALHOST_AUTH_URL: "1",
+      BISA_ALLOW_INSECURE_AUTH_URL: "1",
     });
     expect(env.localhostAuthUrlAllowed).toBe(true);
     // …tetapi flag TIDAK memaafkan BETTER_AUTH_URL yang hilang di production.
@@ -140,8 +141,22 @@ describe("parseEnv — kegagalan wajib keras dan menyebut variabelnya", () => {
           ...VALID_PROD,
           BETTER_AUTH_URL: undefined,
           BISA_ALLOW_LOCALHOST_AUTH_URL: "1",
+          BISA_ALLOW_INSECURE_AUTH_URL: "1",
         }),
     ).toThrow(/BETTER_AUTH_URL/);
+  });
+
+  it("production non-localhost dengan HTTP polos -> gagal kecuali flag insecure eksplisit", () => {
+    expect(() =>
+      parseEnv({ ...VALID_PROD, BETTER_AUTH_URL: "http://erp.example.com" }),
+    ).toThrow(/https/);
+    expect(
+      parseEnv({
+        ...VALID_PROD,
+        BETTER_AUTH_URL: "http://erp.example.com",
+        BISA_ALLOW_INSECURE_AUTH_URL: "1",
+      }).betterAuthUrl,
+    ).toBe("http://erp.example.com");
   });
 
   it("opsi enforceProductionAuthUrl=false (fase build) hanya melonggarkan aturan URL produksi", () => {

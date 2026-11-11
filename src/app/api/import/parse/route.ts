@@ -38,6 +38,10 @@ function isRedirectError(error: unknown): boolean {
 export async function POST(request: Request) {
   try {
     const ctx = await requirePermission("import.manage");
+    const contentLength = Number(request.headers.get("content-length") ?? 0);
+    if (Number.isFinite(contentLength) && contentLength > MAX_BYTES) {
+      return NextResponse.json({ error: "Ukuran file maksimum 20MB." }, { status: 413 });
+    }
     const form = await request.formData();
     // T4-5a: jenis impor dipilih pengunggah; bawaan "products" menjaga
     // wizard produk lama tetap bekerja tanpa perubahan kontrak.

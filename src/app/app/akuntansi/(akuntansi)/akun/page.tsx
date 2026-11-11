@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CornerDownRight, Download, Lock, SearchX } from "lucide-react";
+import { CornerDownRight, Download, Lock, SearchX, Upload } from "lucide-react";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { listAccountBalances } from "@/server/reports";
 import { requirePermissionPage } from "@/lib/session";
@@ -108,10 +108,17 @@ export default async function AccountsPage({
               href={`/api/export/accounts?${new URLSearchParams({
                 ...(params.q ? { q: params.q } : {}),
                 ...(params.type ? { type: params.type } : {}),
+                format: "xlsx",
               }).toString()}`}
               className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] font-medium transition-colors hover:bg-muted"
             >
-              <Download className="size-3.5" /> Unduh CSV
+              <Download className="size-3.5" /> Unduh Excel
+            </Link>
+            <Link
+              href="/app/gudang/impor?jenis=accounts"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] font-medium transition-colors hover:bg-muted"
+            >
+              <Upload className="size-3.5" /> Impor Excel
             </Link>
             {canManage ? <AccountForm parents={parentOptions} /> : null}
           </>

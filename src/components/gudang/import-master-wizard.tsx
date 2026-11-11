@@ -126,7 +126,7 @@ export function MasterImportWizard({
         <ImportUploadCard
           title={title}
           hint={description}
-          templateHref={`/api/import/template/${entity}`}
+          templateHref={`/api/import/template/${entity}?format=xlsx`}
           fileName={flow.file?.name ?? null}
           uploading={flow.uploading}
           onFileChange={flow.setFile}

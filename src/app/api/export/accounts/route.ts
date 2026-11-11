@@ -4,6 +4,7 @@ import { accounts } from "@/db/schema";
 import { requirePermission } from "@/lib/session";
 import { todayISO } from "@/lib/format";
 import { csvResponse, toCsv } from "@/lib/csv";
+import { xlsxResponse } from "@/lib/xlsx";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,6 +19,7 @@ export async function GET(request?: Request) {
   const url = new URL(request?.url ?? "http://localhost");
   const q = url.searchParams.get("q")?.trim();
   const type = url.searchParams.get("type")?.trim();
+  const format = url.searchParams.get("format") === "xlsx" ? "xlsx" : "csv";
 
   const conditions = [eq(accounts.companyId, ctx.company.id)];
   if (q) {
@@ -44,18 +46,22 @@ export async function GET(request?: Request) {
 
   // Header Bahasa Indonesia, nilai mentah apa adanya dari bagan akun agar
   // berkas hasil ekspor bisa diimpor kembali tanpa terjemahan nilai.
-  const csv = toCsv(
-    ["Kode", "Nama", "Tipe", "Saldo Normal", "Bagian", "Kelompok Arus Kas", "Dapat Diposting", "Status"],
-    rows.map((row) => [
-      row.code,
-      row.name,
-      row.type,
-      row.normalBalance,
-      row.section,
-      row.cashFlowGroup,
-      row.isPostable ? "Ya" : "Tidak",
-      row.isActive ? "Aktif" : "Nonaktif",
-    ]),
-  );
-  return csvResponse(`bagan-akun-${todayISO()}.csv`, csv);
+  const headers = ["Kode", "Nama", "Tipe", "Saldo Normal", "Bagian", "Kelompok Arus Kas", "Dapat Diposting", "Status"];
+  const cells = rows.map((row) => [
+    row.code,
+    row.name,
+    row.type,
+    row.normalBalance,
+    row.section,
+    row.cashFlowGroup,
+    row.isPostable ? "Ya" : "Tidak",
+    row.isActive ? "Aktif" : "Nonaktif",
+  ]);
+  const filename = `bagan-akun-${todayISO()}`;
+  if (format === "xlsx") {
+    return xlsxResponse(`${filename}.xlsx`, [
+      { name: "Bagan Akun", headers, rows: cells, widths: [12, 36, 14, 14, 22, 18, 16, 12] },
+    ]);
+  }
+  return csvResponse(`${filename}.csv`, toCsv(headers, cells));
 }

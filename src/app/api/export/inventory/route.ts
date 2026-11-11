@@ -5,6 +5,7 @@ import { can } from "@/lib/permissions";
 import { requirePermission } from "@/lib/session";
 import { todayISO } from "@/lib/format";
 import { csvResponse, moneyCsv, toCsv } from "@/lib/csv";
+import { xlsxResponse, type XlsxCell } from "@/lib/xlsx";
 import { packagingBreakdownLabel, type PackagingSnapshot } from "@/lib/packaging";
 import { d } from "@/lib/money";
 
@@ -18,6 +19,7 @@ export async function GET(request: Request) {
   // (Potensi Jual berbasis harga jual — tetap tampil).
   const includeCost = can(ctx, "inventory.cost");
   const url = new URL(request.url);
+  const format = url.searchParams.get("format") === "xlsx" ? "xlsx" : "csv";
   const warehouseId = url.searchParams.get("warehouse") ?? undefined;
   // S6: kolom rincian kemasan hanya lahir bila diminta eksplisit
   // (`rincian=1`, dikirim tombol ekspor halaman Nilai persediaan saat
@@ -75,6 +77,22 @@ export async function GET(request: Request) {
     ...(withBreakdown ? ["Rincian Kemasan"] : []),
   ];
 
-  const csv = toCsv(headers, rows);
-  return csvResponse(`nilai-persediaan-${todayISO()}.csv`, csv);
+  const filename = `nilai-persediaan-${todayISO()}`;
+  if (format === "xlsx") {
+    const numericHeaders = new Set(["Stok", "HPP", "Nilai Persediaan", "Potensi Jual", "Stok Minimum"]);
+    const cells: XlsxCell[][] = rows.map((row) =>
+      row.map((value, index) => {
+        if (value === null || value === "") return null;
+        if (numericHeaders.has(headers[index])) {
+          const number = Number(value);
+          return Number.isFinite(number) ? number : value;
+        }
+        return value as XlsxCell;
+      }),
+    );
+    return xlsxResponse(`${filename}.xlsx`, [
+      { name: "Nilai Persediaan", headers, rows: cells, widths: [14, 34, 18, 10, 12, 14, 18, 16, 14, 28] },
+    ]);
+  }
+  return csvResponse(`${filename}.csv`, toCsv(headers, rows));
 }

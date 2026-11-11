@@ -74,7 +74,10 @@ export async function postReceiptJournal(
       };
     } else if (source === "customer_return") {
       journalSourceType = "receipt_customer_return";
-      creditLine = { accountId: map.sales_return, description: "Retur penjualan — barang kembali" };
+      // Barang kembali menambah persediaan dan mengembalikan HPP —
+      // bukan pendapatan. Kaki pendapatan/refund milik dokumen retur
+      // penjualan, bukan penerimaan stok ini.
+      creditLine = { accountId: map.cogs, description: "Pengembalian HPP barang retur" };
     } else {
       journalSourceType = source === "opening" ? "receipt_opening" : "receipt_other";
       creditLine = {

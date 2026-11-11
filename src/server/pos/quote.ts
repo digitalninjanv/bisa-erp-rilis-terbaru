@@ -231,9 +231,13 @@ export async function quoteCart(tx: Tx, ctx: QuoteContext): Promise<QuoteResult>
   const companyMode = settings.roundingMode as RoundingMode;
   const cashRounding = groupCashRounding ?? cashRoundingForMode(companyMode);
   const preRounding = subtotal.minus(discountTotal);
-  const rounded = groupCashRounding
+  const roundedRaw = groupCashRounding
     ? roundTo(preRounding, groupCashRounding.step, groupCashRounding.direction)
     : roundTotal(preRounding, companyMode).rounded;
+  // Jangan pernah membulatkan penjualan positif menjadi nol: pembulatan
+  // kas terdekat 500 pada harga 222 akan membuat barang gratis. Bila
+  // hasil bulat <= 0, pertahankan nilai sebelum pembulatan.
+  const rounded = preRounding.gt(0) && roundedRaw.lte(0) ? preRounding : roundedRaw;
   const adjustment = rounded.minus(preRounding);
 
   return {

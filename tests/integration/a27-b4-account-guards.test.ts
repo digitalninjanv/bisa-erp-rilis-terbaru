@@ -163,7 +163,13 @@ async function createAccount(input: Record<string, unknown>): Promise<string> {
 }
 
 beforeAll(async () => {
-  ids.mapped = await createAccount({ code: CODE.mapped, name: "Akun Terpetakan B4" });
+  ids.mapped = await createAccount({
+    code: CODE.mapped,
+    name: "Akun Terpetakan B4",
+    type: "revenue",
+    normalBalance: "credit",
+    section: "other_income",
+  });
   ids.method = await createAccount({ code: CODE.method, name: "Akun Metode B4" });
   ids.group = await createAccount({ code: CODE.group, name: "Akun Diskon Kelompok B4" });
   ids.parent = await createAccount({

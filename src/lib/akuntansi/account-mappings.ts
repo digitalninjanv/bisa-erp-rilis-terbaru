@@ -6,6 +6,8 @@
  * ACCOUNT_MAPPING_KEYS di server (tests/unit/account-mappings-sync).
  * Ubah kunci HANYA bersamaan dengan server.
  */
+import type { AccountType } from "./accounting";
+
 export const MAPPING_LABELS: Record<string, string> = {
   cash: "Kas",
   bank: "Bank",
@@ -157,6 +159,59 @@ export const MAPPING_DESCRIPTIONS: Record<string, string> = {
   tax_withholding_payable: "Utang PPh dipotong — PPh 23/4 ayat (2) yang dipotong dari pembayaran dan menunggu disetor.",
   receivable_writeoff: "Beban piutang tak tertagih — sisa piutang yang dihapus karena dinyatakan tidak dapat ditagih.",
 };
+
+/**
+ * Kontrak tipe akun per kunci pemetaan. Tanpa kontrak ini, akun beban
+ * bisa dipetakan ke `revenue` dan setiap penjualan menjadi kredit beban
+ * (beban negatif / laba palsu) — sumber keluhan “beban jadi pendapatan”.
+ */
+export const MAPPING_ACCOUNT_TYPES: Record<string, readonly AccountType[]> = {
+  cash: ["asset"],
+  bank: ["asset"],
+  qris: ["asset"],
+  receivable: ["asset"],
+  inventory: ["asset"],
+  purchase_advance: ["asset"],
+  tax_input: ["asset"],
+  employee_receivable: ["asset"],
+  employee_loan_receivable: ["asset"],
+  supplier_credit: ["asset"],
+  fixed_asset: ["asset"],
+  accumulated_depreciation: ["asset"],
+  payable: ["liability"],
+  tax_output: ["liability"],
+  customer_credit: ["liability"],
+  salary_payable: ["liability"],
+  salary_deductions_payable: ["liability"],
+  pph21_payable: ["liability"],
+  bpjs_payable: ["liability"],
+  tax_withholding_payable: ["liability"],
+  equity: ["equity"],
+  revenue: ["revenue"],
+  sales_discount: ["revenue"],
+  sales_return: ["revenue"],
+  rounding_gain: ["revenue"],
+  cash_over: ["revenue"],
+  other_income: ["revenue"],
+  cogs: ["cogs", "expense"],
+  inventory_shrink: ["expense", "cogs"],
+  damaged: ["expense", "cogs"],
+  rounding_loss: ["expense"],
+  cash_short: ["expense"],
+  salary_expense: ["expense"],
+  payroll_employer_expense: ["expense"],
+  bank_fee: ["expense"],
+  receivable_writeoff: ["expense"],
+  depreciation_expense: ["expense"],
+};
+
+export function mappingAllowsAccountType(key: string, type: string): boolean {
+  return MAPPING_ACCOUNT_TYPES[key]?.includes(type as AccountType) ?? false;
+}
+
+export function mappingAccountTypes(key: string): readonly AccountType[] {
+  return MAPPING_ACCOUNT_TYPES[key] ?? [];
+}
 
 /**
  * Daftar kunci resmi yang boleh disimpan lewat aksi pemetaan

@@ -78,7 +78,7 @@ export function ImportUploadCard(props: {
           href={props.templateHref}
           className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-3 text-[12px] hover:bg-muted"
         >
-          <Download className="size-3.5" /> Unduh contoh CSV
+          <Download className="size-3.5" /> Unduh template Excel
         </Link>
       </div>
       <p className="mt-3 text-[11px] text-muted-foreground">{props.hint}</p>

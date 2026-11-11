@@ -15,6 +15,7 @@ import { getOpnameReminders } from "@/server/inventory";
 import { listExpiringBatches } from "@/server/batches";
 import { getCompanySettingsRow } from "@/server/settings";
 import { requirePermissionPage } from "@/lib/session";
+import { can } from "@/lib/permissions";
 import { formatIDR, formatNumber, formatQty } from "@/lib/money";
 import { formatDate, formatDateTime, movementReferenceHref, todayISO, stockMovementTypeLabel } from "@/lib/format";
 import { groupMovementsByDocument } from "@/lib/gudang/movement-groups";
@@ -34,6 +35,7 @@ export default async function WarehouseDashboard({
 }) {
   const params = await searchParams;
   const ctx = await requirePermissionPage("inventory.view");
+  const canSeeCost = can(ctx, "inventory.cost");
 
   const data = await withCompanyReadOnly(ctx.company.id, async (tx) => {
     // A-28 Tahap 2 (H-GDG-02): jendela peringatan kedaluwarsa dari
@@ -137,8 +139,10 @@ export default async function WarehouseDashboard({
         </div>
       ) : null}
 
-      <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-        <StatCard label="Nilai persediaan" value={formatIDR(data.valuation.totalValue)} hint="Harga pokok rata-rata" icon={Boxes} tone="amber" />
+      <div className={`grid grid-cols-2 gap-2.5 ${canSeeCost ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
+        {canSeeCost ? (
+          <StatCard label="Nilai persediaan" value={formatIDR(data.valuation.totalValue)} hint="Harga pokok rata-rata" icon={Boxes} tone="amber" />
+        ) : null}
         <StatCard label="Potensi jual" value={formatIDR(data.valuation.totalPotential)} hint="Jika seluruh stok terjual" icon={Warehouse} tone="teal" />
         <StatCard label="SKU aktif" value={formatNumber(data.productCount)} hint={`${formatQty(data.valuation.totalQty)} unit tercatat`} icon={Warehouse} tone="plum" />
         <StatCard label="Stok menipis" value={formatNumber(data.lowCount)} hint="Di bawah stok minimum" icon={TriangleAlert} tone={data.lowCount > 0 ? "red" : "green"} />

@@ -7,17 +7,23 @@ import {
   type CustomFieldEntity,
 } from "@/lib/custom-fields";
 import {
+  mapAccountMappingRow,
   mapAccountRow,
+  mapCategoryRow,
   mapCustomerRow,
   mapOpeningBalanceRow,
   mapOpeningStockRow,
   mapSupplierRow,
+  mapUnitRow,
   type ImportEntity,
   type MappedAccount,
+  type MappedAccountMapping,
+  type MappedCategory,
   type MappedCustomer,
   type MappedOpeningBalance,
   type MappedOpeningStock,
   type MappedSupplier,
+  type MappedUnit,
 } from "@/lib/import-parse";
 import { getCompanySettingsRow } from "@/server/settings";
 import type { Mapping, RowData } from "./shared";
@@ -68,6 +74,9 @@ export type MasterMapped =
   | { kind: "suppliers"; value: MappedSupplier }
   | { kind: "customers"; value: MappedCustomer }
   | { kind: "accounts"; value: MappedAccount }
+  | { kind: "categories"; value: MappedCategory }
+  | { kind: "units"; value: MappedUnit }
+  | { kind: "account_mappings"; value: MappedAccountMapping }
   | { kind: "opening_stock"; value: MappedOpeningStock }
   | { kind: "opening_payables"; value: MappedOpeningBalance }
   | { kind: "opening_receivables"; value: MappedOpeningBalance };
@@ -89,6 +98,20 @@ export function mapMasterRow(
     case "accounts": {
       const mapped = mapAccountRow(row, mapping);
       return mapped.value ? { value: { kind: "accounts", value: mapped.value } } : { error: mapped.error };
+    }
+    case "categories": {
+      const mapped = mapCategoryRow(row, mapping);
+      return mapped.value ? { value: { kind: "categories", value: mapped.value } } : { error: mapped.error };
+    }
+    case "units": {
+      const mapped = mapUnitRow(row, mapping);
+      return mapped.value ? { value: { kind: "units", value: mapped.value } } : { error: mapped.error };
+    }
+    case "account_mappings": {
+      const mapped = mapAccountMappingRow(row, mapping);
+      return mapped.value
+        ? { value: { kind: "account_mappings", value: mapped.value } }
+        : { error: mapped.error };
     }
     case "opening_stock": {
       const mapped = mapOpeningStockRow(row, mapping);
@@ -135,6 +158,24 @@ export function masterPreview(value: MasterMapped): MasterRowPreview {
       };
     case "accounts":
       return { label: `${value.value.code} — ${value.value.name}`, detail: value.value.type };
+    case "categories":
+      return {
+        label: value.value.name,
+        detail: [
+          value.value.parent ? `Induk: ${value.value.parent}` : "Kategori utama",
+          value.value.isActive ? "Aktif" : "Nonaktif",
+        ].join(" · "),
+      };
+    case "units":
+      return {
+        label: `${value.value.code} — ${value.value.name}`,
+        detail: value.value.isActive ? "Aktif" : "Nonaktif",
+      };
+    case "account_mappings":
+      return {
+        label: value.value.key,
+        detail: `Akun ${value.value.accountCode}`,
+      };
     case "opening_stock":
       return {
         label: value.value.sku ?? value.value.name ?? "—",
@@ -157,6 +198,9 @@ export function assertMasterEntity(entity: string): MasterEntity {
     entity === "suppliers" ||
     entity === "customers" ||
     entity === "accounts" ||
+    entity === "categories" ||
+    entity === "units" ||
+    entity === "account_mappings" ||
     entity === "opening_stock" ||
     entity === "opening_payables" ||
     entity === "opening_receivables"

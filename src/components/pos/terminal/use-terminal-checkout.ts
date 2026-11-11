@@ -6,6 +6,7 @@
 "use client";
 
 import { useState, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { newUuid } from "@/lib/uuid";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { checkoutAction } from "@/server/actions/pos";
@@ -189,7 +190,7 @@ export function useTerminalCheckout(params: {
     setQuoteResult(null);
     setHeldSaleId(null);
     setHeldTotal(null);
-    idempotencyKeyRef.current = crypto.randomUUID();
+    idempotencyKeyRef.current = newUuid();
     onSaleQueued?.();
   }
 
@@ -324,7 +325,7 @@ export function useTerminalCheckout(params: {
       // FIX-GDG Tahap 4 (butir b): reservasi terpakai dilepas untuk
       // penjualan berikutnya (domain menandainya fulfilled).
       setReservationId(null);
-      idempotencyKeyRef.current = crypto.randomUUID();
+      idempotencyKeyRef.current = newUuid();
       checkoutAttemptedRef.current = false;
       router.push(`/app/pos/nota/${result.data.id}?autoprint=1`);
     } catch {

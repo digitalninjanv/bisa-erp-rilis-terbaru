@@ -17,6 +17,9 @@ const ENTITY_TABS: { key: ImportEntity; hint: string }[] = [
   { key: "suppliers", hint: "Kolom: Kode/No. Pemasok, Nama, Telepon, Email, Alamat, NPWP, Bank, Termin/Syarat, Catatan. Nama yang sudah ada dilewati; kode kosong dibuatkan otomatis." },
   { key: "customers", hint: "Kolom: Kode/No. Pelanggan, Nama, Telepon, Email, Alamat, Kategori Harga, Batas Piutang, Termin/Syarat, NPWP, Catatan. Kelompok harga ditulis dengan namanya dan harus sudah ada." },
   { key: "accounts", hint: "Kolom: Kode, Nama, Tipe, Saldo Normal, Bagian, Keterangan. Tipe Accurate (Aktiva, Kewajiban Lancar, Cash/Bank, COGS, dll.) diterjemahkan otomatis; kode yang sudah ada dilewati. Hierarki akun induk tidak diimpor — untuk perusahaan berjalan, petakan ke COA ERP yang ada." },
+  { key: "categories", hint: "Kolom: Nama Kategori, Induk Kategori, Status. Induk harus sudah ada (atau impor induk lebih dulu); kategori dengan nama sama dilewati. Contoh: Minuman → Kopi & Teh." },
+  { key: "units", hint: "Kolom: Kode Satuan, Nama Satuan, Status. Kode ditulis huruf besar (PCS, BOX, KG); kode/nama yang sudah ada dilewati. Satuan dipakai di produk dan transaksi." },
+  { key: "account_mappings", hint: "Kolom: Kunci pemetaan, Kode akun. Kunci harus dari daftar resmi (sheet Referensi di template); kode akun harus sudah ada. Baris dengan kunci yang sudah dipetakan akan memperbarui akunnya." },
   { key: "opening_stock", hint: "Kolom: SKU/Kode Barang, Nama Produk, Gudang Saldo Awal, Kuantitas Saldo Awal, Nilai Satuan, Per Tanggal. Produk harus sudah ada; satu penerimaan dibuat per kombinasi gudang+tanggal. Masukkan semua gudang untuk produk yang sama dalam satu file — job impor lain untuk produk yang sama akan dilewati sebagai duplikat." },
   { key: "opening_payables", hint: "Kolom: Nama Pemasok, Tanggal, Jatuh Tempo, Jumlah, Referensi. Pemasok harus sudah ada (dicocokkan dari nama atau kode); setiap baris menjadi satu dokumen saldo awal utang dengan jurnal pembukanya." },
   { key: "opening_receivables", hint: "Kolom: Nama Pelanggan, Tanggal, Jatuh Tempo, Jumlah, Referensi. Pelanggan harus sudah ada (dicocokkan dari nama atau kode); setiap baris menjadi satu dokumen saldo awal piutang dengan jurnal pembukanya." },
@@ -26,6 +29,9 @@ const MASTER_TITLES: Record<Exclude<ImportEntity, "products">, string> = {
   suppliers: "Unggah file pemasok",
   customers: "Unggah file pelanggan",
   accounts: "Unggah file bagan akun",
+  categories: "Unggah file kategori produk",
+  units: "Unggah file satuan",
+  account_mappings: "Unggah file pemetaan akun",
   opening_stock: "Unggah file stok awal",
   opening_payables: "Unggah file saldo awal utang",
   opening_receivables: "Unggah file saldo awal piutang",
@@ -42,6 +48,9 @@ export default async function ImportPage({
     params.jenis === "suppliers" ||
     params.jenis === "customers" ||
     params.jenis === "accounts" ||
+    params.jenis === "categories" ||
+    params.jenis === "units" ||
+    params.jenis === "account_mappings" ||
     params.jenis === "opening_stock" ||
     params.jenis === "opening_payables" ||
     params.jenis === "opening_receivables"
@@ -95,7 +104,7 @@ export default async function ImportPage({
       <PageHeader
         eyebrow="Gudang"
         title="Impor data"
-        description="Satu kerangka untuk semua jenis impor: unggah, petakan kolom, validasi per baris, pilih baris, lalu commit. Setiap jenis punya contoh CSV yang bisa diunduh."
+        description="Satu kerangka untuk semua jenis impor: unduh template Excel, petakan kolom, validasi per baris, pilih baris, lalu commit. Setiap jenis punya contoh dan petunjuk kolom di dalam berkas template."
       />
       <div className="mb-3 flex flex-wrap gap-1.5">
         {ENTITY_TABS.map((tab) => (

@@ -99,12 +99,12 @@ export default async function ReportsPage({
 
   const data = await withCompanyReadOnly(ctx.company.id, async (tx) => {
     if (tab === "laba-rugi") {
-      const value = await getIncomeStatement(tx, ctx.company.id, range);
+      const value = await getIncomeStatement(tx, ctx.company.id, range, { excludeClosing: true });
       const prior = priorDates
         ? await getIncomeStatement(tx, ctx.company.id, {
             from: `${priorDates.from}T00:00:00`,
             to: `${priorDates.to}T23:59:59`,
-          })
+          }, { excludeClosing: true })
         : null;
       return { kind: "income" as const, value, prior };
     }

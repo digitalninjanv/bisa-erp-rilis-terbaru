@@ -1,6 +1,7 @@
 import { withCompanyReadOnly } from "@/db/tenant";
 import { listMovements, listWarehouses } from "@/server/catalog";
 import { requirePermissionPage } from "@/lib/session";
+import { can } from "@/lib/permissions";
 import { parsePageParam } from "@/lib/pagination";
 import { formatIDR, formatQty } from "@/lib/money";
 import {
@@ -28,6 +29,7 @@ export default async function MovementsPage({
 }) {
   const params = await searchParams;
   const ctx = await requirePermissionPage("inventory.view");
+  const canSeeCost = can(ctx, "inventory.cost");
 
   const data = await withCompanyReadOnly(ctx.company.id, async (tx) => {
     const warehouses = await listWarehouses(tx, ctx.company.id);
@@ -116,7 +118,7 @@ export default async function MovementsPage({
                 <th>Referensi</th>
                 <th>Alasan</th>
                 <th className="text-right">Qty</th>
-                <th className="text-right">HPP</th>
+                {canSeeCost ? <th className="text-right">HPP</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -155,7 +157,7 @@ export default async function MovementsPage({
                       </span>
                     ) : null}
                   </td>
-                  <td className="num text-right text-[11px] text-muted-foreground">{formatIDR(row.unitCost)}</td>
+                  {canSeeCost ? <td className="num text-right text-[11px] text-muted-foreground">{formatIDR(row.unitCost)}</td> : null}
                 </tr>
               ))}
             </tbody>

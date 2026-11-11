@@ -93,10 +93,10 @@ export default async function PayrollDetailPage({ params }: { params: Promise<{ 
           ) : null}
           {hasStatutory && canSalaryDoc ? (
             <a
-              href={`/api/export/payroll?runId=${run.id}`}
+              href={`/api/export/payroll?runId=${run.id}&format=xlsx`}
               className="inline-flex h-8 items-center gap-1 rounded-md border border-border bg-card px-3 text-[12px] transition-colors hover:bg-muted"
             >
-              <Download className="size-3.5" /> Rekap CSV (setoran)
+              <Download className="size-3.5" /> Rekap Excel (setoran)
             </a>
           ) : null}
           {can(ctx, "payroll.manage") && cashAccounts.length > 0 ? (

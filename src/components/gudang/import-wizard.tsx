@@ -278,8 +278,8 @@ export function ImportWizard({
       {!uploaded ? (
         <ImportUploadCard
           title="Unggah file produk"
-          hint="Ekspor Accurate didukung: Harga Jual dibaca dari Def. Hrg. Jual Satuan #1, stok dari Kuantitas Saldo Awal, dan multi-satuan Satuan #2..#5 otomatis menjadi kemasan. Filter Siap impor hanya menampilkan baris lengkap (SKU, Nama, Barcode, Satuan, Harga beli > 0, Harga jual > 0); baris lain ada di Belum lengkap. Anda juga bisa memakai contoh CSV ERP."
-          templateHref="/api/import/template/products"
+          hint="Ekspor Accurate didukung: Harga Jual dibaca dari Def. Hrg. Jual Satuan #1, stok dari Kuantitas Saldo Awal, dan multi-satuan Satuan #2..#5 otomatis menjadi kemasan. Filter Siap impor hanya menampilkan baris lengkap (SKU, Nama, Barcode, Satuan, Harga beli > 0, Harga jual > 0); baris lain ada di Belum lengkap. Anda juga bisa memakai template Excel/CSV ERP."
+          templateHref="/api/import/template/products?format=xlsx"
           fileName={flow.file?.name ?? null}
           uploading={flow.uploading}
           onFileChange={flow.setFile}

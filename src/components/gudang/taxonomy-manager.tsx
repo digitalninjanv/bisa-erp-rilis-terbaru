@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FolderTree, Plus, Ruler, Search } from "lucide-react";
+import Link from "next/link";
+import { Download, FolderTree, Plus, Ruler, Search, Upload } from "lucide-react";
 import { toast } from "sonner";
 import {
   createTaxonomyAction,
@@ -177,6 +178,25 @@ export function TaxonomyManager({
 
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[11px] text-muted-foreground">
+          Ekspor untuk mengisi massal, atau unduh template Excel lalu unggah kembali.
+        </p>
+        <div className="flex items-center gap-1.5">
+          <Link
+            href={`/api/export/${activeTab === "categories" ? "categories" : "units"}?format=xlsx`}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-[11px] font-medium hover:bg-muted"
+          >
+            <Download className="size-3.5" /> Ekspor
+          </Link>
+          <Link
+            href={`/app/gudang/impor?jenis=${activeTab === "categories" ? "categories" : "units"}`}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-[11px] font-medium hover:bg-muted"
+          >
+            <Upload className="size-3.5" /> Impor
+          </Link>
+        </div>
+      </div>
       <Tabs
         value={activeTab}
         onValueChange={(val) => setActiveTab(val as "categories" | "units")}

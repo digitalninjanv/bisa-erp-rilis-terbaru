@@ -315,3 +315,37 @@ Scheduler `a24-lanjut-otomatis` (tiap 2 jam) menggerakkan kelanjutannya.
   ekstensi pg_trgm idempoten).
 - Terminal POS tidak disentuh sejak perintah pengguna 2026-11-05 21:50;
   perubahan kemampuan kasir `7079687` tercatat & dapat dibalik.
+
+## [Audit Otonom] Putaran 1 — 2026-11-11
+
+- **Akuntansi**: kontrak tipe akun pemetaan; retur pelanggan `Cr HPP`;
+  P&L periode mengecualikan jurnal tutup buku; section impor divalidasi;
+  akun berjurnal tidak bisa non-posting; void beban tanggal asal;
+  laporan penjualan neto retur & PPN tidak dobel.
+- **Gudang/POS**: void penerimaan memakai DPP/net + recompute AVCO;
+  void retur pemasok/dokumen stok recompute AVCO; pembulatan tidak
+  menghasilkan nol; refund lock sesi kas; default rounding grup 0.
+- **Migrasi**: `0070` unique index idempotency `(company,scope,key)`;
+  `0071` default `customer_groups.rounding_step=0`.
+- **Import/export**: XLSX untuk seluruh route export; template
+  Data/Petunjuk/Referensi; impor kategori, satuan, pemetaan akun;
+  tombol ekspor/impor di halaman master.
+- **Keamanan**: batas pemberian peran/izin, reset password memutus
+  session, impor akuntansi butuh izin akuntansi, HTTPS produksi wajib.
+- **Dokumentasi**: INVENTARIS, DATA_FLOW, TEMUAN, KEPUTUSAN, VALIDATION,
+  SECURITY, BACKUP, DATA_DICTIONARY, PANDUAN_PENGGUNA, DEPLOY,
+  LAPORAN_AKHIR, BLOKIR.
+- **Backup**: `bisa-pre-migration-20261111-103520.dump`; restore drill
+  ke DB kosong berhasil.
+- **Sisa**: SEC-003 (cost leak), SEC-005 (token POS), AKN-004 lanjutan,
+  serial void, stabilisasi seed/suite — lihat `docs/BLOKIR.md`.
+
+- **Akses LAN HTTP**: `crypto.randomUUID()` diganti helper `newUuid()` dengan fallback `crypto.getRandomValues`, sehingga POS/form tidak gagal saat dibuka lewat `http://192.168.x.x` (non-secure context).
+
+- **Cetak otomatis POS**: `ReceiptPrint` menunggu font siap, memanggil
+  `window.print()` otomatis, dan kembali ke `/app/pos` setelah
+  `afterprint`. Ref penjaga yang memblokir auto-print di React Strict
+  Mode (`next dev`) dihapus. Tautan cetak ulang membawa `autoprint=1`.
+- **Launcher printer**: `deploy/print/bisa-pos-print.sh` / `.bat`
+  membuka POS (`/app/pos`) di Chrome/Edge dengan `--kiosk-printing`;
+  pengaturan cetak menampilkan petunjuk printer default OS.

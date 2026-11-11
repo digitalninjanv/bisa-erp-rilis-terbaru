@@ -25,6 +25,8 @@ import {
   products,
   saleLines,
   salePayments,
+  saleReturnLines,
+  saleReturns,
   sales,
   user,
 } from "@/db/schema";
@@ -51,126 +53,272 @@ export async function getSalesSummary(tx: Tx, companyId: string, range: Range) {
       ),
     );
 
-  const total = d(row?.total ?? 0);
-  const cost = d(row?.cost ?? 0);
+  const [returnsRow] = await tx
+    .select({
+      total: sql<string>`coalesce(sum(${saleReturns.total}), 0)`,
+      cost: sql<string>`coalesce(sum(${saleReturns.costTotal}), 0)`,
+      // PPN pada retur mengikuti proporsi penjualan asal; penjualan
+      // menyimpan total inklusif pajak, jadi laba retur harus
+      // mengembalikan porsi pajak itu juga.
+      tax: sql<string>`coalesce(sum(case when ${sales.total} > 0 then (${saleReturns.total} * ${sales.taxTotal}) / ${sales.total} else 0 end), 0)`,
+      transactions: count(),
+    })
+    .from(saleReturns)
+    .innerJoin(sales, eq(saleReturns.saleId, sales.id))
+    .where(
+      and(
+        eq(saleReturns.companyId, companyId),
+        gte(saleReturns.date, range.from),
+        lte(saleReturns.date, range.to),
+        eq(saleReturns.status, "posted"),
+      ),
+    );
+
+  const total = d(row?.total ?? 0).minus(returnsRow?.total ?? 0);
+  const cost = d(row?.cost ?? 0).minus(returnsRow?.cost ?? 0);
+  const tax = d(row?.tax ?? 0).minus(returnsRow?.tax ?? 0);
   return {
     transactions: row?.transactions ?? 0,
     gross: d(row?.gross ?? 0).toNumber(),
     discount: d(row?.discount ?? 0).toNumber(),
-    tax: d(row?.tax ?? 0).toNumber(),
+    tax: tax.toNumber(),
     total: total.toNumber(),
     cost: cost.toNumber(),
-    profit: total.minus(row?.tax ?? 0).minus(cost).toNumber(),
+    profit: total.minus(tax).minus(cost).toNumber(),
+    returned: d(returnsRow?.total ?? 0).toNumber(),
     average: (row?.transactions ?? 0) > 0 ? total.toNumber() / (row?.transactions ?? 1) : 0,
   };
 }
 
 export async function getSalesByDay(tx: Tx, companyId: string, range: Range) {
-  const rows = await tx
-    .select({
-      date: sales.date,
-      total: sql<string>`coalesce(sum(${sales.total}), 0)`,
-      transactions: count(),
-    })
-    .from(sales)
-    .where(
-      and(
-        eq(sales.companyId, companyId),
-        gte(sales.date, range.from),
-        lte(sales.date, range.to),
-        inArray(sales.status, ["completed", "returned"]),
-      ),
-    )
-    .groupBy(sales.date)
-    .orderBy(asc(sales.date));
-  return rows.map((r) => ({ date: r.date, total: d(r.total).toNumber(), transactions: r.transactions }));
+  const [rows, returns] = await Promise.all([
+    tx
+      .select({
+        date: sales.date,
+        total: sql<string>`coalesce(sum(${sales.total}), 0)`,
+        transactions: count(),
+      })
+      .from(sales)
+      .where(
+        and(
+          eq(sales.companyId, companyId),
+          gte(sales.date, range.from),
+          lte(sales.date, range.to),
+          inArray(sales.status, ["completed", "returned"]),
+        ),
+      )
+      .groupBy(sales.date)
+      .orderBy(asc(sales.date)),
+    tx
+      .select({
+        date: saleReturns.date,
+        total: sql<string>`coalesce(sum(${saleReturns.total}), 0)`,
+      })
+      .from(saleReturns)
+      .where(
+        and(
+          eq(saleReturns.companyId, companyId),
+          gte(saleReturns.date, range.from),
+          lte(saleReturns.date, range.to),
+          eq(saleReturns.status, "posted"),
+        ),
+      )
+      .groupBy(saleReturns.date),
+  ]);
+  const returnsByDate = new Map(returns.map((row) => [row.date, d(row.total)]));
+  const dates = new Set([...rows.map((row) => row.date), ...returnsByDate.keys()]);
+  return [...dates]
+    .sort()
+    .map((date) => {
+      const row = rows.find((item) => item.date === date);
+      return {
+        date,
+        total: d(row?.total ?? 0).minus(returnsByDate.get(date) ?? 0).toNumber(),
+        transactions: row?.transactions ?? 0,
+      };
+    });
 }
 
 export async function getSalesByCashier(tx: Tx, companyId: string, range: Range) {
-  const rows = await tx
-    .select({
-      id: sales.cashierId,
-      name: user.name,
-      total: sql<string>`coalesce(sum(${sales.total}), 0)`,
-      transactions: count(),
-    })
-    .from(sales)
-    .leftJoin(user, eq(sales.cashierId, user.id))
-    .where(
-      and(
-        eq(sales.companyId, companyId),
-        gte(sales.date, range.from),
-        lte(sales.date, range.to),
-        inArray(sales.status, ["completed", "returned"]),
-      ),
-    )
-    .groupBy(sales.cashierId, user.name)
-    .orderBy(desc(sql`sum(${sales.total})`));
-  return rows.map((r) => ({ id: r.id, name: r.name ?? "—", total: d(r.total).toNumber(), transactions: r.transactions }));
+  const [rows, returns] = await Promise.all([
+    tx
+      .select({
+        id: sales.cashierId,
+        name: user.name,
+        total: sql<string>`coalesce(sum(${sales.total}), 0)`,
+        transactions: count(),
+      })
+      .from(sales)
+      .leftJoin(user, eq(sales.cashierId, user.id))
+      .where(
+        and(
+          eq(sales.companyId, companyId),
+          gte(sales.date, range.from),
+          lte(sales.date, range.to),
+          inArray(sales.status, ["completed", "returned"]),
+        ),
+      )
+      .groupBy(sales.cashierId, user.name)
+      .orderBy(desc(sql`sum(${sales.total})`)),
+    tx
+      .select({
+        id: sales.cashierId,
+        total: sql<string>`coalesce(sum(${saleReturns.total}), 0)`,
+      })
+      .from(saleReturns)
+      .innerJoin(sales, eq(saleReturns.saleId, sales.id))
+      .where(
+        and(
+          eq(saleReturns.companyId, companyId),
+          gte(saleReturns.date, range.from),
+          lte(saleReturns.date, range.to),
+          eq(saleReturns.status, "posted"),
+        ),
+      )
+      .groupBy(sales.cashierId),
+  ]);
+  const returnsByCashier = new Map(returns.map((row) => [row.id, d(row.total)]));
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name ?? "—",
+    total: d(r.total).minus(returnsByCashier.get(r.id) ?? 0).toNumber(),
+    transactions: r.transactions,
+  }));
 }
 
 export async function getSalesByCategory(tx: Tx, companyId: string, range: Range, cashierId?: string) {
-  const rows = await tx
-    .select({
-      name: categories.name,
-      qty: sql<string>`coalesce(sum(${saleLines.qty}), 0)`,
-      total: sql<string>`coalesce(sum(${saleLines.lineTotal} + ${saleLines.taxAmount}), 0)`,
-      profit: sql<string>`coalesce(sum(${saleLines.lineTotal} - (${saleLines.unitCost} * ${saleLines.qty})), 0)`,
+  const [rows, returns] = await Promise.all([
+    tx
+      .select({
+        name: categories.name,
+        qty: sql<string>`coalesce(sum(${saleLines.qty}), 0)`,
+        total: sql<string>`coalesce(sum(${saleLines.lineTotal}), 0)`,
+        profit: sql<string>`coalesce(sum(${saleLines.lineTotal} - (${saleLines.unitCost} * ${saleLines.qty})), 0)`,
+      })
+      .from(saleLines)
+      .innerJoin(sales, eq(saleLines.saleId, sales.id))
+      .leftJoin(products, eq(saleLines.productId, products.id))
+      .leftJoin(categories, eq(products.categoryId, categories.id))
+      .where(
+        and(
+          eq(saleLines.companyId, companyId),
+          gte(sales.date, range.from),
+          lte(sales.date, range.to),
+          inArray(sales.status, ["completed", "returned"]),
+          ...(cashierId ? [eq(sales.cashierId, cashierId)] : []),
+        ),
+      )
+      .groupBy(categories.name)
+      .orderBy(desc(sql`sum(${saleLines.lineTotal})`)),
+    tx
+      .select({
+        name: categories.name,
+        qty: sql<string>`coalesce(sum(${saleReturnLines.qty}), 0)`,
+        total: sql<string>`coalesce(sum(${saleReturnLines.lineTotal}), 0)`,
+        profit: sql<string>`coalesce(sum(${saleReturnLines.lineTotal} - (${saleReturnLines.unitCost} * ${saleReturnLines.qty})), 0)`,
+      })
+      .from(saleReturnLines)
+      .innerJoin(saleReturns, eq(saleReturnLines.returnId, saleReturns.id))
+      .innerJoin(sales, eq(saleReturns.saleId, sales.id))
+      .leftJoin(products, eq(saleReturnLines.productId, products.id))
+      .leftJoin(categories, eq(products.categoryId, categories.id))
+      .where(
+        and(
+          eq(saleReturnLines.companyId, companyId),
+          gte(saleReturns.date, range.from),
+          lte(saleReturns.date, range.to),
+          eq(saleReturns.status, "posted"),
+          ...(cashierId ? [eq(sales.cashierId, cashierId)] : []),
+        ),
+      )
+      .groupBy(categories.name),
+  ]);
+  const returnsByName = new Map(
+    returns.map((row) => [
+      row.name ?? "Tanpa kategori",
+      { qty: d(row.qty), total: d(row.total), profit: d(row.profit) },
+    ]),
+  );
+  const names = new Set([...rows.map((row) => row.name ?? "Tanpa kategori"), ...returnsByName.keys()]);
+  return [...names]
+    .map((name) => {
+      const row = rows.find((item) => (item.name ?? "Tanpa kategori") === name);
+      const ret = returnsByName.get(name);
+      return {
+        name,
+        qty: d(row?.qty ?? 0).minus(ret?.qty ?? 0).toNumber(),
+        total: d(row?.total ?? 0).minus(ret?.total ?? 0).toNumber(),
+        profit: d(row?.profit ?? 0).minus(ret?.profit ?? 0).toNumber(),
+      };
     })
-    .from(saleLines)
-    .innerJoin(sales, eq(saleLines.saleId, sales.id))
-    .leftJoin(products, eq(saleLines.productId, products.id))
-    .leftJoin(categories, eq(products.categoryId, categories.id))
-    .where(
-      and(
-        eq(saleLines.companyId, companyId),
-        gte(sales.date, range.from),
-        lte(sales.date, range.to),
-        inArray(sales.status, ["completed", "returned"]),
-        ...(cashierId ? [eq(sales.cashierId, cashierId)] : []),
-      ),
-    )
-    .groupBy(categories.name)
-    .orderBy(desc(sql`sum(${saleLines.lineTotal})`));
-  return rows.map((r) => ({
-    name: r.name ?? "Tanpa kategori",
-    qty: d(r.qty).toNumber(),
-    total: d(r.total).toNumber(),
-    profit: d(r.profit).toNumber(),
-  }));
+    .sort((a, b) => b.total - a.total);
 }
 
 export async function getTopProducts(tx: Tx, companyId: string, range: Range, limit = 10) {
-  const rows = await tx
-    .select({
-      productId: saleLines.productId,
-      name: saleLines.productName,
-      sku: saleLines.productSku,
-      qty: sql<string>`coalesce(sum(${saleLines.qty}), 0)`,
-      total: sql<string>`coalesce(sum(${saleLines.lineTotal} + ${saleLines.taxAmount}), 0)`,
-      profit: sql<string>`coalesce(sum(${saleLines.lineTotal} - (${saleLines.unitCost} * ${saleLines.qty})), 0)`,
+  const [rows, returns] = await Promise.all([
+    tx
+      .select({
+        productId: saleLines.productId,
+        name: saleLines.productName,
+        sku: saleLines.productSku,
+        qty: sql<string>`coalesce(sum(${saleLines.qty}), 0)`,
+        total: sql<string>`coalesce(sum(${saleLines.lineTotal}), 0)`,
+        profit: sql<string>`coalesce(sum(${saleLines.lineTotal} - (${saleLines.unitCost} * ${saleLines.qty})), 0)`,
+      })
+      .from(saleLines)
+      .innerJoin(sales, eq(saleLines.saleId, sales.id))
+      .where(
+        and(
+          eq(saleLines.companyId, companyId),
+          gte(sales.date, range.from),
+          lte(sales.date, range.to),
+          inArray(sales.status, ["completed", "returned"]),
+        ),
+      )
+      .groupBy(saleLines.productId, saleLines.productName, saleLines.productSku)
+      .orderBy(desc(sql`sum(${saleLines.lineTotal})`)),
+    tx
+      .select({
+        productId: saleReturnLines.productId,
+        name: saleReturnLines.productName,
+        sku: products.sku,
+        qty: sql<string>`coalesce(sum(${saleReturnLines.qty}), 0)`,
+        total: sql<string>`coalesce(sum(${saleReturnLines.lineTotal}), 0)`,
+        profit: sql<string>`coalesce(sum(${saleReturnLines.lineTotal} - (${saleReturnLines.unitCost} * ${saleReturnLines.qty})), 0)`,
+      })
+      .from(saleReturnLines)
+      .innerJoin(saleReturns, eq(saleReturnLines.returnId, saleReturns.id))
+      .leftJoin(products, eq(saleReturnLines.productId, products.id))
+      .where(
+        and(
+          eq(saleReturnLines.companyId, companyId),
+          gte(saleReturns.date, range.from),
+          lte(saleReturns.date, range.to),
+          eq(saleReturns.status, "posted"),
+        ),
+      )
+      .groupBy(saleReturnLines.productId, saleReturnLines.productName, products.sku),
+  ]);
+  const returnsByProduct = new Map(
+    returns.map((row) => [
+      row.productId,
+      { qty: d(row.qty), total: d(row.total), profit: d(row.profit) },
+    ]),
+  );
+  return rows
+    .map((r) => {
+      const ret = returnsByProduct.get(r.productId);
+      return {
+        productId: r.productId,
+        name: r.name,
+        sku: r.sku,
+        qty: d(r.qty).minus(ret?.qty ?? 0).toNumber(),
+        total: d(r.total).minus(ret?.total ?? 0).toNumber(),
+        profit: d(r.profit).minus(ret?.profit ?? 0).toNumber(),
+      };
     })
-    .from(saleLines)
-    .innerJoin(sales, eq(saleLines.saleId, sales.id))
-    .where(
-      and(
-        eq(saleLines.companyId, companyId),
-        gte(sales.date, range.from),
-        lte(sales.date, range.to),
-        inArray(sales.status, ["completed", "returned"]),
-      ),
-    )
-    .groupBy(saleLines.productId, saleLines.productName, saleLines.productSku)
-    .orderBy(desc(sql`sum(${saleLines.lineTotal})`))
-    .limit(limit);
-  return rows.map((r) => ({
-    productId: r.productId,
-    name: r.name,
-    sku: r.sku,
-    qty: d(r.qty).toNumber(),
-    total: d(r.total).toNumber(),
-    profit: d(r.profit).toNumber(),
-  }));
+    .sort((a, b) => b.total - a.total)
+    .slice(0, limit);
 }
 
 export async function getPaymentBreakdown(tx: Tx, companyId: string, range: Range) {

@@ -98,6 +98,7 @@ const envSchema = z
     // Explicit operator acknowledgement, see parseEnv docs: only ever
     // set by the Playwright webServer harness (playwright.config.ts).
     BISA_ALLOW_LOCALHOST_AUTH_URL: z.string().optional(),
+    BISA_ALLOW_INSECURE_AUTH_URL: z.string().optional(),
   });
 
 function isTruthyFlag(value: string | undefined): boolean {
@@ -123,6 +124,12 @@ function productionAuthUrlProblems(
   if (LOCAL_HOSTS.has(host) && !isTruthyFlag(parsed.BISA_ALLOW_LOCALHOST_AUTH_URL)) {
     return [
       "BETTER_AUTH_URL: BETTER_AUTH_URL tidak boleh ber-host localhost pada NODE_ENV=production.",
+    ];
+  }
+  const protocol = new URL(parsed.BETTER_AUTH_URL).protocol;
+  if (protocol !== "https:" && !isTruthyFlag(parsed.BISA_ALLOW_INSECURE_AUTH_URL)) {
+    return [
+      "BETTER_AUTH_URL: gunakan https pada NODE_ENV=production agar cookie sesi Secure. Set BISA_ALLOW_INSECURE_AUTH_URL=1 hanya untuk uji lokal yang disengaja.",
     ];
   }
   return [];

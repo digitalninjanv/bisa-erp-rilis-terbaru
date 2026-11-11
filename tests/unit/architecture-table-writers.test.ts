@@ -55,6 +55,7 @@ const FROZEN: Record<string, string[]> = {
     "server/accounting.ts",
     "server/actions/accounting/akun-pemetaan.ts",
     "server/coa-migration.ts",
+    "server/import/commit.ts",
     "server/system-accounts.ts",
   ],
   accounts: [
@@ -65,7 +66,11 @@ const FROZEN: Record<string, string[]> = {
     "server/import/commit.ts",
     "server/system-accounts.ts",
   ],
-  categories: ["server/actions/import/commit-phases.ts", "server/actions/inventory/taksonomi.ts"],
+  categories: [
+    "server/actions/import/commit-phases.ts",
+    "server/actions/inventory/taksonomi.ts",
+    "server/import/commit.ts",
+  ],
   customers: [
     "server/actions/inventory/pihak.ts",
     "server/actions/pos.ts",
@@ -157,7 +162,11 @@ const FROZEN: Record<string, string[]> = {
     "server/actions/inventory/pihak.ts",
     "server/import/commit.ts",
   ],
-  units: ["server/actions/import/commit-phases.ts", "server/actions/inventory/taksonomi.ts"],
+  units: [
+    "server/actions/import/commit-phases.ts",
+    "server/actions/inventory/taksonomi.ts",
+    "server/import/commit.ts",
+  ],
 };
 
 /** Domain pemilik berkas (relatif src/) — cermin MODULE_BOUNDARIES §2. */

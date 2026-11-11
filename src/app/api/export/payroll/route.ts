@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { payrollRuns } from "@/db/schema";
 import { csvResponse, toCsv } from "@/lib/csv";
+import { xlsxResponse, type XlsxCell } from "@/lib/xlsx";
 import { d, toDb } from "@/lib/money";
 import { getPayrollRecap } from "@/server/payroll-indonesia";
 import { requirePermission } from "@/lib/session";
@@ -45,6 +46,7 @@ export async function GET(request: NextRequest) {
   // R3 K-5: ekspor massal angka gaji adalah titik sensitif — lapis
   // kedua sesudah izin adalah kesegaran sesi (maks 1 jam sejak masuk).
   requireFreshSession(ctx);
+  const format = request.nextUrl.searchParams.get("format") === "xlsx" ? "xlsx" : "csv";
   const runId = request.nextUrl.searchParams.get("runId");
   if (!runId) {
     return new Response("Parameter runId wajib diisi.", { status: 400 });
@@ -99,7 +101,19 @@ export async function GET(request: NextRequest) {
       totalDeposit,
     ];
   });
-  const csv = toCsv(headers, rows);
   const today = new Date().toISOString().slice(0, 10);
-  return csvResponse(`rekap-payroll-${data.run.period}-${today}.csv`, csv);
+  const filename = `rekap-payroll-${data.run.period}-${today}`;
+  if (format === "xlsx") {
+    const cells: XlsxCell[][] = rows.map((row) =>
+      row.map((value, index) => {
+        if (index < 3) return value;
+        const number = Number(value);
+        return Number.isFinite(number) ? number : value;
+      }),
+    );
+    return xlsxResponse(`${filename}.xlsx`, [
+      { name: "Rekap Payroll", headers, rows: cells },
+    ]);
+  }
+  return csvResponse(`${filename}.csv`, toCsv(headers, rows));
 }

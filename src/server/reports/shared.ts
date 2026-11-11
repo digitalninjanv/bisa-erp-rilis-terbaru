@@ -9,6 +9,7 @@ import {
   inArray,
   lt,
   lte,
+  notInArray,
   sql,
 } from "drizzle-orm";
 import type { Tx } from "@/db";
@@ -136,6 +137,47 @@ export async function accountTotalsInRange(
     });
   }
   return result;
+}
+
+/**
+ * Mutasi per akun dalam rentang, dengan sumber jurnal tertentu
+ * dikecualikan. Dipakai laporan laba rugi periode agar jurnal tutup
+ * buku (`year_end_closing`) tidak menghapus aktivitas tahun yang sudah
+ * ditutup. Agregasi mentah dipakai karena ringkasan bulanan tidak
+ * menyimpan source_type.
+ */
+export async function accountTotalsInRangeExcludingSources(
+  tx: Tx,
+  companyId: string,
+  from: string,
+  to: string,
+  excludedSourceTypes: string[],
+): Promise<Map<string, AccountTotals>> {
+  if (excludedSourceTypes.length === 0) {
+    return accountTotalsInRange(tx, companyId, from, to);
+  }
+  const rows = await tx
+    .select({
+      accountId: journalLines.accountId,
+      debit: sql<string>`coalesce(sum(${journalLines.debit}), 0)`,
+      credit: sql<string>`coalesce(sum(${journalLines.credit}), 0)`,
+    })
+    .from(journalLines)
+    .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
+    .where(
+      and(
+        eq(journalLines.companyId, companyId),
+        eq(journalEntries.companyId, companyId),
+        eq(journalEntries.status, "posted"),
+        gte(journalEntries.date, from),
+        lte(journalEntries.date, to),
+        notInArray(journalEntries.sourceType, excludedSourceTypes),
+      ),
+    )
+    .groupBy(journalLines.accountId);
+  return new Map(
+    rows.map((row) => [row.accountId, { debit: d(row.debit), credit: d(row.credit) }]),
+  );
 }
 
 /** Sum of signed account movements for a set of account keys. */

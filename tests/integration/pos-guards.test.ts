@@ -28,7 +28,7 @@ import {
 import { listCustomerGroups, searchProducts } from "@/server/catalog";
 import { d } from "@/lib/money";
 import { todayISO } from "@/lib/format";
-import { makeRollbackTransaction } from "../helpers/rollback-transaction";
+import { makeRollbackTransaction, rollbackTransaction as rollbackForCompany } from "../helpers/rollback-transaction";
 
 // Tahap 3 POS batch P3-3: POS-DISC-01 (ambang diskon manual + izin
 // pos.discount, D-10), SET-RND-01 (pembulatan perusahaan diterapkan),
@@ -936,6 +936,31 @@ async function guardFixture(tx: Tx) {
     );
   return { warehouse, product, method };
 }
+
+describe("POS-RND-02 pembulatan tidak boleh membuat total nol", () => {
+  it("harga 222 dengan pembulatan terdekat 500 tetap ditagih 222, bukan gratis", async () => {
+    await rollbackForCompany(GUARD_ORG, async (tx) => {
+      await ensureGuardCompany(tx);
+      const { warehouse, product } = await guardFixture(tx);
+      await tx
+        .update(companySettings)
+        .set({ roundingMode: "nearest_500" })
+        .where(eq(companySettings.companyId, GUARD_ORG));
+      await tx
+        .update(products)
+        .set({ salePrice: "222" })
+        .where(eq(products.id, product.id));
+      const quote = await quoteCart(tx, {
+        companyId: GUARD_ORG,
+        warehouseId: warehouse.id,
+        lines: [{ productId: product.id, qty: 1 }],
+      });
+      expect(quote.total).toBeCloseTo(222, 2);
+      expect(quote.total).toBeGreaterThan(0);
+      expect(quote.roundingAdjustment).toBeCloseTo(0, 2);
+    });
+  });
+});
 
 describe("POS-IDEM-01 balapan kunci idempotensi (commit, perusahaan uji)", () => {
   it("dua createSale bersamaan dengan kunci sama: satu penjualan, keduanya menerima hasil yang sama", async () => {

@@ -7,6 +7,7 @@ import { ForbiddenBanner } from "@/components/blocks/forbidden-banner";
 import { MODULE_LIST, MODULES, type ModuleKey } from "@/lib/modules";
 import { singleModuleLanding } from "@/lib/landing";
 import { requireAuth } from "@/lib/session";
+import { can } from "@/lib/permissions";
 import { withCompanyReadOnly } from "@/db/tenant";
 import {
   getHomeSummary,
@@ -80,6 +81,7 @@ export default async function AppHomePage({
   const canSeeGudang = visibleKeys.has("gudang");
   const canSeeAkuntansi = visibleKeys.has("akuntansi");
   const canSeeHr = visibleKeys.has("hr");
+  const canSeeCost = can(ctx, "inventory.cost");
 
   const data = await withCompanyReadOnly(ctx.company.id, async (tx) => {
     const [summary, recent, trendRows, topProducts, periodSummary, staff] = await Promise.all([
@@ -195,7 +197,7 @@ export default async function AppHomePage({
               hint="Saldo buku saat ini"
               icon={Wallet}
             />
-          ) : canSeeGudang ? (
+          ) : canSeeGudang && canSeeCost ? (
             <StatCard
               label="Nilai persediaan"
               value={formatIDR(summary.inventoryValue)}

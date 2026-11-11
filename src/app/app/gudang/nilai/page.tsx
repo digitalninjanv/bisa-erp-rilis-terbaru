@@ -95,10 +95,11 @@ export default async function InventoryValuePage({
               href={`/api/export/inventory?${new URLSearchParams({
                 ...(params.warehouse ? { warehouse: params.warehouse } : {}),
                 ...(showBreakdown ? { rincian: "1" } : {}),
+                format: "xlsx",
               }).toString()}`}
               className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] font-medium hover:bg-muted"
             >
-              <Download className="size-3.5" /> Unduh CSV
+              <Download className="size-3.5" /> Unduh Excel
             </Link>
           </>
         }

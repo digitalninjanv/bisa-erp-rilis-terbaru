@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { newUuid } from "@/lib/uuid";
 import { useRouter } from "next/navigation";
 import { ArrowRight, ArrowRightLeft, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
@@ -24,7 +25,7 @@ export function BankTransferForm({ accounts, today }: { accounts: Account[]; tod
   // A-21 (R3-04): satu kunci idempotensi per sesi form — submit ulang
   // (klik ganda / retry jaringan) mengembalikan dokumen pertama.
   // Diperbarui sesudah submit berhasil agar dokumen berikutnya baru.
-  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
+  const [idempotencyKey, setIdempotencyKey] = useState(() => newUuid());
   // Rekening kas/bank selalu akun aset — combobox menampilkan label tipenya.
   const comboboxAccounts: ComboboxAccount[] = accounts.map((row) => ({ ...row, type: "asset" }));
   const [fromAccountId, setFrom] = useState(accounts[0]?.id ?? "");
@@ -69,7 +70,7 @@ export function BankTransferForm({ accounts, today }: { accounts: Account[]; tod
     }
     toast.success(`Transfer ${result.data.number} tersimpan.`);
     showPostingWarnings(result.data.warnings);
-    setIdempotencyKey(crypto.randomUUID());
+    setIdempotencyKey(newUuid());
     setAmount("");
     setFee("0");
     setReference("");

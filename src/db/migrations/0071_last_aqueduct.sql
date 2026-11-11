@@ -1,0 +1,1 @@
+ALTER TABLE "customer_groups" ALTER COLUMN "rounding_step" SET DEFAULT 0;

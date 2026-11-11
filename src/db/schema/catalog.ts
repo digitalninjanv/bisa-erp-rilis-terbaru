@@ -34,7 +34,7 @@ export const customerGroups = pgTable(
     discountValue: numeric("discount_value", { precision: 19, scale: 4 }).notNull().default("0"),
     // Group pricing: per-product rules are rounded to roundingStep in
     // roundingDirection. "Pembulatan total tunai" is optional.
-    roundingStep: integer("rounding_step").notNull().default(500),
+    roundingStep: integer("rounding_step").notNull().default(0),
     roundingDirection: text("rounding_direction").notNull().default("down"), // down | up | nearest
     roundCashTotal: boolean("round_cash_total").notNull().default(false),
     discountAccountId: uuid("discount_account_id"),

@@ -7,7 +7,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Settings2 } from "lucide-react";
+import Link from "next/link";
+import { Download, Settings2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { saveMappingAction } from "@/server/actions/accounting/akun-pemetaan";
 import { useSettingsSection } from "@/components/blocks/settings-layout";
@@ -76,10 +77,28 @@ export function MappingEditor({
   return (
     <div className="rounded-lg border border-border bg-card">
       <div className="border-b border-border px-4 py-3">
-        <h2 className="flex items-center gap-1.5 text-[13px] font-semibold"><Settings2 className="size-3.5 text-muted-foreground" /> Pemetaan akun otomatis</h2>
-        <p className="mt-0.5 text-[11px] text-muted-foreground">
-          Menentukan akun yang dipakai jurnal otomatis dari POS, gudang, beban, retur, karyawan, payroll, dan aset tetap.
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h2 className="flex items-center gap-1.5 text-[13px] font-semibold"><Settings2 className="size-3.5 text-muted-foreground" /> Pemetaan akun otomatis</h2>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              Menentukan akun yang dipakai jurnal otomatis dari POS, gudang, beban, retur, karyawan, payroll, dan aset tetap.
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Link
+              href="/api/export/account-mappings?format=xlsx"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-[11px] font-medium hover:bg-muted"
+            >
+              <Download className="size-3.5" /> Ekspor
+            </Link>
+            <Link
+              href="/app/gudang/impor?jenis=account_mappings"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-[11px] font-medium hover:bg-muted"
+            >
+              <Upload className="size-3.5" /> Impor
+            </Link>
+          </div>
+        </div>
       </div>
       <div className="divide-y divide-border/70">
         {MAPPING_GROUPS.map((group) => (

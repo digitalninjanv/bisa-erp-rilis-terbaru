@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowDown, ArrowUp, Download } from "lucide-react";
+import { ArrowDown, ArrowUp, Download, Upload } from "lucide-react";
 import { asc, eq } from "drizzle-orm";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { customerGroups } from "@/db/schema";
@@ -124,10 +124,16 @@ export default async function PartnersPage({
         actions={
           <>
             <Link
-              href={`${tab === "pemasok" ? "/api/export/suppliers" : "/api/export/customers"}${exportQuery ? `?${exportQuery}` : ""}`}
+              href={`${tab === "pemasok" ? "/api/export/suppliers" : "/api/export/customers"}?${exportQuery ? `${exportQuery}&` : ""}format=xlsx`}
               className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] font-medium hover:bg-muted"
             >
-              <Download className="size-3.5" /> Unduh CSV
+              <Download className="size-3.5" /> Unduh Excel
+            </Link>
+            <Link
+              href={`/app/gudang/impor?jenis=${tab === "pemasok" ? "suppliers" : "customers"}`}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] font-medium hover:bg-muted"
+            >
+              <Upload className="size-3.5" /> Impor Excel
             </Link>
             <Link
               href="/app/gudang/pemasok/duplikat"

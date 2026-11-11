@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { newUuid } from "@/lib/uuid";
 import { useRouter } from "next/navigation";
 import { Banknote, CreditCard } from "lucide-react";
 import { toast } from "sonner";
@@ -261,7 +262,7 @@ export function PaymentForm({
       <button
         type="button"
         onClick={() => {
-          setPaymentKey(crypto.randomUUID());
+          setPaymentKey(newUuid());
           setFee("");
           setFeeDirty(false);
           setWhType("pph23");

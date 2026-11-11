@@ -11,6 +11,7 @@ import { can } from "@/lib/permissions";
 import { requirePermission } from "@/lib/session";
 import { todayISO } from "@/lib/format";
 import { csvResponse, toCsv } from "@/lib/csv";
+import { xlsxResponse, type XlsxCell } from "@/lib/xlsx";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,6 +31,7 @@ export async function GET(request?: Request) {
   const q = url.searchParams.get("q") ?? undefined;
   const category = url.searchParams.get("category") ?? undefined;
   const lowStock = url.searchParams.get("lowStock") === "1";
+  const format = url.searchParams.get("format") === "xlsx" ? "xlsx" : "csv";
 
   const rows = await withCompanyReadOnly(ctx.company.id, async (tx) => {
     const [settings, warehouses] = await Promise.all([
@@ -47,9 +49,28 @@ export async function GET(request?: Request) {
     });
   });
 
-  const csv = toCsv(
-    productExportHeaders(includeCost),
-    rows.map((row) => toProductExportRow(row, { includeCost })),
-  );
-  return csvResponse(`produk-${todayISO()}.csv`, csv);
+  const headers = productExportHeaders(includeCost);
+  const stringRows = rows.map((row) => toProductExportRow(row, { includeCost }));
+  if (format === "xlsx") {
+    const numericHeaders = new Set(["Harga Beli", "Harga Jual", "Stok Minimum"]);
+    const cells: XlsxCell[][] = stringRows.map((row) =>
+      row.map((value, index) => {
+        if (value === null || value === "") return null;
+        if (numericHeaders.has(headers[index])) {
+          const number = Number(value);
+          return Number.isFinite(number) ? number : value;
+        }
+        return value;
+      }),
+    );
+    return xlsxResponse(`produk-${todayISO()}.xlsx`, [
+      {
+        name: "Produk",
+        headers,
+        rows: cells,
+        widths: [14, 36, 18, 18, 10, 24, 14, 14, 14, 12, 12, 12, 28, 20, 16, 18, 18, 18, 14, 16],
+      },
+    ]);
+  }
+  return csvResponse(`produk-${todayISO()}.csv`, toCsv(headers, stringRows));
 }

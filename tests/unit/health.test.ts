@@ -44,7 +44,7 @@ describe("GET /api/health", () => {
 });
 
 describe("latestMigrationTag", () => {
-  it("membaca tag migrasi terakhir dari jurnal drizzle (0069 saat ini)", () => {
-    expect(latestMigrationTag()).toMatch(/^0069_/);
+  it("membaca tag migrasi terakhir dari jurnal drizzle (0071 saat ini)", () => {
+    expect(latestMigrationTag()).toMatch(/^0071_/);
   });
 });

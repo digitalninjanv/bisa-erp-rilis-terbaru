@@ -4,7 +4,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { hashPassword } from "better-auth/crypto";
 import { z } from "zod";
-import { account, companyRoles, member, user } from "@/db/schema";
+import { account, companyRoles, member, session, user } from "@/db/schema";
 import { withCompany } from "@/db/tenant";
 import { writeAudit } from "@/server/audit";
 import { requirePermission } from "@/lib/session";
@@ -15,6 +15,7 @@ import {
   MODULE_PERMISSIONS,
   moduleForPermission,
   builtinRole,
+  can,
   sanitizeModules,
   sanitizePermissions,
   type Permission,
@@ -59,8 +60,8 @@ async function assertRoleExists(
 }
 
 function assertCanAssignRole(actorRole: string, targetRole: string) {
-  if (targetRole === "owner" && actorRole !== "owner") {
-    throw new AppError("FORBIDDEN", "Hanya owner yang dapat memberikan peran owner.");
+  if ((targetRole === "owner" || targetRole === "admin") && actorRole !== "owner") {
+    throw new AppError("FORBIDDEN", "Hanya owner yang dapat memberikan peran owner atau admin.");
   }
 }
 
@@ -213,6 +214,9 @@ export async function resetUserPasswordAction(input: { userId: string; password:
       if (membership.role === "owner" && ctx.role !== "owner") {
         throw new AppError("FORBIDDEN", "Kata sandi owner hanya bisa direset oleh owner.");
       }
+      if (membership.role === "admin" && ctx.role !== "owner") {
+        throw new AppError("FORBIDDEN", "Kata sandi admin hanya bisa direset oleh owner.");
+      }
 
       const [credential] = await tx
         .select({ id: account.id })
@@ -233,6 +237,9 @@ export async function resetUserPasswordAction(input: { userId: string; password:
           password: passwordHash,
         });
       }
+
+      // Reset password harus memutus sesi lama (mis. akun compromized).
+      await tx.delete(session).where(eq(session.userId, data.userId));
 
       await writeAudit(tx, {
         companyId: ctx.company.id,
@@ -324,6 +331,16 @@ export async function saveCompanyRoleAction(input: z.input<typeof roleWriteSchem
     const permissions = sanitizePermissions(data.permissions) as Permission[];
     if (modules.length === 0) throw new AppError("VALIDATION", "Pilih minimal satu modul.");
     if (permissions.length === 0) throw new AppError("VALIDATION", "Pilih minimal satu izin.");
+    if (ctx.role !== "owner") {
+      for (const permission of permissions) {
+        if (!can(ctx, permission)) {
+          throw new AppError(
+            "FORBIDDEN",
+            `Anda tidak dapat memberikan izin "${permission}" yang tidak Anda miliki.`,
+          );
+        }
+      }
+    }
     for (const permission of permissions) {
       const moduleKey = moduleForPermission(permission);
       if (moduleKey && !modules.includes(moduleKey)) modules.push(moduleKey);
@@ -343,6 +360,12 @@ export async function saveCompanyRoleAction(input: z.input<typeof roleWriteSchem
           .limit(1);
         if (!existing) throw new AppError("NOT_FOUND", "Peran tidak ditemukan.");
         if (builtinRole(existing.key)) throw new AppError("VALIDATION", "Peran bawaan tidak bisa diubah.");
+        if (existing.key === ctx.role) {
+          throw new AppError(
+            "FORBIDDEN",
+            "Anda tidak dapat mengubah peran yang sedang Anda pakai sendiri. Minta owner atau pengguna lain yang berwenang.",
+          );
+        }
 
         const [row] = await tx
           .update(companyRoles)

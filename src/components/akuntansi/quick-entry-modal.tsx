@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { newUuid } from "@/lib/uuid";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -165,7 +166,7 @@ function QuickEntryForm({
   const [selectedDraftId, setSelectedDraftId] = useState(initial.selectedDraftId);
   const [busyPost, setBusyPost] = useState(false);
   const [busyDraft, setBusyDraft] = useState(false);
-  const idempotencyKey = useRef(crypto.randomUUID());
+  const idempotencyKey = useRef(newUuid());
 
   // Muat bootstrap saat pertama dibuka (di-cache di host sesudahnya);
   // semua setState terjadi di callback async, bukan badan efek.
@@ -202,7 +203,7 @@ function QuickEntryForm({
   function applyPayload(payload: QuickEntryPayload, draftId: string | null) {
     setForm(bootstrap ? withDefaults(payloadToForm(payload), bootstrap) : payloadToForm(payload));
     setEditingDraftId(draftId);
-    idempotencyKey.current = crypto.randomUUID();
+    idempotencyKey.current = newUuid();
   }
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {

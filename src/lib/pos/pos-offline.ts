@@ -286,6 +286,7 @@ import {
   type RoundingMode,
 } from "@/lib/money";
 import { pricePerBaseUnit, toBaseQty } from "@/lib/packaging";
+import { newUuid } from "@/lib/uuid";
 
 export type LocalQuoteCatalogEntry = {
   name: string;
@@ -507,7 +508,7 @@ export function getOrCreateDeviceId(): string {
     if (typeof localStorage === "undefined") return "unknown-device";
     const existing = localStorage.getItem(DEVICE_ID_KEY);
     if (existing) return existing;
-    const created = crypto.randomUUID();
+    const created = newUuid();
     localStorage.setItem(DEVICE_ID_KEY, created);
     return created;
   } catch {

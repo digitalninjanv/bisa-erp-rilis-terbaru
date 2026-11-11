@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertTriangle, Download, Package, Percent, TrendingDown, TrendingUp } from "lucide-react";
+import { AlertTriangle, Download, Package, Percent, TrendingDown, TrendingUp, Upload } from "lucide-react";
 import { withCompanyReadOnly } from "@/db/tenant";
 import {
   getSettings,
@@ -130,10 +130,17 @@ export default async function ProductsPage({
                 ...(params.q ? { q: params.q } : {}),
                 ...(params.category ? { category: params.category } : {}),
                 ...(params.lowStock === "1" ? { lowStock: "1" } : {}),
+                format: "xlsx",
               }).toString()}`}
               className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] font-medium hover:bg-muted"
             >
-              <Download className="size-3.5" /> Unduh CSV
+              <Download className="size-3.5" /> Unduh Excel
+            </Link>
+            <Link
+              href="/app/gudang/impor"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] font-medium hover:bg-muted"
+            >
+              <Upload className="size-3.5" /> Impor Excel
             </Link>
             {/* A-25 U2: kategori & satuan menjadi pengelolaan terpisah
                 lewat drawer — bukan lagi dua panel bertumpuk di bawah

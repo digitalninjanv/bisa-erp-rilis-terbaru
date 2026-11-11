@@ -75,12 +75,12 @@ export default async function JournalDetailPage({ params }: { params: Promise<{ 
           ) : null}
           {/* CT-08: the old single "Cetak / CSV" button only downloaded
               a CSV. The two actions are now separate and honestly
-              labelled: Unduh CSV downloads, Cetak opens the print view. */}
+              labelled: Unduh Excel downloads, Cetak opens the print view. */}
           <Link
-            href={`/api/export/journal/${entry.id}`}
+            href={`/api/export/journal/${entry.id}?format=xlsx`}
             className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] transition-colors hover:bg-muted"
           >
-            <Download className="size-3.5" /> Unduh CSV
+            <Download className="size-3.5" /> Unduh Excel
           </Link>
           <Link
             href={`/app/akuntansi/jurnal/${entry.id}/cetak`}

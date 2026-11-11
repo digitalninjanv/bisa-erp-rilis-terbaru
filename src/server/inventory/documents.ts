@@ -17,7 +17,7 @@ import { reverseSourceJournal } from "@/server/accounting";
 import { writeAudit } from "@/server/audit";
 import { applyBatchDelta } from "@/server/batches";
 import { restoreSerialsForTransferVoid } from "@/server/serials";
-import { applyStockMovement, lockStockQty } from "./movements";
+import { applyStockMovement, lockStockQty, recomputeCostFromLedger } from "./movements";
 
 export type StockDocumentRow = typeof stockDocuments.$inferSelect;
 
@@ -249,6 +249,12 @@ export async function voidStockDocument(
       userId: input.userId,
       date: input.date,
     });
+  }
+
+  // "reversal" tidak ikut blend inkremental; hitung ulang AVCO dari
+  // ledger agar nilai persediaan tetap sama dengan GL sesudah void.
+  for (const productId of [...new Set(originals.map((movement) => movement.productId))]) {
+    await recomputeCostFromLedger(tx, input.companyId, productId);
   }
 
   // SIM-2 S7B-2 Batch 5: pembatalan transfer mengembalikan seri ke

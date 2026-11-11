@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { newUuid } from "@/lib/uuid";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
@@ -56,7 +57,7 @@ export function AdjustmentForm({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   // GDG3-06: kunci idempotensi per pembukaan form (lihat receipt-form).
-  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
+  const [idempotencyKey, setIdempotencyKey] = useState(() => newUuid());
   const [warehouseId, setWarehouseId] = useState(defaultWarehouseId || warehouses[0]?.id || "");
   const [type, setType] = useState<(typeof TYPES)[number]["value"]>("adjustment");
   const [date, setDate] = useState(today);
@@ -121,7 +122,7 @@ export function AdjustmentForm({
     } else {
       toast.success("Dokumen penyesuaian tersimpan.");
     }
-    setIdempotencyKey(crypto.randomUUID());
+    setIdempotencyKey(newUuid());
     setLines([]);
     setReasonDetail("");
     setCostOverrideReason("");

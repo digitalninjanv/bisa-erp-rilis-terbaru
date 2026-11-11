@@ -80,7 +80,7 @@ export default async function SalesInvoicePage({
           >
             Riwayat
           </Link>
-          <ReceiptPrint auto={query.autoprint === "1"} />
+          <ReceiptPrint auto={query.autoprint === "1"} returnTo={query.autoprint === "1" ? "/app/pos" : undefined} />
         </div>
       </div>
 

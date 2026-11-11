@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { newUuid } from "@/lib/uuid";
 import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -94,7 +95,7 @@ export function SupplierReturnForm({
   const router = useRouter();
   const [supplierId, setSupplierId] = useState(suppliers[0]?.id ?? "");
   // GDG3-06: kunci idempotensi per pembukaan form (lihat receipt-form).
-  const [idempotencyKey] = useState(() => crypto.randomUUID());
+  const [idempotencyKey] = useState(() => newUuid());
   const [warehouseId, setWarehouseId] = useState(defaultWarehouseId || warehouses[0]?.id || "");
   const [date, setDate] = useState(today);
   const [reasonCategory, setReasonCategory] = useState(reasonOptions[0]?.value ?? "damaged");

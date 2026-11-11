@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { newUuid } from "@/lib/uuid";
 import { useRouter } from "next/navigation";
 import { ArrowRightLeft } from "lucide-react";
 import { toast } from "sonner";
@@ -29,7 +30,7 @@ export function TransferForm({
   const [lines, setLines] = useState<DocLine[]>([]);
   const [busy, setBusy] = useState(false);
   // GDG3-06: kunci idempotensi per pembukaan form (lihat receipt-form).
-  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
+  const [idempotencyKey, setIdempotencyKey] = useState(() => newUuid());
 
   async function submit() {
     if (fromWarehouseId === toWarehouseId) {
@@ -60,7 +61,7 @@ export function TransferForm({
       return;
     }
     toast.success("Transfer stok tersimpan.");
-    setIdempotencyKey(crypto.randomUUID());
+    setIdempotencyKey(newUuid());
     setLines([]);
     setNotes("");
     router.refresh();

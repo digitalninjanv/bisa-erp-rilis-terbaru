@@ -4,7 +4,7 @@
 export { createAdjustment } from "./adjustments";
 export { approveStockAdjustment, rejectStockAdjustment, cancelStockAdjustment } from "./adjustments-post";
 export { voidStockDocument } from "./documents";
-export { applyStockMovement, getStock } from "./movements";
+export { applyStockMovement, getStock, recomputeCostFromLedger } from "./movements";
 export { createOpname } from "./opname";
 export {
   cancelOpnameTask,

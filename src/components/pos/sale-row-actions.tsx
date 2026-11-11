@@ -62,7 +62,7 @@ export function SaleRowActions({
   const menuItems: RowMenuItem[] = [
     // A-28 UI-2 (UX-D03): faktur format dokumen dari riwayat —
     // cetak ulang membawa salinan=1 seperti struk.
-    { key: "faktur", label: "Cetak faktur A4", href: `/app/pos/nota/${saleId}/faktur?salinan=1` },
+    { key: "faktur", label: "Cetak faktur A4", href: `/app/pos/nota/${saleId}/faktur?salinan=1&autoprint=1` },
     ...(canReturn && status === "completed"
       ? [{ key: "retur", label: "Retur penjualan", href: `/app/pos/retur?sale=${saleId}` } satisfies RowMenuItem]
       : []),
@@ -77,7 +77,7 @@ export function SaleRowActions({
   return (
     <div className="flex items-center justify-end gap-1.5">
       <a
-        href={`/app/pos/nota/${saleId}?salinan=1`}
+        href={`/app/pos/nota/${saleId}?salinan=1&autoprint=1`}
         target="_blank"
         rel="noreferrer"
         className="inline-flex h-8 items-center gap-1.5 rounded border border-border bg-card px-2.5 text-[11px] font-medium text-foreground transition-colors hover:bg-muted"

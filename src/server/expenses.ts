@@ -273,7 +273,14 @@ export async function effectiveTaxRate(tx: Tx, companyId: string): Promise<strin
  */
 export async function voidExpense(
   tx: Tx,
-  input: { companyId: string; userId: string; expenseId: string; reason: string },
+  input: {
+    companyId: string;
+    userId: string;
+    expenseId: string;
+    reason: string;
+    /** Tanggal pembalik eksplisit; bawaan tanggal beban asal. */
+    date?: string;
+  },
 ) {
   const [expense] = await tx
     .select()
@@ -309,18 +316,38 @@ export async function voidExpense(
     }
   }
 
-  // AK-P2-05: reverseSourceJournal mengembalikan null bila jurnal asal
-  // tidak ditemukan (sudah dibalik jalur lain / data lama). Hasil null
-  // TIDAK boleh ditelan: tanpa jurnal pembalik, menandai beban void akan
-  // membuat daftar beban dan buku besar berbeda diam-diam. Batalkan void.
-  const reversal = await reverseSourceJournal(tx, {
-    companyId: input.companyId,
-    sourceType: "expense",
-    sourceId: expense.id,
-    date: todayISO(),
-    description: `Pembatalan beban ${expense.number} — ${input.reason}`,
-    createdBy: input.userId,
-  });
+  // Beban dibalik pada tanggal dokumen asal bila periodenya masih
+  // terbuka. Membalik di bulan berjalan membuat beban bulan itu negatif
+  // (terlihat seperti pendapatan) dan P&L bulanan tidak rekonsiliasi.
+  // Bila periode asal sudah ditutup, pembalik jatuh ke hari ini dan
+  // tanggalnya dicatat di audit.
+  const originalDate = input.date ?? String(expense.date).slice(0, 10);
+  let reversalDate = originalDate;
+  let reversal;
+  try {
+    reversal = await reverseSourceJournal(tx, {
+      companyId: input.companyId,
+      sourceType: "expense",
+      sourceId: expense.id,
+      date: reversalDate,
+      description: `Pembatalan beban ${expense.number} — ${input.reason}`,
+      createdBy: input.userId,
+    });
+  } catch (error) {
+    if (error instanceof AppError && error.code === "PERIOD_CLOSED") {
+      reversalDate = todayISO();
+      reversal = await reverseSourceJournal(tx, {
+        companyId: input.companyId,
+        sourceType: "expense",
+        sourceId: expense.id,
+        date: reversalDate,
+        description: `Pembatalan beban ${expense.number} (periode asal tertutup) — ${input.reason}`,
+        createdBy: input.userId,
+      });
+    } else {
+      throw error;
+    }
+  }
   if (!reversal) {
     throw new AppError(
       "VALIDATION",
@@ -337,6 +364,6 @@ export async function voidExpense(
     action: "expense.void",
     entityType: "expense",
     entityId: expense.id,
-    after: { number: expense.number, reason: input.reason },
+    after: { number: expense.number, reason: input.reason, reversalDate },
   });
 }

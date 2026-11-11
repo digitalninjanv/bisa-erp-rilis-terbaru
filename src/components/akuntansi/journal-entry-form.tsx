@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { newUuid } from "@/lib/uuid";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Plus, Save, Scale, Trash2 } from "lucide-react";
@@ -60,7 +61,7 @@ export function JournalEntryForm({
   // AK-P3-02: one idempotency key per form session (same pattern as the
   // POS terminal) — a network retry or double submit replays this key and
   // the server returns the already-posted journal instead of duplicating it.
-  const idempotencyKey = useRef(crypto.randomUUID());
+  const idempotencyKey = useRef(newUuid());
 
   // A-8.4: totals & keseimbangan dihitung fungsi murni bersama
   // (Decimal end-to-end) agar perilakunya teruji unit.

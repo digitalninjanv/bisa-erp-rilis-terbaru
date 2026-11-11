@@ -406,7 +406,7 @@ export async function buildReportExportTable(
   }
 
   // Bawaan: laba rugi.
-  const data = await getIncomeStatement(tx, company.id, range);
+  const data = await getIncomeStatement(tx, company.id, range, { excludeClosing: true });
   return {
     sheetName: "Laba Rugi",
     company: companyName,

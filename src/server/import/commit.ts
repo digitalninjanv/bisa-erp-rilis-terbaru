@@ -1,6 +1,16 @@
 import { and, asc, eq, inArray, or, sql, count } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { accounts, customerGroups, customers, importRows, suppliers } from "@/db/schema";
+import {
+  accounts,
+  accountMappings,
+  categories,
+  customerGroups,
+  customers,
+  importRows,
+  suppliers,
+  units,
+} from "@/db/schema";
+import { ACCOUNT_MAPPING_KEYS, mappingAllowsAccountType, MAPPING_LABELS } from "@/lib/account-mappings";
 import { defaultSection } from "@/lib/accounting";
 import { toDb } from "@/lib/money";
 import type { MappedCustomer, MappedSupplier } from "@/lib/import-parse";
@@ -71,11 +81,16 @@ export async function commitMasterBatch(
   }));
   const nameKeys = [
     ...new Set(
-      mappedRows.flatMap(({ mapped }) =>
-        mapped.value && (mapped.value.kind === "suppliers" || mapped.value.kind === "customers")
-          ? [mapped.value.value.name.toLowerCase()]
-          : [],
-      ),
+      mappedRows.flatMap(({ mapped }) => {
+        if (!mapped.value) return [];
+        if (mapped.value.kind === "suppliers" || mapped.value.kind === "customers") {
+          return [mapped.value.value.name.toLowerCase()];
+        }
+        if (mapped.value.kind === "categories" || mapped.value.kind === "units") {
+          return [mapped.value.value.name.toLowerCase()];
+        }
+        return [];
+      }),
     ),
   ];
   const codeKeys = [
@@ -83,6 +98,7 @@ export async function commitMasterBatch(
       mappedRows.flatMap(({ mapped }) => {
         if (!mapped.value) return [];
         if (mapped.value.kind === "accounts") return [mapped.value.value.code.toLowerCase()];
+        if (mapped.value.kind === "units") return [mapped.value.value.code.toLowerCase()];
         if (mapped.value.kind === "suppliers" || mapped.value.kind === "customers") {
           return mapped.value.value.code ? [mapped.value.value.code.toLowerCase()] : [];
         }
@@ -96,6 +112,14 @@ export async function commitMasterBatch(
   let supplierSeq = 0;
   let customerSeq = 0;
   const groupByName = new Map<string, string>();
+  const categoryByName = new Map<string, string>();
+  const existingUnitNames = new Map<string, string>();
+  const accountIdByCode = new Map<string, string>();
+  const accountMetaByCode = new Map<
+    string,
+    { type: string; isPostable: boolean; isActive: boolean }
+  >();
+  const mappingIdByKey = new Map<string, string>();
 
   if (entity === "suppliers") {
     const keyConditions = [
@@ -150,10 +174,53 @@ export async function commitMasterBatch(
           .where(and(eq(accounts.companyId, companyId), inArray(sql`lower(${accounts.code})`, codeKeys)))
       : [];
     for (const row of found) existingCodes.set(row.code.toLowerCase(), row.id);
+  } else if (entity === "categories") {
+    const found = await tx
+      .select({ id: categories.id, name: categories.name })
+      .from(categories)
+      .where(eq(categories.companyId, companyId));
+    for (const row of found) categoryByName.set(row.name.toLowerCase(), row.id);
+  } else if (entity === "units") {
+    const found = await tx
+      .select({ id: units.id, code: units.code, name: units.name })
+      .from(units)
+      .where(eq(units.companyId, companyId));
+    for (const row of found) {
+      existingCodes.set(row.code.toLowerCase(), row.id);
+      existingUnitNames.set(row.name.toLowerCase(), row.id);
+    }
+  } else if (entity === "account_mappings") {
+    const [accountRows, mappingRows] = await Promise.all([
+      tx
+        .select({
+          id: accounts.id,
+          code: accounts.code,
+          type: accounts.type,
+          isPostable: accounts.isPostable,
+          isActive: accounts.isActive,
+        })
+        .from(accounts)
+        .where(eq(accounts.companyId, companyId)),
+      tx
+        .select({ id: accountMappings.id, key: accountMappings.key })
+        .from(accountMappings)
+        .where(eq(accountMappings.companyId, companyId)),
+    ]);
+    for (const row of accountRows) {
+      existingCodes.set(row.code.toLowerCase(), row.id);
+      accountIdByCode.set(row.code.toLowerCase(), row.id);
+      accountMetaByCode.set(row.code.toLowerCase(), {
+        type: row.type,
+        isPostable: row.isPostable,
+        isActive: row.isActive,
+      });
+    }
+    for (const row of mappingRows) mappingIdByKey.set(row.key, row.id);
   }
 
   const seenNames = new Set<string>();
   const seenCodes = new Set<string>();
+  const seenMappingKeys = new Set<string>();
   let imported = 0;
   let skipped = 0;
   let failed = 0;
@@ -325,6 +392,154 @@ export async function commitMasterBatch(
         continue;
       }
       existingCodes.set(codeKey, created.id);
+      imported += 1;
+      await markRow(tx, row.id, "imported", null, created.id);
+    }
+
+    if (value.kind === "categories") {
+      const category = value.value;
+      const nameKey = category.name.toLowerCase();
+      if (seenNames.has(nameKey)) {
+        failed += 1;
+        await markRow(tx, row.id, "error", "Nama kategori duplikat di file");
+        continue;
+      }
+      seenNames.add(nameKey);
+      const existingId = categoryByName.get(nameKey);
+      if (existingId) {
+        skipped += 1;
+        await markRow(tx, row.id, "skipped", "Kategori sudah ada", existingId);
+        continue;
+      }
+      let parentId: string | null = null;
+      if (category.parent) {
+        parentId = categoryByName.get(category.parent.toLowerCase()) ?? null;
+        if (!parentId) {
+          failed += 1;
+          await markRow(
+            tx,
+            row.id,
+            "error",
+            `Induk kategori "${category.parent}" tidak ditemukan — buat induknya dulu`,
+          );
+          continue;
+        }
+      }
+      const [created] = await tx
+        .insert(categories)
+        .values({
+          companyId,
+          name: category.name,
+          parentId,
+          isActive: category.isActive,
+        })
+        .onConflictDoNothing()
+        .returning({ id: categories.id });
+      if (!created) {
+        skipped += 1;
+        await markRow(tx, row.id, "skipped", "Kategori sudah ada");
+        continue;
+      }
+      categoryByName.set(nameKey, created.id);
+      imported += 1;
+      await markRow(tx, row.id, "imported", null, created.id);
+    }
+
+    if (value.kind === "units") {
+      const unit = value.value;
+      const codeKey = unit.code.toLowerCase();
+      const nameKey = unit.name.toLowerCase();
+      if (seenCodes.has(codeKey) || seenNames.has(nameKey)) {
+        failed += 1;
+        await markRow(tx, row.id, "error", "Kode/nama satuan duplikat di file");
+        continue;
+      }
+      seenCodes.add(codeKey);
+      seenNames.add(nameKey);
+      const existingId = existingCodes.get(codeKey) ?? existingUnitNames.get(nameKey);
+      if (existingId) {
+        skipped += 1;
+        await markRow(tx, row.id, "skipped", "Satuan sudah ada", existingId);
+        continue;
+      }
+      const [created] = await tx
+        .insert(units)
+        .values({ companyId, code: unit.code, name: unit.name, isActive: unit.isActive })
+        .onConflictDoNothing()
+        .returning({ id: units.id });
+      if (!created) {
+        skipped += 1;
+        await markRow(tx, row.id, "skipped", "Satuan sudah ada");
+        continue;
+      }
+      existingCodes.set(codeKey, created.id);
+      existingUnitNames.set(nameKey, created.id);
+      imported += 1;
+      await markRow(tx, row.id, "imported", null, created.id);
+    }
+
+    if (value.kind === "account_mappings") {
+      const key = value.value.key;
+      const codeKey = value.value.accountCode.toLowerCase();
+      if (!(ACCOUNT_MAPPING_KEYS as readonly string[]).includes(key)) {
+        failed += 1;
+        await markRow(tx, row.id, "error", `Kunci pemetaan "${key}" tidak dikenal`);
+        continue;
+      }
+      if (seenMappingKeys.has(key)) {
+        failed += 1;
+        await markRow(tx, row.id, "error", "Kunci pemetaan duplikat di file");
+        continue;
+      }
+      seenMappingKeys.add(key);
+      const accountId = accountIdByCode.get(codeKey);
+      const meta = accountMetaByCode.get(codeKey);
+      if (!accountId || !meta) {
+        failed += 1;
+        await markRow(tx, row.id, "error", `Kode akun "${value.value.accountCode}" tidak ditemukan`);
+        continue;
+      }
+      if (!mappingAllowsAccountType(key, meta.type)) {
+        failed += 1;
+        await markRow(
+          tx,
+          row.id,
+          "error",
+          `Akun ${value.value.accountCode} bertipe ${meta.type}, tidak sesuai untuk pemetaan "${MAPPING_LABELS[key] ?? key}"`,
+        );
+        continue;
+      }
+      if (!meta.isPostable || !meta.isActive) {
+        failed += 1;
+        await markRow(tx, row.id, "error", `Akun ${value.value.accountCode} harus aktif dan dapat diposting`);
+        continue;
+      }
+      const existingId = mappingIdByKey.get(key);
+      if (existingId) {
+        await tx
+          .update(accountMappings)
+          .set({ accountId, updatedAt: new Date() })
+          .where(
+            and(
+              eq(accountMappings.companyId, companyId),
+              eq(accountMappings.id, existingId),
+            ),
+          );
+        imported += 1;
+        await markRow(tx, row.id, "imported", "Diperbarui", existingId);
+        continue;
+      }
+      const [created] = await tx
+        .insert(accountMappings)
+        .values({ companyId, key, accountId })
+        .onConflictDoNothing()
+        .returning({ id: accountMappings.id });
+      if (!created) {
+        skipped += 1;
+        await markRow(tx, row.id, "skipped", "Pemetaan sudah ada");
+        continue;
+      }
+      mappingIdByKey.set(key, created.id);
       imported += 1;
       await markRow(tx, row.id, "imported", null, created.id);
     }

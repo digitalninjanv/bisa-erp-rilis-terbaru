@@ -532,7 +532,7 @@ describe("Terima barang 3 skenario (G6 / D-5)", () => {
       const journal = await receiptJournal(tx, receipt.id);
       expect(journal).not.toBeNull();
       expect(lineTotals(journal!.lines, map.inventory).debit.toFixed(2)).toBe("12000.00");
-      expect(lineTotals(journal!.lines, map.sales_return).credit.toFixed(2)).toBe("12000.00");
+      expect(lineTotals(journal!.lines, map.cogs).credit.toFixed(2)).toBe("12000.00");
     });
   });
 

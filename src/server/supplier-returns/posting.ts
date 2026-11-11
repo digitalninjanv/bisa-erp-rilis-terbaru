@@ -29,7 +29,7 @@ import {
 } from "@/server/accounting";
 import { writeAudit } from "@/server/audit";
 import { applyBatchDelta, creditBatchById } from "@/server/batches";
-import { applyStockMovement } from "@/server/inventory";
+import { applyStockMovement, recomputeCostFromLedger } from "@/server/inventory";
 import { pickSerialsOut, restoreSerialsForSale } from "@/server/serials";
 import {
   allocateReturnToPayables,
@@ -678,6 +678,21 @@ export async function voidPostedSupplierReturn(
     date: input.date,
     reason: input.reason,
   });
+  // Stock yang kembali dari retur tidak mengikuti blend inkremental
+  // (movement "reversal"), jadi AVCO produk harus dihitung ulang dari
+  // ledger agar nilai persediaan = GL.
+  const returnedProducts = await tx
+    .select({ productId: supplierReturnLines.productId })
+    .from(supplierReturnLines)
+    .where(
+      and(
+        eq(supplierReturnLines.companyId, input.companyId),
+        eq(supplierReturnLines.returnId, header.id),
+      ),
+    );
+  for (const productId of [...new Set(returnedProducts.map((row) => row.productId))]) {
+    await recomputeCostFromLedger(tx, input.companyId, productId);
+  }
   await releaseReturnAllocations(tx, input.companyId, header.id);
 
   await tx

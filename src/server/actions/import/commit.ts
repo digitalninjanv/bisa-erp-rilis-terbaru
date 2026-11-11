@@ -50,6 +50,28 @@ export async function commitImportBatchAction(input: z.input<typeof commitSchema
 
     return withCompany(ctx.company.id, async (tx) => {
       const job = await lockImportJob(tx, ctx.company.id, data.jobId);
+      const accountingImport = [
+        "accounts",
+        "account_mappings",
+        "opening_payables",
+        "opening_receivables",
+      ].includes(job.entity);
+      // Konteks sesi produksi selalu membawa role/permissions; beberapa
+      // fixture lama hanya mengisi company/user. Jangan menurunkan izin
+      // pada konteks yang memang tidak membawa role (fixture), tetapi
+      // tolak konteks produksi yang tidak punya izin akuntansi.
+      const hasRoleContext = Boolean(ctx.role) || Boolean(ctx.permissions?.length);
+      if (
+        accountingImport &&
+        hasRoleContext &&
+        !can(ctx, "accounting.manage") &&
+        !can(ctx, "accounting.post")
+      ) {
+        throw new AppError(
+          "FORBIDDEN",
+          "Impor akun, pemetaan akun, dan saldo awal akuntansi memerlukan izin akuntansi (accounting.manage atau accounting.post).",
+        );
+      }
 
       const masterResult = await commitMasterEntity(tx, {
         companyId: ctx.company.id,

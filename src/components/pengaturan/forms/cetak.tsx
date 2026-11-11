@@ -296,6 +296,16 @@ export function PrintSettingsForm({
               ))}
             </select>
           </label>
+          <div className="rounded-md border border-border bg-muted/40 p-3 text-[11px] leading-5 sm:col-span-2">
+            <p className="font-medium text-foreground">Cetak otomatis tanpa dialog</p>
+            <p className="mt-0.5 text-muted-foreground">
+              Browser biasa selalu menampilkan dialog cetak dan tidak bisa memilih printer sendiri.
+              Agar nota langsung tercetak setelah transaksi, pasang printer thermal sebagai
+              <strong> printer default</strong> di komputer kasir, lalu buka POS memakai Chrome/Edge
+              dengan mode <code className="rounded bg-background px-1">--kiosk-printing</code>.
+              Launcher siap pakai ada di folder <code className="rounded bg-background px-1">deploy/print/</code>.
+            </p>
+          </div>
           <label className="space-y-1 sm:col-span-2">
             <span className={labelClass}>Teks kop (di bawah nama perusahaan)</span>
             <textarea value={form.printHeaderText} onChange={(event) => setForm({ ...form, printHeaderText: event.target.value })} rows={2} className="w-full rounded-md border border-input bg-background px-2.5 py-2 text-[12px] outline-none focus:border-ring" placeholder="Mis. Cabang Pusat — buka setiap hari 07.00–21.00" />

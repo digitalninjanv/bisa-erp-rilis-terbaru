@@ -1,7 +1,5 @@
 // A-26 Q4 (K-03): pecahan src/server/actions/accounting.ts per sub-domain (A-26 Q4). Nama aksi, skema Zod, izin, & payload tidak berubah; pemanggil kini mengimpor dari berkas sub-domain ini langsung (re-export silang antar berkas "use server" tidak dipakai — pelajaran A-24 T2).
-
 "use server";
-
 import {
   and,
   eq,
@@ -25,10 +23,8 @@ import {
   getAccountImpact,
   type AccountImpact,
 } from "@/server/account-impact";
-
 import { writeAudit } from "@/server/audit";
 import { requirePermissionInModule } from "@/lib/session";
-
 import {
   AppError,
   guard,
@@ -38,8 +34,18 @@ import {
   moneyString,
   parseInput,
 } from "@/lib/action-validation";
-import { ACCOUNT_MAPPING_KEYS } from "@/lib/account-mappings";
-import { ACCOUNT_SECTIONS, type AccountSection } from "@/lib/accounting";
+import {
+  ACCOUNT_MAPPING_KEYS,
+  mappingAccountTypes,
+  mappingAllowsAccountType,
+  MAPPING_LABELS,
+} from "@/lib/account-mappings";
+import {
+  ACCOUNT_SECTIONS,
+  ACCOUNT_TYPE_LABELS,
+  isAccountSectionAllowed,
+  type AccountSection,
+} from "@/lib/accounting";
 import {
   defaultPsak118Tags,
   EXPENSE_FUNCTIONS,
@@ -55,7 +61,6 @@ import {
   formatIDR,
   toDb,
 } from "@/lib/money";
-
 const accountSchema = z.object({
   id: z.string().uuid().optional(),
   code: z.string().min(1).max(20),
@@ -106,9 +111,7 @@ const accountSchema = z.object({
   // saldo TIDAK dipindahkan otomatis — tidak ada jurnal otomatis.
   confirmDeactivateWithBalance: z.boolean().optional(),
 });
-
 type AccountInputData = z.infer<typeof accountSchema>;
-
 /**
  * A-27 B3: koherensi minimal KHUSUS kelas kas/bank (koherensi umum
  * type↔section adalah wilayah B4 — jangan melebar ke sini):
@@ -146,7 +149,6 @@ function assertCashBankCoherence(data: AccountInputData): string | null {
   }
   return "current_asset";
 }
-
 /**
  * A-27 B4 (F-10): matriks koherensi tipe ↔ kelompok laporan (section).
  * Taksonomi tipe/section sendiri tetap tertutup (sesuai praktik
@@ -156,57 +158,29 @@ function assertCashBankCoherence(data: AccountInputData): string | null {
  * TIDAK divalidasi terhadap matriks ini: akun kontra adalah
  * pengecualian sah (4010 debit di pendapatan, 1510 kredit di aset).
  */
-const TYPE_SECTION_MATRIX: Record<AccountInputData["type"], readonly AccountSection[]> = {
-  asset: ["current_asset", "non_current_asset"],
-  liability: ["current_liability", "non_current_liability"],
-  equity: ["equity"],
-  revenue: ["revenue", "other_income"],
-  cogs: ["cogs"],
-  expense: ["operating_expense", "other_expense"],
-};
-
-const TYPE_LABELS_ID: Record<AccountInputData["type"], string> = {
-  asset: "Aset",
-  liability: "Liabilitas",
-  equity: "Ekuitas",
-  revenue: "Pendapatan",
-  expense: "Beban",
-  cogs: "Harga Pokok Penjualan",
-};
-
 function assertTypeSectionCoherence(data: AccountInputData, section: string | null): void {
   if (!section) return;
-  const allowed = TYPE_SECTION_MATRIX[data.type];
-  if (!(allowed as readonly string[]).includes(section)) {
+  if (!isAccountSectionAllowed(data.type, section)) {
     throw new AppError(
       "VALIDATION",
-      `Akun bertipe ${TYPE_LABELS_ID[data.type]} tidak dapat masuk kelompok laporan "${ACCOUNT_SECTIONS[section as AccountSection] ?? section}". Pilih kelompok laporan yang sesuai dengan tipe akun.`,
+      `Akun bertipe ${ACCOUNT_TYPE_LABELS[data.type]} tidak dapat masuk kelompok laporan "${ACCOUNT_SECTIONS[section as AccountSection] ?? section}". Pilih kelompok laporan yang sesuai dengan tipe akun.`,
     );
   }
 }
-
-/**
- * A-27 B5: koherensi tagging PSAK 118 terhadap tipe akun. Kategori
- * presentasi adalah kategori LABA RUGI — akun neraca yang membawa
- * kategori adalah data yang salah tulis, ditolak bernama. Sifat/fungsi
- * adalah tag BEBAN — hanya akun cogs/expense. Tag kosong selalu lolos
- * (akuntan boleh melepas tag; bawaan hanya mengisi saat tidak dikirim).
- */
 function assertPsak118Coherence(type: AccountInputData["type"], tags: Psak118Tags): void {
   if (tags.psak118Category && !["revenue", "cogs", "expense"].includes(type)) {
     throw new AppError(
       "VALIDATION",
-      `Kategori PSAK 118 hanya untuk akun laba rugi (Pendapatan, HPP, Beban). Akun bertipe ${TYPE_LABELS_ID[type]} tidak membawa kategori presentasi — kosongkan kategori PSAK 118.`,
+      `Kategori PSAK 118 hanya untuk akun laba rugi (Pendapatan, HPP, Beban). Akun bertipe ${ACCOUNT_TYPE_LABELS[type]} tidak membawa kategori presentasi — kosongkan kategori PSAK 118.`,
     );
   }
   if ((tags.expenseNature || tags.expenseFunction) && !["cogs", "expense"].includes(type)) {
     throw new AppError(
       "VALIDATION",
-      `Sifat & fungsi beban hanya untuk akun HPP dan Beban. Akun bertipe ${TYPE_LABELS_ID[type]} tidak membawa sifat/fungsi beban — kosongkan keduanya.`,
+      `Sifat & fungsi beban hanya untuk akun HPP dan Beban. Akun bertipe ${ACCOUNT_TYPE_LABELS[type]} tidak membawa sifat/fungsi beban — kosongkan keduanya.`,
     );
   }
 }
-
 /**
  * A-27 B5: resolusi tag efektif. Bidang tak terkirim (undefined) pada
  * pembuatan jatuh ke bawaan deterministik defaultPsak118Tags; pada
@@ -228,7 +202,6 @@ function resolvePsak118Tags(
       data.expenseFunction === undefined ? base.expenseFunction : data.expenseFunction,
   };
 }
-
 /**
  * A-27 B4 (F-05): ikatan yang menghalangi penonaktifan — cek referensi
  * yang sama relevannya dengan deleteAccountAction (pemetaan, metode
@@ -258,7 +231,6 @@ function deactivationBindings(impact: AccountImpact): string[] {
   }
   return parts;
 }
-
 export async function saveAccountAction(input: z.input<typeof accountSchema>) {
   return guard(async () => {
     const ctx = await requirePermissionInModule("accounting.manage", "akuntansi");
@@ -406,6 +378,17 @@ export async function saveAccountAction(input: z.input<typeof accountSchema>) {
           throw new AppError(
             "CONFLICT",
             `Akun ${existing.code} (${impact.name}) masih menjadi induk dari ${impact.children.length} sub-akun dan tidak dapat dijadikan akun posting. Pindahkan sub-akunnya terlebih dahulu.`,
+          );
+        }
+
+        // Akun yang sudah memiliki jurnal tidak boleh berhenti menjadi
+        // postable: laporan laba rugi membaca akun postable, sehingga
+        // seluruh histori akun akan hilang dari P&L sementara neraca
+        // tetap memuatnya.
+        if (existing.isPostable && data.isPostable === false && impact.journalLineCount > 0) {
+          throw new AppError(
+            "CONFLICT",
+            `Akun ${existing.code} (${impact.name}) sudah memiliki ${impact.journalLineCount} baris jurnal dan tidak dapat dijadikan non-posting. Nonaktifkan akun dengan konfirmasi saldo, atau buat akun baru.`,
           );
         }
 
@@ -705,6 +688,7 @@ export async function saveMappingAction(input: { key: string; accountId: string 
           id: accounts.id,
           code: accounts.code,
           name: accounts.name,
+          type: accounts.type,
           isPostable: accounts.isPostable,
           isActive: accounts.isActive,
         })
@@ -726,6 +710,22 @@ export async function saveMappingAction(input: { key: string; accountId: string 
           `Akun ${account.code} (${account.name}) sudah tidak aktif dan tidak dapat dipakai sebagai tujuan pemetaan.`,
         );
       }
+      if (!mappingAllowsAccountType(data.key, account.type)) {
+        throw new AppError(
+          "VALIDATION",
+          `Akun ${account.code} (${account.name}) bertipe ${account.type}, tidak sesuai untuk pemetaan "${MAPPING_LABELS[data.key] ?? data.key}". Pilih akun bertipe ${mappingAccountTypes(data.key).join("/")}.`,
+        );
+      }
+      const [previous] = await tx
+        .select({ accountId: accountMappings.accountId })
+        .from(accountMappings)
+        .where(
+          and(
+            eq(accountMappings.companyId, ctx.company.id),
+            eq(accountMappings.key, data.key),
+          ),
+        )
+        .limit(1);
       await tx
         .insert(accountMappings)
         .values({ companyId: ctx.company.id, key: data.key, accountId: data.accountId })
@@ -733,6 +733,15 @@ export async function saveMappingAction(input: { key: string; accountId: string 
           target: [accountMappings.companyId, accountMappings.key],
           set: { accountId: data.accountId, updatedAt: new Date() },
         });
+      await writeAudit(tx, {
+        companyId: ctx.company.id,
+        userId: ctx.user.id,
+        action: "account_mapping.update",
+        entityType: "account_mapping",
+        entityId: data.key,
+        before: previous ? { accountId: previous.accountId } : null,
+        after: { key: data.key, accountId: data.accountId, code: account.code },
+      });
     });
     revalidatePath("/app/pengaturan");
     return data;

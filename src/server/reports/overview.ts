@@ -170,7 +170,7 @@ export async function getAccountingSummary(tx: Tx, companyId: string, range: Ran
   // valuation report, getInventoryValuation.)
   const [statement, balanceSheet, receivable, payable, inventoryValue] =
     await Promise.all([
-      getIncomeStatement(tx, companyId, range),
+      getIncomeStatement(tx, companyId, range, { excludeClosing: true }),
       getBalanceSheet(tx, companyId, range.to),
       mappedBalance(tx, companyId, ["receivable"]),
       mappedBalance(tx, companyId, ["payable"]),

@@ -191,7 +191,7 @@ export default async function AccountingDashboard({
       getIncomeStatement(tx, ctx.company.id, {
         from: `${priorFrom}T00:00:00`,
         to: `${priorTo}T23:59:59`,
-      }),
+      }, { excludeClosing: true }),
       getSalesByDay(tx, ctx.company.id, range),
       listReceivables(tx, ctx.company.id),
       listPayables(tx, ctx.company.id),

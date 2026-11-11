@@ -86,7 +86,7 @@ export async function getBusinessHealth(
   const [currentSales, priorSales, income, cashFlow] = await Promise.all([
     getSalesSummary(tx, companyId, dateRange),
     getSalesSummary(tx, companyId, priorRange),
-    getIncomeStatement(tx, companyId, tsRange),
+    getIncomeStatement(tx, companyId, tsRange, { excludeClosing: true }),
     getCashFlow(tx, companyId, tsRange),
   ]);
 
@@ -127,7 +127,7 @@ export async function getPerformanceDrivers(
         name: saleLines.productName,
         category: categories.name,
         qty: sql<string>`coalesce(sum(${saleLines.qty}), 0)`,
-        revenue: sql<string>`coalesce(sum(${saleLines.lineTotal} + ${saleLines.taxAmount}), 0)`,
+        revenue: sql<string>`coalesce(sum(${saleLines.lineTotal}), 0)`,
         netRevenue: sql<string>`coalesce(sum(${saleLines.lineTotal}), 0)`,
         profit: sql<string>`coalesce(sum(${saleLines.lineTotal} - (${saleLines.unitCost} * ${saleLines.qty})), 0)`,
         transactions: sql<number>`count(distinct ${sales.id})`,
@@ -151,12 +151,12 @@ export async function getPerformanceDrivers(
         saleLines.productName,
         categories.name,
       )
-      .orderBy(desc(sql`sum(${saleLines.lineTotal} + ${saleLines.taxAmount})`)),
+      .orderBy(desc(sql`sum(${saleLines.lineTotal})`)),
     getInventoryValuation(tx, companyId, undefined, { skipLowStock: true }),
     getIncomeStatement(tx, companyId, {
       from: `${period.from}T00:00:00`,
       to: `${period.to}T23:59:59`,
-    }),
+    }, { excludeClosing: true }),
     getAccountMap(tx, companyId),
   ]);
 

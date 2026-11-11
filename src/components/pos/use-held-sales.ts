@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { newUuid } from "@/lib/uuid";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -195,7 +196,7 @@ export function useHeldSales(params: {
       result = await holdAction({
         warehouseId: selectedWarehouse,
         groupId: groupId || null,
-        idempotencyKey: crypto.randomUUID(),
+        idempotencyKey: newUuid(),
         label: holdLabel,
         lines: cart.map((line) => ({
           productId: line.productId,
@@ -236,7 +237,7 @@ export function useHeldSales(params: {
       const result = await holdAction({
         warehouseId: resumeOffer.stored.warehouseId,
         groupId: resumeOffer.stored.groupId || null,
-        idempotencyKey: crypto.randomUUID(),
+        idempotencyKey: newUuid(),
         label: `Otomatis ${new Date().toLocaleTimeString("id-ID", {
           hour: "2-digit",
           minute: "2-digit",

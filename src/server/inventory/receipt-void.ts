@@ -31,6 +31,7 @@ async function loadVoidLines(tx: Tx, companyId: string, receiptId: string) {
       productId: stockReceiptLines.productId,
       qty: stockReceiptLines.qty,
       unitCost: stockReceiptLines.unitCost,
+      lineTotal: stockReceiptLines.lineTotal,
       batchNumber: stockReceiptLines.batchNumber,
       expiryDate: stockReceiptLines.expiryDate,
       // REM-02: pesan penjaga memakai snapshot nama baris penerimaan.
@@ -173,6 +174,12 @@ async function reverseReceiptStock(
 ) {
   const { receipt } = input;
   for (const line of input.lines) {
+    // Nilai persediaan masuk pada DPP/net (lineTotal), bukan harga
+    // faktur bruto. Void harus memakai biaya per unit yang sama agar
+    // AVCO dan GL tetap cocok saat PPN/diskon dipisah.
+    const reversalUnitCost = d(line.qty).gt(0)
+      ? d(line.lineTotal).div(line.qty)
+      : d(line.unitCost);
     // Batch-tracked lines leave the batch they arrived in (G8/D-7); if
     // FEFO sales already consumed part of it, the overflow is taken FEFO
     // across the remaining batches so no batch row goes negative alone.
@@ -192,7 +199,7 @@ async function reverseReceiptStock(
           warehouseId: receipt.warehouseId,
           productId: line.productId,
           delta: slice.qty.negated(),
-          unitCost: line.unitCost,
+          unitCost: reversalUnitCost,
           movementType: "reversal",
           referenceType: "stock_receipt_void",
           referenceId: receipt.id,
@@ -210,7 +217,7 @@ async function reverseReceiptStock(
       warehouseId: receipt.warehouseId,
       productId: line.productId,
       delta: d(line.qty).negated(),
-      unitCost: line.unitCost,
+      unitCost: reversalUnitCost,
       // "reversal" movements never feed the incremental blend (only
       // positive purchase/sale-return movements do); the void's effect
       // on the average is applied once, explicitly, by

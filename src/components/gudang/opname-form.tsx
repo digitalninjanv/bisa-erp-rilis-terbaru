@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { newUuid } from "@/lib/uuid";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -85,7 +86,7 @@ export function OpnameForm({
   const [countFilter, setCountFilter] = useState<CountFilter>("all");
   const [reviewFilter, setReviewFilter] = useState<OpnameReviewFilter>("diff");
   // GDG3-06: kunci idempotensi per pembukaan form (lihat receipt-form).
-  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
+  const [idempotencyKey, setIdempotencyKey] = useState(() => newUuid());
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingAll, setLoadingAll] = useState(false);
@@ -351,7 +352,7 @@ export function OpnameForm({
     }
     toast.success("Opname tersimpan dan stok disesuaikan.");
     window.localStorage.removeItem(opnameDraftKey(companyId, warehouseId));
-    setIdempotencyKey(crypto.randomUUID());
+    setIdempotencyKey(newUuid());
     setRows([]);
     setNotes("");
     setStep("hitung");

@@ -1,7 +1,9 @@
 import { and, asc, eq, ne } from "drizzle-orm";
 import type { Tx } from "@/db";
 import {
+  accountMappings,
   accounts,
+  categories,
   customerGroups,
   customers,
   importJobs,
@@ -9,7 +11,9 @@ import {
   partyOpeningBalances,
   products,
   suppliers,
+  units,
 } from "@/db/schema";
+import { ACCOUNT_MAPPING_KEYS, mappingAllowsAccountType, MAPPING_LABELS } from "@/lib/account-mappings";
 import {
   loadRequiredCustomFields,
   mapMasterRow,
@@ -53,7 +57,7 @@ type PreviewItem = {
   label: string | null;
   detail: string | null;
   issue: string | null;
-  action: "insert" | "skip" | "error";
+  action: "insert" | "update" | "skip" | "error";
   // Kolom pratinjau khusus produk — opsional agar bentuk pratinjau
   // analyze tetap satu tipe gabungan yang aman diakses konsumen lama.
   name?: string | null;
@@ -83,6 +87,15 @@ export async function analyzeMasterImport(
   const existingCustomerNames = new Set<string>();
   const existingCustomerCodes = new Set<string>();
   const existingAccountCodes = new Set<string>();
+  const accountMetaByCode = new Map<
+    string,
+    { id: string; type: string; isPostable: boolean; isActive: boolean }
+  >();
+  const existingMappingKeys = new Set<string>();
+  const existingCategoryNames = new Set<string>();
+  const existingUnitCodes = new Set<string>();
+  const existingUnitNames = new Set<string>();
+  const categoryByName = new Map<string, string>();
   const groupByName = new Map<string, string>();
   const productBySku = new Map<string, { id: string }>();
   const productByName = new Map<string, { id: string }>();
@@ -123,10 +136,57 @@ export async function analyzeMasterImport(
     for (const group of groups) groupByName.set(group.name.toLowerCase(), group.id);
   } else if (entity === "accounts") {
     const found = await tx
-      .select({ code: accounts.code })
+      .select({ id: accounts.id, code: accounts.code })
       .from(accounts)
       .where(eq(accounts.companyId, companyId));
-    for (const row of found) existingAccountCodes.add(row.code.toLowerCase());
+    for (const row of found) {
+      existingAccountCodes.add(row.code.toLowerCase());
+    }
+  } else if (entity === "account_mappings") {
+    const [found, mappings] = await Promise.all([
+      tx
+        .select({
+          id: accounts.id,
+          code: accounts.code,
+          type: accounts.type,
+          isPostable: accounts.isPostable,
+          isActive: accounts.isActive,
+        })
+        .from(accounts)
+        .where(eq(accounts.companyId, companyId)),
+      tx
+        .select({ key: accountMappings.key })
+        .from(accountMappings)
+        .where(eq(accountMappings.companyId, companyId)),
+    ]);
+    for (const row of found) {
+      existingAccountCodes.add(row.code.toLowerCase());
+      accountMetaByCode.set(row.code.toLowerCase(), {
+        id: row.id,
+        type: row.type,
+        isPostable: row.isPostable,
+        isActive: row.isActive,
+      });
+    }
+    for (const row of mappings) existingMappingKeys.add(row.key);
+  } else if (entity === "categories") {
+    const found = await tx
+      .select({ id: categories.id, name: categories.name })
+      .from(categories)
+      .where(eq(categories.companyId, companyId));
+    for (const row of found) {
+      existingCategoryNames.add(row.name.toLowerCase());
+      categoryByName.set(row.name.toLowerCase(), row.id);
+    }
+  } else if (entity === "units") {
+    const found = await tx
+      .select({ code: units.code, name: units.name })
+      .from(units)
+      .where(eq(units.companyId, companyId));
+    for (const row of found) {
+      existingUnitCodes.add(row.code.toLowerCase());
+      existingUnitNames.add(row.name.toLowerCase());
+    }
   } else if (entity === "opening_stock") {
     const found = await tx
       .select({ id: products.id, sku: products.sku, name: products.name })
@@ -205,6 +265,7 @@ export async function analyzeMasterImport(
   const rowIssues: { id: string; status: string; issue: string | null }[] = [];
   const seenNames = new Set<string>();
   const seenCodes = new Set<string>();
+  const seenMappingKeys = new Set<string>();
   const seenOpeningKeys = new Set<string>();
 
   for (const row of rows) {
@@ -274,6 +335,81 @@ export async function analyzeMasterImport(
             summary.existingCount += 1;
             issue = "Kode sudah ada — akan dilewati";
             action = "skip";
+          }
+        }
+      } else if (value.kind === "categories") {
+        const nameKey = value.value.name.toLowerCase();
+        if (seenNames.has(nameKey)) {
+          summary.duplicateInFile += 1;
+          issue = "Nama kategori duplikat di file (baris pertama dipakai)";
+          storedIssue = issue;
+          action = "error";
+        } else {
+          seenNames.add(nameKey);
+          if (existingCategoryNames.has(nameKey)) {
+            summary.existingCount += 1;
+            issue = "Kategori sudah ada — akan dilewati";
+            action = "skip";
+          } else if (
+            value.value.parent &&
+            !categoryByName.has(value.value.parent.toLowerCase())
+          ) {
+            summary.invalidRows += 1;
+            issue = `Induk kategori "${value.value.parent}" tidak ditemukan — buat induknya dulu`;
+            storedIssue = issue;
+            action = "error";
+          }
+        }
+      } else if (value.kind === "units") {
+        const codeKey = value.value.code.toLowerCase();
+        const nameKey = value.value.name.toLowerCase();
+        if (seenCodes.has(codeKey) || seenNames.has(nameKey)) {
+          summary.duplicateInFile += 1;
+          issue = "Kode/nama satuan duplikat di file (baris pertama dipakai)";
+          storedIssue = issue;
+          action = "error";
+        } else {
+          seenCodes.add(codeKey);
+          seenNames.add(nameKey);
+          if (existingUnitCodes.has(codeKey) || existingUnitNames.has(nameKey)) {
+            summary.existingCount += 1;
+            issue = "Satuan sudah ada — akan dilewati";
+            action = "skip";
+          }
+        }
+      } else if (value.kind === "account_mappings") {
+        const key = value.value.key;
+        if (!(ACCOUNT_MAPPING_KEYS as readonly string[]).includes(key)) {
+          summary.invalidRows += 1;
+          issue = `Kunci pemetaan "${key}" tidak dikenal`;
+          storedIssue = issue;
+          action = "error";
+        } else if (seenMappingKeys.has(key)) {
+          summary.duplicateInFile += 1;
+          issue = "Kunci pemetaan duplikat di file (baris pertama dipakai)";
+          storedIssue = issue;
+          action = "error";
+        } else {
+          seenMappingKeys.add(key);
+          const meta = accountMetaByCode.get(value.value.accountCode.toLowerCase());
+          if (!meta) {
+            summary.invalidRows += 1;
+            issue = `Kode akun "${value.value.accountCode}" tidak ditemukan`;
+            storedIssue = issue;
+            action = "error";
+          } else if (!mappingAllowsAccountType(key, meta.type)) {
+            summary.invalidRows += 1;
+            issue = `Akun ${value.value.accountCode} bertipe ${meta.type}, tidak sesuai untuk pemetaan "${MAPPING_LABELS[key] ?? key}"`;
+            storedIssue = issue;
+            action = "error";
+          } else if (!meta.isPostable || !meta.isActive) {
+            summary.invalidRows += 1;
+            issue = `Akun ${value.value.accountCode} harus aktif dan dapat diposting`;
+            storedIssue = issue;
+            action = "error";
+          } else if (existingMappingKeys.has(key)) {
+            action = "update";
+            detail = `${detail ?? ""} · perbarui`.trim();
           }
         }
       } else if (value.kind === "opening_stock") {

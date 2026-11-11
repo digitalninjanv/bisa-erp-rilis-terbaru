@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { newUuid } from "@/lib/uuid";
 import { useRouter } from "next/navigation";
 import { HandCoins } from "lucide-react";
 import { toast } from "sonner";
@@ -25,7 +26,7 @@ export function PurchaseAdvanceForm({
   today: string;
 }) {
   const router = useRouter();
-  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
+  const [idempotencyKey, setIdempotencyKey] = useState(() => newUuid());
   const [supplierId, setSupplierId] = useState(suppliers[0]?.id ?? "");
   const [paymentAccountId, setPaymentAccountId] = useState(paymentAccounts[0]?.id ?? "");
   const [date, setDate] = useState(today);
@@ -65,7 +66,7 @@ export function PurchaseAdvanceForm({
       return;
     }
     toast.success(`Uang muka ${result.data.number} tersimpan.`);
-    setIdempotencyKey(crypto.randomUUID());
+    setIdempotencyKey(newUuid());
     setAmount("");
     setTaxInvoiceNumber("");
     setNotes("");

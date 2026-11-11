@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { db, type Tx } from "@/db";
 import {
+  companyRoles,
   member,
   posPairingCodes,
   posTerminalSessionReviews,
@@ -10,6 +11,7 @@ import {
   warehouses,
 } from "@/db/schema";
 import { AppError } from "@/lib/errors";
+import { permissionsFor, sanitizePermissions, type Permission } from "@/lib/permissions";
 
 /**
  * Registry terminal POS desktop (POS Native Langkah 6, RENCANA-TAURI
@@ -310,6 +312,35 @@ export async function resolvePosTerminalByToken(
     await tx.execute(
       sql`select set_config('app.company_id', ${terminal.companyId}, true)`,
     );
+    // Token perangkat tidak boleh hidup lebih lama dari keanggotaan/
+    // hak POS pengguna. Cek ulang setiap resolusi, bukan hanya saat pairing.
+    const [membership] = await tx
+      .select({ role: member.role })
+      .from(member)
+      .where(
+        and(
+          eq(member.organizationId, terminal.companyId),
+          eq(member.userId, terminal.userId),
+        ),
+      )
+      .limit(1);
+    if (!membership) return null;
+    let permissions: Permission[] = permissionsFor(membership.role);
+    const [customRole] = await tx
+      .select({ permissions: companyRoles.permissions, isActive: companyRoles.isActive })
+      .from(companyRoles)
+      .where(
+        and(
+          eq(companyRoles.companyId, terminal.companyId),
+          eq(companyRoles.key, membership.role),
+        ),
+      )
+      .limit(1);
+    if (customRole) {
+      if (!customRole.isActive) return null;
+      permissions = sanitizePermissions(customRole.permissions);
+    }
+    if (!permissions.includes("pos.sell")) return null;
     const stale =
       !terminal.lastSeenAt ||
       Date.now() - terminal.lastSeenAt.getTime() > LAST_SEEN_TOUCH_MS;

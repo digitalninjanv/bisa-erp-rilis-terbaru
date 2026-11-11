@@ -3,6 +3,7 @@ import { listJournalEntries } from "@/server/reports";
 import { requirePermission } from "@/lib/session";
 import { journalSourceLabel, monthStartISO, todayISO } from "@/lib/format";
 import { csvResponse, moneyCsv, toCsv } from "@/lib/csv";
+import { xlsxResponse } from "@/lib/xlsx";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,6 +32,7 @@ export async function GET(request: Request) {
   const accountId = url.searchParams.get("account") || undefined;
   const status = url.searchParams.get("status") || undefined;
   const createdBy = url.searchParams.get("user") || undefined;
+  const format = url.searchParams.get("format") === "xlsx" ? "xlsx" : "csv";
 
   const rows = await withCompanyReadOnly(ctx.company.id, async (tx) => {
     const all: Awaited<ReturnType<typeof listJournalEntries>>["rows"] = [];
@@ -53,16 +55,30 @@ export async function GET(request: Request) {
     return all;
   });
 
-  const csv = toCsv(
-    ["Nomor", "Tanggal", "Keterangan", "Sumber", "Status", "Nilai"],
-    rows.map((row) => [
+  const headers = ["Nomor", "Tanggal", "Keterangan", "Sumber", "Status", "Nilai"];
+  const cells = rows.map((row) => [
+    row.number,
+    String(row.date),
+    row.description,
+    journalSourceLabel(row.sourceType),
+    STATUS_LABELS[row.status] ?? row.status,
+    Number(row.amount),
+  ]);
+  const filename = `jurnal-${from}-${to}`;
+  if (format === "xlsx") {
+    return xlsxResponse(`${filename}.xlsx`, [
+      { name: "Jurnal", headers, rows: cells, widths: [18, 12, 44, 20, 14, 16] },
+    ]);
+  }
+  return csvResponse(
+    `${filename}.csv`,
+    toCsv(headers, rows.map((row) => [
       row.number,
       String(row.date),
       row.description,
       journalSourceLabel(row.sourceType),
       STATUS_LABELS[row.status] ?? row.status,
       moneyCsv(row.amount),
-    ]),
+    ])),
   );
-  return csvResponse(`jurnal-${from}-${to}.csv`, csv);
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { newUuid } from "@/lib/uuid";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { formatIDR } from "@/lib/money";
@@ -136,7 +137,7 @@ export function PosTerminal({
   const [quickBusy, setQuickBusy] = useState(false);
   const [dueDate, setDueDate] = useState<string>(() => defaultDueDate(receivableDefaultTermDays));
 
-  const idempotencyKey = useRef(crypto.randomUUID());
+  const idempotencyKey = useRef(newUuid());
   // POS-IDEM-01: ditandai setiap kali checkout dicoba. Selama belum ada
   // percobaan, kunci yang sama aman dipakai ulang oleh quote; sesudah
   // ada percobaan, perubahan keranjang/kelompok/gudang berikutnya
@@ -440,7 +441,7 @@ export function PosTerminal({
   useEffect(() => {
     if (!checkoutAttempted.current) return;
     checkoutAttempted.current = false;
-    idempotencyKey.current = crypto.randomUUID();
+    idempotencyKey.current = newUuid();
   }, [cart, groupId, selectedWarehouse, paymentsFingerprint]);
 
   // S4: penyunting baris berkunci (produk, kemasan) — logika murninya

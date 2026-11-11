@@ -158,6 +158,31 @@ export function cellText(
   return text ? text.slice(0, max) : null;
 }
 
+const ACTIVE_TRUE = new Set(["aktif", "active", "ya", "yes", "1", "true"]);
+const ACTIVE_FALSE = new Set([
+  "nonaktif",
+  "non aktif",
+  "tidak aktif",
+  "tidak",
+  "no",
+  "0",
+  "false",
+]);
+
+/** Status aktif/nonaktif dari sel; kosong = aktif (bawaan master). */
+export function activeCell(
+  row: Record<string, unknown>,
+  mapping: Partial<Record<string, string>>,
+  field = "isActive",
+): { value: boolean } | { error: string } {
+  const raw = cellText(row, mapping, field, 20);
+  if (!raw) return { value: true };
+  const normalized = normalizeHeader(raw);
+  if (ACTIVE_TRUE.has(normalized)) return { value: true };
+  if (ACTIVE_FALSE.has(normalized)) return { value: false };
+  return { error: `Status tidak dikenal: "${raw}" (pakai Aktif/Nonaktif)` };
+}
+
 /**
  * Termin hari dari sel impor. Menerima "30", "Net 30", "30 hari",
  * "2/10 Net 30" (angka terakhir = jatuh tempo), dan COD/tunai = 0.

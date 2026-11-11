@@ -73,7 +73,7 @@ export function CustomerGroupManager({
   function openCreate() {
     setForm({
       name: "",
-      roundingStep: 500,
+      roundingStep: 0,
       roundingDirection: "down",
       roundCashTotal: false,
       discountAccountId: accounts[0]?.id ?? "",
