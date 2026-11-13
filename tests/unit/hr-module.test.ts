@@ -108,11 +108,11 @@ describe("sidebar akuntansi kehilangan grup SDM & Payroll", () => {
     ]);
   });
 
-  it("gabungan href semua modul = 56 item tanpa dobel", () => {
+  it("gabungan href semua modul = 58 item tanpa dobel", () => {
     const all = MODULE_LIST.flatMap((m) => m.nav.map((i) => i.href));
     expect(new Set(all).size).toBe(all.length);
-    // 9 POS + 17 Gudang + 16 Akuntansi + 10 HR + 4 Analisa = 56 item nav.
-    expect(all).toHaveLength(56);
+    // 9 POS + 18 Gudang + 17 Akuntansi + 10 HR + 4 Analisa = 58 item nav.
+    expect(all).toHaveLength(58);
   });
 });
 

@@ -113,3 +113,26 @@ export type PaymentEntry = {
   /** A-21 Tahap R3-A (R3-01): fee final per pembayaran (string kosong = bawaan konfigurasi). */
   fee?: string;
 };
+
+export type PosTerminalProps = {
+  companyId: string;
+  userId: string;
+  companyName: string;
+  warehouseId: string;
+  warehouses: { id: string; name: string; code: string }[];
+  methods: Method[];
+  creditMethod: { id: string; name: string } | null;
+  debtMethod: { id: string; name: string } | null;
+  initialProducts: ProductOption[];
+  qrisImage: string | null;
+  groups: { id: string; name: string; roundingStep: number; roundingDirection: string; roundCashTotal: boolean }[];
+  sessionOpen: boolean;
+  sessionId?: string | null;
+  heldCount: number;
+  resumeId: string | null;
+  posOfflineEnabled?: boolean;
+  offlineTaxRate?: number;
+  offlineRoundingMode?: string;
+  receivableDefaultTermDays?: number;
+  reservations?: TerminalReservation[];
+};

@@ -1,8 +1,7 @@
+import { listReceiptSourceDocuments } from "@/server/catalog";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { and, eq, inArray } from "drizzle-orm";
 import { withCompanyReadOnly } from "@/db/tenant";
-import { purchaseOrders, stockReceiptLines, stockReceipts } from "@/db/schema";
 import { getSettings } from "@/server/catalog";
 import {
   SUPPLIER_RETURN_REASON_LABELS,
@@ -50,29 +49,7 @@ export default async function SupplierReturnPrintPage({
     const receiptLineIds = printData.detail.lines
       .map((line) => line.receiptLineId)
       .filter((value): value is string => Boolean(value));
-    let sourceDocuments: { receiptNumber: string; purchaseOrderNumber: string | null }[] = [];
-    if (receiptLineIds.length > 0) {
-      const rows = await tx
-        .select({
-          receiptNumber: stockReceipts.number,
-          purchaseOrderNumber: purchaseOrders.number,
-        })
-        .from(stockReceiptLines)
-        .innerJoin(stockReceipts, eq(stockReceiptLines.receiptId, stockReceipts.id))
-        .leftJoin(purchaseOrders, eq(stockReceipts.purchaseOrderId, purchaseOrders.id))
-        .where(
-          and(
-            eq(stockReceiptLines.companyId, ctx.company.id),
-            inArray(stockReceiptLines.id, receiptLineIds),
-          ),
-        );
-      const seen = new Set<string>();
-      sourceDocuments = rows.filter((row) => {
-        if (seen.has(row.receiptNumber)) return false;
-        seen.add(row.receiptNumber);
-        return true;
-      });
-    }
+    const sourceDocuments = await listReceiptSourceDocuments(tx, ctx.company.id, receiptLineIds);
     return { ...printData, settings, sourceDocuments };
   });
 

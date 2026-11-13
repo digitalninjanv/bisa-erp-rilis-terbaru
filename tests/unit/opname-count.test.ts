@@ -89,7 +89,12 @@ describe("draf opname (GDG2-01)", () => {
   };
 
   it("round-trip serialize/parse utuh", () => {
-    expect(parseOpnameDraft(serializeOpnameDraft(draft))).toEqual(draft);
+    expect(parseOpnameDraft(serializeOpnameDraft(draft))).toEqual({ ...draft, scope: "full", fullLoaded: false });
+  });
+
+  it("mempertahankan scope dan kelengkapan draf baru", () => {
+    const current = { ...draft, scope: "cycle" as const, fullLoaded: true };
+    expect(parseOpnameDraft(serializeOpnameDraft(current))).toEqual(current);
   });
 
   it("draf rusak atau asing ditolak menjadi null (form mulai bersih)", () => {

@@ -1,3 +1,4 @@
+import "@/components/akuntansi/financial-report.css";
 import Link from "next/link";
 import { CheckSquare, Download, Printer, Square } from "lucide-react";
 import { withCompanyReadOnly } from "@/db/tenant";
@@ -148,7 +149,7 @@ export default async function ReportsPage({
   const reference = `${REFERENCES[tab]}-${to}`;
 
   return (
-    <div>
+    <div className="financial-report-workspace">
       <PageHeader
         eyebrow="Akuntansi"
         title="Laporan keuangan"
@@ -192,10 +193,11 @@ export default async function ReportsPage({
       />
 
       <div className="no-print mx-auto mb-3 max-w-5xl overflow-hidden rounded-lg border border-border bg-card">
-        <div className="flex flex-nowrap overflow-x-auto border-b border-border px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <nav aria-label="Jenis laporan keuangan" className="flex flex-nowrap overflow-x-auto border-b border-border px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {TABS.map((row) => (
             <Link
               key={row.key}
+              aria-current={tab === row.key ? "page" : undefined}
               href={`/app/akuntansi/laporan?tab=${row.key}&from=${from}&to=${to}${zeroSuffix}${compareSuffix}`}
               className={
                 tab === row.key
@@ -206,7 +208,7 @@ export default async function ReportsPage({
               {row.label}
             </Link>
           ))}
-        </div>
+        </nav>
 
         <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5">
           <div className="flex flex-wrap items-center gap-1">
@@ -257,7 +259,7 @@ export default async function ReportsPage({
             </AutoFilterForm>
             <Link
               href={`/app/akuntansi/laporan?tab=${tab}&from=${from}&to=${to}${showZero ? "" : "&nol=1"}${compareSuffix}`}
-              aria-pressed={showZero}
+              aria-label={showZero ? "Sembunyikan akun nol" : "Tampilkan akun nol"}
               className="inline-flex h-8 items-center gap-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
             >
               {showZero ? <CheckSquare className="size-3.5" /> : <Square className="size-3.5" />}
@@ -281,6 +283,15 @@ export default async function ReportsPage({
             periodLabel={periodLabel}
             reference={reference}
           />
+          <div className="financial-report-document" data-report-kind={data.kind} data-comparative={Boolean(compareMode)}>
+          <div className={data.kind === "notes" ? undefined : "statement-body"}>
+          {data.kind === "income" || data.kind === "balance" ? (
+            <div className="financial-report-columns">
+              <span>Uraian / akun</span>
+              <span><strong>{data.kind === "balance" ? "Posisi keuangan" : "Periode berjalan"}</strong>{data.kind === "balance" ? formatDateReport(to) : `${formatDate(from)} — ${formatDate(to)}`}</span>
+              {priorDates ? <span><strong>{compareLabel}</strong>{data.kind === "balance" ? formatDateReport(priorDates.to) : `${formatDate(priorDates.from)} — ${formatDate(priorDates.to)}`}</span> : null}
+            </div>
+          ) : null}
           {data.kind === "income" ? <IncomeStatement data={data.value} range={{ from, to }} hideZero={hideZero} prior={"prior" in data ? data.prior : null} compareLabel={compareLabel ?? undefined} /> : null}
           {data.kind === "balance" ? <BalanceSheet data={data.value} range={{ from, to }} hideZero={hideZero} prior={"prior" in data ? data.prior : null} compareLabel={compareLabel ?? undefined} /> : null}
           {data.kind === "cashflow" ? <CashFlow data={data.value} /> : null}
@@ -288,6 +299,8 @@ export default async function ReportsPage({
           {data.kind === "trial" ? <TrialBalance data={data.value} range={{ from, to }} hideZero={hideZero} /> : null}
           {data.kind === "notes" ? <ReportNotes data={data.value} from={from} to={to} canManageSettings={can(ctx, "settings.manage")} /> : null}
           {data.kind === "sales" ? <SalesReport data={data.value} /> : null}
+          </div>
+          </div>
         </div>
         <div className="border-t border-border px-4 py-2.5 text-[10px] text-muted-foreground sm:px-6">
           Sumber: jurnal yang telah diposting · Mata uang: Rupiah (IDR) · Ref. {reference}
@@ -322,7 +335,7 @@ function ReportScreenHeader({
         </div>
         <div className="text-left text-[10px] leading-4 text-muted-foreground sm:w-auto sm:text-right">
           <p className="num">Ref. {reference}</p>
-          <p>Dicetak {formatDateTime(new Date())}</p>
+          <p>Diperbarui {formatDateTime(new Date())}</p>
         </div>
       </div>
     </header>

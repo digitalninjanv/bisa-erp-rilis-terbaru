@@ -1,8 +1,7 @@
+import { listSupplierReturnReceiptOptions } from "@/server/catalog";
 import Link from "next/link";
 import { ArrowLeft, FileText, PencilLine } from "lucide-react";
-import { and, desc, eq } from "drizzle-orm";
 import { withCompanyReadOnly } from "@/db/tenant";
-import { purchaseOrders, stockReceipts, suppliers } from "@/db/schema";
 import {
   getReceiptDetail,
   getSettings,
@@ -38,20 +37,7 @@ export default async function NewSupplierReturnPage({
       params.receiptId
         ? getReceiptDetail(tx, ctx.company.id, params.receiptId)
         : Promise.resolve(null),
-      tx
-        .select({
-          id: stockReceipts.id,
-          number: stockReceipts.number,
-          date: stockReceipts.date,
-          supplierName: suppliers.name,
-          poNumber: purchaseOrders.number,
-        })
-        .from(stockReceipts)
-        .leftJoin(suppliers, eq(stockReceipts.supplierId, suppliers.id))
-        .leftJoin(purchaseOrders, eq(stockReceipts.purchaseOrderId, purchaseOrders.id))
-        .where(and(eq(stockReceipts.companyId, ctx.company.id), eq(stockReceipts.status, "posted")))
-        .orderBy(desc(stockReceipts.date), desc(stockReceipts.createdAt))
-        .limit(100),
+      listSupplierReturnReceiptOptions(tx, ctx.company.id),
     ]);
     return {
       warehouseRows,

@@ -118,7 +118,7 @@ export function BalanceSheet({
     return <ReportAllEmpty />;
   }
   return (
-    <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
+    <div data-balance-layout className="grid gap-6 lg:grid-cols-2 lg:items-start">
       <div className="space-y-4">
         <h3 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Aset</h3>
         <StatementGroup title="Aset lancar" rows={data.currentAssets} total={data.totalCurrentAssets} range={range} hideZero={hideZero} priorRows={prior?.currentAssets} priorTotal={prior?.totalCurrentAssets} compareLabel={compareLabel} />
@@ -240,16 +240,17 @@ function StatementGroup({
   if (visible.length === 0) return null;
   const priorByAccount = priorMap(priorRows);
   return (
-    <section>
+    <section data-statement-group>
       <h3 className="border-b border-border pb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
         {title}
       </h3>
       <div className="overflow-x-auto">
         <table className="mt-1 w-full text-[12px]">
+          <colgroup><col style={{ width: "var(--label-width)" }} /><col style={{ width: "var(--amount-width)" }} />{comparative ? <col style={{ width: "var(--amount-width)" }} /> : null}</colgroup>
           {comparative ? (
             <thead className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               <tr>
-                <th />
+                <th scope="col">Uraian / akun</th>
                 <th className="py-1 text-right font-medium">Periode ini</th>
                 <th className="py-1 text-right font-medium">{compareLabel}</th>
               </tr>
@@ -318,6 +319,8 @@ function StatementRow({
   const comparative = compareLabel !== undefined;
   return (
     <div
+      data-statement-total
+      data-statement-final={final || undefined}
       className={cn(
         "mt-2 items-center gap-3 px-3 text-[12px] print:bg-transparent",
         comparative ? "grid grid-cols-[1fr_90px_90px] sm:grid-cols-[1fr_130px_130px]" : "flex justify-between",

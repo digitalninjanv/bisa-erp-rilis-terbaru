@@ -10,6 +10,7 @@ import {
   sql,
 } from "drizzle-orm";
 import type { Tx } from "@/db";
+import { stockTransitSql } from "@/server/inventory";
 import { isLowStock } from "@/lib/stock";
 import {
   d,
@@ -36,9 +37,9 @@ export async function getInventoryValuation(
   // need every row (CSV export, warehouse dashboard) omit `opts`.
   const where = and(
     eq(products.companyId, companyId),
-    eq(products.isActive, true),
     ...(warehouseId ? [eq(stockOnHand.warehouseId, warehouseId)] : []),
   );
+  const ownedQty = sql<string>`coalesce(sum(${stockOnHand.qty}), 0) + ${warehouseId ? sql`0` : stockTransitSql(companyId, products.id, "qty")}`;
   const baseQuery = () =>
     tx
       .select({
@@ -47,7 +48,7 @@ export async function getInventoryValuation(
         name: products.name,
         category: categories.name,
         unit: units.code,
-        qty: sql<string>`coalesce(sum(${stockOnHand.qty}), 0)`,
+        qty: ownedQty.as("owned_qty"),
         cost: products.costPrice,
         salePrice: products.salePrice,
         minStock: products.minStock,
@@ -59,16 +60,13 @@ export async function getInventoryValuation(
       .where(where)
       .groupBy(products.id, products.sku, products.name, categories.name, units.code, products.costPrice, products.salePrice, products.minStock);
 
-  const [totalsRow] = await tx
-    .select({
-      productCount: sql<string>`count(distinct ${products.id})`,
-      qty: sql<string>`coalesce(sum(${stockOnHand.qty}), 0)`,
-      value: sql<string>`coalesce(sum(${stockOnHand.qty} * ${products.costPrice}), 0)`,
-      potential: sql<string>`coalesce(sum(${stockOnHand.qty} * ${products.salePrice}), 0)`,
-    })
-    .from(products)
-    .leftJoin(stockOnHand, eq(stockOnHand.productId, products.id))
-    .where(where);
+  const grouped = baseQuery().as("valuation_totals");
+  const [totalsRow] = await tx.select({
+    productCount: sql<string>`count(*)`,
+    qty: sql<string>`coalesce(sum(${grouped.qty}), 0)`,
+    value: sql<string>`coalesce(sum(${grouped.qty} * ${grouped.cost}), 0)`,
+    potential: sql<string>`coalesce(sum(${grouped.qty} * ${grouped.salePrice}), 0)`,
+  }).from(grouped);
 
   const total = Number(totalsRow?.productCount ?? 0);
   const paginated = opts?.page !== undefined || opts?.pageSize !== undefined;
@@ -92,7 +90,7 @@ export async function getInventoryValuation(
   const lowRows = opts?.skipLowStock
     ? []
     : await baseQuery()
-        .having(sql`coalesce(sum(${stockOnHand.qty}), 0) <= ${products.minStock}`)
+        .having(sql`${ownedQty} <= ${products.minStock}`)
         .orderBy(asc(products.name), asc(products.id));
 
   const toItem = (r: (typeof rows)[number]) => ({

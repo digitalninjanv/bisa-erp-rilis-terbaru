@@ -57,7 +57,7 @@ export async function seedHrDefaults(tx: Tx, companyId: string): Promise<void> {
       value: row.value,
       effectiveFrom: "2000-01-01",
     })),
-  );
+  ).onConflictDoNothing({ target: [hrParameters.companyId, hrParameters.key, hrParameters.effectiveFrom] });
 }
 
 /** Membaca parameter HR yang efektif pada `asOf` (bawaan ditanam dulu bila kosong). */

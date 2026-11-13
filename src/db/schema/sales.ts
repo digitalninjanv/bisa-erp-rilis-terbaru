@@ -135,6 +135,8 @@ export const saleReturns = pgTable(
     date: date("date").notNull(),
     type: text("type").notNull().default("return"), // return | exchange
     status: text("status").notNull().default("posted"),
+    idempotencyKey: text("idempotency_key"),
+    disposition: text("disposition").notNull().default("sellable"),
     refundMethod: text("refund_method").notNull().default("cash"), // cash | store_credit | exchange
     total: numeric("total", { precision: 19, scale: 4 }).notNull().default("0"),
     // D-12: for exchange/store_credit returns this document IS the credit
@@ -148,6 +150,7 @@ export const saleReturns = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    uniqueIndex("sale_returns_company_idem_uq").on(t.companyId, t.idempotencyKey),
     uniqueIndex("sale_returns_company_number_uq").on(t.companyId, t.number),
     index("sale_returns_company_date_idx").on(t.companyId, t.date),
   ],

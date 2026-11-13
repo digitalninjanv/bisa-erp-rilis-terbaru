@@ -123,6 +123,7 @@ export function PosActionMenu({
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
+        aria-label="Menu terminal POS"
         aria-expanded={open}
         aria-haspopup="menu"
         className={cn(

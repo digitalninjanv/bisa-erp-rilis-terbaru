@@ -1,3 +1,4 @@
+import "./financial-report.css";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { ArrowLeft } from "lucide-react";
@@ -41,6 +42,8 @@ export function ReportDocument({
   printedByName,
   qrDataUrl,
   children,
+  financial = false,
+  comparative = false,
 }: {
   settings: PrintSettings;
   company: ReportCompanyIdentity;
@@ -54,8 +57,11 @@ export function ReportDocument({
   printedByName?: string | null;
   qrDataUrl?: string | null;
   children?: ReactNode;
+  financial?: boolean;
+  comparative?: boolean;
 }) {
   return (
+    <div className={financial ? "financial-report-document financial-report-print" : undefined} data-comparative={comparative}>
     <PrintShell settings={settings} paper={settings.documentPaper}>
       <PrintHeader
         settings={settings}
@@ -75,7 +81,7 @@ export function ReportDocument({
         <span>Dicetak {formatDateTime(new Date())}</span>
       </div>
       <div className="mt-3">{children}</div>
-      <footer className="mt-6 break-inside-avoid">
+      <footer data-report-approvals={settings.showSignature || settings.showQr} className="mt-6 break-inside-avoid">
         <div className="border-t border-black/60 pt-3">
           <div className="flex items-start justify-between gap-6">
             {settings.showSignature ? (
@@ -127,6 +133,7 @@ export function ReportDocument({
         </div>
       </footer>
     </PrintShell>
+    </div>
   );
 }
 
@@ -221,6 +228,7 @@ export function PrintGroupSection({
     <section className="report-keep mt-4 first:mt-0">
       <h3 className="border-b border-black/60 pb-1 text-[11px] font-semibold uppercase tracking-wide">{title}</h3>
       <table className="mt-1 w-full text-[12px]">
+        <colgroup><col style={{ width: "var(--label-width)" }} /><col style={{ width: "var(--amount-width)" }} />{comparative ? <col style={{ width: "var(--amount-width)" }} /> : null}</colgroup>
         <tbody>
           {rows.map((row, index) => (
             <tr key={row.key}>
@@ -281,14 +289,14 @@ export function PrintSummaryLine({
   const spacing = band || final ? "py-2" : "pt-1.5";
   if (prior === undefined) {
     return (
-      <div className={`mt-3 flex items-baseline justify-between text-[12px] ${rule} ${weight} ${bandClass} ${spacing}`}>
+      <div data-print-total className={`mt-3 flex items-baseline justify-between text-[12px] ${rule} ${weight} ${bandClass} ${spacing}`}>
         <span>{label}</span>
         <PrintAmount value={amount} />
       </div>
     );
   }
   return (
-    <div className={`mt-3 grid grid-cols-[1fr_130px_130px] text-[12px] ${rule} ${weight} ${bandClass} ${spacing}`}>
+    <div data-print-total className={`mt-3 grid grid-cols-[1fr_130px_130px] text-[12px] ${rule} ${weight} ${bandClass} ${spacing}`}>
       <span>{label}</span>
       <span className="text-right">
         <PrintAmount value={amount} />
@@ -311,7 +319,7 @@ export function PrintCompareHeader({
   firstColumnLabel?: string;
 }) {
   return (
-    <div className="grid grid-cols-[1fr_130px_130px] text-[10px] uppercase tracking-wide opacity-60">
+    <div data-print-columns className="grid grid-cols-[1fr_130px_130px] text-[10px] uppercase tracking-wide opacity-60">
       <span>{firstColumnLabel ?? ""}</span>
       <span className="text-right font-medium">{current}</span>
       <span className="text-right font-medium">{prior}</span>

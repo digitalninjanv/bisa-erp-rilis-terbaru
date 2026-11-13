@@ -154,30 +154,32 @@ export default async function ReportPrintPage({
     tab === "neraca"
       ? `Per ${formatDateReport(to)}`
       : tab === "neraca-saldo" || tab === "penjualan" || tab === "catatan"
-        ? `Periode ${formatDateReport(from)} — ${formatDateReport(to)}`
+        ? `Periode ${formatDate(from)} — ${formatDate(to)}`
         : `Untuk periode yang berakhir pada ${formatDateReport(to)}`;
   const comparisonStatement = compareLabel ? ` · Pembanding: ${compareLabel}` : "";
   const currentColumnLabel =
     tab === "neraca"
       ? `Per ${formatDateReport(to)}`
-      : `Periode ${formatDateReport(from)} — ${formatDateReport(to)}`;
+      : `Periode ${formatDate(from)} — ${formatDate(to)}`;
   const priorColumnLabel = priorDates
     ? tab === "neraca"
       ? `Per ${formatDateReport(priorDates.to)}`
-      : `Periode ${formatDateReport(priorDates.from)} — ${formatDateReport(priorDates.to)}`
+      : `Periode ${formatDate(priorDates.from)} — ${formatDate(priorDates.to)}`
     : "";
   // Satu tab = satu dokumen: halaman ini hanya merender tab aktif, sehingga
   // setiap tab selalu mulai dari halaman pertamanya sendiri. Laporan gabungan
   // (penjualan) menandai tiap seksi mandiri dengan break-before-page.
   return (
     <ReportPrintPageShell
-      backHref={`/app/akuntansi/laporan?tab=${tab}&from=${from}&to=${to}`}
+      backHref={`/app/akuntansi/laporan?tab=${tab}&from=${from}&to=${to}${params.nol === "1" ? "&nol=1" : ""}${compareMode ? `&compare=${compareMode}` : ""}`}
       backLabel="Laporan keuangan"
       eyebrow="Laporan keuangan · Cetak resmi"
       heading={TITLES[tab]}
       auto={params.autoprint === "1"}
     >
       <ReportDocument
+        financial
+        comparative={Boolean(compareMode)}
         settings={printSettings}
         company={company}
         title={TITLES[tab]}
@@ -200,6 +202,8 @@ export default async function ReportPrintPage({
             current={data.current}
             prior={"prior" in data ? data.prior : null}
             hideZero={hideZero}
+            currentLabel={currentColumnLabel}
+            priorLabel={priorColumnLabel}
           />
         ) : null}
         {data.kind === "cashflow" ? <CashFlowPrint current={data.current} /> : null}
@@ -216,14 +220,6 @@ export default async function ReportPrintPage({
           />
         ) : null}
         {data.kind === "notes" ? <NotesPrint notes={data.notes} /> : null}
-
-        <div className="mt-6 flex flex-wrap items-baseline justify-between gap-2 border-t border-black/40 pt-2 text-[10px] opacity-80 break-inside-avoid">
-          <span>
-            {TITLES[tab]} · {periodStatement}
-            {comparisonStatement}
-          </span>
-          <span className="num">Ref. {reference}</span>
-        </div>
       </ReportDocument>
     </ReportPrintPageShell>
   );
@@ -307,10 +303,14 @@ function BalancePrint({
   current,
   prior,
   hideZero,
+  currentLabel,
+  priorLabel,
 }: {
   current: BalanceData;
   prior?: BalanceData | null;
   hideZero: boolean;
+  currentLabel: string;
+  priorLabel: string;
 }) {
   const equityRows: PrintStatementRow[] = [
     ...toRows(current.equity, hideZero, prior?.equity),
@@ -365,7 +365,8 @@ function BalancePrint({
   }
   return (
     <div>
-      <div className="grid grid-cols-2 gap-8">
+      {prior ? <PrintCompareHeader firstColumnLabel="Uraian" current={currentLabel} prior={priorLabel} /> : null}
+      <div data-print-balance className="grid grid-cols-2 gap-8">
         <div>
           <h2 className="border-b border-black/60 pb-1 text-[11px] font-semibold uppercase tracking-wide">
             Aset

@@ -69,6 +69,7 @@ describe("navigasi akuntansi berkelompok (Accurate-like)", () => {
     ]);
     expect(byGroup.get("Buku Besar")).toEqual([
       "/app/akuntansi/jurnal",
+      "/app/akuntansi/jurnal/riwayat",
       "/app/akuntansi/buku-besar",
       "/app/akuntansi/akun",
       "/app/akuntansi/aset",
@@ -84,10 +85,10 @@ describe("navigasi akuntansi berkelompok (Accurate-like)", () => {
     ]);
   });
 
-  it("tidak ada href ganda dan total item 16", () => {
+  it("tidak ada href ganda dan total item 17", () => {
     const hrefs = MODULES.akuntansi.nav.map((i) => i.href);
     expect(new Set(hrefs).size).toBe(hrefs.length);
-    expect(hrefs).toHaveLength(16);
+    expect(hrefs).toHaveLength(17);
   });
 
   it("form Beban tidak dipromosikan; Piutang & Utang menjadi halaman kerja Kas & Bank", () => {

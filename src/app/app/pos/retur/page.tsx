@@ -9,10 +9,12 @@ import {
 } from "@/server/pos";
 import { requirePermissionPage } from "@/lib/session";
 import { formatIDR } from "@/lib/money";
+import { parsePageParam } from "@/lib/pagination";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { PageHeader } from "@/components/blocks/page-header";
-import { DataList } from "@/components/blocks/data-list";
+import { DataList, DataListToolbar } from "@/components/blocks/data-list";
 import { EmptyState } from "@/components/blocks/empty-state";
+import { Pagination } from "@/components/blocks/pagination";
 import { ReturnForm } from "@/components/pos/return-form";
 
 export const metadata = { title: "Retur penjualan" };
@@ -21,13 +23,19 @@ export const dynamic = "force-dynamic";
 export default async function ReturnsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ sale?: string }>;
+  searchParams: Promise<{ sale?: string; q?: string; page?: string }>;
 }) {
   const params = await searchParams;
   const ctx = await requirePermissionPage("pos.return");
 
   const data = await withCompanyReadOnly(ctx.company.id, async (tx) => {
-    const recent = await listSales(tx, { companyId: ctx.company.id, status: "completed", pageSize: 12 });
+    const recent = await listSales(tx, {
+      companyId: ctx.company.id,
+      status: "completed",
+      q: params.q,
+      page: parsePageParam(params.page),
+      pageSize: 20,
+    });
     const history = await listRecentSaleReturns(tx, ctx.company.id);
 
     // Sesi terbuka milik kasir pemroses: refund tunai dicatat ke sesi ini
@@ -118,31 +126,83 @@ export default async function ReturnsPage({
         <section className="overflow-hidden rounded-lg border border-border bg-card">
           <div className="border-b border-border px-4 py-3">
             <h2 className="text-[13px] font-semibold">Pilih transaksi yang akan diretur</h2>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">Hanya transaksi selesai dalam 30 transaksi terakhir.</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              Cari nomor nota atau nama pelanggan. Retur selalu mengacu ke transaksi asal.
+            </p>
+          </div>
+          <div className="border-b border-border px-3 py-2.5">
+            <DataListToolbar
+              action="/app/pos/retur"
+              q={params.q}
+              placeholder="Cari nomor nota atau pelanggan…"
+              resetHref={params.q ? "/app/pos/retur" : undefined}
+            />
           </div>
           {data.recent.rows.length === 0 ? (
-            <EmptyState title="Belum ada transaksi selesai" description="Selesaikan transaksi di kasir terlebih dahulu." />
+            <EmptyState title="Transaksi tidak ditemukan" description="Ubah kata kunci atau selesaikan transaksi di kasir terlebih dahulu." />
           ) : (
-            <div className="divide-y divide-border/70">
-              {data.recent.rows.map((sale) => (
-                <Link
-                  key={sale.id}
-                  href={`/app/pos/retur?sale=${sale.id}`}
-                  className="flex items-center justify-between gap-3 px-4 py-2.5 hover:bg-muted/50"
-                >
-                  <div className="min-w-0">
-                    <p className="num text-[12px] font-medium">{sale.number}</p>
-                    <p className="text-[11px] text-muted-foreground">
-                      {formatDateTime(sale.createdAt)} · {sale.customerName ?? "Umum"} · {sale.itemCount} item
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="num text-[12px] font-semibold">{formatIDR(sale.total)}</span>
-                    <RotateCcw className="size-3.5 text-muted-foreground" />
-                  </div>
-                </Link>
-              ))}
-            </div>
+            <>
+              <div className="hidden overflow-x-auto sm:block">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Nota</th>
+                      <th>Tanggal</th>
+                      <th>Pelanggan</th>
+                      <th className="text-right">Item</th>
+                      <th className="text-right">Total</th>
+                      <th className="text-right">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.recent.rows.map((sale) => (
+                      <tr key={sale.id}>
+                        <td className="num font-medium">{sale.number}</td>
+                        <td className="num text-[11px] text-muted-foreground">{formatDateTime(sale.createdAt)}</td>
+                        <td className="text-[12px]">{sale.customerName ?? "Umum"}</td>
+                        <td className="num text-right text-[11px]">{sale.itemCount}</td>
+                        <td className="num text-right font-medium">{formatIDR(sale.total)}</td>
+                        <td className="text-right">
+                          <Link
+                            href={`/app/pos/retur?sale=${sale.id}`}
+                            className="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11px] font-medium text-foreground transition-colors hover:bg-muted"
+                          >
+                            <RotateCcw className="size-3" /> Retur
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="divide-y divide-border/70 sm:hidden">
+                {data.recent.rows.map((sale) => (
+                  <Link
+                    key={sale.id}
+                    href={`/app/pos/retur?sale=${sale.id}`}
+                    className="flex items-center justify-between gap-3 px-4 py-2.5 hover:bg-muted/50"
+                  >
+                    <div className="min-w-0">
+                      <p className="num text-[12px] font-medium">{sale.number}</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {formatDateTime(sale.createdAt)} · {sale.customerName ?? "Umum"} · {sale.itemCount} item
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="num text-[12px] font-semibold">{formatIDR(sale.total)}</span>
+                      <RotateCcw className="size-3.5 text-muted-foreground" />
+                    </div>
+                  </Link>
+                ))}
+              </div>
+              <Pagination
+                page={data.recent.page}
+                pageSize={data.recent.pageSize}
+                total={data.recent.total}
+                basePath="/app/pos/retur"
+                params={{ q: params.q }}
+              />
+            </>
           )}
         </section>
       )}
@@ -151,7 +211,10 @@ export default async function ReturnsPage({
           seksi berdiri di atas kartu. Bagian pemilih transaksi di
           atas tetap seksi alur (bukan daftar) seperti sebelumnya. */}
       <div className="mt-4">
-        <h2 className="mb-2 text-[13px] font-semibold">Riwayat retur</h2>
+        <div className="mb-2 flex items-end justify-between gap-2">
+          <h2 className="text-[13px] font-semibold">Riwayat retur</h2>
+          <span className="text-[11px] text-muted-foreground">20 retur terbaru</span>
+        </div>
         <DataList
           isEmpty={data.history.length === 0}
           empty={

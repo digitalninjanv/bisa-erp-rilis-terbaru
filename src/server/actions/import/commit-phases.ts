@@ -9,7 +9,7 @@
 
 import { and, asc, count, eq, inArray, or, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { categories, importJobs, importRows, products, suppliers, units } from "@/db/schema";
+import { categories, importJobs, importRows, products, stockMovements, suppliers, units } from "@/db/schema";
 import { getAccountMap, postJournal } from "@/server/accounting";
 import { writeAudit } from "@/server/audit";
 import {
@@ -29,7 +29,7 @@ import {
   loadRequiredCustomFields,
   requiredCustomFieldsNote,
 } from "@/server/import-masters";
-import { applyStockMovement } from "@/server/inventory";
+import { applyStockMovement, recomputeCostFromLedger } from "@/server/inventory";
 import { AppError } from "@/lib/errors";
 import { todayISO } from "@/lib/format";
 import { importFallbackSku, mapProductRow, type ImportField, type MappedProduct } from "@/lib/import-parse";
@@ -450,6 +450,7 @@ async function applyImportedStock(
     userId: input.userId,
     date: input.date,
   });
+  await recomputeCostFromLedger(tx, input.companyId, input.productId);
   return d(input.value.stock).mul(input.value.costPrice);
 }
 
@@ -568,7 +569,13 @@ export async function processProductBatch(
       if (data.mapping.category && categoryId) updateFields.categoryId = categoryId;
       if (data.mapping.unit && unitId) updateFields.unitId = unitId;
       if (data.mapping.supplier && supplierId) updateFields.supplierId = supplierId;
-      if (data.mapping.costPrice && value.costPrice !== undefined) updateFields.costPrice = toDb(value.costPrice);
+      if (data.mapping.costPrice && value.costPrice !== undefined) {
+        await tx.select({ id: products.id }).from(products)
+          .where(and(eq(products.companyId, companyId), eq(products.id, existing.id))).for("update");
+        const [movement] = await tx.select({ id: stockMovements.id }).from(stockMovements)
+          .where(and(eq(stockMovements.companyId, companyId), eq(stockMovements.productId, existing.id))).limit(1);
+        if (!movement) updateFields.costPrice = toDb(value.costPrice);
+      }
       if (data.mapping.salePrice && value.salePrice !== undefined) updateFields.salePrice = toDb(value.salePrice);
       if (data.mapping.minStock && value.minStock !== undefined) updateFields.minStock = toDb(value.minStock);
       if (data.mapping.notes && value.notes !== undefined) updateFields.notes = value.notes;

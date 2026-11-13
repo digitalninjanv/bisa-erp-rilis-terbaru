@@ -142,13 +142,7 @@ describe("database reconciliation", () => {
         from stock_on_hand s
         join products p on p.id = s.product_id
         where s.company_id = ${ORG_ID}
-          -- SIM-2 S7 (REM-01): populasi yang sama dengan laporan —
-          -- getInventoryValuation hanya menilai produk AKTIF. Dulu baris
-          -- SQL ini cocok tanpa filter karena cleanup fixture menghapus
-          -- baris master produk ber-ledger (meninggalkan yatim); sejak FK
-          -- migrasi 0031 master itu ditombstone nonaktif, jadi populasi
-          -- kedua sisi harus dinyatakan eksplisit sama.
-          and p.is_active = true
+          -- Owned inventory includes inactive product masters.
       `)) as unknown as { value: string }[];
       return { report: valuation.totalValue, sql: Number(row.value) };
     });

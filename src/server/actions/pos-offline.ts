@@ -74,6 +74,7 @@ export async function syncOfflineSalesAction(input: z.input<typeof syncSchema>) 
           companyId: ctx.company.id,
           userId: ctx.user.id,
           canDiscount: can(ctx, "pos.discount"),
+          allowCrossCashier: can(ctx, "pos.void"),
           originEntitlements,
           item: item as OfflineSalePayload,
         }),

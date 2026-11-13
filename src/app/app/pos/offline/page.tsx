@@ -95,7 +95,21 @@ export default async function PosOfflinePage() {
                     />
                   </td>
                   <td className="max-w-[260px] text-[11px] text-muted-foreground">
-                    <span className="block truncate">{row.payload.message ?? "—"}</span>
+                    <span className="block">{row.payload.message ?? "—"}</span>
+                    {canManage && row.payload.sale ? (
+                      <details className="mt-1">
+                        <summary className="cursor-pointer font-medium">Rincian struk dan satuan</summary>
+                        <ul className="mt-1 space-y-1">
+                          {row.payload.sale.lines.map((line, index) => (
+                            <li key={index}>
+                              Produk {line.productId}: {line.qty} × isi {line.isiSnapshot ?? 1}
+                              {" = "}{line.qty * (line.isiSnapshot ?? 1)} satuan dasar
+                              {line.unitPrice != null ? ` · harga ${formatIDR(line.unitPrice)}` : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    ) : null}
                     {row.payload.priceConflict ? (
                       <span className="block">
                         Struk {formatIDR(row.payload.priceConflict.expectedTotal)} · kini{" "}

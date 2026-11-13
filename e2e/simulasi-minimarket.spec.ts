@@ -20,8 +20,10 @@ test("simulasi minimarket: terima tunai 100, jual 1 di POS, stok berkurang tepat
 
   // 2) Terima 100 unit @Rp2.500 secara TUNAI dari halaman penerimaan.
   await page.goto("/app/gudang/penerimaan");
-  await page.getByRole("button", { name: "Penerimaan baru" }).click();
-  await page.getByLabel("Sumber penerimaan").selectOption({ label: "Pembelian tunai (langsung bayar)" });
+  await page.waitForLoadState("networkidle");
+  const openReceipt = page.getByRole("button", { name: "Penerimaan baru", exact: true });
+  if (await openReceipt.isVisible()) await openReceipt.click();
+  await page.getByLabel("Sumber penerimaan").selectOption("purchase_cash");
   await expect(page.getByLabel("Dibayar dari akun")).toBeVisible();
 
   const picker = page.getByPlaceholder("Tambah produk ke dokumen…");
@@ -40,7 +42,8 @@ test("simulasi minimarket: terima tunai 100, jual 1 di POS, stok berkurang tepat
   await page.getByRole("button", { name: "Posting penerimaan" }).click();
   await expect(page.getByText("Penerimaan barang tersimpan dan stok diperbarui.")).toBeVisible();
   // Dokumen lahir lunas tanpa utang di riwayat.
-  await expect(page.locator("table").last().locator("tbody tr").first()).toContainText("Lunas (tunai)");
+  await page.goto("/app/gudang/penerimaan/riwayat");
+  await expect(page.getByRole("table").first().locator("tbody tr").first()).toContainText("Lunas (tunai)");
 
   // 3) Stok bertambah tepat 100.
   const stockAfterReceipt = await readProductStock(page, "Aqua", PRODUCT);

@@ -102,8 +102,7 @@ diedit/dihapus diam-diam.**
    berkadaluarsa terdekat; barang kadaluarsa tidak bisa dijual.
 8. **Stok minimum kanonis** (D-4) menjadi dasar peringatan menipis &
    rekomendasi pembelian; qty saran terlabel sebagai saran.
-9. **Konversi multi-satuan tidak dibangun** (D-17): produk satu satuan
-   dasar — keputusan pemilik, bukan kelalaian.
+9. **Konversi kemasan faktor tetap tersedia** (Satuan Kemasan S1–S6; menggantikan batas D-17 lama): produk memiliki satuan dasar dan kemasan berfaktor tetap; seluruh transaksi menyimpan faktor cuplikan. Konversi UOM arbitrer tidak disediakan.
 
 ## 4. POS & penjualan
 
@@ -182,3 +181,14 @@ ekspor ulang Accurate Opsi A · gerbang harga bulk-edit · pembatasan
 gudang per pengguna · saklar riwayat lintas-kasir · pemetaan khusus PPh
 bunga · xlsx registry vs CDN. Daftar otoritatif: `docs/rombak/RENCANA.md`
 §3 (19 butir) & `PROGRESS.md` §0D/§0G.
+
+
+## 8. Guard integritas ERP (remediasi 13 November 2026)
+
+- Harga pokok produk yang sudah memiliki stock movement tidak boleh ditimpa bulk edit atau impor master. Penerimaan dan dokumen persediaan mengubah cost pool; perubahan harga jual tetap terpisah.
+- Valuasi perusahaan mencakup stok produk nonaktif dan stok transfer yang masih dalam perjalanan. Valuasi gudang tertentu hanya menghitung stok fisik gudang tersebut.
+- Jurnal memakai angka canonical 4 desimal yang sama untuk detail dan summary. Residual pembulatan dialokasikan pada sisi yang sama; jurnal harus seimbang sebelum disimpan. Baris jurnal hanya dapat ditambahkan dalam transaksi yang membuat header.
+- Retur penjualan memiliki kunci operasi agar retry tidak menggandakan refund. Pilih layak jual untuk restock, atau rusak/tidak layak jual untuk tanpa restock dan reklasifikasi HPP ke akun penyusutan persediaan. Pisahkan dokumen untuk kondisi campuran.
+- Sinkronisasi offline dari kasir lain membutuhkan otoritas supervisor. Faktor kemasan yang berubah tidak langsung diterima; supervisor memeriksa rincian faktor, jumlah dan bukti transaksi sebelum settlement historis.
+
+Guard ini tidak menetapkan kebijakan baru untuk GRNI, credit note pemasok, koreksi retur posted, pajak atau negative stock. Keputusan yang belum disahkan tetap tercatat pada laporan audit dan remediasi.

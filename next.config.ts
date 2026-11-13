@@ -58,6 +58,8 @@ const EXTRA_DEV_ORIGINS = (process.env.ALLOWED_DEV_ORIGINS ?? "")
   .filter(Boolean);
 
 const nextConfig: NextConfig = {
+  // Keep disposable verification builds separate from a running local app.
+  distDir: process.env.BISA_TEST_BUILD === "1" ? ".next-remediation" : ".next",
   // Dev-only: browser bisa membuka aplikasi lewat localhost, 127.0.0.1,
   // atau IP LAN (mis. dari perangkat lain). Next memblokir /_next/hmr
   // sebagai cross-origin bila hostname tidak terdaftar, dan halaman dev
@@ -87,6 +89,8 @@ const nextConfig: NextConfig = {
   // .next/standalone with a minimal server.js; deploy tooling copies
   // public/ and .next/static into it. `next start` keeps working.
   output: "standalone",
+  // Runtime backup manifests live outside the release; never package DB dumps or local secrets.
+  outputFileTracingExcludes: { "/*": ["./backups/**/*", "./.env*"] },
   // ERP pages are request-time and tenant-scoped. Caching stays opt-in per query.
   cacheComponents: false,
   turbopack: {

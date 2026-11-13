@@ -52,3 +52,13 @@ test.describe("Aksesibilitas (axe WCAG 2 A/AA)", () => {
     });
   }
 });
+
+test.describe("Aksesibilitas POS mobile", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+  test("menu terminal tetap memiliki nama saat teks disembunyikan", async ({ page }) => {
+    await page.goto("/app/pos");
+    await expect(page.getByRole("button", { name: "Menu terminal POS", exact: true })).toBeVisible();
+    const result = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
+    expect(result.violations.filter(v => v.impact === "critical" || v.impact === "serious").map(v => v.id)).toEqual([]);
+  });
+});

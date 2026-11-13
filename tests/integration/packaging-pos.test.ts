@@ -1,5 +1,6 @@
+import { outbox } from "@/db/schema";
 import { describe, expect, it } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { and, sql, eq } from "drizzle-orm";
 import {
   accountMappings,
   cashSessions,
@@ -19,7 +20,7 @@ import {
   getReturnedQtyBySaleLine,
   quoteCart,
 } from "@/server/pos";
-import { processOfflineSaleItem } from "@/server/pos-offline";
+import { processOfflineSaleItem, postOfflineReviewItem } from "@/server/pos-offline";
 import {
   findProductByAnyBarcode,
   listProductPackagings,
@@ -340,7 +341,7 @@ describe("S4 — penjualan POS berkemasan", () => {
     });
   });
 
-  it("(d) penjualan offline berkemasan tersinkron dengan cuplikan muatan, bukan master", async () => {
+  it("(d) faktor kemasan lama ditinjau supervisor sebelum snapshot historis diposting", async () => {
     await rollbackTransaction(async (tx) => {
       const warehouse = await defaultWarehouse(tx);
       const method = await cashMethod(tx);
@@ -408,13 +409,16 @@ describe("S4 — penjualan POS berkemasan", () => {
           queuedAt: new Date().toISOString(),
         },
       });
-      expect(result.status).toBe("synced");
-      expect(result.saleId).toBeDefined();
+      expect(result.status).toBe("failed");
+      expect(result.message).toContain("Faktor kemasan");
+      const [pending] = await tx.select().from(outbox).where(and(eq(outbox.companyId, ORG_ID), sql`${outbox.payload}->>'clientKey' = ${result.clientKey}`)).limit(1);
+      const settled = await postOfflineReviewItem(tx, { companyId: ORG_ID, actorId: USER_ID, outboxId: pending.id, mode: "settle", originEntitlements: { [USER_ID]: { canSell: true, canDiscount: true } } });
+      expect(settled.saleId).toBeDefined();
 
       const [line] = await tx
         .select()
         .from(saleLines)
-        .where(eq(saleLines.saleId, result.saleId!));
+        .where(eq(saleLines.saleId, settled.saleId!));
       expect(line.packagingId).toBe(pack.id);
       expect(d(line.isiSnapshot).toNumber()).toBe(40);
       expect(d(line.qty).toNumber()).toBe(40);

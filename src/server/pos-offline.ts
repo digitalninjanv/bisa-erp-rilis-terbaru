@@ -177,6 +177,8 @@ export async function processOfflineSaleItem(
     userId: string;
     /** Hak diskon penyinkron; hanya fallback untuk muatan warisan. */
     canDiscount?: boolean;
+    /** Only an authenticated supervisor may sync for another cashier. */
+    allowCrossCashier?: boolean;
     /** Hak kasir asal per userId, diresolusi lapisan aksi dari
      *  keanggotaan. Bila diisi, kasir asal yang tidak berhak ditahan. */
     originEntitlements?: Record<string, OriginEntitlement | null>;
@@ -282,6 +284,11 @@ export async function processOfflineSaleItem(
   // POS3-02: hak dinilai dari KASIR ASAL. Asal yang tidak lagi berhak
   // ditahan untuk peninjauan supervisor — penjualan tidak dialihkan
   // ke penyinkron dan tidak diposting atas nama siapa pun.
+  if (originCashierId !== input.userId && !input.allowCrossCashier) {
+    meta.kind = "origin_ineligible";
+    return record({ clientKey: item.clientKey, status: "failed", kind: "origin_ineligible",
+      message: "Identitas kasir asal berbeda dari penyinkron. Minta supervisor meninjau dan menyelesaikan transaksi ini." });
+  }
   let originCanDiscount = input.canDiscount ?? false;
   if (item.cashierId && input.originEntitlements) {
     const entitlement = input.originEntitlements[item.cashierId] ?? null;
@@ -543,6 +550,7 @@ export async function postOfflineReviewItem(
     const result = await processOfflineSaleItem(tx, {
       companyId: input.companyId,
       userId: input.actorId,
+      allowCrossCashier: true,
       item,
       originEntitlements: input.originEntitlements,
     });

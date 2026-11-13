@@ -1,8 +1,7 @@
+import { getReceiptPurchaseOrderNumber } from "@/server/catalog";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { and, eq } from "drizzle-orm";
 import { withCompanyReadOnly } from "@/db/tenant";
-import { purchaseOrders, stockReceipts } from "@/db/schema";
 import { getReceiptPrintData, getSettings } from "@/server/catalog";
 import { RECEIPT_SOURCE_LABELS, type ReceiptSource } from "@/server/inventory";
 import { requirePermissionPage } from "@/lib/session";
@@ -36,12 +35,7 @@ export default async function GoodsReceiptPrintPage({
       // getReceiptPrintData tidak memuat tautan PO; satu kueri lokal di
       // halaman cetak menyelesaikan nomor PO tanpa mengubah kontrak baca
       // bersama (halaman detail tetap memakai getReceiptDetail).
-      tx
-        .select({ number: purchaseOrders.number })
-        .from(stockReceipts)
-        .innerJoin(purchaseOrders, eq(stockReceipts.purchaseOrderId, purchaseOrders.id))
-        .where(and(eq(stockReceipts.companyId, ctx.company.id), eq(stockReceipts.id, id)))
-        .limit(1),
+      getReceiptPurchaseOrderNumber(tx, ctx.company.id, id),
     ]);
     return { ...printData, settings, purchaseOrderNumber: poRows[0]?.number ?? null };
   });

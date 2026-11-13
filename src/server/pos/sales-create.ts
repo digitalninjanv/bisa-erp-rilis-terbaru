@@ -9,7 +9,7 @@ import type { Tx } from "@/db";
 import { cashSessions, customers, idempotencyKeys, paymentMethods, sales } from "@/db/schema";
 import { AppError } from "@/lib/errors";
 import { d, toDb, Decimal } from "@/lib/money";
-import { getAccountMap } from "@/server/accounting";
+import { assertPeriodOpen, getAccountMap } from "@/server/accounting";
 import { writeAudit } from "@/server/audit";
 import { consumeReservationForSale, getReservedQuantities } from "@/server/reservations";
 import { quoteCart } from "./quote";
@@ -25,6 +25,7 @@ export async function createSale(
   const replayedSale = await claimSaleIdempotency(tx, input);
   if (replayedSale) return replayedSale;
 
+  await assertPeriodOpen(tx, input.companyId, input.date);
   await validateSaleCustomer(tx, input);
 
   const { quote, settings } = await prepareSaleQuote(tx, input);
@@ -240,6 +241,7 @@ async function prepareSaleQuote(tx: Tx, input: CreateSaleInput) {
     lines: input.lines,
     asOfDate: input.date,
     canDiscount: input.canDiscount,
+    lockCosts: true,
     frozenPrices: input.frozenPrices,
     reservationId: input.reservationId ?? null,
     allowInactiveProducts: input.allowInactiveProducts,

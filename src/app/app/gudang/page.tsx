@@ -141,7 +141,7 @@ export default async function WarehouseDashboard({
 
       <div className={`grid grid-cols-2 gap-2.5 ${canSeeCost ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
         {canSeeCost ? (
-          <StatCard label="Nilai persediaan" value={formatIDR(data.valuation.totalValue)} hint="Harga pokok rata-rata" icon={Boxes} tone="amber" />
+          <StatCard label="Valuasi stok" value={formatIDR(data.valuation.totalValue)} hint="Qty × HPP rata-rata" icon={Boxes} tone="amber" />
         ) : null}
         <StatCard label="Potensi jual" value={formatIDR(data.valuation.totalPotential)} hint="Jika seluruh stok terjual" icon={Warehouse} tone="teal" />
         <StatCard label="SKU aktif" value={formatNumber(data.productCount)} hint={`${formatQty(data.valuation.totalQty)} unit tercatat`} icon={Warehouse} tone="plum" />

@@ -965,9 +965,9 @@ describe("POS-RND-02 pembulatan tidak boleh membuat total nol", () => {
 describe("POS-IDEM-01 balapan kunci idempotensi (commit, perusahaan uji)", () => {
   it("dua createSale bersamaan dengan kunci sama: satu penjualan, keduanya menerima hasil yang sama", async () => {
     const key = crypto.randomUUID();
+    const { warehouse, product, method } = await guardTransaction(guardFixture);
     const run = () =>
       guardTransaction(async (tx) => {
-        const { warehouse, product, method } = await guardFixture(tx);
         return createSale(tx, {
           companyId: GUARD_ORG,
           userId: GUARD_USER,

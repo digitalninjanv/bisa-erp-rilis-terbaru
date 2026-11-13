@@ -15,17 +15,36 @@ import {
   type Decimal,
 } from "@/lib/money";
 import { getAccountMap, postJournal } from "@/server/accounting";
+import { claimIdempotencyKey } from "@/server/idempotency";
 import { writeAudit } from "@/server/audit";
 import { applyStockMovement } from "@/server/inventory";
 import { restoreSerialsForSale, serialTrackFlags } from "@/server/serials";
 import { nextDocumentNumber } from "@/server/sequences";
 import { batchTrackFlags, restoreSaleLineBatches, trackStockFlags } from "./sales-stock";
-import type { SaleRow } from "./sales-void";;
+import type { SaleRow } from "./sales-void";
 import { resolveReturnSettlement, type CreateSaleReturnInput, type RefundSettlement } from "./returns-settlement";
 
 export async function createSaleReturn(tx: Tx, input: CreateSaleReturnInput) {
   if (!input.reason.trim()) throw new AppError("VALIDATION", "Alasan retur wajib diisi.");
   if (input.lines.length === 0) throw new AppError("VALIDATION", "Pilih minimal satu barang yang diretur.");
+
+  if (input.idempotencyKey) {
+    const existing = () => tx.select({ id: saleReturns.id, number: saleReturns.number, total: saleReturns.total, saleId: saleReturns.saleId })
+      .from(saleReturns).where(and(eq(saleReturns.companyId, input.companyId), eq(saleReturns.idempotencyKey, input.idempotencyKey!))).limit(1);
+    const replay = async () => {
+      const [row] = await existing();
+      if (!row) return null;
+      if (row.saleId !== input.saleId) throw new AppError("CONFLICT", "Kunci retur sudah dipakai pada penjualan lain.");
+      return { id: row.id, number: row.number, total: d(row.total).toNumber(), warnings: [] as string[] };
+    };
+    const found = await replay();
+    if (found) return found;
+    if (!await claimIdempotencyKey(tx, { companyId: input.companyId, key: input.idempotencyKey, scope: "pos.return" })) {
+      const winner = await replay();
+      if (winner) return winner;
+      throw new AppError("CONFLICT", "Retur dengan kunci yang sama sedang diproses. Coba lagi.");
+    }
+  }
 
   const origin = await loadReturnOrigin(tx, input);
   const { sale, originalLines, map } = origin;
@@ -38,7 +57,7 @@ export async function createSaleReturn(tx: Tx, input: CreateSaleReturnInput) {
 
   const ret = await insertSaleReturnDocument(tx, input, sale, computedLines);
 
-  await restoreReturnedStock(tx, input, origin, ret, computedLines);
+  if (input.disposition !== "write_off") await restoreReturnedStock(tx, input, origin, ret, computedLines);
 
   // Total dokumen = nilai penyelesaian penuh retur (barang + porsi
   // pembulatan), sejajar dengan sales.total yang juga memuat
@@ -115,6 +134,7 @@ export async function createSaleReturn(tx: Tx, input: CreateSaleReturnInput) {
       number: ret.number,
       total: toDb(documentTotal),
       reason: input.reason,
+      disposition: input.disposition ?? "sellable",
       // FIX-P1: rincian penyelesaian agar potongan piutang vs refund
       // dapat ditelusur dari audit, bukan ditebak dari jurnal.
       goodsValue: toDb(returnTotal),
@@ -134,7 +154,7 @@ export async function createSaleReturn(tx: Tx, input: CreateSaleReturnInput) {
 
   // FIX-R2 Tahap 3 (RV2-01): peringatan penjaga saldo kas/bank (mode
   // warn) untuk jurnal refund tunai retur ini.
-  return { id: ret.id, number: ret.number, total: refundDue.toNumber(), warnings: returnJournal?.warnings ?? [] };
+  return { id: ret.id, number: ret.number, total: documentTotal.toNumber(), warnings: returnJournal?.warnings ?? [] };
 }
 
 
@@ -483,6 +503,8 @@ async function insertSaleReturnDocument(
       type: input.type,
       status: "posted",
       refundMethod: input.refundMethod,
+      idempotencyKey: input.idempotencyKey ?? null,
+      disposition: input.disposition ?? "sellable",
       reason: input.reason,
       createdBy: input.userId,
       postedAt: new Date(),
@@ -661,7 +683,7 @@ async function postSaleReturnJournal(
       : []),
     ...(costPortion.gt(0)
       ? [
-          { accountId: map.inventory, debit: costPortion, description: "Persediaan kembali" },
+          { accountId: input.disposition === "write_off" ? (map.damaged ?? map.inventory_shrink) : map.inventory, debit: costPortion, description: input.disposition === "write_off" ? "Barang retur tidak layak jual — dibebankan" : "Persediaan kembali" },
           { accountId: map.cogs, credit: costPortion, description: "Pembalik HPP" },
         ]
       : []),

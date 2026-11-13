@@ -13,6 +13,7 @@ import {
 } from "@/db/schema";
 import { AppError } from "@/lib/errors";
 import { Decimal, d, toDb, type MoneyInput } from "@/lib/money";
+import { stockTransitSql } from "./transit";
 import { todayISO } from "@/lib/format";
 import { applyBatchDelta, isBatchTracked } from "@/server/batches";
 import { isSerialTracked, pickSerialsOut } from "@/server/serials";
@@ -43,6 +44,14 @@ export async function applyStockMovement(
   },
 ): Promise<{ before: number; after: number }> {
   const delta = d(input.delta);
+  if (!delta.isFinite() || !d(input.unitCost).isFinite() || d(input.unitCost).lt(0)) {
+    throw new AppError("VALIDATION", "Jumlah dan biaya mutasi stok harus valid; biaya tidak boleh negatif.");
+  }
+  // All stock writers use product -> on-hand lock order. Checkout takes
+  // this same product lock before reading the cost snapshot.
+  const [costProduct] = await tx.select({ costPrice: products.costPrice }).from(products)
+    .where(and(eq(products.companyId, input.companyId), eq(products.id, input.productId))).for("update");
+  if (!costProduct) throw new AppError("NOT_FOUND", "Produk mutasi stok tidak ditemukan.");
 
   await tx
     .insert(stockOnHand)
@@ -119,14 +128,9 @@ export async function applyStockMovement(
     // penerimaan bersamaan di gudang berbeda sama-sama membaca
     // costPrice yang sama dan yang menulis terakhir menimpa blend yang
     // lain (audit GDG-1 catatan A3: benar secara empiris 4/4, tetapi
-    // jendela balapannya nyata). Urutan kunci selalu on-hand → produk,
+    // jendela balapannya nyata). Urutan kunci selalu produk → on-hand,
     // sama di semua pemanggil, jadi tidak ada siklus kunci baru.
-    const [product] = await tx
-      .select({ costPrice: products.costPrice })
-      .from(products)
-      .where(and(eq(products.companyId, input.companyId), eq(products.id, input.productId)))
-      .limit(1)
-      .for("update");
+    const product = costProduct;
     if (product) {
       // products.costPrice is GLOBAL per product, so the moving average must
       // be weighted by the product's stock across ALL warehouses. Using only
@@ -143,7 +147,9 @@ export async function applyStockMovement(
             eq(stockOnHand.productId, input.productId),
           ),
         );
-      const globalAfter = d(globalRow?.total ?? 0);
+      const [transit] = await tx.select({ qty: stockTransitSql(input.companyId, sql`${input.productId}::uuid`, "qty") }).from(products)
+        .where(and(eq(products.companyId, input.companyId), eq(products.id, input.productId))).limit(1);
+      const globalAfter = d(globalRow?.total ?? 0).plus(transit?.qty ?? 0);
       const globalBefore = globalAfter.minus(delta);
       // GDG1-02: rumus tertimbang berlaku untuk SETIAP globalAfter > 0 —
       // termasuk globalBefore NEGATIF. Invariant nilainya: nilai akhir =
@@ -351,6 +357,8 @@ export async function lockStockQty(
   warehouseId: string,
   productId: string,
 ): Promise<ReturnType<typeof d>> {
+  await tx.select({ id: products.id }).from(products)
+    .where(and(eq(products.companyId, companyId), eq(products.id, productId))).for("update");
   await tx
     .insert(stockOnHand)
     .values({ companyId, warehouseId, productId, qty: "0" })
@@ -390,6 +398,8 @@ export async function lockStockQty(
 
 
 export async function recomputeCostFromLedger(tx: Tx, companyId: string, productId: string) {
+  await tx.select({ id: products.id }).from(products)
+    .where(and(eq(products.companyId, companyId), eq(products.id, productId))).for("update");
   const [row] = await tx
     .select({
       value: sql<string>`coalesce(sum(${stockMovements.qty} * ${stockMovements.unitCost}), 0)`,
@@ -402,11 +412,16 @@ export async function recomputeCostFromLedger(tx: Tx, companyId: string, product
         eq(stockMovements.productId, productId),
       ),
     );
-  const qty = d(row?.qty ?? 0);
+  const [transit] = await tx.select({
+    qty: stockTransitSql(companyId, sql`${productId}::uuid`, "qty"),
+    value: stockTransitSql(companyId, sql`${productId}::uuid`, "value"),
+  }).from(products).where(and(eq(products.companyId, companyId), eq(products.id, productId))).limit(1);
+  const qty = d(row?.qty ?? 0).plus(transit?.qty ?? 0);
+  const value = d(row?.value ?? 0).plus(transit?.value ?? 0);
   if (qty.lte(0)) return;
   await tx
     .update(products)
-    .set({ costPrice: toDb(d(row?.value ?? 0).div(qty)), updatedAt: new Date() })
+    .set({ costPrice: toDb(value.div(qty)), updatedAt: new Date() })
     .where(and(eq(products.companyId, companyId), eq(products.id, productId)));
 }
 

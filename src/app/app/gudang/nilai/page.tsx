@@ -116,7 +116,7 @@ export default async function InventoryValuePage({
             {/* UX4-05 (G2): cip ikon dekoratif dinetralkan; Stok
                 menipis PERTAHAN red/green karena warnanya bermakna. */}
             {canSeeCost ? (
-              <StatCard size="compact" label="Nilai persediaan" value={formatIDR(data.valuation.totalValue)} hint="HPP rata-rata" icon={Boxes} />
+              <StatCard size="compact" label="Valuasi stok" value={formatIDR(data.valuation.totalValue)} hint="Qty × HPP rata-rata" icon={Boxes} />
             ) : null}
             <StatCard size="compact" label="Potensi jual" value={formatIDR(data.valuation.totalPotential)} hint="Pada harga jual" />
             <StatCard size="compact" label="Total unit" value={formatQty(data.valuation.totalQty)} hint={`${formatNumber(data.valuation.total)} SKU`} />

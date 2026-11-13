@@ -15,6 +15,7 @@ import {
   type Method,
   type PaymentEntry,
   type ProductOption,
+  type PosTerminalProps,
   type TerminalReservation,
 } from "@/components/pos/terminal-types";
 import { cartStorageKey, useCartPersistence } from "@/components/pos/use-cart-persistence";
@@ -37,29 +38,6 @@ import {
 import { MobilePayBar } from "@/components/pos/terminal/mobile-pay-bar";
 
 export type { TerminalReservation };
-
-type PosTerminalProps = {
-  companyId: string;
-  userId: string;
-  companyName: string;
-  warehouseId: string;
-  warehouses: { id: string; name: string; code: string }[];
-  methods: Method[];
-  creditMethod: { id: string; name: string } | null;
-  debtMethod: { id: string; name: string } | null;
-  initialProducts: ProductOption[];
-  qrisImage: string | null;
-  groups: { id: string; name: string; roundingStep: number; roundingDirection: string; roundCashTotal: boolean }[];
-  sessionOpen: boolean;
-  sessionId?: string | null;
-  heldCount: number;
-  resumeId: string | null;
-  posOfflineEnabled?: boolean;
-  offlineTaxRate?: number;
-  offlineRoundingMode?: string;
-  receivableDefaultTermDays?: number;
-  reservations?: TerminalReservation[];
-};
 
 export function PosTerminal({
   companyId,

@@ -502,9 +502,9 @@ export default async function AccountingDashboard({
               tone={data.queues.payables.overdueCount > 0 ? "amber" : undefined}
             />
             <PositionCell
-              label="Persediaan"
+              label="Persediaan (GL)"
               value={formatIDR(summary.inventoryValue)}
-              hint="Nilai buku persediaan"
+              hint="Saldo buku persediaan"
             />
           </div>
           <div className="border-t border-border px-4 py-2.5">

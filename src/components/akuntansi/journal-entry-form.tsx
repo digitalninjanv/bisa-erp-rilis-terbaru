@@ -320,7 +320,7 @@ export function JournalEntryForm({
         >
           <Scale className="size-3.5" />
           {balancing ? `Samakan selisih ${formatIDR(balancing.amount)}` : "Samakan selisih"}
-          <span className="hidden sm:inline font-mono text-[10px] text-muted-foreground opacity-70 ml-0.5">(Alt+B)</span>
+          <span className="hidden sm:inline font-mono text-[11px] text-muted-foreground opacity-70 ml-0.5">(Alt+B)</span>
         </button>
       </div>
       <div className="flex flex-col items-end gap-1">

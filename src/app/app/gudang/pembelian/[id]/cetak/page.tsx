@@ -1,8 +1,7 @@
+import { getPurchaseOrderSupplierTerms } from "@/server/catalog";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { and, eq } from "drizzle-orm";
 import { withCompanyReadOnly } from "@/db/tenant";
-import { purchaseOrders, suppliers } from "@/db/schema";
 import { getSettings, listWarehouses } from "@/server/catalog";
 import { PURCHASE_ORDER_STATUS_LABELS, getPurchaseOrderPrintData } from "@/server/purchasing";
 import { requirePermissionPage } from "@/lib/session";
@@ -33,12 +32,7 @@ export default async function PurchaseOrderPrintPage({
     if (!printData) return null;
     const [settings, supplierRows, warehouseRows] = await Promise.all([
       getSettings(tx, ctx.company.id),
-      tx
-        .select({ paymentTermDays: suppliers.paymentTermDays })
-        .from(purchaseOrders)
-        .innerJoin(suppliers, eq(purchaseOrders.supplierId, suppliers.id))
-        .where(and(eq(purchaseOrders.companyId, ctx.company.id), eq(purchaseOrders.id, id)))
-        .limit(1),
+      getPurchaseOrderSupplierTerms(tx, ctx.company.id, id),
       listWarehouses(tx, ctx.company.id),
     ]);
     // PO tidak menyimpan gudang tujuan; gudang bawaan perusahaan adalah

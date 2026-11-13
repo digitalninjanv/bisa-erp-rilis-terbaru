@@ -200,9 +200,9 @@ export default async function AppHomePage({
             />
           ) : canSeeGudang && canSeeCost ? (
             <StatCard
-              label="Nilai persediaan"
+              label="Nilai persediaan (GL)"
               value={formatIDR(summary.inventoryValue)}
-              hint="Harga pokok rata-rata"
+              hint="Saldo buku persediaan"
               icon={Boxes}
             />
           ) : null}
@@ -558,7 +558,7 @@ function moduleStats(
   }
   if (key === "gudang") {
     return [
-      { label: "Persediaan", value: formatIDR(summary.inventoryValue) },
+      { label: "Persediaan (GL)", value: formatIDR(summary.inventoryValue) },
       { label: "Stok tipis", value: `${summary.lowStockCount} SKU` },
     ];
   }

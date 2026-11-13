@@ -119,7 +119,7 @@ export function OfflineResolveButtons({
       <ConfirmDialog
         open={confirmingSettle}
         title={`Posting penyelesaian untuk antrean ${clientKey}?`}
-        description="Penjualan diposting pada harga struk offline ke sesi kasir asal. Tindakan ini tercatat di audit."
+        description="Penjualan diposting pada harga struk offline ke sesi kasir asal. Periksa kasir asal, jumlah satuan dasar dan faktor kemasan pada rincian antrean; penyelesaian menyetujui snapshot tersebut. Tindakan ini tercatat di audit."
         confirmLabel="Posting penyelesaian"
         busy={busy}
         onConfirm={() => void post("settle")}

@@ -512,6 +512,13 @@
       "when": 1794457932228,
       "tag": "0072_panoramic_chameleon",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1794536117935,
+      "tag": "0073_cheerful_ghost_rider",
+      "breakpoints": true
     }
   ]
 }

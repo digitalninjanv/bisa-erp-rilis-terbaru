@@ -322,7 +322,7 @@ describe("matriks RBAC — POS", () => {
   it("retur penjualan: hanya pos.return yang lolos gerbang", async () => {
     for (const role of ROLES) {
       asRole(role);
-      const result = await createReturnAction({
+      const result = await createReturnAction({ idempotencyKey: crypto.randomUUID(),
         saleId: FAKE,
         reason: "uji matriks rbac",
         refundMethod: "cash",

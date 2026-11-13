@@ -22,3 +22,5 @@ export { voidReceipt } from "./receipt-void";
 export type { ReceiptSource } from "./receipts";
 export { createTransfer } from "./transfers";
 export { receiveTransfer } from "./transfers-receive";
+
+export { stockTransitSql } from "./transit";

@@ -1,13 +1,22 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { formatIDR, formatQty } from "@/lib/money";
 import { showPostingWarnings } from "@/lib/notify-warnings";
 import { createReturnAction } from "@/server/actions/pos";
+import { newUuid } from "@/lib/uuid";
 import { QtyInput } from "@/components/qty-input";
 import { useActionRunner } from "@/components/use-action-runner";
+
+const REASON_PRESETS = [
+  "Kemasan rusak",
+  "Barang tidak sesuai",
+  "Salah input",
+  "Kedaluwarsa",
+  "Tidak jadi membeli",
+] as const;
 
 type Line = {
   /** S4: baris penjualan asal — retur ditargetkan per baris ini. */
@@ -40,6 +49,8 @@ export function ReturnForm({
   outstandingReceivable?: number;
 }) {
   const router = useRouter();
+  const operationKey = useRef<string | null>(null);
+  const [disposition, setDisposition] = useState<"sellable" | "write_off">("sellable");
   const [qty, setQty] = useState<Record<string, number>>({});
   const [reason, setReason] = useState("");
   const [type, setType] = useState<"return" | "exchange">("return");
@@ -58,6 +69,11 @@ export function ReturnForm({
   // Perkiraan rincian penyelesaian: potong piutang dulu, sisanya refund.
   const estimatedOffset = Math.min(estimate, outstandingReceivable);
   const estimatedRefund = Math.max(0, estimate - estimatedOffset);
+  const selectedCount = selected.length;
+  const reasonValid = reason.trim().length >= 3;
+  const cashBlocked =
+    type === "return" && refundMethod === "cash" && estimatedRefund > 0 && !cashSession;
+  const canSubmit = !busy && selectedCount > 0 && reasonValid && !cashBlocked;
 
   async function submit() {
     if (selected.length === 0) {
@@ -68,7 +84,19 @@ export function ReturnForm({
       toast.error("Alasan retur minimal 3 karakter.");
       return;
     }
+    const pendingKey = `bisa-erp:return:${saleId}`;
+    const fingerprint = JSON.stringify({ qty, reason, type, refundMethod, disposition });
+    try {
+      const stored = JSON.parse(sessionStorage.getItem(pendingKey) ?? "null");
+      operationKey.current = stored?.fingerprint === fingerprint && typeof stored?.key === "string" ? stored.key : newUuid();
+      sessionStorage.setItem(pendingKey, JSON.stringify({ key: operationKey.current, fingerprint }));
+    } catch {
+      operationKey.current ??= newUuid();
+    }
+    const idempotencyKey = operationKey.current ??= newUuid();
     const data = await run(createReturnAction({
+      idempotencyKey,
+      disposition,
       saleId,
       reason,
       refundMethod,
@@ -82,6 +110,8 @@ export function ReturnForm({
       })),
     }));
     if (data === null) return;
+    try { sessionStorage.removeItem(pendingKey); } catch { /* storage may be unavailable */ }
+    operationKey.current = null;
     toast.success(`Retur ${data.number} tersimpan.`);
     showPostingWarnings(data.warnings);
     router.push("/app/pos/retur");
@@ -91,10 +121,46 @@ export function ReturnForm({
   return (
     <div className="rounded-lg border border-border bg-card">
       <div className="border-b border-border px-4 py-3">
-        <h2 className="text-[13px] font-semibold">Form retur · {number}</h2>
-        <p className="mt-0.5 text-[11px] text-muted-foreground">
-          Stok otomatis kembali ke gudang dan jurnal pembalik dibuat.
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-[13px] font-semibold">Form retur · {number}</h2>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              Stok otomatis kembali ke gudang dan jurnal pembalik dibuat.
+            </p>
+          </div>
+          <span className="num rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+            {selectedCount} baris dipilih
+          </span>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2">
+        <div>
+          <p className="text-[12px] font-semibold">1 · Barang yang diretur</p>
+          <p className="text-[10px] text-muted-foreground">
+            Isi qty 0 untuk barang yang tidak diretur. Maksimum mengikuti sisa yang dapat diretur.
+          </p>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() =>
+              setQty(
+                Object.fromEntries(lines.map((line) => [line.saleLineId, line.remaining])),
+              )
+            }
+            className="h-7 rounded-md border border-border px-2 text-[10px] font-medium text-muted-foreground hover:bg-muted"
+          >
+            Pilih semua
+          </button>
+          <button
+            type="button"
+            onClick={() => setQty({})}
+            className="h-7 rounded-md px-2 text-[10px] font-medium text-muted-foreground hover:bg-muted"
+          >
+            Kosongkan
+          </button>
+        </div>
       </div>
 
       <div className="divide-y divide-border/70">
@@ -161,6 +227,22 @@ export function ReturnForm({
             — penjualan yang belum lunas tidak mengeluarkan refund melebihi yang sudah diterima.
           </p>
         ) : null}
+        <label className="block space-y-1">
+          <span className="text-[12px] font-medium">Kondisi dan penanganan barang</span>
+          <select aria-label="Kondisi dan penanganan barang" value={disposition}
+            onChange={(event) => setDisposition(event.target.value as typeof disposition)}
+            className="h-9 w-full rounded-md border border-input bg-background px-2 text-[12px]">
+            <option value="sellable">Layak jual — kembalikan ke stok</option>
+            <option value="write_off">Rusak / kedaluwarsa — tidak masuk stok, catat beban</option>
+          </select>
+          <p className="text-[11px] text-muted-foreground">Berlaku untuk seluruh barang pada retur ini. Pisahkan retur jika kondisi barang berbeda.</p>
+        </label>
+        <div className="border-t border-border pt-3">
+          <p className="text-[12px] font-semibold">3 · Penyelesaian</p>
+          <p className="mt-0.5 text-[10px] text-muted-foreground">
+            Pilih jenis retur dan tujuan pengembalian dana.
+          </p>
+        </div>
         <div className="grid gap-2 sm:grid-cols-2">
           <label className="space-y-1">
             <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Jenis</span>
@@ -169,7 +251,7 @@ export function ReturnForm({
               onChange={(event) => {
                 const next = event.target.value as "return" | "exchange";
                 setType(next);
-                if (next === "exchange") setRefundMethod("exchange");
+                setRefundMethod(next === "exchange" ? "exchange" : "cash");
               }}
               className="h-9 w-full rounded-md border border-input bg-background px-2 text-[12px]"
             >
@@ -182,12 +264,18 @@ export function ReturnForm({
             <select
               value={refundMethod}
               onChange={(event) => setRefundMethod(event.target.value as typeof refundMethod)}
-              className="h-9 w-full rounded-md border border-input bg-background px-2 text-[12px]"
+              disabled={type === "exchange"}
+              className="h-9 w-full rounded-md border border-input bg-background px-2 text-[12px] disabled:opacity-60"
             >
-              <option value="cash">Tunai</option>
-              <option value="transfer">Transfer bank</option>
-              <option value="store_credit">Kredit toko (kredit pelanggan)</option>
-              <option value="exchange">Tukar barang (kredit pelanggan)</option>
+              {type === "exchange" ? (
+                <option value="exchange">Tukar barang (kredit pelanggan)</option>
+              ) : (
+                <>
+                  <option value="cash">Tunai</option>
+                  <option value="transfer">Transfer bank</option>
+                  <option value="store_credit">Kredit toko (kredit pelanggan)</option>
+                </>
+              )}
             </select>
           </label>
         </div>
@@ -198,7 +286,7 @@ export function ReturnForm({
               {cashSession.openedAtLabel}).
             </p>
           ) : (
-            <p className="text-[11px] font-medium text-red-600">
+            <p className="text-[11px] font-medium text-destructive">
               Belum ada sesi kasir terbuka — buka sesi terlebih dahulu, refund tunai tidak dapat
               diproses tanpa sesi.
             </p>
@@ -210,21 +298,44 @@ export function ReturnForm({
             kasir tidak diperlukan.
           </p>
         ) : null}
-        <label className="block space-y-1">
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Alasan</span>
+        <div className="border-t border-border pt-3">
+          <p className="text-[12px] font-semibold">2 · Alasan retur</p>
+          <p className="mt-0.5 text-[10px] text-muted-foreground">
+            Pilih alasan umum atau tulis detailnya. Alasan wajib diisi minimal 3 karakter.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {REASON_PRESETS.map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                onClick={() => setReason(preset)}
+                aria-pressed={reason === preset}
+                className={
+                  reason === preset
+                    ? "h-7 rounded-full bg-foreground px-2.5 text-[10px] font-medium text-background"
+                    : "h-7 rounded-full border border-border bg-card px-2.5 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"
+                }
+              >
+                {preset}
+              </button>
+            ))}
+          </div>
           <textarea
             value={reason}
             onChange={(event) => setReason(event.target.value)}
             rows={2}
             placeholder="Contoh: kemasan rusak, salah input, barang tidak sesuai"
-            className="w-full rounded-md border border-input bg-background px-2.5 py-2 text-[12px] outline-none focus:border-ring"
+            aria-label="Alasan retur"
+            className="mt-2 w-full rounded-md border border-input bg-background px-2.5 py-2 text-[12px] outline-none focus:border-ring"
           />
-        </label>
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-2.5">
+        </div>
+        <div className="sticky bottom-0 z-10 -mx-4 -mb-4 flex flex-wrap items-center justify-between gap-2 border-t border-border bg-card px-4 py-3">
           <div>
-            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Estimasi nilai retur</p>
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              Estimasi nilai retur · {selectedCount} baris
+            </p>
             <p className="num text-[15px] font-semibold">{formatIDR(estimate)}</p>
-            {outstandingReceivable > 0 && selected.length > 0 ? (
+            {outstandingReceivable > 0 && selectedCount > 0 ? (
               <p className="num text-[11px] text-muted-foreground">
                 Potong piutang {formatIDR(estimatedOffset)} · Refund {formatIDR(estimatedRefund)}
               </p>
@@ -232,9 +343,9 @@ export function ReturnForm({
           </div>
           <button
             type="button"
-            disabled={busy}
+            disabled={!canSubmit}
             onClick={submit}
-            className="h-9 rounded-md bg-primary px-4 text-[12px] font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            className="h-9 rounded-md bg-primary px-4 text-[12px] font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {busy ? "Memproses…" : "Simpan retur"}
           </button>

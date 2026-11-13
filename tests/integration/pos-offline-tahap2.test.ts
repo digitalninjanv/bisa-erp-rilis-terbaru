@@ -390,7 +390,7 @@ describe("POS3-02 identitas asal terbawa", () => {
   it("diskon manual 50% dari manajer (berhak) lolos dan tercatat sebagai penjualan manajer", async () => {
     const pricey = await makeProduct("100000", "60000", 5);
     const sessionManager = await openSession(MANAGER);
-    setActor(CASHIER, CASHIER_PERMS); // kasir yang menyinkronkan antrean manajer
+    setActor(MANAGER, MANAGER_PERMS); // identitas asal harus dimiliki penyinkron atau mendapat otorisasi supervisor
     const res = await syncOfflineSalesAction({
       items: [
         {
@@ -723,6 +723,7 @@ describe("Peninjauan: konflik harga & kebersihan daftar (POS3-04/05)", () => {
         processOfflineSaleItem(tx, {
           companyId: ORG,
           userId: MANAGER,
+          allowCrossCashier: true,
           item,
           originEntitlements: { [CASHIER]: { canSell: true, canDiscount: false } },
         }),

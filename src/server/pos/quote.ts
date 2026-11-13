@@ -151,6 +151,8 @@ export type QuoteContext = {
   // permission. The action layer resolves it from the session; direct
   // domain callers default to "not permitted".
   canDiscount?: boolean;
+  /** Checkout locks the cost snapshot; read-only quotes never lock. */
+  lockCosts?: boolean;
   // FIX-POS Tahap 2 (POS3-04): mode harga beku — harga satuan diambil
   // dari snapshot baris (line.unitPrice), BUKAN harga master, dan
   // aturan harga kelompok tidak diterapkan ulang di atasnya. HANYA
@@ -390,7 +392,7 @@ async function loadQuoteContext(tx: Tx, ctx: QuoteContext): Promise<LoadedQuoteC
       });
     }
   }
-  const productRows = await tx
+  const productQuery = tx
     .select({
       id: products.id,
       sku: products.sku,
@@ -403,7 +405,8 @@ async function loadQuoteContext(tx: Tx, ctx: QuoteContext): Promise<LoadedQuoteC
       trackSerial: products.trackSerial,
     })
     .from(products)
-    .where(and(eq(products.companyId, ctx.companyId), inArray(products.id, ids)));
+    .where(and(eq(products.companyId, ctx.companyId), inArray(products.id, ids))).orderBy(products.id);
+  const productRows = await (ctx.lockCosts ? productQuery.for("update") : productQuery);
 
   const productMap = new Map(productRows.map((row) => [row.id, row]));
   const stock = await getStock(tx, ctx.companyId, ctx.warehouseId, ids);
@@ -551,6 +554,9 @@ async function resolveQuotePackagings(
           "VALIDATION",
           `Kemasan "${row.name}" bukan kemasan produk ${productName(line.productId)}.`,
         );
+      }
+      if (!ctx.frozenPrices && !d(line.isiSnapshot).eq(d(row.isi))) {
+        throw new AppError("VALIDATION", `Faktor kemasan ${row.name} berbeda dari master. Transaksi ditahan; supervisor harus memeriksa faktor dan struk asal sebelum penyelesaian.`);
       }
       result[index] = {
         id: row.id,

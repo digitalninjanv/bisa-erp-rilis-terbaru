@@ -176,9 +176,9 @@ export async function createOpname(
     components: CountBreakdownComponent[] | null;
   }[] = [];
 
-  for (const [lineIndex, line] of input.lines.entries()) {
-    const [product] = await tx
+  const opnameProducts = await tx
       .select({
+        id: products.id,
         name: products.name,
         sku: products.sku,
         costPrice: products.costPrice,
@@ -186,8 +186,12 @@ export async function createOpname(
       })
       .from(products)
       .leftJoin(units, eq(products.unitId, units.id))
-      .where(and(eq(products.companyId, input.companyId), eq(products.id, line.productId)))
-      .limit(1);
+      .where(and(eq(products.companyId, input.companyId), inArray(products.id, opnameProductIds)))
+      ;
+
+  const productById = new Map(opnameProducts.map((product) => [product.id, product]));
+  for (const [lineIndex, line] of input.lines.entries()) {
+    const product = productById.get(line.productId);
     if (!product) throw new AppError("VALIDATION", "Produk tidak ditemukan.");
     const systemQty = lockedStock.get(line.productId) ?? d(0);
 

@@ -1,3 +1,4 @@
+import { stockTransitSql } from "@/server/inventory";
 // A-24 Tahap T4B: bagian dari pemecahan src/server/reports.ts mengikuti jahitan
 // domain yang sudah ada di dalamnya. Perilaku tidak berubah;
 // jalur impor publik tetap lewat src/server/reports.ts.
@@ -359,7 +360,7 @@ export async function getControlReconciliation(
     .select({
       productId: stockMovements.productId,
       totalQty: sql<string>`coalesce(sum(${stockMovements.qty}), 0)`,
-      totalValue: sql<string>`coalesce(sum(${stockMovements.qty} * ${stockMovements.unitCost}), 0)`,
+      totalValue: sql<string>`coalesce(sum(${stockMovements.qty} * ${stockMovements.unitCost}), 0) + ${stockTransitSql(companyId, stockMovements.productId, "value", asOf)}`,
     })
     .from(stockMovements)
     .where(and(eq(stockMovements.companyId, companyId), lte(stockMovements.date, asOf)))

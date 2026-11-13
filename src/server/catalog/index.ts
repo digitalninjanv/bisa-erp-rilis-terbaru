@@ -13,3 +13,5 @@ export * from "./stock-documents";
 export * from "./document-details";
 export * from "./group-prices";
 export * from "./settings-reads";
+
+export * from "./receipt-links";

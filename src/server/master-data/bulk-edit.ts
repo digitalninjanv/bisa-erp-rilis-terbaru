@@ -13,7 +13,7 @@
 
 import { and, asc, eq, inArray } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { categories, productPackagings, products, units } from "@/db/schema";
+import { categories, productPackagings, products, stockMovements, units } from "@/db/schema";
 import { AppError } from "@/lib/errors";
 import { d } from "@/lib/money";
 import Decimal from "decimal.js";
@@ -174,9 +174,20 @@ async function evaluateBulkOperation(
     throw new AppError("VALIDATION", "Stok minimum tidak boleh negatif.");
   }
 
+  const costManagedIds = new Set<string>();
+  if (operation.kind === "price" && operation.target === "costPrice" && rows.length > 0) {
+    const moved = await tx.selectDistinct({ productId: stockMovements.productId })
+      .from(stockMovements)
+      .where(and(eq(stockMovements.companyId, companyId), inArray(stockMovements.productId, rows.map((row) => row.id))));
+    for (const row of moved) costManagedIds.add(row.productId);
+  }
+
   return rows.map((row): EvaluatedRow => {
     switch (operation.kind) {
       case "price": {
+        if (operation.target === "costPrice" && costManagedIds.has(row.id)) {
+          return { row, problem: "Harga pokok dikelola AVCO karena produk sudah memiliki mutasi. Gunakan dokumen persediaan untuk koreksi nilai." };
+        }
         const before = operation.target === "salePrice" ? row.salePrice : row.costPrice;
         const after = adjustedPrice(before, operation.mode, operation.value);
         if (after.lt(0)) {
@@ -345,6 +356,11 @@ export async function applyBulkEditProducts(
   },
 ): Promise<{ applied: { id: string; sku: string }[]; skipped: BulkRowProblem[]; unchangedCount: number }> {
   const rows = await resolveBulkProducts(tx, input.companyId, input.warehouseId, input.selection);
+  if (rows.length > 0) {
+    await tx.select({ id: products.id }).from(products)
+      .where(and(eq(products.companyId, input.companyId), inArray(products.id, rows.map((row) => row.id))))
+      .orderBy(asc(products.id)).for("update");
+  }
   const evaluated = await evaluateBulkOperation(tx, input.companyId, rows, input.operation);
   const applied: { id: string; sku: string }[] = [];
   const skipped: BulkRowProblem[] = [];

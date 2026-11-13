@@ -250,6 +250,13 @@ export async function checkoutAction(input: z.input<typeof checkoutSchema>) {
     const ctx = await requirePermissionInModule("pos.sell", "pos");
     const data = parseInput(checkoutSchema, input);
     const result = await withCompany(ctx.company.id, async (tx) => {
+      const findReplay = async () => {
+        const [row] = await tx.select({ id: sales.id, number: sales.number, total: sales.total, changeTotal: sales.changeTotal })
+          .from(sales).where(and(eq(sales.companyId, ctx.company.id), eq(sales.idempotencyKey, data.idempotencyKey))).limit(1);
+        return row ? { id: row.id, number: row.number, total: Number(row.total), change: Number(row.changeTotal) } : null;
+      };
+      const replayed = await findReplay();
+      if (replayed) return replayed;
       if (data.heldSaleId) {
         // T3R-3: klaim tahanan secara atomik SEBELUM checkout, di
         // transaksi yang sama. Baris tahanan dikunci FOR UPDATE:
@@ -265,6 +272,8 @@ export async function checkoutAction(input: z.input<typeof checkoutSchema>) {
           .limit(1)
           .for("update");
         if (!held || held.status !== "held") {
+          const winner = await findReplay();
+          if (winner) return winner;
           throw new AppError(
             "VALIDATION",
             "Pesanan tahanan sudah diselesaikan atau tidak tersedia.",
@@ -437,6 +446,8 @@ export async function voidSaleAction(input: { saleId: string; reason: string }) 
 
 export async function createReturnAction(input: {
   saleId: string;
+  idempotencyKey: string;
+  disposition?: "sellable" | "write_off";
   reason: string;
   refundMethod: "cash" | "transfer" | "store_credit" | "exchange";
   type: "return" | "exchange";
@@ -447,6 +458,8 @@ export async function createReturnAction(input: {
     const data = parseInput(
       z.object({
         saleId: z.string().uuid(),
+        idempotencyKey: z.string().uuid(),
+        disposition: z.enum(["sellable", "write_off"]).default("sellable"),
         reason: z.string().min(3).max(300),
         refundMethod: z.enum(["cash", "transfer", "store_credit", "exchange"]),
         type: z.enum(["return", "exchange"]),
@@ -475,6 +488,8 @@ export async function createReturnAction(input: {
         companyId: ctx.company.id,
         userId: ctx.user.id,
         saleId: data.saleId,
+        idempotencyKey: data.idempotencyKey,
+        disposition: data.disposition,
         date: todayISO(),
         reason: data.reason,
         refundMethod: data.refundMethod,

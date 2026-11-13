@@ -21,6 +21,8 @@ export type CreateSaleReturnInput = {
   companyId: string;
   userId: string;
   saleId: string;
+  idempotencyKey?: string;
+  disposition?: "sellable" | "write_off";
   date: string;
   reason: string;
   refundMethod: "cash" | "transfer" | "store_credit" | "exchange";

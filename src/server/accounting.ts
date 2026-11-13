@@ -11,6 +11,7 @@ import {
   paymentMethods,
 } from "@/db/schema";
 import { AppError } from "@/lib/errors";
+import { canonicalJournalAmounts } from "@/lib/akuntansi/journal-amounts";
 import { CHART_TEMPLATE } from "@/lib/akuntansi/chart-template";
 import { Decimal, d, formatIDR, sum, toDb, type MoneyInput } from "@/lib/money";
 import { nextDocumentNumber } from "@/server/sequences";
@@ -312,33 +313,7 @@ export async function postJournal(
     if (existing) return { ...existing, warnings: [] };
   }
 
-  const parsedLines = input.lines.map((line) => ({
-    ...line,
-    debitValue: d(line.debit),
-    creditValue: d(line.credit),
-  }));
-
-  // FIX-P1 Tahap 3 (AK6-01/AK1-02): baris jurnal wajib satu sisi dan
-  // non-negatif. Baris negatif atau dua-sisi tetap "seimbang" secara
-  // aritmetika (Σdebit = Σkredit), sehingga lolos uji keseimbangan dan
-  // trigger DB — tetapi mendistorsi mutasi per akun di semua laporan.
-  // Koreksi nilai berjalan lewat jurnal pembalik, bukan baris negatif.
-  for (const line of parsedLines) {
-    if (line.debitValue.lt(0) || line.creditValue.lt(0)) {
-      throw new AppError(
-        "VALIDATION",
-        "Baris jurnal tidak boleh bernilai negatif. Gunakan jurnal pembalik untuk mengoreksi jurnal yang sudah terposting.",
-      );
-    }
-    if (line.debitValue.gt(0) && line.creditValue.gt(0)) {
-      throw new AppError(
-        "VALIDATION",
-        "Setiap baris jurnal hanya boleh terisi di satu sisi (debit atau kredit), tidak boleh keduanya sekaligus.",
-      );
-    }
-  }
-
-  const lines = parsedLines.filter((line) => line.debitValue.gt(0) || line.creditValue.gt(0));
+  const lines = canonicalJournalAmounts(input.lines);
 
   if (lines.length < 2) {
     throw new AppError("VALIDATION", "Jurnal minimal memiliki dua baris.");

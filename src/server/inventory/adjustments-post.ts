@@ -17,7 +17,7 @@ import { writeAudit } from "@/server/audit";
 import { addToBatch, isBatchTracked } from "@/server/batches";
 import { isSerialTracked, relocateSerialsByOutReference } from "@/server/serials";
 import type { StockDocumentLineRow, StockDocumentRow } from "./documents";
-import { applyDocumentMovement, applyStockMovement } from "./movements";
+import { applyDocumentMovement, applyStockMovement, recomputeCostFromLedger } from "./movements";
 
 /**
  * Apply a stored adjustment document: replay its lines as stock
@@ -79,6 +79,10 @@ export async function postStockAdjustment(
   const map = await getAccountMap(tx, input.companyId);
 
   const { inValue, outValue } = await applyAdjustmentLineMovements(tx, input, doc, warehouseId, lines);
+
+  for (const productId of [...new Set(lines.map((line) => line.productId))].sort()) {
+    await recomputeCostFromLedger(tx, input.companyId, productId);
+  }
 
   const totalValue = await postAdjustmentJournal(tx, input, doc, map, inValue, outValue);
 

@@ -53,13 +53,23 @@ export async function autoMatch(
   const bookLines = await loadBookLines(tx, input.companyId, input.accountId);
   const claimed = await claimedJournalLineIds(tx, input.companyId, input.accountId);
 
+  const amountKey = (line: { debit: string; credit: string }) =>
+    `${d(line.debit).toFixed(4)}|${d(line.credit).toFixed(4)}`;
+  const bookByAmount = new Map<string, typeof bookLines>();
+  for (const book of bookLines) {
+    const key = amountKey(book);
+    const bucket = bookByAmount.get(key) ?? [];
+    bucket.push(book);
+    bookByAmount.set(key, bucket);
+  }
+
   let matchedCount = 0;
   let ambiguousCount = 0;
   let unmatchedCount = 0;
 
   for (const statement of statements) {
     const statementTime = Date.parse(statement.date);
-    const candidates = bookLines.filter((book) => {
+    const candidates = (bookByAmount.get(amountKey(statement)) ?? []).filter((book) => {
       if (claimed.has(book.id)) return false;
       if (!amountsAlign(statement, book)) return false;
       const diffDays = Math.abs(Date.parse(book.date) - statementTime) / 86_400_000;

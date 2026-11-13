@@ -83,7 +83,12 @@ function measureOverflow() {
 async function measure(page: Page, path: string) {
   await page.goto(path);
   await page.waitForTimeout(700);
-  return page.evaluate(measureNeatness);
+  let result: ReturnType<typeof measureNeatness> | undefined;
+  await expect(async () => {
+    await expect(page.locator("main h1").first()).toBeVisible();
+    result = await page.evaluate(measureNeatness);
+  }).toPass({ timeout: 15000 });
+  return result!;
 }
 
 test.describe("Penjaga kerapian UI (Gabungan G5)", () => {

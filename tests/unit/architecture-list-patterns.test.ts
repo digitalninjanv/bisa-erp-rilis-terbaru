@@ -41,7 +41,7 @@ const LIST_PAGE_SIZE_PAGES = [
   "app/app/gudang/pemasok/page.tsx",
   "app/app/gudang/reservasi/page.tsx",
   "app/app/gudang/purchase-request/page.tsx",
-  "app/app/akuntansi/(akuntansi)/jurnal/page.tsx",
+  "app/app/akuntansi/(akuntansi)/jurnal/riwayat/page.tsx",
   "app/app/akuntansi/(akuntansi)/rekonsiliasi/page.tsx",
 ];
 
@@ -74,7 +74,7 @@ const COMPACT_DENSITY_SURFACES = [
   "app/app/gudang/pergerakan/page.tsx",
   "app/app/gudang/pemasok/page.tsx",
   "app/app/akuntansi/(akuntansi)/akun/page.tsx",
-  "app/app/akuntansi/(akuntansi)/jurnal/page.tsx",
+  "app/app/akuntansi/(akuntansi)/jurnal/riwayat/page.tsx",
   "app/app/akuntansi/(hr)/payroll/page.tsx",
   "components/akuntansi/period-manager.tsx",
 ];

@@ -74,3 +74,6 @@ dist-release/
 *.key
 *.key.password
 pos-native-keys/
+
+# Disposable verification build
+/.next-remediation/
