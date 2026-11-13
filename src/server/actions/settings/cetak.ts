@@ -18,12 +18,14 @@ import { guard } from "@/lib/errors";
 import { parseInput } from "@/lib/action-validation";
 import { printLogoDataUrlSchema, printLogoUrlSchema } from "@/lib/print-logo";
 import {
+  sanitizePrintDocumentOverrides,
   sanitizePrintSignatureLabels,
+  type PrintDocumentOverrides,
   type PrintSignatureLabels,
 } from "@/components/print/types";
 
 const printSettingsSchema = z.object({
-  printTemplate: z.enum(["modern", "minimal", "classic"]),
+  printTemplate: z.enum(["modern", "minimal", "classic", "corporate", "compact", "elegant"]),
   printLogoUrl: printLogoUrlSchema.optional().nullable(),
   printAccentColor: z
     .string()
@@ -49,6 +51,8 @@ const printSettingsSchema = z.object({
     .record(z.string(), z.array(z.string().max(60)).max(4))
     .optional()
     .nullable(),
+  // Per-document design overrides; disanitasi sebelum disimpan.
+  printDocumentSettings: z.record(z.string(), z.unknown()).optional().nullable(),
 });
 
 /**
@@ -62,6 +66,9 @@ export async function savePrintSettingsAction(input: z.input<typeof printSetting
     const data = parseInput(printSettingsSchema, input);
     const signatureLabels: PrintSignatureLabels = sanitizePrintSignatureLabels(
       data.printSignatureLabels,
+    );
+    const documentSettings: PrintDocumentOverrides = sanitizePrintDocumentOverrides(
+      data.printDocumentSettings,
     );
     await withCompany(ctx.company.id, async (tx) => {
       await tx
@@ -88,6 +95,12 @@ export async function savePrintSettingsAction(input: z.input<typeof printSetting
                   Object.keys(signatureLabels).length > 0 ? signatureLabels : null,
               }
             : {}),
+          ...(data.printDocumentSettings !== undefined
+            ? {
+                printDocumentSettings:
+                  Object.keys(documentSettings).length > 0 ? documentSettings : null,
+              }
+            : {}),
           updatedAt: new Date(),
         })
         .where(eq(companySettings.companyId, ctx.company.id));
@@ -110,6 +123,7 @@ export async function savePrintSettingsAction(input: z.input<typeof printSetting
           printShowCustomer: data.printShowCustomer,
           printShowSession: data.printShowSession,
           printShowBranding: data.printShowBranding,
+          printDocumentSettings: documentSettings,
         },
       });
     });

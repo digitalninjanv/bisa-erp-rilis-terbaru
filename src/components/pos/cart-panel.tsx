@@ -82,7 +82,7 @@ export function CartPanel(props: {
               <ShoppingCart className="size-4 text-muted-foreground" />
               <h2 className="text-[13px] font-semibold">Keranjang</h2>
               <span className="num rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                {cart.length}
+                {cart.length} baris
               </span>
             </div>
             <div className="flex items-center gap-1">
@@ -108,20 +108,22 @@ export function CartPanel(props: {
           </div>
 
           <div className="border-b border-border px-3 py-2">
-            <label className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-              <UserRound className="size-3" /> Kelompok harga
-            </label>
-            <select
-              value={groupId}
-              onChange={(event) => setGroupId(event.target.value)}
-              className="h-9 w-full rounded-md border border-input bg-background px-2 text-[12px]"
-              aria-label="Kelompok harga"
-            >
-              <option value="">Harga normal (tanpa kelompok)</option>
-              {groups.map((group) => (
-                <option key={group.id} value={group.id}>{group.name}</option>
-              ))}
-            </select>
+            <div className="flex items-center gap-2">
+              <label className="flex shrink-0 items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <UserRound className="size-3" /> Harga
+              </label>
+              <select
+                value={groupId}
+                onChange={(event) => setGroupId(event.target.value)}
+                className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-[12px]"
+                aria-label="Kelompok harga"
+              >
+                <option value="">Harga normal (tanpa kelompok)</option>
+                {groups.map((group) => (
+                  <option key={group.id} value={group.id}>{group.name}</option>
+                ))}
+              </select>
+            </div>
             {selectedGroup ? (
               <p className="mt-1 text-[10px] text-tone-teal">
                 Harga kelompok aktif · pembulatan {selectedGroup.roundingStep.toLocaleString("id-ID")}
@@ -135,7 +137,7 @@ export function CartPanel(props: {
             ) : null}
           </div>
 
-          <div className="max-h-[340px] min-h-[120px] overflow-y-auto">
+          <div className="max-h-[42vh] min-h-[120px] overflow-y-auto">
             {cart.length === 0 ? (
               <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
                 <ShoppingCart className="size-6 text-muted-foreground/60" />
@@ -172,8 +174,8 @@ export function CartPanel(props: {
                     <li key={key} className="px-3 py-2">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="truncate text-[12px] font-medium">{line?.name ?? cached?.name ?? "Produk"}</p>
-                          <p className="num text-[10px] text-muted-foreground">
+                          <p className="truncate text-[13px] font-medium">{line?.name ?? cached?.name ?? "Produk"}</p>
+                          <p className="num text-[11px] text-muted-foreground">
                             {line?.sku ?? cached?.sku} · {formatIDR(price)}
                             {pack ? <span> / {pack.name}</span> : null}
                             {line && line.unitPrice > line.groupUnitPrice ? (
@@ -248,7 +250,7 @@ export function CartPanel(props: {
                             onChange={(value) => setQty(key, value === "" ? 0 : Number(value))}
                             aria-label={`Jumlah ${unitName}`}
                             wrapperClassName="w-10 shrink-0"
-                            className="w-full rounded-none border-x border-y-0 border-border bg-transparent px-0 text-center text-[12px] focus:border-border"
+                            className="w-full rounded-none border-x border-y-0 border-border bg-transparent px-0 text-center text-[13px] focus:border-border"
                           />
                           <button
                             type="button"
@@ -260,7 +262,7 @@ export function CartPanel(props: {
                             <Plus className="size-4" />
                           </button>
                         </div>
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-end gap-2">
                           <button
                             type="button"
                             onClick={() => setDiscountFor(discountFor === key ? null : key)}
@@ -271,12 +273,17 @@ export function CartPanel(props: {
                                 : "text-muted-foreground hover:bg-muted",
                             )}
                           >
-                            {line && line.discountAmount > 0 ? `−${formatIDR(line.discountAmount)}` : "Diskon"}
+                            {line && line.discountAmount > 0 ? `Diskon −${formatIDR(line.discountAmount)}` : "Diskon"}
                           </button>
-                          <span className="num text-[12px] font-semibold">
-                            {/* lineTotal sudah termasuk pajak (POS-RCPT-01) */}
-                            {formatIDR(line ? line.lineTotal : price * item.qty)}
-                          </span>
+                          <div className="text-right">
+                            <span className="block text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+                              Total
+                            </span>
+                            <span className="num text-[14px] font-semibold leading-tight">
+                              {/* lineTotal sudah termasuk pajak (POS-RCPT-01) */}
+                              {formatIDR(line ? line.lineTotal : price * item.qty)}
+                            </span>
+                          </div>
                         </div>
                       </div>
 
@@ -388,8 +395,8 @@ export function CartPanel(props: {
               />
             ) : null}
             <div className="flex items-center justify-between border-t border-border pt-2">
-              <span className="text-[12px] font-semibold">Total</span>
-              <span className="num text-lg font-semibold">{formatIDR(total)}</span>
+              <span className="text-[13px] font-semibold">Total</span>
+              <span className="num text-xl font-semibold">{formatIDR(total)}</span>
             </div>
             {/* POS2-01/22: status perhitungan adalah informasi
                 operasional — 11px, dan tampil juga saat quote basi

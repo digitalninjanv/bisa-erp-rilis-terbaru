@@ -50,7 +50,7 @@ export default async function SalesInvoicePage({
 
   if (!data) notFound();
   const { sale, lines, payments, settings, customer, cashier } = data;
-  const printSettings = toPrintSettings(settings);
+  const printSettings = toPrintSettings(settings, "faktur");
   const qrDataUrl = printSettings.showQr ? await documentQrDataUrl(sale.number) : null;
   const taxAmount = d(sale.taxTotal);
   const showTax = printSettings.showTax && taxAmount.gt(0);
@@ -108,6 +108,9 @@ export default async function SalesInvoicePage({
             <div>
               <span className="block text-black/60">Ditagihkan kepada</span>
               <span className="font-medium">{customer?.name ?? "Pelanggan umum"}</span>
+              <span className="mt-1 inline-block border border-black/40 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+                {remaining.gt(0) ? "Belum lunas" : "Lunas"}
+              </span>
               {customer?.address ? (
                 <span className="block whitespace-pre-line">{customer.address}</span>
               ) : null}
@@ -146,6 +149,9 @@ export default async function SalesInvoicePage({
                 <tr key={line.id} className="border-b border-black/15 align-top">
                   <td className="py-1.5 pr-2">
                     <p className="font-medium">{line.productName}</p>
+                    {line.productSku ? (
+                      <p className="num text-[10px] text-black/50">{line.productSku}</p>
+                    ) : null}
                     {/* S4: baris berkemasan pada faktur A4 — qty &
                         harga satuan dalam bentuk masukan, padanan
                         satuan dasar sebagai anotasi. */}
@@ -230,6 +236,18 @@ export default async function SalesInvoicePage({
               )}
             </div>
           </div>
+
+          {remaining.gt(0) ? (
+            <div className="mt-3 break-inside-avoid rounded border border-black/30 p-3 text-[11px] leading-5">
+              <p className="font-semibold uppercase tracking-wide">Cara pembayaran</p>
+              <p>
+                Mohon lakukan pembayaran{sale.dueDate ? ` sebelum ${formatDate(sale.dueDate)}` : ""}.
+                Cantumkan nomor faktur <span className="num font-medium">{sale.number}</span> pada
+                bukti transfer.
+              </p>
+              {settings?.phone ? <p>Konfirmasi pembayaran: {settings.phone}</p> : null}
+            </div>
+          ) : null}
 
           {sale.voidReason ? (
             <p className="mt-3 border-y-2 border-double border-black py-1.5 text-center text-[13px] font-bold uppercase tracking-widest text-black">

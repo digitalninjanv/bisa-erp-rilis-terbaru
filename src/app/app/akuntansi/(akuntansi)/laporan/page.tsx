@@ -26,6 +26,7 @@ import { visibleEquityRows, visibleTrialRows } from "@/lib/report-visibility";
 import { BalanceSheet, CashFlow, IncomeStatement } from "./report-statements";
 
 import { getCompanySettingsRow } from "@/server/settings";
+import { AutoFilterForm } from "@/components/blocks/auto-filter-form";
 export const metadata = { title: "Laporan keuangan" };
 export const dynamic = "force-dynamic";
 
@@ -228,7 +229,7 @@ export default async function ReportsPage({
           <div className="flex flex-wrap items-center gap-2">
             {/* A-28 UI-3 (POLA-03): filter tanggal = DateField bersama
                 (dd/mm/yyyy), bukan input native berformat AS. */}
-            <form action="/app/akuntansi/laporan" className="flex flex-wrap items-center gap-1.5">
+            <AutoFilterForm action="/app/akuntansi/laporan" className="flex flex-wrap items-center gap-1.5">
               <input type="hidden" name="tab" value={tab} />
               {showZero ? <input type="hidden" name="nol" value="1" /> : null}
               {canCompare ? (
@@ -253,7 +254,7 @@ export default async function ReportsPage({
               >
                 Terapkan
               </button>
-            </form>
+            </AutoFilterForm>
             <Link
               href={`/app/akuntansi/laporan?tab=${tab}&from=${from}&to=${to}${showZero ? "" : "&nol=1"}${compareSuffix}`}
               aria-pressed={showZero}

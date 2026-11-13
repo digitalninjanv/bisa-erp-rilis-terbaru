@@ -16,6 +16,7 @@ import {
   ThrDraftVoidButton,
 } from "@/components/akuntansi/hr-panel";
 import { listEmployeeOptions, listOvertimeRequests, listThrDrafts } from "@/server/hr";
+import { AutoFilterForm } from "@/components/blocks/auto-filter-form";
 
 export const metadata = { title: "Lembur & THR" };
 export const dynamic = "force-dynamic";
@@ -75,14 +76,14 @@ export default async function OvertimeThrPage({
         title="Lembur & THR"
         description="Pengajuan lembur dengan persetujuan atasan, dan perhitungan THR menjadi draf komponen payroll — draf tidak memposting jurnal apa pun."
         actions={
-          <form className="flex items-center gap-1.5" action="/app/akuntansi/hr/lembur">
+          <AutoFilterForm className="flex items-center gap-1.5" action="/app/akuntansi/hr/lembur">
             <label className="text-[12px] text-muted-foreground" htmlFor="period">Periode</label>
             <input id="period" type="month" name="period" defaultValue={period} className="h-9 rounded-md border border-input bg-background px-2 text-[12px]" />
             {params.status ? <input type="hidden" name="status" value={params.status} /> : null}
             <button type="submit" className="h-8 rounded-md border border-border bg-card px-2.5 text-[12px] font-medium transition-colors hover:bg-muted">
               Tampilkan
             </button>
-          </form>
+          </AutoFilterForm>
         }
       />
 

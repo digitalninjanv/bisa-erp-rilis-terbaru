@@ -2,6 +2,7 @@ import Link from "next/link";
 import { CheckCircle2, CircleAlert, MinusCircle } from "lucide-react";
 import { fieldClass, labelClass } from "@/components/akuntansi/field-classes";
 import type { MonthEndChecklistStep } from "@/server/reports";
+import { AutoFilterForm } from "@/components/blocks/auto-filter-form";
 
 const MONTHS = [
   "Januari", "Februari", "Maret", "April", "Mei", "Juni",
@@ -42,7 +43,7 @@ export function MonthEndChecklist({
               : `${pendingCount} langkah belum selesai. Kerjakan dari atas ke bawah, lalu tutup periode di daftar periode di bawah.`}
           </p>
         </div>
-        <form method="get" action="/app/akuntansi/periode" className="flex items-end gap-2">
+        <AutoFilterForm action="/app/akuntansi/periode" className="flex items-end gap-2">
           <input type="hidden" name="year" value={pageYear} />
           <label className="space-y-1">
             <span className={labelClass}>Bulan periksa</span>
@@ -54,7 +55,7 @@ export function MonthEndChecklist({
           >
             Periksa
           </button>
-        </form>
+        </AutoFilterForm>
       </div>
       <ol className="divide-y divide-border/60">
         {steps.map((step, index) => (

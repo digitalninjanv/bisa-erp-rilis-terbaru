@@ -164,11 +164,13 @@ export default async function SettingsPage({
             printShowSession: settings.printShowSession,
             printShowBranding: settings.printShowBranding,
             printSignatureLabels: settings.printSignatureLabels ?? {},
+            printDocumentSettings: settings.printDocumentSettings ?? {},
           }}
           company={{
             legalName: settings.legalName,
             address: settings.address ?? "",
             phone: settings.phone ?? "",
+            taxId: settings.taxId ?? "",
           }}
         />
       ) : null}

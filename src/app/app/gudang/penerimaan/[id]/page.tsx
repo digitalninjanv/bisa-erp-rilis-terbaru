@@ -121,6 +121,14 @@ export default async function ReceiptDetailPage({
           >
             Cetak GRN
           </Link>
+          {receipt.status === "posted" && receipt.supplierId && can(ctx, "inventory.manage") ? (
+            <Link
+              href={`/app/gudang/retur-pembelian/baru?receiptId=${receipt.id}`}
+              className="inline-flex h-8 items-center rounded-md border border-border bg-card px-3 text-[12px] font-medium transition-colors hover:bg-muted"
+            >
+              Retur ke pemasok
+            </Link>
+          ) : null}
           {receipt.status === "posted" && can(ctx, "inventory.manage") ? (
             <ReceiptVoidButton id={receipt.id} number={receipt.number} />
           ) : null}

@@ -8,7 +8,9 @@ import {
   count,
   desc,
   eq,
+  gte,
   inArray,
+  lte,
   sql,
 } from "drizzle-orm";
 import type { Tx } from "@/db";
@@ -20,6 +22,8 @@ import {
   branches,
   cashMovements,
   cashSessions,
+  paymentMethods,
+  salePayments,
   sales,
   user,
 } from "@/db/schema";
@@ -58,6 +62,20 @@ export async function getCashSessionSummary(tx: Tx, companyId: string, sessionId
     .from(sales)
     .where(and(eq(sales.companyId, companyId), eq(sales.sessionId, sessionId), eq(sales.status, "completed")));
 
+  // Penjualan non-tunai (QRIS, bank, kartu, kredit pelanggan) tidak
+  // memengaruhi laci kas, tetapi tetap ditampilkan agar kasir melihat
+  // total penjualan sesi secara utuh — bukan hanya penjualan tunai.
+  const [nonCashRow] = await tx.execute(sql`
+    select coalesce(sum(${salePayments.amount}), 0) as total
+      from ${salePayments}
+      inner join ${sales} on ${sales.id} = ${salePayments.saleId}
+      left join ${paymentMethods} on ${paymentMethods.id} = ${salePayments.methodId}
+     where ${salePayments.companyId} = ${companyId}
+       and ${sales.sessionId} = ${sessionId}
+       and ${sales.status} = 'completed'
+       and coalesce(${paymentMethods.type}, 'cash') <> 'cash'
+  `) as unknown as { total: string }[];
+
   return {
     session,
     movements,
@@ -71,6 +89,7 @@ export async function getCashSessionSummary(tx: Tx, companyId: string, sessionId
     deposits: Math.abs(Number(totals?.deposits ?? 0)),
     withdrawals: Math.abs(Number(totals?.withdrawals ?? 0)),
     transactionCount: txCount?.value ?? 0,
+    nonCashSales: Number(nonCashRow?.total ?? 0),
   };
 }
 
@@ -81,6 +100,8 @@ export async function getCashSessionSummary(tx: Tx, companyId: string, sessionId
 export type CashSessionTotals = {
   /** Penjualan tunai (mutasi 'sale', selalu positif). */
   salesTotal: string;
+  /** Penjualan non-tunai (QRIS, bank, kartu, kredit pelanggan). */
+  nonCashSalesTotal: string;
   /** Refund tunai, dilaporkan positif sebagai uang keluar. */
   refundsTotal: string;
   /** Setor ke bank, dilaporkan positif sebagai uang keluar (D-9). */
@@ -97,6 +118,7 @@ export type CashSessionTotals = {
 
 const emptySessionTotals = (): CashSessionTotals => ({
   salesTotal: "0",
+  nonCashSalesTotal: "0",
   refundsTotal: "0",
   depositsTotal: "0",
   withdrawalsTotal: "0",
@@ -141,6 +163,7 @@ async function aggregateCashSessionMovements(
     const withdrawals = d(row.withdrawals);
     totals.set(row.sessionId, {
       salesTotal: toDb(sales),
+      nonCashSalesTotal: "0",
       refundsTotal: toDb(refunds),
       depositsTotal: toDb(deposits),
       withdrawalsTotal: toDb(withdrawals),
@@ -149,6 +172,40 @@ async function aggregateCashSessionMovements(
       expectedCash: toDb(d(row.total)),
     });
   }
+
+  // Penjualan non-tunai per sesi (QRIS, bank, kartu, kredit pelanggan)
+  // tidak memengaruhi laci, tetapi ditampilkan di riwayat.
+  if (sessionIds.length > 0) {
+    const nonCashRows = await tx
+      .select({
+        sessionId: sales.sessionId,
+        total: sql<string>`coalesce(sum(${salePayments.amount}), 0)`,
+      })
+      .from(salePayments)
+      .innerJoin(sales, eq(salePayments.saleId, sales.id))
+      .leftJoin(paymentMethods, eq(salePayments.methodId, paymentMethods.id))
+      .where(
+        and(
+          eq(salePayments.companyId, companyId),
+          inArray(sales.sessionId, sessionIds),
+          eq(sales.status, "completed"),
+          sql`coalesce(${paymentMethods.type}, 'cash') <> 'cash'`,
+        ),
+      )
+      .groupBy(sales.sessionId);
+    for (const row of nonCashRows) {
+      if (!row.sessionId) continue;
+      const current = totals.get(row.sessionId);
+      if (current) {
+        current.nonCashSalesTotal = toDb(d(row.total ?? 0));
+      } else {
+        const empty = emptySessionTotals();
+        empty.nonCashSalesTotal = toDb(d(row.total ?? 0));
+        totals.set(row.sessionId, empty);
+      }
+    }
+  }
+
   return totals;
 }
 
@@ -232,6 +289,7 @@ function toHistoryRow(
     expectedCash:
       closed && row.storedExpectedCash != null ? row.storedExpectedCash : totals.expectedCash,
     transactionCount,
+    longOpen: row.status === "open" && Date.now() - new Date(row.openedAt).getTime() > 24 * 60 * 60 * 1000,
   };
 }
 
@@ -244,7 +302,15 @@ function toHistoryRow(
 export async function listCashSessionHistory(
   tx: Tx,
   companyId: string,
-  opts: { status?: string; userId?: string; page?: number; pageSize?: number } = {},
+  opts: {
+    status?: string;
+    userId?: string;
+    branchId?: string;
+    from?: string;
+    to?: string;
+    page?: number;
+    pageSize?: number;
+  } = {},
 ) {
   const page = Math.max(1, Math.floor(opts.page ?? 1));
   const pageSize = Math.min(100, Math.max(1, Math.floor(opts.pageSize ?? 20)));
@@ -254,6 +320,9 @@ export async function listCashSessionHistory(
       ? eq(cashSessions.status, opts.status)
       : undefined,
     opts.userId ? eq(cashSessions.userId, opts.userId) : undefined,
+    opts.branchId ? eq(cashSessions.branchId, opts.branchId) : undefined,
+    opts.from ? gte(cashSessions.openedAt, new Date(`${opts.from}T00:00:00Z`)) : undefined,
+    opts.to ? lte(cashSessions.openedAt, new Date(`${opts.to}T23:59:59Z`)) : undefined,
   );
   const [rows, totalRows] = await Promise.all([
     tx
@@ -307,7 +376,7 @@ export async function getCashSessionHistoryDetail(tx: Tx, companyId: string, ses
     .limit(1);
   if (!row) return null;
 
-  const [totalsMap, countsMap, movements] = await Promise.all([
+  const [totalsMap, countsMap, movements, paymentRows] = await Promise.all([
     aggregateCashSessionMovements(tx, companyId, [sessionId]),
     countSessionTransactions(tx, companyId, [sessionId]),
     tx
@@ -326,6 +395,25 @@ export async function getCashSessionHistoryDetail(tx: Tx, companyId: string, ses
       // createdAt saja tidak cukup urut di dalam satu transaksi —
       // id uuidv7 menjadi penentu urutan kedua yang monoton.
       .orderBy(asc(cashMovements.createdAt), asc(cashMovements.id)),
+    tx
+      .select({
+        methodName: paymentMethods.name,
+        methodType: paymentMethods.type,
+        amount: sql<string>`coalesce(sum(${salePayments.amount}), 0)`,
+        fee: sql<string>`coalesce(sum(${salePayments.feeAmount}), 0)`,
+      })
+      .from(salePayments)
+      .innerJoin(sales, eq(salePayments.saleId, sales.id))
+      .leftJoin(paymentMethods, eq(salePayments.methodId, paymentMethods.id))
+      .where(
+        and(
+          eq(salePayments.companyId, companyId),
+          eq(sales.sessionId, sessionId),
+          eq(sales.status, "completed"),
+        ),
+      )
+      .groupBy(paymentMethods.name, paymentMethods.type)
+      .orderBy(desc(sql`sum(${salePayments.amount})`)),
   ]);
 
   const historyRow = toHistoryRow(
@@ -335,6 +423,15 @@ export async function getCashSessionHistoryDetail(tx: Tx, companyId: string, ses
   );
   const { salesTotal, refundsTotal, depositsTotal, withdrawalsTotal, totalIn, totalOut, expectedCash } =
     historyRow;
+  const paymentBreakdown = paymentRows.map((row) => ({
+    methodName: row.methodName ?? "Pembayaran",
+    methodType: row.methodType ?? "other",
+    amount: toDb(d(row.amount)),
+    fee: toDb(d(row.fee)),
+  }));
+  const grossSales = toDb(
+    paymentRows.reduce((acc, row) => acc.plus(d(row.amount)), d(0)),
+  );
   return {
     session: {
       id: historyRow.id,
@@ -352,5 +449,7 @@ export async function getCashSessionHistoryDetail(tx: Tx, companyId: string, ses
     totals: { salesTotal, refundsTotal, depositsTotal, withdrawalsTotal, totalIn, totalOut, expectedCash },
     transactionCount: historyRow.transactionCount,
     movements,
+    paymentBreakdown,
+    grossSales,
   };
 }

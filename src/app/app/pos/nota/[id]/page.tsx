@@ -56,7 +56,7 @@ export default async function ReceiptPage({
   const { sale, lines, payments, settings, customer, cashier } = data;
   // Print Engine (T4-4, D-13): paper/template come from the shared print
   // settings; the legacy receipt width column no longer drives layout.
-  const printSettings = toPrintSettings(settings);
+  const printSettings = toPrintSettings(settings, "nota");
   const qrDataUrl = printSettings.showQr ? await documentQrDataUrl(sale.number) : null;
   // CT-17: on sheet paper (A4/A5) the receipt stays a receipt — its
   // content is capped at 80mm and centered inside the wide shell
@@ -197,6 +197,9 @@ export default async function ReceiptPage({
                 <tr key={line.id} className="align-top">
                   <td className="py-1 pr-1">
                     <p className="font-medium">{line.productName}</p>
+                    {line.productSku ? (
+                      <p className="num text-[9px] leading-tight text-black/50">{line.productSku}</p>
+                    ) : null}
                     <p className="num">
                       {/* CT-26: price phrases never break mid-phrase;
                           wrapping may only happen between segments.
@@ -258,7 +261,7 @@ export default async function ReceiptPage({
                 </span>
               </div>
             ) : null}
-            <div className="print-total-bar mt-1 flex justify-between border-t border-black/50 pt-1 text-[13px] font-bold">
+            <div className="print-total-bar mt-1 flex justify-between border-t-2 border-black pt-1.5 text-[15px] font-bold">
               <span>TOTAL</span>
               <span className="num">{formatIDR(sale.total)}</span>
             </div>
@@ -267,6 +270,7 @@ export default async function ReceiptPage({
                 reference per pembayaran; kini keduanya tercetak:
                 "Diterima" untuk tunai yang diserahkan melebihi
                 tagihan, dan referensi untuk pembayaran non-tunai. */}
+            <p className="mt-1.5 text-center text-[10px] font-semibold uppercase tracking-wide">Pembayaran</p>
             {payments.map((payment) => (
               <div key={payment.id}>
                 <div className="flex justify-between">

@@ -23,6 +23,7 @@ import { toPrintSettings } from "@/components/print/types";
 import { documentQrDataUrl } from "@/components/print/qr";
 import {
   PrintAmount,
+  PrintCompareHeader,
   PrintGroupSection,
   PrintSummaryLine,
   ReportDocument,
@@ -139,7 +140,7 @@ export default async function ReportPrintPage({
     return { settings, kind: "sales" as const, summary, byDay, byCashier, byCategory, top, payments };
   });
 
-  const printSettings = toPrintSettings(data.settings);
+  const printSettings = toPrintSettings(data.settings, "laporan");
   const company = {
     legalName: data.settings?.legalName ?? ctx.company.name,
     address: data.settings?.address,
@@ -156,6 +157,18 @@ export default async function ReportPrintPage({
         ? `Periode ${formatDateReport(from)} — ${formatDateReport(to)}`
         : `Untuk periode yang berakhir pada ${formatDateReport(to)}`;
   const comparisonStatement = compareLabel ? ` · Pembanding: ${compareLabel}` : "";
+  const currentColumnLabel =
+    tab === "neraca"
+      ? `Per ${formatDateReport(to)}`
+      : `Periode ${formatDateReport(from)} — ${formatDateReport(to)}`;
+  const priorColumnLabel = priorDates
+    ? tab === "neraca"
+      ? `Per ${formatDateReport(priorDates.to)}`
+      : `Periode ${formatDateReport(priorDates.from)} — ${formatDateReport(priorDates.to)}`
+    : "";
+  // Satu tab = satu dokumen: halaman ini hanya merender tab aktif, sehingga
+  // setiap tab selalu mulai dari halaman pertamanya sendiri. Laporan gabungan
+  // (penjualan) menandai tiap seksi mandiri dengan break-before-page.
   return (
     <ReportPrintPageShell
       backHref={`/app/akuntansi/laporan?tab=${tab}&from=${from}&to=${to}`}
@@ -173,8 +186,22 @@ export default async function ReportPrintPage({
         printedByName={ctx.user.name}
         qrDataUrl={qrDataUrl}
       >
-        {data.kind === "income" ? <IncomePrint current={data.current} prior={"prior" in data ? data.prior : null} hideZero={hideZero} /> : null}
-        {data.kind === "balance" ? <BalancePrint current={data.current} prior={"prior" in data ? data.prior : null} hideZero={hideZero} /> : null}
+        {data.kind === "income" ? (
+          <IncomePrint
+            current={data.current}
+            prior={"prior" in data ? data.prior : null}
+            hideZero={hideZero}
+            currentLabel={currentColumnLabel}
+            priorLabel={priorColumnLabel}
+          />
+        ) : null}
+        {data.kind === "balance" ? (
+          <BalancePrint
+            current={data.current}
+            prior={"prior" in data ? data.prior : null}
+            hideZero={hideZero}
+          />
+        ) : null}
         {data.kind === "cashflow" ? <CashFlowPrint current={data.current} /> : null}
         {data.kind === "equity" ? <EquityPrint current={data.current} hideZero={hideZero} /> : null}
         {data.kind === "trial" ? <TrialPrint current={data.current} hideZero={hideZero} /> : null}
@@ -189,6 +216,14 @@ export default async function ReportPrintPage({
           />
         ) : null}
         {data.kind === "notes" ? <NotesPrint notes={data.notes} /> : null}
+
+        <div className="mt-6 flex flex-wrap items-baseline justify-between gap-2 border-t border-black/40 pt-2 text-[10px] opacity-80 break-inside-avoid">
+          <span>
+            {TITLES[tab]} · {periodStatement}
+            {comparisonStatement}
+          </span>
+          <span className="num">Ref. {reference}</span>
+        </div>
       </ReportDocument>
     </ReportPrintPageShell>
   );
@@ -219,10 +254,14 @@ function IncomePrint({
   current,
   prior,
   hideZero,
+  currentLabel,
+  priorLabel,
 }: {
   current: IncomeData;
   prior?: IncomeData | null;
   hideZero: boolean;
+  currentLabel: string;
+  priorLabel: string;
 }) {
   if (
     allStatementGroupsEmpty(
@@ -247,6 +286,11 @@ function IncomePrint({
   }
   return (
     <div>
+      {prior ? (
+        <div className="mb-2">
+          <PrintCompareHeader current={currentLabel} prior={priorLabel} firstColumnLabel="Uraian" />
+        </div>
+      ) : null}
       <PrintGroupSection title="Pendapatan" rows={toRows(current.revenue, hideZero, prior?.revenue)} totalLabel="Total pendapatan" total={current.totalRevenue} totalPrior={prior?.totalRevenue} />
       <PrintGroupSection title="Harga pokok penjualan" rows={toRows(current.cogs, hideZero, prior?.cogs)} totalLabel="Total harga pokok penjualan" total={current.totalCogs} totalPrior={prior?.totalCogs} />
       <PrintSummaryLine label="Laba kotor" amount={current.grossProfit} prior={prior?.grossProfit} strong band />
@@ -374,7 +418,7 @@ function CashFlowPrint({ current }: { current: CashFlowData }) {
       groups.map((group) => {
         const rows = current.rows.filter((row) => row.group === group);
         return (
-          <section key={group} className="mt-4">
+          <section key={group} className="mt-4 report-keep">
             <h3 className="border-b border-black/60 pb-1 text-[11px] font-semibold uppercase tracking-wide">
               Arus kas {groupLabels[group].toLowerCase()}
             </h3>
@@ -581,7 +625,13 @@ function SalesPrint({
 }) {
   return (
     <div>
-      <table className="w-full max-w-[420px] text-[12px]">
+      <table className="w-full max-w-[420px] text-[12px] report-keep">
+        <thead className="text-[10px] uppercase tracking-wide opacity-60">
+          <tr>
+            <th className="py-1 text-left font-medium">Uraian</th>
+            <th className="py-1 text-right font-medium">Jumlah</th>
+          </tr>
+        </thead>
         <tbody>
           <tr>
             <td className="py-1">Transaksi</td>
@@ -609,13 +659,14 @@ function SalesPrint({
       </table>
 
       <PrintMiniTable title="Penjualan per hari" headers={["Tanggal", "Transaksi", "Total"]} rows={byDay.map((row) => [formatDate(row.date), formatNumber(row.transactions), row.total])} />
-      <PrintMiniTable title="Per kasir" headers={["Kasir", "Transaksi", "Total"]} rows={byCashier.map((row) => [row.name, formatNumber(row.transactions), row.total])} />
-      <PrintMiniTable title="Produk terlaris" headers={["Produk", "Qty", "Total"]} rows={top.map((row) => [row.name, formatNumber(row.qty), row.total])} />
-      <PrintMiniTable title="Per kategori" headers={["Kategori", "Qty", "Total"]} rows={byCategory.map((row) => [row.name, formatNumber(row.qty), row.total])} />
+      <PrintMiniTable title="Per kasir" headers={["Kasir", "Transaksi", "Total"]} rows={byCashier.map((row) => [row.name, formatNumber(row.transactions), row.total])} startNewPage={byCashier.length > 0} />
+      <PrintMiniTable title="Produk terlaris" headers={["Produk", "Qty", "Total"]} rows={top.map((row) => [row.name, formatNumber(row.qty), row.total])} startNewPage={top.length > 0} />
+      <PrintMiniTable title="Per kategori" headers={["Kategori", "Qty", "Total"]} rows={byCategory.map((row) => [row.name, formatNumber(row.qty), row.total])} startNewPage={byCategory.length > 0} />
       <PrintMiniTable
         title="Metode pembayaran"
         headers={["Metode", "Jenis", "Total"]}
         rows={payments.map((row) => [row.name, paymentMethodTypeLabel(row.type), row.amount])}
+        startNewPage={payments.length > 0}
       />
     </div>
   );
@@ -625,13 +676,15 @@ function PrintMiniTable({
   title,
   headers,
   rows,
+  startNewPage,
 }: {
   title: string;
   headers: string[];
   rows: (string | number)[][];
+  startNewPage?: boolean;
 }) {
   return (
-    <section className="mt-5">
+    <section className={`mt-5 report-keep${startNewPage ? " break-before-page" : ""}`}>
       <h3 className="border-b border-black/60 pb-1 text-[11px] font-semibold uppercase tracking-wide">{title}</h3>
       <table className="mt-1 w-full text-[12px]">
         <thead className="text-[10px] uppercase tracking-wide opacity-60">
@@ -675,7 +728,7 @@ function NotesPrint({ notes }: { notes: string }) {
       ) : (
         <p>Tidak ada catatan tambahan.</p>
       )}
-      <div className="mt-5 border-t border-black/40 pt-3">
+      <div className="mt-5 border-t border-black/40 pt-3 report-keep">
         <p className="font-semibold">Dasar penyusunan</p>
         <p className="mt-1">
           Laporan disusun dari jurnal double-entry yang telah diposting. Kebijakan akuntansi, estimasi, dan

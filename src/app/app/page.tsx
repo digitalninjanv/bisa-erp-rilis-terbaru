@@ -24,6 +24,7 @@ import { EmptyState } from "@/components/blocks/empty-state";
 import { DateRangeField } from "@/components/date-field";
 import { SalesTrendChart } from "@/components/akuntansi/charts";
 import { addDaysISO } from "@/lib/due-date";
+import { AutoFilterForm } from "@/components/blocks/auto-filter-form";
 
 export const dynamic = "force-dynamic";
 
@@ -245,7 +246,7 @@ export default async function AppHomePage({
                   </Link>
                 ))}
               </div>
-              <form action="/app" className="flex flex-wrap items-center gap-1.5">
+              <AutoFilterForm action="/app" className="flex flex-wrap items-center gap-1.5">
                 <DateRangeField
                   from={{ name: "from", defaultValue: from }}
                   to={{ name: "to", defaultValue: to }}
@@ -256,7 +257,7 @@ export default async function AppHomePage({
                 >
                   Terapkan
                 </button>
-              </form>
+              </AutoFilterForm>
             </div>
 
             <div className="mt-3 grid gap-3 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">

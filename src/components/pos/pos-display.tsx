@@ -6,12 +6,23 @@ import { cn } from "@/lib/utils";
 
 export type PosDensity = "comfortable" | "compact";
 export type PosColumns = "auto" | "4" | "5" | "6";
+export type PosView = "grid" | "list";
+export type PosFontScale = "normal" | "large" | "xl";
+export type PosCardShape = "rounded" | "square";
 
 export type PosDisplayPrefs = {
   density: PosDensity;
   columns: PosColumns;
   cartWidth: number;
   showStock: boolean;
+  showSku: boolean;
+  showPackaging: boolean;
+  showPrice: boolean;
+  view: PosView;
+  fontScale: PosFontScale;
+  cardShape: PosCardShape;
+  colorByCategory: boolean;
+  showCategory: boolean;
   autoFullscreen: boolean;
 };
 
@@ -20,6 +31,14 @@ export const POS_DISPLAY_DEFAULTS: PosDisplayPrefs = {
   columns: "auto",
   cartWidth: 396,
   showStock: true,
+  showSku: false,
+  showPackaging: true,
+  showPrice: true,
+  view: "grid",
+  fontScale: "normal",
+  cardShape: "rounded",
+  colorByCategory: true,
+  showCategory: false,
   autoFullscreen: false,
 };
 
@@ -53,6 +72,16 @@ function readPrefs(): PosDisplayPrefs {
         ? (parsed.cartWidth as number)
         : POS_DISPLAY_DEFAULTS.cartWidth,
       showStock: typeof parsed.showStock === "boolean" ? parsed.showStock : true,
+      showSku: typeof parsed.showSku === "boolean" ? parsed.showSku : false,
+      showPackaging: typeof parsed.showPackaging === "boolean" ? parsed.showPackaging : true,
+      showPrice: typeof parsed.showPrice === "boolean" ? parsed.showPrice : true,
+      view: parsed.view === "list" ? "list" : "grid",
+      fontScale:
+        parsed.fontScale === "large" || parsed.fontScale === "xl" ? parsed.fontScale : "normal",
+      cardShape: parsed.cardShape === "square" ? "square" : "rounded",
+      colorByCategory:
+        typeof parsed.colorByCategory === "boolean" ? parsed.colorByCategory : true,
+      showCategory: typeof parsed.showCategory === "boolean" ? parsed.showCategory : false,
       autoFullscreen:
         typeof parsed.autoFullscreen === "boolean" ? parsed.autoFullscreen : false,
     };
@@ -216,6 +245,92 @@ export function PosDisplayControls({
               </Segment>
             ))}
           </Field>
+
+          <Field label="Tampilan produk">
+            <Segment active={prefs.view === "grid"} onClick={() => onChange({ view: "grid" })}>
+              Grid
+            </Segment>
+            <Segment active={prefs.view === "list"} onClick={() => onChange({ view: "list" })}>
+              List
+            </Segment>
+          </Field>
+
+          <Field label="Ukuran teks">
+            {(["normal", "large", "xl"] as const).map((value) => (
+              <Segment
+                key={value}
+                active={prefs.fontScale === value}
+                onClick={() => onChange({ fontScale: value })}
+              >
+                {value === "normal" ? "Normal" : value === "large" ? "Besar" : "XL"}
+              </Segment>
+            ))}
+          </Field>
+
+          <Field label="Bentuk kartu">
+            <Segment
+              active={prefs.cardShape === "rounded"}
+              onClick={() => onChange({ cardShape: "rounded" })}
+            >
+              Rounded
+            </Segment>
+            <Segment
+              active={prefs.cardShape === "square"}
+              onClick={() => onChange({ cardShape: "square" })}
+            >
+              Kotak
+            </Segment>
+          </Field>
+
+          <label className="flex items-center justify-between gap-2">
+            <span className="text-muted-foreground">Warna per kategori</span>
+            <input
+              type="checkbox"
+              checked={prefs.colorByCategory}
+              onChange={(event) => onChange({ colorByCategory: event.target.checked })}
+              className="size-3.5 accent-primary"
+            />
+          </label>
+
+          <label className="flex items-center justify-between gap-2">
+            <span className="text-muted-foreground">Tampilkan kategori</span>
+            <input
+              type="checkbox"
+              checked={prefs.showCategory}
+              onChange={(event) => onChange({ showCategory: event.target.checked })}
+              className="size-3.5 accent-primary"
+            />
+          </label>
+
+          <label className="flex items-center justify-between gap-2">
+            <span className="text-muted-foreground">Tampilkan SKU</span>
+            <input
+              type="checkbox"
+              checked={prefs.showSku}
+              onChange={(event) => onChange({ showSku: event.target.checked })}
+              className="size-3.5 accent-primary"
+            />
+          </label>
+
+          <label className="flex items-center justify-between gap-2">
+            <span className="text-muted-foreground">Tampilkan kemasan</span>
+            <input
+              type="checkbox"
+              checked={prefs.showPackaging}
+              onChange={(event) => onChange({ showPackaging: event.target.checked })}
+              className="size-3.5 accent-primary"
+            />
+          </label>
+
+          <label className="flex items-center justify-between gap-2">
+            <span className="text-muted-foreground">Tampilkan harga</span>
+            <input
+              type="checkbox"
+              checked={prefs.showPrice}
+              onChange={(event) => onChange({ showPrice: event.target.checked })}
+              className="size-3.5 accent-primary"
+            />
+          </label>
 
           <Field label="Lebar keranjang">
             {POS_CART_WIDTHS.map((width) => (

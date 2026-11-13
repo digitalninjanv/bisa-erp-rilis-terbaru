@@ -434,7 +434,7 @@ async function readSnapshotRefs(
   // Blok cetak dari baris pengaturan yang sama (lihat
   // PosSnapshotReceipt): nama tampilan struk mengikuti halaman nota
   // web — legalName perusahaan, jatuh ke nama bawaan yang sama.
-  const print = toPrintSettings(settings);
+  const print = toPrintSettings(settings, "nota");
   return {
     warehouse: warehouse
       ? { id: warehouse.id, code: warehouse.code, name: warehouse.name }

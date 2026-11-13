@@ -42,6 +42,18 @@ type ReturnLine = {
    * qty baris dinyatakan dalam kemasan terpilih; kosong = satuan dasar. */
   packagings: PickedPackaging[];
   packagingId: string;
+  /** Jejak ke baris penerimaan asal saat retur dimulai dari GRN. */
+  receiptLineId?: string | null;
+};
+
+export type InitialReturnLine = {
+  receiptLineId: string;
+  productId: string;
+  name: string;
+  sku: string;
+  qty: string;
+  trackBatch: boolean;
+  unitCost?: string | null;
 };
 
 /** Qty baris retur dalam SATUAN DASAR (qty masukan × isi kemasan). */
@@ -84,6 +96,11 @@ export function SupplierReturnForm({
   today,
   reasonOptions,
   resolutionOptions,
+  initialSupplierId,
+  initialWarehouseId,
+  initialLines = [],
+  sourceReceiptNumber,
+  lockSource = false,
 }: {
   suppliers: { id: string; name: string }[];
   warehouses: { id: string; name: string }[];
@@ -91,22 +108,46 @@ export function SupplierReturnForm({
   today: string;
   reasonOptions: LabelOption[];
   resolutionOptions: LabelOption[];
+  initialSupplierId?: string;
+  initialWarehouseId?: string;
+  initialLines?: InitialReturnLine[];
+  sourceReceiptNumber?: string;
+  /** Retur dari GRN: pemasok/gudang terkunci dan baris tidak bisa ditambah/hapus. */
+  lockSource?: boolean;
 }) {
   const router = useRouter();
-  const [supplierId, setSupplierId] = useState(suppliers[0]?.id ?? "");
+  const lineKey = useRef(initialLines.length);
+  const [supplierId, setSupplierId] = useState(initialSupplierId ?? suppliers[0]?.id ?? "");
   // GDG3-06: kunci idempotensi per pembukaan form (lihat receipt-form).
   const [idempotencyKey] = useState(() => newUuid());
-  const [warehouseId, setWarehouseId] = useState(defaultWarehouseId || warehouses[0]?.id || "");
+  const [warehouseId, setWarehouseId] = useState(
+    initialWarehouseId || defaultWarehouseId || warehouses[0]?.id || "",
+  );
   const [date, setDate] = useState(today);
   const [reasonCategory, setReasonCategory] = useState(reasonOptions[0]?.value ?? "damaged");
   const [reasonDetail, setReasonDetail] = useState("");
   const [resolutionType, setResolutionType] = useState(resolutionOptions[0]?.value ?? "replacement");
   const [resolutionNote, setResolutionNote] = useState("");
-  const [lines, setLines] = useState<ReturnLine[]>([]);
+  const [lines, setLines] = useState<ReturnLine[]>(() =>
+    initialLines.map((line, index) => ({
+      key: index + 1,
+      productId: line.productId,
+      name: line.name,
+      sku: line.sku,
+      qty: line.qty,
+      trackBatch: line.trackBatch,
+      batchId: "",
+      stock: null,
+      batches: [],
+      unitCost: line.unitCost ?? null,
+      packagings: [],
+      packagingId: "",
+      receiptLineId: line.receiptLineId,
+    })),
+  );
   const [busy, setBusy] = useState<"" | "draft" | "post">("");
   const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
   const infoSeq = useRef(0);
-  const lineKey = useRef(0);
 
   function handleCancelClick() {
     if (lines.length > 0 || reasonDetail.trim().length > 0) {
@@ -233,6 +274,8 @@ export function SupplierReturnForm({
         batchId: line.batchId || null,
         // S2: qty dinyatakan dalam kemasan terpilih (domain mengonversi).
         packagingId: line.packagingId || null,
+        // Jejak retur ke baris penerimaan asal (bila dimulai dari GRN).
+        receiptLineId: line.receiptLineId ?? null,
       })),
     });
     if (!created.ok) {
@@ -292,23 +335,41 @@ export function SupplierReturnForm({
       header={
         <div className="p-4">
           <p className="mb-2 text-[12px] font-semibold">1 · Pemasok & gudang asal</p>
+          {sourceReceiptNumber ? (
+            <p className="mb-2 text-[11px] text-muted-foreground">
+              Retur dari penerimaan <span className="num font-medium text-foreground">{sourceReceiptNumber}</span>.
+              Qty awal mengikuti baris penerimaan asal.
+            </p>
+          ) : null}
           <div className="grid gap-2 sm:grid-cols-3">
-            <label className="space-y-1">
+            <div className="space-y-1">
               <span className={labelClass}>Pemasok tujuan retur</span>
-              <select value={supplierId} onChange={(event) => setSupplierId(event.target.value)} className={fieldClass}>
-                {suppliers.map((row) => (
-                  <option key={row.id} value={row.id}>{row.name}</option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-1">
+              {lockSource ? (
+                <p className="flex h-9 items-center rounded-md border border-border bg-muted/40 px-2.5 text-[12px] font-medium">
+                  {supplierName ?? "—"}
+                </p>
+              ) : (
+                <select value={supplierId} onChange={(event) => setSupplierId(event.target.value)} className={fieldClass}>
+                  {suppliers.map((row) => (
+                    <option key={row.id} value={row.id}>{row.name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+            <div className="space-y-1">
               <span className={labelClass}>Gudang asal barang</span>
-              <select value={warehouseId} onChange={(event) => setWarehouseId(event.target.value)} className={fieldClass}>
-                {warehouses.map((row) => (
-                  <option key={row.id} value={row.id}>{row.name}</option>
-                ))}
-              </select>
-            </label>
+              {lockSource ? (
+                <p className="flex h-9 items-center rounded-md border border-border bg-muted/40 px-2.5 text-[12px] font-medium">
+                  {warehouseName ?? "—"}
+                </p>
+              ) : (
+                <select value={warehouseId} onChange={(event) => setWarehouseId(event.target.value)} className={fieldClass}>
+                  {warehouses.map((row) => (
+                    <option key={row.id} value={row.id}>{row.name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
             <label className="space-y-1">
               <span className={labelClass}>Tanggal retur</span>
               <DateField value={date} onChange={setDate} className={fieldClass} />
@@ -405,7 +466,13 @@ export function SupplierReturnForm({
         <div className="p-4">
           <p className="mb-2 text-[12px] font-semibold">2 · Barang yang diretur</p>
           <div className="space-y-2">
-            <ProductPicker onPick={addProduct} placeholder="Cari produk yang diretur…" />
+            {lockSource ? (
+              <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground">
+                Baris dikunci mengikuti penerimaan asal. Ubah qty atau batch bila hanya sebagian yang diretur.
+              </p>
+            ) : (
+              <ProductPicker onPick={addProduct} placeholder="Cari produk yang diretur…" />
+            )}
             {lines.length === 0 ? (
               <p className="rounded-md border border-dashed border-border px-3 py-5 text-center text-[11px] text-muted-foreground">
                 Belum ada baris. Cari dan pilih produk di atas. Nilai retur dihitung otomatis dari harga pokok rata-rata (AVCO) saat dokumen diposting.
@@ -497,14 +564,16 @@ export function SupplierReturnForm({
                               {value === null ? "—" : formatIDR(value)}
                             </td>
                             <td className="px-2 py-2.5 text-right">
-                              <button
-                                type="button"
-                                onClick={() => setLines((current) => current.filter((_, i) => i !== index))}
-                                className="ml-auto grid size-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-                                aria-label={`Hapus ${line.name}`}
-                              >
-                                <Trash2 className="size-3.5" />
-                              </button>
+                              {lockSource ? null : (
+                                <button
+                                  type="button"
+                                  onClick={() => setLines((current) => current.filter((_, i) => i !== index))}
+                                  className="ml-auto grid size-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                                  aria-label={`Hapus ${line.name}`}
+                                >
+                                  <Trash2 className="size-3.5" />
+                                </button>
+                              )}
                             </td>
                           </tr>
                         );
@@ -524,14 +593,16 @@ export function SupplierReturnForm({
                             <p className="truncate text-[12px] font-medium">{line.name}</p>
                             <p className="num text-[10px] text-muted-foreground">{line.sku}</p>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => setLines((current) => current.filter((_, i) => i !== index))}
-                            className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-                            aria-label={`Hapus ${line.name}`}
-                          >
-                            <Trash2 className="size-3.5" />
-                          </button>
+                          {lockSource ? null : (
+                            <button
+                              type="button"
+                              onClick={() => setLines((current) => current.filter((_, i) => i !== index))}
+                              className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                              aria-label={`Hapus ${line.name}`}
+                            >
+                              <Trash2 className="size-3.5" />
+                            </button>
+                          )}
                         </div>
 
                         {line.packagings.length > 0 ? (

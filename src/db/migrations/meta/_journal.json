@@ -505,6 +505,13 @@
       "when": 1794368239127,
       "tag": "0071_last_aqueduct",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1794457932228,
+      "tag": "0072_panoramic_chameleon",
+      "breakpoints": true
     }
   ]
 }

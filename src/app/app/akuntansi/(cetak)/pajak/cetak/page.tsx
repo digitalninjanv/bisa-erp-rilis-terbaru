@@ -34,7 +34,7 @@ export default async function VatPrintPage({
     return { settings, vat };
   });
 
-  const printSettings = toPrintSettings(data.settings);
+  const printSettings = toPrintSettings(data.settings, "pajak");
   const company: ReportCompanyIdentity = {
     legalName: data.settings.legalName ?? ctx.company.name,
     address: data.settings.address,
@@ -64,22 +64,33 @@ export default async function VatPrintPage({
         printedByName={ctx.user.name}
         qrDataUrl={qrDataUrl}
       >
-        <div className="mb-4 grid grid-cols-3 gap-4 text-[11px]">
-          <div>
-            <p className="opacity-60">PPN Keluaran</p>
-            <p className="num mt-1 text-[14px] font-semibold">{formatIDRReport(data.vat.output)}</p>
-          </div>
-          <div>
-            <p className="opacity-60">PPN Masukan</p>
-            <p className="num mt-1 text-[14px] font-semibold">{formatIDRReport(data.vat.input)}</p>
-          </div>
-          <div>
-            <p className="opacity-60">
-              {data.vat.net > 0 ? "PPN kurang bayar" : data.vat.net < 0 ? "PPN lebih bayar" : "PPN neto"}
+        <div className="mb-4 border-y border-black/40 py-2 break-inside-avoid">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 text-[11px]">
+            <p className="text-[9px] font-semibold uppercase tracking-wide opacity-60">Masa Pajak</p>
+            <p className="num font-semibold">
+              {formatDate(from)} — {formatDate(to)}
             </p>
-            <p className="num mt-1 text-[14px] font-semibold">
-              {formatIDRReport(Math.abs(data.vat.net))}
-            </p>
+          </div>
+          <p className="mt-1 text-[10px] opacity-70">
+            {data.vat.lines.length} baris PPN dari {data.vat.entryCount} jurnal terposting pada periode ini.
+          </p>
+          <div className="mt-3 grid grid-cols-3 gap-4 text-[11px]">
+            <div>
+              <p className="opacity-60">PPN Keluaran</p>
+              <p className="num mt-1 text-[14px] font-semibold">{formatIDRReport(data.vat.output)}</p>
+            </div>
+            <div>
+              <p className="opacity-60">PPN Masukan</p>
+              <p className="num mt-1 text-[14px] font-semibold">{formatIDRReport(data.vat.input)}</p>
+            </div>
+            <div>
+              <p className="opacity-60">
+                {data.vat.net > 0 ? "PPN kurang bayar" : data.vat.net < 0 ? "PPN lebih bayar" : "PPN neto"}
+              </p>
+              <p className="num mt-1 text-[14px] font-semibold">
+                {formatIDRReport(Math.abs(data.vat.net))}
+              </p>
+            </div>
           </div>
         </div>
 

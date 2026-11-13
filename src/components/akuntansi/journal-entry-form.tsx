@@ -328,7 +328,7 @@ export function JournalEntryForm({
           <p className="text-[11px] text-muted-foreground" role="status">{blockReason}</p>
         ) : null}
         <div className="flex items-center gap-2">
-          <Link href="/app/akuntansi/jurnal" className="inline-flex h-8 items-center rounded-md border border-border px-3 text-[12px] transition-colors hover:bg-muted">
+          <Link href="/app/akuntansi" className="inline-flex h-8 items-center rounded-md border border-border px-3 text-[12px] transition-colors hover:bg-muted">
             Batal
           </Link>
           <button

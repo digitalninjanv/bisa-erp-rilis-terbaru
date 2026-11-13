@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Search } from "lucide-react";
 import { SectionTitle } from "@/components/blocks/page-header";
+import { AutoFilterForm } from "@/components/blocks/auto-filter-form";
 import { fieldWidths } from "@/components/blocks/field-classes";
 import { cn } from "@/lib/utils";
 
@@ -82,10 +83,11 @@ export function DataList({
  * Bar pencarian + filter satu gaya untuk DataList. Bentuk form GET
  * seperti SearchForm bersama (satu sumber kebenaran per parameter:
  * filter adalah kontrol anak bernama, JANGAN diteruskan juga sebagai
- * hidden — lihat catatan A-22 K1 di halaman jurnal/produk), dengan
- * label tombol yang tidak pernah berubah ("Cari") dan tautan "Atur
- * ulang" yang hanya tampil bila `resetHref` diberikan pemanggil
- * (keadaan tersaring aktif).
+ * hidden — lihat catatan A-22 K1 di halaman jurnal/produk). Sejak
+ * filter otomatis, perubahan select/date/checkbox langsung diterapkan
+ * dan ketikan pencarian memakai debounce; tombol "Cari" tetap ada
+ * sebagai fallback keyboard/no-JS. Tautan "Atur ulang" hanya tampil
+ * bila `resetHref` diberikan pemanggil.
  */
 export function DataListToolbar({
   action,
@@ -103,7 +105,7 @@ export function DataListToolbar({
   children?: React.ReactNode;
 }) {
   return (
-    <form action={action} method="get" className="flex flex-wrap items-center gap-2">
+    <AutoFilterForm action={action} className="flex flex-wrap items-center gap-2">
       {Object.entries(hidden).map(([key, value]) =>
         value ? <input key={key} type="hidden" name={key} value={value} /> : null,
       )}
@@ -132,7 +134,7 @@ export function DataListToolbar({
           Atur ulang
         </Link>
       ) : null}
-    </form>
+    </AutoFilterForm>
   );
 }
 

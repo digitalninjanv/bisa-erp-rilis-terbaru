@@ -673,11 +673,13 @@ export function PosTerminal({
         reservationId={reservationId}
         applyReservation={applyReservation}
         sessionOpen={sessionOpen}
+        heldCount={heldCount}
         posOfflineEnabled={posOfflineEnabled}
         online={online}
         queuedCount={queuedCount}
         syncing={syncing}
         syncOfflineQueue={syncOfflineQueue}
+        cart={cart}
         display={display}
         updateDisplay={updateDisplay}
         resetDisplay={resetDisplay}

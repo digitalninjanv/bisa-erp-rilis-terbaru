@@ -414,6 +414,8 @@ export async function searchProducts(
     sku: products.sku,
     barcode: products.barcode,
     name: products.name,
+    categoryId: products.categoryId,
+    categoryName: categories.name,
     salePrice: products.salePrice,
     costPrice: products.costPrice,
     unitCode: units.code,
@@ -429,6 +431,7 @@ export async function searchProducts(
         .select(projection)
         .from(products)
         .leftJoin(units, eq(products.unitId, units.id))
+        .leftJoin(categories, eq(products.categoryId, categories.id))
         .where(and(eq(products.companyId, input.companyId), eq(products.isActive, true)))
         .orderBy(asc(products.name))
         .limit(input.limit ?? 20)
@@ -437,6 +440,7 @@ export async function searchProducts(
         .select(projection)
         .from(products)
         .leftJoin(units, eq(products.unitId, units.id))
+        .leftJoin(categories, eq(products.categoryId, categories.id))
         .where(
           and(
             eq(products.companyId, input.companyId),

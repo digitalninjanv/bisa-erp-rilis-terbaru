@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AutoFilterForm } from "@/components/blocks/auto-filter-form";
 import { HandCoins } from "lucide-react";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { listPaymentAccounts } from "@/server/accounting";
@@ -100,7 +101,7 @@ export default async function PurchaseAdvancesPage({
       <DataList
         density="compact"
         toolbar={
-          <form action="/app/gudang/uang-muka" className="flex flex-wrap items-center gap-1.5">
+          <AutoFilterForm action="/app/gudang/uang-muka" className="flex flex-wrap items-center gap-1.5">
             <DateRangeField from={{ name: "from", defaultValue: from }} to={{ name: "to", defaultValue: to }} />
             <select
               name="supplier"
@@ -139,7 +140,7 @@ export default async function PurchaseAdvancesPage({
                 Atur ulang
               </Link>
             ) : null}
-          </form>
+          </AutoFilterForm>
         }
         isEmpty={data.rows.length === 0}
         empty={

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AccountCombobox } from "@/components/akuntansi/account-combobox";
 import { DateRangeField } from "@/components/date-field";
@@ -52,17 +52,40 @@ export function LedgerFilters({
     ? accounts.filter((account) => account.type === typeValue)
     : accounts;
 
-  function apply(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function pushFilters(next: {
+    type: string;
+    account: string;
+    from: string;
+    to: string;
+  }) {
     const params = new URLSearchParams();
-    if (typeValue) params.set("type", typeValue);
-    if (selectedAccount) params.set("account", selectedAccount);
-    params.set("from", fromValue);
-    params.set("to", toValue);
+    if (next.type) params.set("type", next.type);
+    if (next.account) params.set("account", next.account);
+    params.set("from", next.from);
+    params.set("to", next.to);
     startTransition(() => {
       router.push(`/app/akuntansi/buku-besar?${params.toString()}`);
     });
   }
+
+  function apply(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    pushFilters({ type: typeValue, account: selectedAccount, from: fromValue, to: toValue });
+  }
+
+  const firstRender = useRef(true);
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    const timer = setTimeout(() => {
+      pushFilters({ type: typeValue, account: selectedAccount, from: fromValue, to: toValue });
+    }, 350);
+    return () => clearTimeout(timer);
+    // pushFilters stabil secara perilaku; dependency nilai filter saja.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typeValue, selectedAccount, fromValue, toValue]);
 
   function reset() {
     startTransition(() => {

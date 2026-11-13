@@ -47,7 +47,7 @@ export default async function PayrollSlipsPrintPage({
 
   if (!data) notFound();
   const { run, settings } = data;
-  const printSettings = toPrintSettings(settings);
+  const printSettings = toPrintSettings(settings, "payroll");
   const qrDataUrl = printSettings.showQr ? await documentQrDataUrl(run.number) : null;
 
   const linesByItem = new Map<string, typeof data.lines>();
@@ -89,15 +89,50 @@ export default async function PayrollSlipsPrintPage({
             const lines = linesByItem.get(item.itemId) ?? [];
             const employeeLines = lines.filter((line) => line.category === "statutory_employee");
             const employerLines = lines.filter((line) => line.category === "statutory_employer");
+            const earningLines = lines.filter((line) => line.category === "earning");
+            // Baris "deduction" bernama (mis. cuti tidak berbayar) sudah
+            // termasuk item.deductions; cicilan pinjaman disimpan terpisah
+            // di item.loanDeduction, jadi hanya baris itu yang ditambahkan
+            // sebagai potongan di luar item.deductions.
+            const namedDeductionLines = lines.filter(
+              (line) => line.category === "deduction" && line.code !== "loan_installment",
+            );
+            const loanLines = lines.filter((line) => line.code === "loan_installment");
             const pphLine = lines.find((line) => line.code === "pph21");
             const taxGrossLine = lines.find((line) => line.code === "tax_gross");
             const gross = d(item.baseSalary).plus(d(item.allowances));
+            const namedEarningTotal = earningLines.reduce((acc, line) => acc.plus(d(line.amount)), d(0));
+            const fixedAllowance = d(item.allowances).minus(namedEarningTotal);
             const statutoryEmployeeTotal = employeeLines.reduce((acc, line) => acc.plus(d(line.amount)), d(0));
+            const namedDeductionTotal = namedDeductionLines.reduce((acc, line) => acc.plus(d(line.amount)), d(0));
+            const fixedDeductions = d(item.deductions).minus(namedDeductionTotal);
+            const loanTotal = loanLines.reduce((acc, line) => acc.plus(d(line.amount)), d(0));
             const totalDeductions = d(item.deductions)
               .plus(statutoryEmployeeTotal)
               .plus(d(pphLine?.amount ?? 0))
-              .plus(d(item.advanceDeduction));
+              .plus(d(item.advanceDeduction))
+              .plus(loanTotal);
+            const employerTotal = employerLines.reduce((acc, line) => acc.plus(d(line.amount)), d(0));
             const taxPremium = taxGrossLine ? d(taxGrossLine.amount).minus(gross) : d(0);
+            const earningRows: SlipRow[] = [
+              { label: "Gaji pokok", amount: item.baseSalary, alwaysShow: true },
+              ...(fixedAllowance.gt(0)
+                ? [{ label: "Tunjangan", amount: fixedAllowance.toFixed(4) }]
+                : []),
+              ...earningLines.map((line) => ({ label: line.label, amount: line.amount })),
+            ];
+            const deductionRows: SlipRow[] = [
+              ...(fixedDeductions.gt(0)
+                ? [{ label: "Potongan tetap", amount: fixedDeductions.toFixed(4) }]
+                : []),
+              ...namedDeductionLines.map((line) => ({ label: line.label, amount: line.amount })),
+              ...employeeLines.map((line) => ({ label: line.label, amount: line.amount })),
+              ...(pphLine ? [{ label: pphLine.label, amount: pphLine.amount }] : []),
+              ...(d(item.advanceDeduction).gt(0)
+                ? [{ label: "Potongan kasbon", amount: item.advanceDeduction }]
+                : []),
+              ...loanLines.map((line) => ({ label: line.label, amount: line.amount })),
+            ];
             return (
               <section
                 key={item.itemId}
@@ -117,51 +152,62 @@ export default async function PayrollSlipsPrintPage({
                 />
                 <div className="mt-2 grid grid-cols-2 gap-x-6 text-[11px]">
                   <Row label="Nama karyawan" value={item.employeeName ?? "—"} />
-                  <Row label="Kode" value={item.employeeCode ?? "—"} />
+                  <Row label="ID karyawan" value={item.employeeCode ?? "—"} />
                   <Row label="Jabatan" value={item.position ?? "—"} />
                   <Row label="Status PTKP" value={item.ptkpStatus ?? "—"} />
+                  <div className="col-span-2 mt-1 border-t border-black/10 pt-1">
+                    <Row label="Periode penggajian" value={formatMonth(run.period)} />
+                  </div>
                 </div>
 
                 <SlipTable
-                  title="Penghasilan"
-                  rows={[
-                    { label: "Gaji pokok", amount: item.baseSalary },
-                    { label: "Tunjangan", amount: item.allowances },
-                    ...(taxPremium.gt(0)
-                      ? [{ label: "Premi BPJS dari perusahaan (objek pajak)", amount: taxPremium.toFixed(4), muted: true }]
-                      : []),
-                  ]}
-                  totalLabel="Penghasilan bruto"
-                  total={gross}
+                  title="A. Penghasilan"
+                  rows={earningRows}
+                  subtotalLabel="Subtotal penghasilan bruto"
+                  subtotal={gross}
                 />
 
-                {employerLines.length > 0 ? (
-                  <SlipTable
-                    title="Iuran ditanggung perusahaan (informasi)"
-                    rows={employerLines.map((line) => ({ label: line.label, amount: line.amount, muted: true }))}
-                    totalLabel="Total beban perusahaan di luar gaji"
-                    total={employerLines.reduce((acc, line) => acc.plus(d(line.amount)), d(0))}
-                  />
+                <SlipTable
+                  title="B. Potongan"
+                  rows={deductionRows}
+                  subtotalLabel="Subtotal potongan"
+                  subtotal={totalDeductions}
+                  emptyLabel="Tidak ada potongan"
+                />
+
+                <div className="print-summary mt-4 break-inside-avoid border-y-2 border-black px-3 py-3">
+                  <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-1">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.14em]">
+                        C. Gaji bersih diterima
+                      </p>
+                      <p className="mt-0.5 text-[9px] opacity-60">
+                        Jumlah yang diterima setelah seluruh potongan.
+                      </p>
+                    </div>
+                    <p className="num whitespace-nowrap text-[26px] font-bold leading-none">
+                      {formatIDR(item.net)}
+                    </p>
+                  </div>
+                </div>
+
+                {employerLines.length > 0 && employerTotal.gt(0) ? (
+                  <div className="mt-5 border-t border-dashed border-black/30 pt-2">
+                    <SlipTable
+                      title="Informasi iuran ditanggung perusahaan"
+                      rows={employerLines.map((line) => ({ label: line.label, amount: line.amount, muted: true }))}
+                      subtotalLabel="Total iuran perusahaan"
+                      subtotal={employerTotal}
+                      secondary
+                    />
+                    <p className="mt-1 text-[9px] opacity-60">
+                      Iuran di atas bukan potongan gaji karyawan.
+                      {taxPremium.gt(0)
+                        ? ` Termasuk premi perusahaan senilai ${formatIDR(taxPremium)} yang menjadi objek pajak PPh 21.`
+                        : ""}
+                    </p>
+                  </div>
                 ) : null}
-
-                <SlipTable
-                  title="Potongan"
-                  rows={[
-                    { label: "Potongan tetap", amount: item.deductions },
-                    ...employeeLines.map((line) => ({ label: line.label, amount: line.amount })),
-                    ...(pphLine
-                      ? [{ label: pphLine.label, amount: pphLine.amount }]
-                      : []),
-                    { label: "Potongan kasbon", amount: item.advanceDeduction },
-                  ]}
-                  totalLabel="Total potongan"
-                  total={totalDeductions}
-                />
-
-                <div className="mt-3 flex items-center justify-between border-t-2 border-black/70 pt-2 text-[13px] font-semibold">
-                  <span>Gaji bersih diterima</span>
-                  <span className="num">{formatIDR(item.net)}</span>
-                </div>
 
                 <PrintFooter
                   settings={printSettings}
@@ -191,34 +237,75 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
+type SlipRow = {
+  label: string;
+  amount: string;
+  muted?: boolean;
+  alwaysShow?: boolean;
+};
+
 function SlipTable({
   title,
   rows,
-  totalLabel,
-  total,
+  subtotalLabel,
+  subtotal,
+  secondary = false,
+  emptyLabel,
 }: {
   title: string;
-  rows: Array<{ label: string; amount: string; muted?: boolean }>;
-  totalLabel: string;
-  total: ReturnType<typeof d>;
+  rows: SlipRow[];
+  subtotalLabel: string;
+  subtotal: ReturnType<typeof d>;
+  /** Bagian informasi (mis. iuran perusahaan) tampil lebih kecil. */
+  secondary?: boolean;
+  /** Tetap tampilkan bagian dengan subtotal nol (mis. tanpa potongan). */
+  emptyLabel?: string;
 }) {
-  const visible = rows.filter((row) => !d(row.amount).isZero() || row.label === "Gaji pokok");
+  const visible = rows.filter((row) => row.alwaysShow || !d(row.amount).isZero());
+  if (visible.length === 0 && !emptyLabel) return null;
   return (
-    <div className="mt-4">
-      <h3 className="text-[11px] font-semibold uppercase tracking-wide">{title}</h3>
-      <table className="mt-1 w-full text-[11px]">
-        <tbody>
-          {visible.map((row) => (
-            <tr key={row.label} className={row.muted ? "opacity-70" : undefined}>
-              <td className="py-0.5">{row.label}</td>
-              <td className="num py-0.5 text-right">{formatIDR(row.amount)}</td>
-            </tr>
-          ))}
-          <tr className="border-t border-black/40 font-semibold">
-            <td className="py-1">{totalLabel}</td>
-            <td className="num py-1 text-right">{formatIDR(total)}</td>
+    <div className={secondary ? "mt-1" : "mt-5"}>
+      <h3
+        className={
+          secondary
+            ? "text-[9px] font-semibold uppercase tracking-wide opacity-60"
+            : "text-[11px] font-semibold uppercase tracking-wide"
+        }
+      >
+        {title}
+      </h3>
+      <table className={`mt-1 w-full border-collapse ${secondary ? "text-[10px] opacity-75" : "text-[11px]"}`}>
+        <thead>
+          <tr
+            className={`border-b text-[9px] uppercase tracking-wide ${
+              secondary ? "border-black/20 opacity-60" : "border-black/40 opacity-60"
+            }`}
+          >
+            <th className="py-0.5 text-left font-medium">Komponen</th>
+            <th className="py-0.5 text-right font-medium">Jumlah</th>
           </tr>
+        </thead>
+        <tbody>
+          {visible.length === 0 ? (
+            <tr className="opacity-70">
+              <td className="py-0.5 pr-2">{emptyLabel}</td>
+              <td className="num py-0.5 text-right">{formatIDR(0)}</td>
+            </tr>
+          ) : (
+            visible.map((row, index) => (
+              <tr key={`${row.label}-${index}`} className={row.muted ? "opacity-70" : undefined}>
+                <td className="py-0.5 pr-2">{row.label}</td>
+                <td className="num py-0.5 text-right">{formatIDR(row.amount)}</td>
+              </tr>
+            ))
+          )}
         </tbody>
+        <tfoot>
+          <tr className="border-t border-black/40 font-semibold">
+            <td className="py-1">{subtotalLabel}</td>
+            <td className="num py-1 text-right">{formatIDR(subtotal)}</td>
+          </tr>
+        </tfoot>
       </table>
     </div>
   );

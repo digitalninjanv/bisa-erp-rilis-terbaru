@@ -11,7 +11,7 @@ import { listCashBankIds } from "@/server/accounting";
 import { requirePermissionPage } from "@/lib/session";
 import { can } from "@/lib/permissions";
 import { formatIDR } from "@/lib/money";
-import { formatDate, monthStartISO, todayISO } from "@/lib/format";
+import { formatDate } from "@/lib/format";
 import { LIST_PAGE_SIZE, normalizePageParams, pageOffset, parsePageParam } from "@/lib/pagination";
 import { PageHeader } from "@/components/blocks/page-header";
 import { DataList } from "@/components/blocks/data-list";
@@ -20,6 +20,7 @@ import { Pagination } from "@/components/blocks/pagination";
 import { StatusBadge } from "@/components/blocks/status-badge";
 import { DateRangeField } from "@/components/date-field";
 import { BankTransferVoidButton } from "@/components/akuntansi/bank-transfer-form";
+import { AutoFilterForm } from "@/components/blocks/auto-filter-form";
 
 export const metadata = { title: "Riwayat transfer" };
 export const dynamic = "force-dynamic";
@@ -38,8 +39,11 @@ export default async function BankTransferHistoryPage({
 }) {
   const params = await searchParams;
   const ctx = await requirePermissionPage("accounting.view");
-  const from = params.from || monthStartISO();
-  const to = params.to || todayISO();
+  // Tanpa parameter tanggal = semua waktu; pengguna tetap bisa mempersempit
+  // lewat DateRangeField. Sebelumnya bawaan bulan berjalan membuat transfer
+  // lama seolah "tidak terdeteksi" di halaman ini.
+  const from = params.from || "";
+  const to = params.to || "";
   const { page, pageSize } = normalizePageParams(
     { page: parsePageParam(params.page), pageSize: LIST_PAGE_SIZE },
     LIST_PAGE_SIZE,
@@ -99,7 +103,7 @@ export default async function BankTransferHistoryPage({
       <DataList
         density="compact"
         toolbar={
-          <form action="/app/akuntansi/bank/transfer" className="flex flex-wrap items-center gap-1.5">
+          <AutoFilterForm action="/app/akuntansi/bank/transfer" className="flex flex-wrap items-center gap-1.5">
             <DateRangeField from={{ name: "from", defaultValue: from }} to={{ name: "to", defaultValue: to }} />
             <select
               name="account"
@@ -147,7 +151,7 @@ export default async function BankTransferHistoryPage({
                 Atur ulang
               </Link>
             ) : null}
-          </form>
+          </AutoFilterForm>
         }
         isEmpty={data.transfers.length === 0}
         empty={
@@ -213,16 +217,26 @@ export default async function BankTransferHistoryPage({
                     </td>
                     <td><StatusBadge status={isVoid ? "void" : "posted"} /></td>
                     <td>
-                      {row.journalId ? (
-                        <Link
-                          href={`/app/akuntansi/jurnal/${row.journalId}`}
-                          className="num text-[11px] font-medium text-primary transition-colors hover:underline"
-                        >
-                          {row.journalNumber ?? "Lihat jurnal"}
-                        </Link>
-                      ) : (
-                        <span className="text-[11px] text-muted-foreground">—</span>
-                      )}
+                      <div className="flex flex-col gap-0.5">
+                        {row.journalId ? (
+                          <Link
+                            href={`/app/akuntansi/jurnal/${row.journalId}`}
+                            className="num text-[11px] font-medium text-primary transition-colors hover:underline"
+                          >
+                            {row.journalNumber ?? "Lihat jurnal"}
+                          </Link>
+                        ) : (
+                          <span className="text-[11px] text-muted-foreground">—</span>
+                        )}
+                        {row.reversalJournalId ? (
+                          <Link
+                            href={`/app/akuntansi/jurnal/${row.reversalJournalId}`}
+                            className="num text-[10px] text-muted-foreground transition-colors hover:underline"
+                          >
+                            pembalik: {row.reversalJournalNumber ?? "lihat"}
+                          </Link>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="text-right">
                       {!isVoid && canVoid ? (

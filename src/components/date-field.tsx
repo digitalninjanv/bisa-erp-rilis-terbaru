@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { CalendarDays } from "lucide-react";
 import {
   DATE_DISPLAY_PLACEHOLDER,
   groupDateDigits,
@@ -61,6 +62,7 @@ export function DateField({
     /^\d{4}-\d{2}-\d{2}/.test(initialIso) ? initialIso.slice(0, 10) : "",
   );
   const [error, setError] = useState<string | null>(null);
+  const nativeRef = useRef<HTMLInputElement>(null);
   const lastEmitted = useRef(value ?? defaultValue ?? "");
 
   // Sinkronisasi nilai eksternal (mode terkontrol / reset form).
@@ -111,28 +113,75 @@ export function DateField({
     }
   }
 
+  function handleNativeChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const next = event.target.value;
+    setText(isoToDisplay(next));
+    setError(null);
+    emit(next);
+    onValidityChange?.(true);
+  }
+
+  function openCalendar() {
+    const input = nativeRef.current;
+    if (!input) return;
+    const picker = input as HTMLInputElement & { showPicker?: () => void };
+    try {
+      if (picker.showPicker) {
+        picker.showPicker();
+        return;
+      }
+    } catch {
+      // Browser dapat menolak showPicker di luar gesture; fallback click.
+    }
+    input.click();
+  }
+
   return (
     <div>
       {name ? <input type="hidden" name={name} value={iso} /> : null}
-      <input
-        id={inputId}
-        type="text"
-        value={text}
-        onChange={handleChange}
-        onBlur={handleBlur}
-        inputMode="numeric"
-        autoComplete="off"
-        placeholder={placeholder}
-        disabled={disabled}
-        aria-label={ariaLabel}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={error ? errorId : undefined}
-        className={cn(
-          "field-control num h-9 w-full rounded-md border border-input bg-background px-2.5 text-[12px] outline-none focus:border-ring focus:ring-2 focus:ring-ring/20 disabled:opacity-60",
-          error && "border-destructive",
-          className,
-        )}
-      />
+      <div className="relative">
+        <input
+          id={inputId}
+          type="text"
+          value={text}
+          onChange={handleChange}
+          onBlur={handleBlur}
+          inputMode="numeric"
+          autoComplete="off"
+          placeholder={placeholder}
+          disabled={disabled}
+          aria-label={ariaLabel}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
+          className={cn(
+            "field-control num h-9 w-full rounded-md border border-input bg-background px-2.5 pr-9 text-[12px] outline-none focus:border-ring focus:ring-2 focus:ring-ring/20 disabled:opacity-60",
+            error && "border-destructive",
+            className,
+          )}
+        />
+        <button
+          type="button"
+          onClick={openCalendar}
+          disabled={disabled}
+          aria-label={ariaLabel ? `Pilih ${ariaLabel} dari kalender` : "Pilih tanggal dari kalender"}
+          title="Buka kalender"
+          className="absolute inset-y-0 right-0 grid w-8 place-items-center rounded-r-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+        >
+          <CalendarDays className="size-3.5" />
+        </button>
+        {/* Native input transparan di atas ikon kalender: klik area ikon
+            membuka pemilih tanggal bawaan browser di semua platform,
+            sementara input teks tetap bisa diketik manual. */}
+        <input
+          ref={nativeRef}
+          type="date"
+          value={iso}
+          onChange={handleNativeChange}
+          tabIndex={-1}
+          aria-hidden="true"
+          className="absolute inset-y-0 right-0 w-8 cursor-pointer opacity-0"
+        />
+      </div>
       {error ? (
         <p id={errorId} role="alert" className="mt-1 text-[11px] leading-4 text-destructive">
           {error}

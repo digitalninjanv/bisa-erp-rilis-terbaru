@@ -229,12 +229,22 @@ export default async function PurchaseOrderDetailPage({
                       />
                     </td>
                     <td>
-                      <Link
-                        href={`/app/gudang/penerimaan/${receipt.id}/cetak`}
-                        className="text-[11px] font-medium text-primary hover:underline"
-                      >
-                        Cetak GRN
-                      </Link>
+                      <div className="flex items-center justify-end gap-2">
+                        <Link
+                          href={`/app/gudang/penerimaan/${receipt.id}/cetak`}
+                          className="text-[11px] font-medium text-primary hover:underline"
+                        >
+                          Cetak GRN
+                        </Link>
+                        {receipt.status === "posted" && can(ctx, "inventory.manage") ? (
+                          <Link
+                            href={`/app/gudang/retur-pembelian/baru?receiptId=${receipt.id}`}
+                            className="text-[11px] font-medium text-primary hover:underline"
+                          >
+                            Retur
+                          </Link>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 ))}

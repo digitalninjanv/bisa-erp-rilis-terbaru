@@ -5,7 +5,7 @@
  */
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ImageUp } from "lucide-react";
 import { toast } from "sonner";
@@ -17,13 +17,19 @@ import {
   PRINT_DOCUMENT_PAPER_LABELS,
   PRINT_FONT_LABELS,
   PRINT_RECEIPT_PAPER_LABELS,
+  PRINT_DOCUMENT_TYPES,
   PRINT_SIGNATURE_DOCS,
+  applyPrintDocumentOverride,
   PRINT_TEMPLATE_LABELS,
   paperSpec,
   resolveSignatureLabels,
+  sanitizePrintDocumentOverrides,
   sanitizePrintSignatureLabels,
   type PrintDocumentPaper,
   type PrintFontChoice,
+  type PrintDocumentOverride,
+  type PrintDocumentType,
+  type PrintSignatureDocType,
   type PrintReceiptPaper,
   type PrintSettings,
   type PrintTemplate,
@@ -48,53 +54,8 @@ export type PrintSettingsValues = {
   printShowSession: boolean;
   printShowBranding: boolean;
   printSignatureLabels: Record<string, string[]>;
+  printDocumentSettings: Record<string, unknown>;
 };
-
-/**
- * CT-16: scales its child down (never up) so a full-width document
- * preview fits the settings column — the A4 shell is 186mm wide and
- * used to overflow its card, hiding the title block and signatures.
- * The wrapper height is corrected to the scaled height so the layout
- * below does not jump or overlap.
- */
-function ScaledPreview({ children }: { children: ReactNode }) {
-  const outerRef = useRef<HTMLDivElement>(null);
-  const innerRef = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(1);
-  const [height, setHeight] = useState<number | undefined>(undefined);
-
-  useEffect(() => {
-    const outer = outerRef.current;
-    const inner = innerRef.current;
-    if (!outer || !inner) return;
-    const update = () => {
-      const available = outer.clientWidth;
-      const naturalWidth = inner.offsetWidth;
-      const naturalHeight = inner.offsetHeight;
-      if (!available || !naturalWidth) return;
-      const next = Math.min(1, available / naturalWidth);
-      setScale(next);
-      setHeight(naturalHeight * next);
-    };
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(outer);
-    observer.observe(inner);
-    return () => observer.disconnect();
-  }, []);
-
-  return (
-    <div ref={outerRef} className="relative w-full overflow-hidden" style={{ height }}>
-      <div
-        ref={innerRef}
-        className="absolute left-0 top-0 w-fit"
-        style={{ transform: `scale(${scale})`, transformOrigin: "top left" }}
-      >
-        {children}
-      </div>
-    </div>
-  );
-}
 
 /**
  * Print Engine settings (T4-4, D-13) with a live preview. The preview
@@ -107,7 +68,7 @@ export function PrintSettingsForm({
   company,
 }: {
   initial: PrintSettingsValues;
-  company: { legalName: string; address: string; phone: string };
+  company: { legalName: string; address: string; phone: string; taxId?: string };
 }) {
   const router = useRouter();
   const [form, setForm] = useState(initial);
@@ -119,6 +80,8 @@ export function PrintSettingsForm({
   // lewat uploadPrintLogoAction; URL tetap dapat diisi manual).
   const logoInputRef = useRef<HTMLInputElement>(null);
   const [logoBusy, setLogoBusy] = useState(false);
+  const [section, setSection] = useState<"global" | "dokumen">("global");
+  const [previewDocType, setPreviewDocType] = useState<PrintDocumentType>("penerimaan");
 
   async function pickLogo(file: File) {
     if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
@@ -151,7 +114,7 @@ export function PrintSettingsForm({
     reader.readAsDataURL(file);
   }
 
-  const previewSettings: PrintSettings = {
+  const globalPreviewSettings: PrintSettings = {
     template: form.printTemplate as PrintTemplate,
     logoUrl: form.printLogoUrl || null,
     accentColor: /^#[0-9a-fA-F]{6}$/.test(form.printAccentColor) ? form.printAccentColor : "#111827",
@@ -169,6 +132,32 @@ export function PrintSettingsForm({
     showBranding: form.printShowBranding,
     signatureLabels: sanitizePrintSignatureLabels(form.printSignatureLabels),
   };
+  const previewDoc =
+    PRINT_DOCUMENT_TYPES.find((doc) => doc.key === previewDocType) ?? PRINT_DOCUMENT_TYPES[0];
+  const previewSettings = applyPrintDocumentOverride(
+    globalPreviewSettings,
+    sanitizePrintDocumentOverrides(form.printDocumentSettings),
+    previewDocType,
+  );
+  const previewIsReceipt = previewDoc.paper === "receipt";
+  const PREVIEW_SIGNATURE_DOC: Partial<Record<PrintDocumentType, PrintSignatureDocType>> = {
+    faktur: "faktur",
+    pembelian: "pembelian",
+    penerimaan: "penerimaan",
+    retur_pembelian: "retur_pembelian",
+    transfer: "transfer",
+    opname: "opname",
+    payroll: "payroll",
+    jurnal: "jurnal",
+  };
+  const previewSignatureKey = PREVIEW_SIGNATURE_DOC[previewDocType];
+  const previewSignatureLabels = previewSignatureKey
+    ? resolveSignatureLabels(
+        previewSettings,
+        previewSignatureKey,
+        PRINT_SIGNATURE_DOCS.find((doc) => doc.key === previewSignatureKey)?.defaults ?? [],
+      )
+    : ["Dibuat oleh", "Diterima oleh"];
 
   async function saveAll() {
     const result = await savePrintSettingsAction({
@@ -188,6 +177,7 @@ export function PrintSettingsForm({
       printShowSession: form.printShowSession,
       printShowBranding: form.printShowBranding,
       printSignatureLabels: sanitizePrintSignatureLabels(form.printSignatureLabels),
+      printDocumentSettings: form.printDocumentSettings,
     });
     if (!result.ok) {
       toast.error(result.message);
@@ -199,13 +189,52 @@ export function PrintSettingsForm({
 
   const { setDirty } = useSettingsSection("cetak", saveAll);
 
+  function updateDocumentOverride(
+    docType: PrintDocumentType,
+    patch: PrintDocumentOverride,
+  ) {
+    setForm((current) => {
+      const existing = (current.printDocumentSettings[docType] as PrintDocumentOverride | undefined) ?? {};
+      const next: PrintDocumentOverride = { ...existing, ...patch };
+      for (const key of Object.keys(next) as (keyof PrintDocumentOverride)[]) {
+        if (next[key] === undefined) delete next[key];
+      }
+      const settings = { ...current.printDocumentSettings };
+      if (Object.keys(next).length > 0) settings[docType] = next;
+      else delete settings[docType];
+      return { ...current, printDocumentSettings: settings };
+    });
+  }
+
   useEffect(() => {
     setDirty(JSON.stringify(form) !== JSON.stringify(baselineRef.current));
   }, [form, setDirty]);
 
   return (
-    <div className="grid gap-3 xl:grid-cols-[minmax(0,460px)_minmax(0,1fr)]">
-      <div className="rounded-lg border border-border bg-card">
+    <div>
+      <div className="mb-3 flex flex-wrap gap-1 rounded-lg border border-border bg-muted/40 p-0.5">
+        {[
+          { key: "global" as const, label: "Global" },
+          { key: "dokumen" as const, label: "Per dokumen" },
+        ].map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => setSection(item.key)}
+            aria-pressed={section === item.key}
+            className={
+              section === item.key
+                ? "inline-flex h-8 items-center rounded-md bg-card px-3 text-[12px] font-semibold text-foreground shadow-sm"
+                : "inline-flex h-8 items-center rounded-md px-3 text-[12px] text-muted-foreground transition-colors hover:text-foreground"
+            }
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,460px)_minmax(0,1fr)]">
+      <div className={`rounded-lg border border-border bg-card ${section === "global" ? "" : "hidden"}`}>
         <div className="border-b border-border px-4 py-3">
           <h2 className="text-[13px] font-semibold">Mesin cetak</h2>
           <p className="mt-0.5 text-[11px] text-muted-foreground">
@@ -391,102 +420,282 @@ export function PrintSettingsForm({
         </div>
       </div>
 
-      <div className="rounded-lg border border-border bg-card">
+      <div className={`rounded-lg border border-border bg-card xl:col-span-2 ${section === "dokumen" ? "" : "hidden"}`}>
+        <div className="border-b border-border px-4 py-3">
+          <h2 className="text-[13px] font-semibold">Template per dokumen</h2>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
+            Override desain di atas pengaturan global. Kosongkan pilihan untuk mengikuti template global.
+            Pola ini sama dengan paper format per report di Odoo: default global, override per jenis dokumen.
+          </p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="data-table min-w-[860px]">
+            <thead>
+              <tr>
+                <th>Dokumen</th>
+                <th>Template</th>
+                <th>Font</th>
+                <th>Kertas</th>
+                <th>QR</th>
+                <th>TTD</th>
+                <th>Merek</th>
+              </tr>
+            </thead>
+            <tbody>
+              {PRINT_DOCUMENT_TYPES.map((doc) => {
+                const override = (form.printDocumentSettings[doc.key] as PrintDocumentOverride | undefined) ?? {};
+                const paperValue = doc.paper === "receipt" ? override.receiptPaper : override.documentPaper;
+                return (
+                  <tr key={doc.key}>
+                    <td className="text-[11px] font-medium">{doc.label}</td>
+                    <td>
+                      <select
+                        value={override.template ?? ""}
+                        onChange={(event) =>
+                          updateDocumentOverride(doc.key, {
+                            template: (event.target.value || undefined) as PrintTemplate | undefined,
+                          })
+                        }
+                        className="h-8 min-w-[120px] rounded-md border border-input bg-background px-1.5 text-[11px]"
+                        aria-label={`Template ${doc.label}`}
+                      >
+                        <option value="">Ikuti global</option>
+                        {(Object.keys(PRINT_TEMPLATE_LABELS) as PrintTemplate[]).map((key) => (
+                          <option key={key} value={key}>{PRINT_TEMPLATE_LABELS[key]}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
+                      <select
+                        value={override.font ?? ""}
+                        onChange={(event) =>
+                          updateDocumentOverride(doc.key, {
+                            font: (event.target.value || undefined) as PrintFontChoice | undefined,
+                          })
+                        }
+                        className="h-8 min-w-[110px] rounded-md border border-input bg-background px-1.5 text-[11px]"
+                        aria-label={`Font ${doc.label}`}
+                      >
+                        <option value="">Ikuti global</option>
+                        {(Object.keys(PRINT_FONT_LABELS) as PrintFontChoice[]).map((key) => (
+                          <option key={key} value={key}>{PRINT_FONT_LABELS[key]}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
+                      <select
+                        value={paperValue ?? ""}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          if (doc.paper === "receipt") {
+                            updateDocumentOverride(doc.key, {
+                              receiptPaper: (value || undefined) as PrintReceiptPaper | undefined,
+                            });
+                          } else {
+                            updateDocumentOverride(doc.key, {
+                              documentPaper: (value || undefined) as PrintDocumentPaper | undefined,
+                            });
+                          }
+                        }}
+                        className="h-8 min-w-[130px] rounded-md border border-input bg-background px-1.5 text-[11px]"
+                        aria-label={`Kertas ${doc.label}`}
+                      >
+                        <option value="">Ikuti global</option>
+                        {doc.paper === "receipt"
+                          ? (Object.keys(PRINT_RECEIPT_PAPER_LABELS) as PrintReceiptPaper[]).map((key) => (
+                              <option key={key} value={key}>{PRINT_RECEIPT_PAPER_LABELS[key]}</option>
+                            ))
+                          : (Object.keys(PRINT_DOCUMENT_PAPER_LABELS) as PrintDocumentPaper[]).map((key) => (
+                              <option key={key} value={key}>{PRINT_DOCUMENT_PAPER_LABELS[key]}</option>
+                            ))}
+                      </select>
+                    </td>
+                    {([
+                      ["showQr", "QR"],
+                      ["showSignature", "TTD"],
+                      ["showBranding", "Merek"],
+                    ] as const).map(([key, label]) => (
+                      <td key={key}>
+                        <select
+                          value={override[key] === undefined ? "" : override[key] ? "1" : "0"}
+                          onChange={(event) =>
+                            updateDocumentOverride(doc.key, {
+                              [key]:
+                                event.target.value === "" ? undefined : event.target.value === "1",
+                            })
+                          }
+                          className="h-8 rounded-md border border-input bg-background px-1.5 text-[11px]"
+                          aria-label={`${label} ${doc.label}`}
+                        >
+                          <option value="">Global</option>
+                          <option value="1">Tampil</option>
+                          <option value="0">Sembunyi</option>
+                        </select>
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className={`rounded-lg border border-border bg-card ${section === "global" ? "" : "hidden"}`}>
         <div className="border-b border-border px-4 py-3">
           <h2 className="text-[13px] font-semibold">Pratinjau langsung</h2>
           <p className="mt-0.5 text-[11px] text-muted-foreground">Contoh dokumen dengan kerangka cetak yang sama seperti aslinya.</p>
         </div>
-        <div className="space-y-4 overflow-x-auto p-4">
-          <ScaledPreview>
-          <div className="w-fit bg-white p-4 text-black shadow-sm ring-1 ring-border">
-            <PrintShell settings={previewSettings} paper={previewSettings.documentPaper} pageStyle={false}>
-              <PrintHeader
-                settings={previewSettings}
-                companyName={company.legalName}
-                address={company.address || null}
-                phone={company.phone || null}
-                variant="document"
-                title="Bukti Penerimaan Barang"
-                number="GRN-CONTOH-001"
-                dateLabel="4 November 2026"
-              />
-              <table className="w-full text-[12px]">
-                <tbody>
-                  <tr className="border-b border-black/15">
-                    <td className="py-1.5 pr-2">Contoh Produk A</td>
-                    <td className="num py-1.5 text-right">2 × {formatIDR(7500)}</td>
-                    <td className="num py-1.5 text-right">{formatIDR(15000)}</td>
-                  </tr>
-                  <tr className="border-b border-black/15">
-                    <td className="py-1.5 pr-2">Contoh Produk B</td>
-                    <td className="num py-1.5 text-right">1 × {formatIDR(12000)}</td>
-                    <td className="num py-1.5 text-right">{formatIDR(12000)}</td>
-                  </tr>
-                  <tr>
-                    <td colSpan={2} className="pt-2 text-right font-bold">TOTAL</td>
-                    <td className="num pt-2 text-right font-bold">{formatIDR(27000)}</td>
-                  </tr>
-                </tbody>
-              </table>
-              <PrintFooter
-                settings={previewSettings}
-                documentNumber="GRN-CONTOH-001"
-                variant="document"
-                qrSizeMm={paperSpec(previewSettings.documentPaper).qrMm}
-                signatures={resolveSignatureLabels(
-                  previewSettings,
-                  "penerimaan",
-                  PRINT_SIGNATURE_DOCS.find((doc) => doc.key === "penerimaan")!.defaults,
-                ).map((label, index) => ({
-                  label,
-                  name: ["Pemasok / Pengirim", "Petugas gudang", "Kepala gudang / Pemilik"][index],
-                }))}
-              />
-            </PrintShell>
+        <div className="space-y-3 p-4">
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <p className="text-[12px] font-semibold">Pratinjau: {previewDoc.label}</p>
+              <p className="text-[11px] text-muted-foreground">
+                {PRINT_TEMPLATE_LABELS[previewSettings.template]} ·{" "}
+                {previewIsReceipt
+                  ? PRINT_RECEIPT_PAPER_LABELS[previewSettings.receiptPaper]
+                  : PRINT_DOCUMENT_PAPER_LABELS[previewSettings.documentPaper]}{" "}
+                · {PRINT_FONT_LABELS[previewSettings.font]}
+              </p>
+            </div>
+            <label className="space-y-1">
+              <span className="block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Dokumen contoh
+              </span>
+              <select
+                value={previewDocType}
+                onChange={(event) => setPreviewDocType(event.target.value as PrintDocumentType)}
+                className="h-8 min-w-[220px] rounded-md border border-input bg-background px-2 text-[11px]"
+              >
+                {PRINT_DOCUMENT_TYPES.map((doc) => (
+                  <option key={doc.key} value={doc.key}>{doc.label}</option>
+                ))}
+              </select>
+            </label>
           </div>
-          </ScaledPreview>
 
-          <div className="w-fit bg-white p-3 text-black shadow-sm ring-1 ring-border">
-            <PrintShell settings={previewSettings} paper={previewSettings.receiptPaper} pageStyle={false}>
-              <div style={{ fontSize: 11, lineHeight: 1.35 }}>
-                <PrintHeader
-                  settings={previewSettings}
-                  companyName={company.legalName}
-                  address={company.address || null}
-                  phone={company.phone || null}
-                  variant="receipt"
-                />
-                {previewSettings.showCashier ? (
-                  <div className="flex justify-between">
-                    <span>Kasir</span>
-                    <span>Kasir contoh</span>
+          <div className="flex justify-center overflow-x-auto">
+            {previewIsReceipt ? (
+              <div className="w-fit bg-white p-3 text-black shadow-sm ring-1 ring-border">
+                <PrintShell settings={previewSettings} paper={previewSettings.receiptPaper} pageStyle={false}>
+                  <div className="receipt" style={{ fontSize: 11, lineHeight: 1.35 }}>
+                    <PrintHeader
+                      settings={previewSettings}
+                      companyName={company.legalName}
+                      address={company.address || null}
+                      phone={company.phone || null}
+                      taxId={company.taxId || null}
+                      variant="receipt"
+                    />
+                    <div className="flex justify-between">
+                      <span>No.</span>
+                      <span className="num">INV-CONTOH-001</span>
+                    </div>
+                    {previewSettings.showCashier ? (
+                      <div className="flex justify-between">
+                        <span>Kasir</span>
+                        <span>Kasir contoh</span>
+                      </div>
+                    ) : null}
+                    {previewSettings.showSession ? (
+                      <div className="flex justify-between">
+                        <span>Sesi</span>
+                        <span className="num">01a1b3ba</span>
+                      </div>
+                    ) : null}
+                    {previewSettings.showCustomer ? (
+                      <div className="flex justify-between">
+                        <span>Pelanggan</span>
+                        <span>Pelanggan contoh</span>
+                      </div>
+                    ) : null}
+                    <div className="my-2 border-t border-dashed border-black/50" />
+                    <div className="flex justify-between">
+                      <span>Contoh Produk A ×2</span>
+                      <span className="num">{formatIDR(15000)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Contoh Produk B ×1</span>
+                      <span className="num">{formatIDR(12000)}</span>
+                    </div>
+                    <div className="print-total-bar mt-1 flex justify-between border-t border-black/50 pt-1 text-[13px] font-bold">
+                      <span>TOTAL</span>
+                      <span className="num">{formatIDR(27000)}</span>
+                    </div>
+                    <PrintFooter
+                      settings={previewSettings}
+                      documentNumber="INV-CONTOH-001"
+                      variant="receipt"
+                      qrSizeMm={paperSpec(previewSettings.receiptPaper).qrMm}
+                    />
                   </div>
-                ) : null}
-                {previewSettings.showSession ? (
-                  <div className="flex justify-between">
-                    <span>Sesi</span>
-                    <span className="num">01a1b3ba</span>
-                  </div>
-                ) : null}
-                {previewSettings.showCustomer ? (
-                  <div className="flex justify-between">
-                    <span>Pelanggan</span>
-                    <span>Pelanggan contoh</span>
-                  </div>
-                ) : null}
-                <div className="flex justify-between">
-                  <span>Contoh Produk A ×2</span>
-                  <span className="num">{formatIDR(15000)}</span>
-                </div>
-                <div className="mt-1 flex justify-between font-bold">
-                  <span>TOTAL</span>
-                  <span className="num">{formatIDR(15000)}</span>
-                </div>
-                <PrintFooter settings={previewSettings} documentNumber="INV-CONTOH-001" variant="receipt" qrSizeMm={paperSpec(previewSettings.receiptPaper).qrMm} />
+                </PrintShell>
               </div>
-            </PrintShell>
+            ) : (
+              <div className="w-fit bg-white p-4 text-black shadow-sm ring-1 ring-border">
+                <PrintShell settings={previewSettings} paper={previewSettings.documentPaper} pageStyle={false}>
+                  <PrintHeader
+                    settings={previewSettings}
+                    companyName={company.legalName}
+                    address={company.address || null}
+                    phone={company.phone || null}
+                    taxId={company.taxId || null}
+                    variant="document"
+                    title={previewDoc.label}
+                    number="DOK-CONTOH-001"
+                    dateLabel="12 November 2026"
+                  />
+                  <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-[11px]">
+                    <div>
+                      <p className="text-black/60">Pihak / Tujuan</p>
+                      <p className="font-medium">Contoh Pihak</p>
+                    </div>
+                    <div>
+                      <p className="text-black/60">Referensi</p>
+                      <p className="num font-medium">REF-CONTOH-001</p>
+                    </div>
+                  </div>
+                  <table className="mt-3 w-full text-[12px]">
+                    <thead>
+                      <tr className="border-y border-black/60 text-left">
+                        <th className="py-1.5 pr-2 font-semibold">Produk</th>
+                        <th className="py-1.5 pr-2 text-right font-semibold">Qty</th>
+                        <th className="py-1.5 text-right font-semibold">Jumlah</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="border-b border-black/15">
+                        <td className="py-1.5 pr-2">Contoh Produk A</td>
+                        <td className="num py-1.5 pr-2 text-right">2</td>
+                        <td className="num py-1.5 text-right">{formatIDR(15000)}</td>
+                      </tr>
+                      <tr className="border-b border-black/15">
+                        <td className="py-1.5 pr-2">Contoh Produk B</td>
+                        <td className="num py-1.5 pr-2 text-right">1</td>
+                        <td className="num py-1.5 text-right">{formatIDR(12000)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <div className="print-total-bar mt-1 flex justify-between border-t border-black/50 pt-1 text-[13px] font-bold">
+                    <span>TOTAL</span>
+                    <span className="num">{formatIDR(27000)}</span>
+                  </div>
+                  <PrintFooter
+                    settings={previewSettings}
+                    documentNumber="DOK-CONTOH-001"
+                    variant="document"
+                    qrSizeMm={paperSpec(previewSettings.documentPaper).qrMm}
+                    signatures={previewSignatureLabels.map((label, index) => ({
+                      label,
+                      name: ["Kasir contoh", "Contoh Pihak", "Mengetahui"][index],
+                    }))}
+                  />
+                </PrintShell>
+              </div>
+            )}
           </div>
         </div>
+      </div>
       </div>
     </div>
   );

@@ -154,6 +154,8 @@ export async function getReceiptDetail(tx: Tx, companyId: string, id: string) {
       postedAt: stockReceipts.postedAt,
       createdAt: stockReceipts.createdAt,
       purchaseOrderId: stockReceipts.purchaseOrderId,
+      supplierId: stockReceipts.supplierId,
+      warehouseId: stockReceipts.warehouseId,
       supplierName: suppliers.name,
       warehouseName: warehouses.name,
       paymentAccountCode: accounts.code,

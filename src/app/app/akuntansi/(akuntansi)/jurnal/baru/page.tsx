@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { asc, eq } from "drizzle-orm";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, History } from "lucide-react";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { fiscalPeriods } from "@/db/schema";
 import { getAccountMap, listPostableAccounts } from "@/server/accounting";
@@ -36,13 +36,21 @@ export default async function NewJournalPage() {
 
   return (
     <div>
-      <Link href="/app/akuntansi/jurnal" className="mb-3 inline-flex min-h-8 items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground">
-        <ArrowLeft className="size-3.5" /> Kembali ke jurnal
+      <Link href="/app/akuntansi" className="mb-3 inline-flex min-h-8 items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground">
+        <ArrowLeft className="size-3.5" /> Kembali ke akuntansi
       </Link>
       <PageHeader
         eyebrow="Akuntansi"
         title="Jurnal baru"
         description="Formulir mulai dengan tiga baris. Isi debit atau kredit; baris berdekatan yang akunnya sudah dipilih terisi otomatis sebagai penyeimbang. Keterangan opsional."
+        actions={
+          <Link
+            href="/app/akuntansi/jurnal/riwayat"
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] font-medium transition-colors hover:bg-muted"
+          >
+            <History className="size-3.5" /> Riwayat
+          </Link>
+        }
       />
       <JournalEntryForm
         accounts={accounts.map((row) => ({ id: row.id, code: row.code, name: row.name, type: row.type }))}

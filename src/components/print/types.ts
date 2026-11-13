@@ -6,11 +6,65 @@
  * document data being printed.
  */
 
-export type PrintTemplate = "modern" | "minimal" | "classic";
+export type PrintTemplate = "modern" | "minimal" | "classic" | "corporate" | "compact" | "elegant";
 export type PrintFontChoice = "sans" | "serif" | "mono";
 export type PrintReceiptPaper = "thermal58" | "thermal80" | "a5" | "a4";
 export type PrintDocumentPaper = "a4" | "a5";
 export type PrintPaper = PrintReceiptPaper | PrintDocumentPaper;
+
+/** Dokumen yang boleh punya override desain sendiri (Odoo paper format
+ * per report; NetSuite template per report type). */
+export type PrintDocumentType =
+  | "nota"
+  | "faktur"
+  | "pembelian"
+  | "penerimaan"
+  | "retur_pembelian"
+  | "transfer"
+  | "opname"
+  | "jurnal"
+  | "buku_besar"
+  | "laporan"
+  | "pajak"
+  | "aging"
+  | "payroll"
+  | "z_report"
+  | "statement";
+
+export type PrintDocumentOverride = {
+  template?: PrintTemplate;
+  font?: PrintFontChoice;
+  accentColor?: string;
+  receiptPaper?: PrintReceiptPaper;
+  documentPaper?: PrintDocumentPaper;
+  showQr?: boolean;
+  showSignature?: boolean;
+  showBranding?: boolean;
+};
+
+export type PrintDocumentOverrides = Partial<Record<PrintDocumentType, PrintDocumentOverride>>;
+
+export const PRINT_DOCUMENT_TYPES: {
+  key: PrintDocumentType;
+  label: string;
+  paper: "receipt" | "document";
+}[] = [
+  { key: "nota", label: "Nota kasir (thermal)", paper: "receipt" },
+  { key: "faktur", label: "Faktur penjualan", paper: "document" },
+  { key: "pembelian", label: "Pesanan pembelian (PO)", paper: "document" },
+  { key: "penerimaan", label: "Bukti penerimaan barang (GRN)", paper: "document" },
+  { key: "retur_pembelian", label: "Retur pembelian", paper: "document" },
+  { key: "transfer", label: "Transfer gudang", paper: "document" },
+  { key: "opname", label: "Lembar hitung opname", paper: "document" },
+  { key: "jurnal", label: "Jurnal umum", paper: "document" },
+  { key: "buku_besar", label: "Buku besar", paper: "document" },
+  { key: "laporan", label: "Laporan keuangan", paper: "document" },
+  { key: "pajak", label: "Buku PPN", paper: "document" },
+  { key: "aging", label: "Aging piutang/utang", paper: "document" },
+  { key: "payroll", label: "Slip gaji", paper: "document" },
+  { key: "z_report", label: "Laporan tutup sesi (Z)", paper: "document" },
+  { key: "statement", label: "Statement piutang pelanggan", paper: "document" },
+];
 
 export interface PrintSettings {
   template: PrintTemplate;
@@ -80,6 +134,60 @@ export type PrintSignatureDocType =
   | "faktur";
 
 export type PrintSignatureLabels = Partial<Record<PrintSignatureDocType, string[]>>;
+
+/** Sanitasi override desain per dokumen dari jsonb / input pengguna. */
+export function sanitizePrintDocumentOverrides(value: unknown): PrintDocumentOverrides {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const out: PrintDocumentOverrides = {};
+  for (const doc of PRINT_DOCUMENT_TYPES) {
+    const raw = (value as Record<string, unknown>)[doc.key];
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const row = raw as Record<string, unknown>;
+    const override: PrintDocumentOverride = {};
+    if (
+      row.template === "modern" ||
+      row.template === "minimal" ||
+      row.template === "classic" ||
+      row.template === "corporate" ||
+      row.template === "compact" ||
+      row.template === "elegant"
+    ) {
+      override.template = row.template;
+    }
+    if (row.font === "sans" || row.font === "serif" || row.font === "mono") {
+      override.font = row.font;
+    }
+    if (typeof row.accentColor === "string" && /^#[0-9a-fA-F]{6}$/.test(row.accentColor)) {
+      override.accentColor = row.accentColor;
+    }
+    if (
+      row.receiptPaper === "thermal58" ||
+      row.receiptPaper === "thermal80" ||
+      row.receiptPaper === "a5" ||
+      row.receiptPaper === "a4"
+    ) {
+      override.receiptPaper = row.receiptPaper;
+    }
+    if (row.documentPaper === "a4" || row.documentPaper === "a5") {
+      override.documentPaper = row.documentPaper;
+    }
+    if (typeof row.showQr === "boolean") override.showQr = row.showQr;
+    if (typeof row.showSignature === "boolean") override.showSignature = row.showSignature;
+    if (typeof row.showBranding === "boolean") override.showBranding = row.showBranding;
+    if (Object.keys(override).length > 0) out[doc.key] = override;
+  }
+  return out;
+}
+
+/** Terapkan override per dokumen di atas pengaturan global. */
+export function applyPrintDocumentOverride(
+  base: PrintSettings,
+  overrides: PrintDocumentOverrides,
+  docType: PrintDocumentType,
+): PrintSettings {
+  const override = overrides[docType];
+  return override ? { ...base, ...override } : base;
+}
 
 export const PRINT_SIGNATURE_DOCS: {
   key: PrintSignatureDocType;
@@ -161,6 +269,9 @@ export const PRINT_TEMPLATE_LABELS: Record<PrintTemplate, string> = {
   modern: "Modern",
   minimal: "Minimal",
   classic: "Klasik",
+  corporate: "Corporate",
+  compact: "Compact",
+  elegant: "Elegan",
 };
 
 export const PRINT_FONT_LABELS: Record<PrintFontChoice, string> = {
@@ -181,7 +292,7 @@ export const PRINT_DOCUMENT_PAPER_LABELS: Record<PrintDocumentPaper, string> = {
   a5: "A5",
 };
 
-const TEMPLATES: PrintTemplate[] = ["modern", "minimal", "classic"];
+const TEMPLATES: PrintTemplate[] = ["modern", "minimal", "classic", "corporate", "compact", "elegant"];
 const FONTS: PrintFontChoice[] = ["sans", "serif", "mono"];
 const RECEIPT_PAPERS: PrintReceiptPaper[] = ["thermal58", "thermal80", "a5", "a4"];
 const DOCUMENT_PAPERS: PrintDocumentPaper[] = ["a4", "a5"];
@@ -209,11 +320,13 @@ export function toPrintSettings(
     printShowSession?: boolean | null;
     printShowBranding?: boolean | null;
     printSignatureLabels?: unknown;
+    printDocumentSettings?: unknown;
   } | null
   | undefined,
+  docType?: PrintDocumentType,
 ): PrintSettings {
   if (!row) return { ...DEFAULT_PRINT_SETTINGS };
-  return {
+  const base: PrintSettings = {
     template: pick(row.printTemplate, TEMPLATES, DEFAULT_PRINT_SETTINGS.template),
     logoUrl: row.printLogoUrl || null,
     accentColor:
@@ -234,6 +347,12 @@ export function toPrintSettings(
     showBranding: row.printShowBranding ?? DEFAULT_PRINT_SETTINGS.showBranding,
     signatureLabels: sanitizePrintSignatureLabels(row.printSignatureLabels),
   };
+  if (!docType) return base;
+  return applyPrintDocumentOverride(
+    base,
+    sanitizePrintDocumentOverrides(row.printDocumentSettings),
+    docType,
+  );
 }
 
 export function printFontFamily(font: PrintFontChoice): string {

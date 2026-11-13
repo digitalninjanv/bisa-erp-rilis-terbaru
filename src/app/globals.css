@@ -459,6 +459,38 @@
   border-top: 1px solid rgba(0, 0, 0, 0.4);
   padding-top: 4px;
 }
+.print-doc--corporate header {
+  border-left: 4px solid var(--print-accent);
+  padding-left: 10px;
+}
+.print-doc--corporate table thead tr {
+  background: #f3f4f6;
+}
+.print-doc--corporate .print-total-bar {
+  background: var(--print-accent);
+  color: #fff;
+  padding: 5px 8px;
+}
+.print-doc--compact {
+  font-size: 0.94em;
+}
+.print-doc--compact table td,
+.print-doc--compact table th {
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+.print-doc--compact .print-total-bar {
+  border-top: 2px solid #000;
+  padding-top: 3px;
+}
+.print-doc--elegant header {
+  text-align: center;
+}
+.print-doc--elegant .print-total-bar {
+  border-top: 1px solid #000;
+  border-bottom: 1px solid #000;
+  padding: 3px 0;
+}
 
 /* FIX-R2 Tahap 1 — bahasa garis & struktur laporan formal.
    Konvensi penyajian: subtotal/total bergaris tunggal di atasnya;

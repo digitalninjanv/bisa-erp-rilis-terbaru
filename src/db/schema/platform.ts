@@ -103,6 +103,11 @@ export const companySettings = pgTable("company_settings", {
   // divalidasi sebelum tulis & disanitasi saat baca oleh
   // src/components/print/types.ts (sanitizePrintSignatureLabels).
   printSignatureLabels: jsonb("print_signature_labels").$type<Record<string, string[]>>(),
+  // Per-document print design overrides ({ [docType]: { template?, font?,
+  // accentColor?, paper?, showQr?, showSignature?, showBranding? } }).
+  // null = every document follows the global print settings. Sanitized on
+  // read by src/components/print/types.ts.
+  printDocumentSettings: jsonb("print_document_settings").$type<Record<string, unknown>>(),
   qrisImage: text("qris_image"),
   // AK-P3-07: per-document-type numbering overrides
   // ({ [docType]: { prefix?, padding? } }); null = every type uses the

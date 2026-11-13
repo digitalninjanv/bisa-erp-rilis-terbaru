@@ -57,7 +57,7 @@ export default async function LedgerPrintPage({
   });
   if (!data.account || !data.ledger) notFound();
 
-  const printSettings = toPrintSettings(data.settings);
+  const printSettings = toPrintSettings(data.settings, "buku_besar");
   const company: ReportCompanyIdentity = {
     legalName: data.settings.legalName ?? ctx.company.name,
     address: data.settings.address,
@@ -92,6 +92,36 @@ export default async function LedgerPrintPage({
         <p className="text-[11px]">
           {accountTypeLabel(data.account.type)} · Saldo normal {normalBalanceLabel(data.account.normalBalance)}
         </p>
+
+        <div className="mt-3 grid grid-cols-2 gap-3 border-y border-black/40 py-2 text-[11px] break-inside-avoid sm:grid-cols-4">
+          <div>
+            <p className="text-[9px] uppercase tracking-wide opacity-60">Saldo awal</p>
+            <p className="num mt-0.5 font-semibold">
+              <PrintAmount value={ledger.opening} />
+            </p>
+            <p className="text-[9px] opacity-60">sebelum {formatDate(from)}</p>
+          </div>
+          <div>
+            <p className="text-[9px] uppercase tracking-wide opacity-60">Mutasi debit</p>
+            <p className="num mt-0.5">
+              <PrintAmount value={ledger.totalDebit} symbol={false} />
+            </p>
+          </div>
+          <div>
+            <p className="text-[9px] uppercase tracking-wide opacity-60">Mutasi kredit</p>
+            <p className="num mt-0.5">
+              <PrintAmount value={ledger.totalCredit} symbol={false} />
+            </p>
+          </div>
+          <div>
+            <p className="text-[9px] uppercase tracking-wide opacity-60">Saldo akhir</p>
+            <p className="num mt-0.5 font-semibold">
+              <PrintAmount value={ledger.closing} />
+            </p>
+            <p className="text-[9px] opacity-60">per {formatDate(to)}</p>
+          </div>
+        </div>
+
         {/* A-22 K6: pratinjau LAYAR tidak boleh overflow di 390
             (tabel ±489px). Pembungkus hanya berlaku di layar
             (print:overflow-visible) — tipografi & lebar kertas
@@ -109,9 +139,9 @@ export default async function LedgerPrintPage({
             </tr>
           </thead>
           <tbody>
-            <tr>
+            <tr className="report-keep">
               <td className="py-1.5" colSpan={3}>
-                Saldo awal periode
+                Saldo awal periode <span className="text-[10px] opacity-60">(sebelum {formatDate(from)})</span>
               </td>
               <td className={cell} />
               <td className={cell} />
@@ -119,6 +149,13 @@ export default async function LedgerPrintPage({
                 <PrintAmount value={ledger.opening} symbol={false} />
               </td>
             </tr>
+            {ledger.items.length === 0 ? (
+              <tr>
+                <td className="py-2 text-[11px] opacity-60" colSpan={6}>
+                  Tidak ada mutasi pada periode ini.
+                </td>
+              </tr>
+            ) : null}
             {ledger.items.map((row) => (
               <tr key={row.id} className="report-keep">
                 <td className="py-1.5">{formatDate(row.date)}</td>
@@ -151,7 +188,7 @@ export default async function LedgerPrintPage({
             </tr>
             <tr className="rule-final font-semibold">
               <td className="py-1.5" colSpan={3}>
-                Saldo akhir periode
+                Saldo akhir periode <span className="text-[10px] font-normal opacity-60">(per {formatDate(to)})</span>
               </td>
               <td className={cell} />
               <td className={cell} />

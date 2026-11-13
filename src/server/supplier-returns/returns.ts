@@ -4,7 +4,7 @@
 // A-26 Q8: posting & void berpindah ke posting.ts, plafon asal-usul
 // ke provenance.ts; berkas ini menyisakan pembuatan & penghapusan draf.
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
 import {
   products,
@@ -396,6 +396,46 @@ async function validateReturnLines(
     }
     return { packagingId: null, isiSnapshot: "1", qtyBase: qty, qtyInput: toDb(qty) };
   });
+
+  // Retur yang dimulai dari GRN tidak boleh melebihi qty baris penerimaan
+  // dikurangi retur lain yang masih hidup. Plafon per baris ini melengkapi
+  // plafon provenance per pemasok/produk di postSupplierReturn.
+  for (let index = 0; index < input.lines.length; index += 1) {
+    const receiptLineId = input.lines[index].receiptLineId;
+    if (!receiptLineId) continue;
+    const [receiptLine] = await tx
+      .select({ qty: stockReceiptLines.qty })
+      .from(stockReceiptLines)
+      .where(
+        and(
+          eq(stockReceiptLines.companyId, input.companyId),
+          eq(stockReceiptLines.id, receiptLineId),
+        ),
+      )
+      .limit(1);
+    if (!receiptLine) {
+      throw new AppError("VALIDATION", "Baris penerimaan asal tidak ditemukan.");
+    }
+    const [prior] = await tx
+      .select({ qty: sql<string>`coalesce(sum(${supplierReturnLines.qty}), 0)` })
+      .from(supplierReturnLines)
+      .innerJoin(supplierReturns, eq(supplierReturnLines.returnId, supplierReturns.id))
+      .where(
+        and(
+          eq(supplierReturnLines.companyId, input.companyId),
+          eq(supplierReturnLines.receiptLineId, receiptLineId),
+          sql`${supplierReturns.status} <> 'void'`,
+        ),
+      );
+    const alreadyReturned = d(prior?.qty ?? 0);
+    const remaining = d(receiptLine.qty).minus(alreadyReturned);
+    if (linePlans[index].qtyBase.gt(remaining)) {
+      throw new AppError(
+        "VALIDATION",
+        `Qty retur ${productById.get(input.lines[index].productId)?.name ?? "produk"} melebihi sisa yang dapat diretur dari penerimaan ini (sisa ${remaining.toFixed(4)}).`,
+      );
+    }
+  }
 
   return { productById, linePlans };
 }

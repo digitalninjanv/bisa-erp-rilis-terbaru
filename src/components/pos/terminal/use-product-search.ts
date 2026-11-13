@@ -54,6 +54,8 @@ export function useProductSearch(params: {
         name: p.name,
         sku: p.sku,
         barcode: p.barcode,
+        categoryId: (p as { categoryId?: string | null }).categoryId ?? null,
+        categoryName: (p as { categoryName?: string | null }).categoryName ?? null,
         salePrice: p.salePrice,
         stock: "stock" in p ? Number((p as { stock?: string }).stock ?? 0) : 0,
         trackStock: (p as { trackStock?: boolean }).trackStock ?? true,

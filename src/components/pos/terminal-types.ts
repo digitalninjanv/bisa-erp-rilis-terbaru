@@ -19,6 +19,8 @@ export type ProductOption = {
   name: string;
   sku: string;
   barcode: string | null;
+  categoryId?: string | null;
+  categoryName?: string | null;
   salePrice: string;
   stock: number;
   // POS-1: produk jasa (trackStock=false) tidak pernah "habis".

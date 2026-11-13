@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/blocks/page-header";
 import { DateRangeField } from "@/components/date-field";
 import { EmptyState } from "@/components/blocks/empty-state";
+import { AutoFilterForm } from "@/components/blocks/auto-filter-form";
 
 export const metadata = { title: "Analisa bisnis" };
 export const dynamic = "force-dynamic";
@@ -180,7 +181,7 @@ export default async function AnalisaPage({
             {periodLabel} · pembanding {formatDate(data.period.priorFrom)} — {formatDate(data.period.priorTo)}
           </span>
         </div>
-        <form action="/app/analisa" className="flex flex-wrap items-center gap-1.5">
+        <AutoFilterForm action="/app/analisa" className="flex flex-wrap items-center gap-1.5">
           <input type="hidden" name="view" value={view} />
           <DateRangeField from={{ name: "from", defaultValue: from }} to={{ name: "to", defaultValue: to }} />
           <button
@@ -189,7 +190,7 @@ export default async function AnalisaPage({
           >
             Terapkan
           </button>
-        </form>
+        </AutoFilterForm>
       </div>
 
       <div id="kesehatan" className="scroll-mt-4">
@@ -272,7 +273,7 @@ export default async function AnalisaPage({
                   </Link>
                 ))}
               </div>
-              <form action="/app/analisa" className="relative min-w-[180px]">
+              <AutoFilterForm action="/app/analisa" className="relative min-w-[180px]">
                 <input type="hidden" name="view" value={view} />
                 <input type="hidden" name="from" value={from} />
                 <input type="hidden" name="to" value={to} />
@@ -284,7 +285,7 @@ export default async function AnalisaPage({
                   aria-label="Cari produk dalam daftar"
                   className="h-8 w-full rounded-md border border-input bg-background pl-7 pr-2 text-[11px] outline-none focus:border-ring"
                 />
-              </form>
+              </AutoFilterForm>
             </div>
           </div>
 

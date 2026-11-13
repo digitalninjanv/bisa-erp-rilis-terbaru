@@ -11,6 +11,7 @@ import { SummaryStrip } from "@/components/blocks/summary-strip";
 import { DataList } from "@/components/blocks/data-list";
 import { EmptyState } from "@/components/blocks/empty-state";
 import { DateRangeField } from "@/components/date-field";
+import { AutoFilterForm } from "@/components/blocks/auto-filter-form";
 
 export const metadata = { title: "Pajak (PPN)" };
 export const dynamic = "force-dynamic";
@@ -101,7 +102,7 @@ export default async function VatReportPage({
             {formatDate(from)} — {formatDate(to)}
           </span>
         </div>
-        <form action="/app/akuntansi/pajak" className="flex flex-wrap items-center gap-1.5">
+        <AutoFilterForm action="/app/akuntansi/pajak" className="flex flex-wrap items-center gap-1.5">
           <DateRangeField
             from={{ name: "from", defaultValue: from }}
             to={{ name: "to", defaultValue: to }}
@@ -112,7 +113,7 @@ export default async function VatReportPage({
           >
             Terapkan
           </button>
-        </form>
+        </AutoFilterForm>
       </div>
 
       {!data.mapped ? (

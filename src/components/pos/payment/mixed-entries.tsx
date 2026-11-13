@@ -81,14 +81,15 @@ export function MixedEntries(props: {
                       campuran — "Uang Pas" = pas sebesar nominal baris. */}
                   {method.type === "cash" ? (
                     <CashChips
-                      pasValue={Number(entries[method.id]?.amount ?? 0)}
+                      total={Number(entries[method.id]?.amount ?? 0)}
+                      tendered={Number(entries[method.id]?.tendered ?? 0)}
                       disabled={total <= 0}
-                      onPick={(value) =>
+                      onChange={(value) =>
                         setEntries((current) => ({
                           ...current,
                           [method.id]: {
                             amount: current[method.id]?.amount ?? "",
-                            tendered: String(value),
+                            tendered: value > 0 ? String(value) : "",
                             reference: current[method.id]?.reference ?? "",
                           },
                         }))

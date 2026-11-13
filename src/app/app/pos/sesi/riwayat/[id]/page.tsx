@@ -54,6 +54,14 @@ export default async function SessionHistoryDetailPage({
         eyebrow="POS"
         title="Rincian sesi kas"
         description={`${session.userName ?? "Kasir"}${session.branchName ? ` · ${session.branchName}` : ""} · dibuka ${formatDateTime(session.openedAt)}`}
+        actions={
+          <Link
+            href={`/app/pos/sesi/riwayat/${session.id}/cetak`}
+            className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            Cetak laporan Z
+          </Link>
+        }
       />
 
       <section className="overflow-hidden rounded-lg border border-border bg-card">

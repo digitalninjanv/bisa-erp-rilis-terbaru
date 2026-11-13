@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Search } from "lucide-react";
+import { AutoFilterForm } from "@/components/blocks/auto-filter-form";
 
 export function SearchForm({
   action,
@@ -15,7 +16,7 @@ export function SearchForm({
   children?: React.ReactNode;
 }) {
   return (
-    <form action={action} method="get" className="flex flex-wrap items-center gap-2">
+    <AutoFilterForm action={action} className="flex flex-wrap items-center gap-2">
       {Object.entries(hidden).map(([key, value]) =>
         value ? <input key={key} type="hidden" name={key} value={value} /> : null,
       )}
@@ -36,7 +37,7 @@ export function SearchForm({
       >
         Cari
       </button>
-    </form>
+    </AutoFilterForm>
   );
 }
 

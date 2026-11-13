@@ -105,6 +105,12 @@ export async function createBankTransfer(
     .returning({ id: bankTransfers.id, number: bankTransfers.number });
 
   const map = await getAccountMap(tx, input.companyId);
+  if (fee.gt(0) && !map.bank_fee) {
+    throw new AppError(
+      "VALIDATION",
+      'Akun untuk "bank_fee" belum dipetakan di Pengaturan, jadi biaya transfer tidak dapat dijurnal.',
+    );
+  }
   const journal = await postJournal(tx, {
     companyId: input.companyId,
     date: input.date,
@@ -141,8 +147,9 @@ export async function createBankTransfer(
  * saringan, urutan, dan batas sama persis dengan kueri lama).
  */
 type BankTransferListOptions = {
-  from: string;
-  to: string;
+  /** Kosong = tanpa batas tanggal (semua waktu). */
+  from?: string;
+  to?: string;
   limit?: number;
   offset?: number;
   /** Rekening asal ATAU tujuan — filter "rekening" pada histori. */
@@ -153,11 +160,9 @@ type BankTransferListOptions = {
 };
 
 function bankTransferConditions(companyId: string, opts: BankTransferListOptions) {
-  const conditions = [
-    eq(bankTransfers.companyId, companyId),
-    gte(bankTransfers.date, opts.from),
-    lte(bankTransfers.date, opts.to),
-  ];
+  const conditions = [eq(bankTransfers.companyId, companyId)];
+  if (opts.from) conditions.push(gte(bankTransfers.date, opts.from));
+  if (opts.to) conditions.push(lte(bankTransfers.date, opts.to));
   if (opts.accountId) {
     conditions.push(
       or(
@@ -189,10 +194,21 @@ export async function listBankTransfers(
     rows.map((row) => row.id),
   );
   return rows.map((row) => {
-    const primary = (journalsByTransfer.get(row.id) ?? []).find(
+    const journals = journalsByTransfer.get(row.id) ?? [];
+    const primary = journals.find(
       (journal) => journal.sourceType === "bank_transfer" && !journal.reversalOfId,
     );
-    return { ...row, journalId: primary?.id ?? null, journalNumber: primary?.number ?? null };
+    // postJournal memberi sourceType `${asal}_reversal` pada jurnal
+    // pembalik, jadi jangan menyaring dengan "bank_transfer" lagi:
+    // cukup reversalOfId yang menandai jurnal pembalik dokumen ini.
+    const reversal = journals.find((journal) => Boolean(journal.reversalOfId));
+    return {
+      ...row,
+      journalId: primary?.id ?? null,
+      journalNumber: primary?.number ?? null,
+      reversalJournalId: reversal?.id ?? null,
+      reversalJournalNumber: reversal?.number ?? null,
+    };
   });
 }
 

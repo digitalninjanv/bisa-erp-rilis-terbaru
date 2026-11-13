@@ -23,6 +23,8 @@ export type SessionHistoryRowData = {
   countedCash: string | null;
   difference: string | null;
   transactionCount: number;
+  nonCashSalesTotal?: string;
+  longOpen?: boolean;
 };
 
 export function cashMovementLabel(type: string): string {
@@ -81,6 +83,7 @@ export function SessionHistoryTable({ rows }: { rows: SessionHistoryRowData[] })
             <th scope="col">Dibuka</th>
             <th scope="col">Ditutup</th>
             <th scope="col" className="text-right">Transaksi</th>
+            <th scope="col" className="text-right">Non-tunai</th>
             <th scope="col" className="text-right">Modal awal</th>
             <th scope="col" className="text-right">
               Masuk
@@ -127,6 +130,7 @@ export function SessionHistoryTable({ rows }: { rows: SessionHistoryRowData[] })
                 )}
               </td>
               <td className="num text-right">{row.transactionCount}</td>
+              <td className="num text-right">{formatIDR(row.nonCashSalesTotal ?? "0")}</td>
               <td className="num text-right">{formatIDR(row.openingCash)}</td>
               <td className="num text-right">{formatIDR(row.totalIn)}</td>
               <td className="num text-right">{formatIDR(row.totalOut)}</td>
@@ -136,9 +140,17 @@ export function SessionHistoryTable({ rows }: { rows: SessionHistoryRowData[] })
               </td>
               <td className="num text-right">
                 <DifferenceText difference={row.difference} />
+                {row.difference != null && row.totalIn && d(row.totalIn).gt(0) ? (
+                  <span className="block text-[10px] text-muted-foreground">
+                    {d(row.difference).div(d(row.totalIn)).mul(100).toFixed(1)}%
+                  </span>
+                ) : null}
               </td>
               <td>
                 <SessionStatusBadge status={row.status} />
+                {row.longOpen ? (
+                  <span className="block text-[10px] font-medium text-destructive">Terbuka &gt;24 jam</span>
+                ) : null}
               </td>
             </tr>
           ))}

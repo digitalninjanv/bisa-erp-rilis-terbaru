@@ -134,7 +134,9 @@ export function ReceiptForm({
   canPrice?: boolean;
 }) {
   const router = useRouter();
-  const [open, setOpen] = useState(Boolean(initialPurchaseOrder));
+  // Halaman penerimaan langsung menampilkan formulir; tombol
+  // "Penerimaan baru" hanya relevan setelah pengguna menutup form.
+  const [open, setOpen] = useState(true);
   // GDG3-06: satu kunci idempotensi per pembukaan form — submit ulang
   // (klik ganda / retry jaringan) mengembalikan dokumen pertama.
   // Diperbarui sesudah submit berhasil agar dokumen berikutnya baru.
@@ -398,7 +400,6 @@ export function ReceiptForm({
     setTaxPercent(d(taxRate || "0").gt(0) ? String(d(taxRate || "0").toNumber()) : "0");
     setAdvanceApplied("0");
     setAdvanceResetKey((value) => value + 1);
-    setOpen(false);
     router.refresh();
   }
 

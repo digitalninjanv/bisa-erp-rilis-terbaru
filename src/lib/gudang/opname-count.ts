@@ -252,11 +252,17 @@ export type OpnameDraftRow = {
   components?: Record<string, string>;
 };
 
+export type OpnameScope = "full" | "cycle";
+
 export type OpnameDraft = {
   warehouseId: string;
   date: string;
   notes: string;
   step: "hitung" | "tinjau";
+  /** full = seluruh produk aktif; cycle = subset yang dipilih/dipindai. */
+  scope?: OpnameScope;
+  /** true setelah "Muat semua" berhasil untuk gudang ini. */
+  fullLoaded?: boolean;
   rows: OpnameDraftRow[];
 };
 
@@ -322,6 +328,8 @@ export function parseOpnameDraft(raw: string | null): OpnameDraft | null {
     date: draft.date,
     notes: draft.notes,
     step: draft.step === "tinjau" ? "tinjau" : "hitung",
+    scope: draft.scope === "cycle" ? "cycle" : "full",
+    fullLoaded: draft.fullLoaded === true,
     rows: draft.rows,
   };
 }

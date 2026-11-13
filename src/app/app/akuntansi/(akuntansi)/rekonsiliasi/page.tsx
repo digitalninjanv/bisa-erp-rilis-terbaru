@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AutoFilterForm } from "@/components/blocks/auto-filter-form";
 import { BookOpen, Landmark } from "lucide-react";
 import { withCompanyReadOnly } from "@/db/tenant";
 import {
@@ -190,7 +191,7 @@ export default async function RekonsiliasiPage({
           Formulir impor tidak lagi mendominasi paruh atas halaman;
           pekerjaan harian (pencocokan) menjadi isi utama. */}
       <div className="mb-3 flex flex-wrap items-end gap-2">
-        <form method="get" className="flex flex-wrap items-end gap-2">
+        <AutoFilterForm action="/app/akuntansi/rekonsiliasi" className="flex flex-wrap items-end gap-2">
           <label className="space-y-1">
             <span className={labelClass}>Akun kas/bank</span>
             <select
@@ -211,7 +212,7 @@ export default async function RekonsiliasiPage({
           >
             Tampilkan
           </button>
-        </form>
+        </AutoFilterForm>
         {canManage ? <AutoMatchButton accountId={accountId} /> : null}
         {canManage ? <ImportStatementDialog accountId={accountId} /> : null}
         <span className="pb-1 text-[11px] text-muted-foreground">

@@ -72,7 +72,7 @@ export default async function AgingPrintPage({
     return { settings, rows };
   });
 
-  const printSettings = toPrintSettings(data.settings);
+  const printSettings = toPrintSettings(data.settings, "aging");
   const company: ReportCompanyIdentity = {
     legalName: data.settings.legalName ?? ctx.company.name,
     address: data.settings.address,
@@ -110,6 +110,29 @@ export default async function AgingPrintPage({
         printedByName={ctx.user.name}
         qrDataUrl={qrDataUrl}
       >
+        <div className="mb-4 grid grid-cols-2 gap-3 border-y border-black/40 py-2 text-[11px] break-inside-avoid sm:grid-cols-4">
+          <div>
+            <p className="text-[9px] uppercase tracking-wide opacity-60">Posisi per</p>
+            <p className="mt-0.5 font-semibold">{formatDate(asOf)}</p>
+          </div>
+          <div>
+            <p className="text-[9px] uppercase tracking-wide opacity-60">Dokumen terbuka</p>
+            <p className="num mt-0.5 font-semibold">{data.rows.length}</p>
+          </div>
+          <div>
+            <p className="text-[9px] uppercase tracking-wide opacity-60">
+              Total {isReceivable ? "piutang" : "utang"} terbuka
+            </p>
+            <p className="num mt-0.5 font-semibold">
+              <PrintAmount value={grandTotal} />
+            </p>
+          </div>
+          <div>
+            <p className="text-[9px] uppercase tracking-wide opacity-60">Rentang umur</p>
+            <p className="mt-0.5">0–30 · 31–60 · 61–90 · &gt;90 hari</p>
+          </div>
+        </div>
+
         <table className="w-full text-[12px]">
           <thead className="text-[10px] uppercase tracking-wide opacity-60">
             <tr>

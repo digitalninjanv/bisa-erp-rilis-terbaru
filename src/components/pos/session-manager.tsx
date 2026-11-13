@@ -19,6 +19,7 @@ type Summary = {
   openingCash: number;
   expected: number;
   sales: number;
+  nonCashSales?: number;
   refunds: number;
   deposits: number;
   withdrawals: number;
@@ -192,6 +193,7 @@ export function SessionManager({
             {[
               ["Modal awal", session.openingCash],
               ["Penjualan tunai", session.sales],
+              ["Penjualan non-tunai", session.nonCashSales ?? 0],
               ["Refund", session.refunds],
               ["Transaksi", session.transactionCount],
             ].map(([label, value]) => (

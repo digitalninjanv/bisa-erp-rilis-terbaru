@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AutoFilterForm } from "@/components/blocks/auto-filter-form";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { requirePermissionPage } from "@/lib/session";
 import { can } from "@/lib/permissions";
@@ -87,7 +88,7 @@ export default async function AttendancePage({
         title="Absensi"
         description="Catat kehadiran harian dan pantau rekap periode. Absensi tidak mengubah payroll kecuali fitur terkait diaktifkan."
         actions={
-          <form className="flex items-center gap-1.5" action="/app/akuntansi/hr/absensi">
+          <AutoFilterForm className="flex items-center gap-1.5" action="/app/akuntansi/hr/absensi">
             <label className="text-[12px] text-muted-foreground" htmlFor="period">
               Periode
             </label>
@@ -104,7 +105,7 @@ export default async function AttendancePage({
             >
               Tampilkan
             </button>
-          </form>
+          </AutoFilterForm>
         }
       />
 

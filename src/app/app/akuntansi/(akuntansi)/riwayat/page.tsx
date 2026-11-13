@@ -11,6 +11,7 @@ import { DataList } from "@/components/blocks/data-list";
 import { EmptyState } from "@/components/blocks/empty-state";
 import { Pagination } from "@/components/blocks/pagination";
 import { DateRangeField } from "@/components/date-field";
+import { AutoFilterForm } from "@/components/blocks/auto-filter-form";
 
 export const metadata = { title: "Audit trail" };
 export const dynamic = "force-dynamic";
@@ -173,7 +174,7 @@ export default async function AccountingHistoryPage({
       <DataList
         density="compact"
         toolbar={
-          <form action="/app/akuntansi/riwayat" className="flex flex-wrap items-center gap-1.5">
+          <AutoFilterForm action="/app/akuntansi/riwayat" className="flex flex-wrap items-center gap-1.5">
             <DateRangeField
               from={{ name: "from", defaultValue: from }}
               to={{ name: "to", defaultValue: to }}
@@ -229,7 +230,7 @@ export default async function AccountingHistoryPage({
             >
               Atur ulang
             </Link>
-          </form>
+          </AutoFilterForm>
         }
         isEmpty={data.rows.length === 0}
         empty={

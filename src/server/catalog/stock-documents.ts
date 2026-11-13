@@ -209,7 +209,18 @@ export async function listMovements(
  */
 export async function listReceiptHistory(
   tx: Tx,
-  input: { companyId: string; page?: number; pageSize?: number; q?: string },
+  input: {
+    companyId: string;
+    page?: number;
+    pageSize?: number;
+    q?: string;
+    from?: string;
+    to?: string;
+    supplierId?: string;
+    warehouseId?: string;
+    status?: string;
+    source?: string;
+  },
 ) {
   const { page, pageSize } = normalizePageParams(input, 40);
   // FIX-GDG Tahap 4 (GDG2-06): pencarian nomor dokumen / no. invoice
@@ -217,6 +228,12 @@ export async function listReceiptHistory(
   const q = input.q?.trim();
   const where = and(
     eq(stockReceipts.companyId, input.companyId),
+    input.from ? gte(stockReceipts.date, input.from) : undefined,
+    input.to ? lte(stockReceipts.date, input.to) : undefined,
+    input.supplierId ? eq(stockReceipts.supplierId, input.supplierId) : undefined,
+    input.warehouseId ? eq(stockReceipts.warehouseId, input.warehouseId) : undefined,
+    input.status ? eq(stockReceipts.status, input.status) : undefined,
+    input.source ? eq(stockReceipts.source, input.source) : undefined,
     q
       ? or(
           ilike(stockReceipts.number, `%${q}%`),

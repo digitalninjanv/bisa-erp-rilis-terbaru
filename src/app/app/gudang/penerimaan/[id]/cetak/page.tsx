@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { and, eq } from "drizzle-orm";
 import { withCompanyReadOnly } from "@/db/tenant";
+import { purchaseOrders, stockReceipts } from "@/db/schema";
 import { getReceiptPrintData, getSettings } from "@/server/catalog";
 import { RECEIPT_SOURCE_LABELS, type ReceiptSource } from "@/server/inventory";
 import { requirePermissionPage } from "@/lib/session";
@@ -29,18 +31,37 @@ export default async function GoodsReceiptPrintPage({
   const data = await withCompanyReadOnly(ctx.company.id, async (tx) => {
     const printData = await getReceiptPrintData(tx, ctx.company.id, id);
     if (!printData) return null;
-    const settings = await getSettings(tx, ctx.company.id);
-    return { ...printData, settings };
+    const [settings, poRows] = await Promise.all([
+      getSettings(tx, ctx.company.id),
+      // getReceiptPrintData tidak memuat tautan PO; satu kueri lokal di
+      // halaman cetak menyelesaikan nomor PO tanpa mengubah kontrak baca
+      // bersama (halaman detail tetap memakai getReceiptDetail).
+      tx
+        .select({ number: purchaseOrders.number })
+        .from(stockReceipts)
+        .innerJoin(purchaseOrders, eq(stockReceipts.purchaseOrderId, purchaseOrders.id))
+        .where(and(eq(stockReceipts.companyId, ctx.company.id), eq(stockReceipts.id, id)))
+        .limit(1),
+    ]);
+    return { ...printData, settings, purchaseOrderNumber: poRows[0]?.number ?? null };
   });
 
   if (!data) notFound();
-  const { receipt, lines, serialsByProduct, settings } = data;
+  const { receipt, lines, serialsByProduct, settings, purchaseOrderNumber } = data;
   const hasDiscount = lines.some((line) => d(line.discountAmount).gt(0));
   // Print Engine (T4-4, D-13): shared shell/header/footer; figures unchanged.
-  const printSettings = toPrintSettings(settings);
+  const printSettings = toPrintSettings(settings, "penerimaan");
   const qrDataUrl = printSettings.showQr ? await documentQrDataUrl(receipt.number) : null;
   const source = receipt.source as ReceiptSource;
   const isCreditPurchase = source === "purchase" && !receipt.paymentAccountId;
+  const statusText =
+    receipt.status === "void"
+      ? "Dibatalkan"
+      : receipt.status === "draft"
+        ? "Draf"
+        : receipt.status === "posted"
+          ? "Terposting"
+          : receipt.status;
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -95,9 +116,19 @@ export default async function GoodsReceiptPrintPage({
             <span className="font-medium">{receipt.warehouseName ?? "—"}</span>
           </div>
           <div>
+            <span className="block text-black/60">Status dokumen</span>
+            <span className="font-medium">{statusText}</span>
+          </div>
+          <div>
             <span className="block text-black/60">Pemasok</span>
             <span className="font-medium">{receipt.supplierName ?? "—"}</span>
           </div>
+          {purchaseOrderNumber ? (
+            <div>
+              <span className="block text-black/60">No. pesanan pembelian</span>
+              <span className="num font-medium">{purchaseOrderNumber}</span>
+            </div>
+          ) : null}
           {receipt.supplierInvoiceNumber ? (
             <div>
               <span className="block text-black/60">No. invoice pemasok</span>

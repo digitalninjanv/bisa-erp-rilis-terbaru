@@ -1,4 +1,5 @@
 import { withCompanyReadOnly } from "@/db/tenant";
+import { AutoFilterForm } from "@/components/blocks/auto-filter-form";
 import { getControlReconciliation, type ControlReconciliationLeg } from "@/server/reports";
 import { requirePermissionPage } from "@/lib/session";
 import { formatIDR } from "@/lib/money";
@@ -47,7 +48,7 @@ export default async function ControlReconciliationPage({
           nada rumah (bukan emerald/red Tailwind mentah). */}
       <DataList
         toolbar={
-          <form method="get" className="flex flex-wrap items-end gap-2">
+          <AutoFilterForm action="/app/akuntansi/rekonsiliasi-kontrol" className="flex flex-wrap items-end gap-2">
             <label className="space-y-1">
               <span className="text-[11px] font-medium text-muted-foreground">Per tanggal</span>
               <span className={`block ${fieldWidths.date}`}>
@@ -60,7 +61,7 @@ export default async function ControlReconciliationPage({
             >
               Tampilkan
             </button>
-          </form>
+          </AutoFilterForm>
         }
       >
         <div className="overflow-x-auto">

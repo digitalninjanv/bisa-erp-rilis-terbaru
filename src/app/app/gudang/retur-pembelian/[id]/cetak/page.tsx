@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { and, eq, inArray } from "drizzle-orm";
 import { withCompanyReadOnly } from "@/db/tenant";
+import { purchaseOrders, stockReceiptLines, stockReceipts } from "@/db/schema";
 import { getSettings } from "@/server/catalog";
 import {
   SUPPLIER_RETURN_REASON_LABELS,
@@ -42,15 +44,54 @@ export default async function SupplierReturnPrintPage({
     const printData = await getSupplierReturnPrintData(tx, ctx.company.id, id);
     if (!printData) return null;
     const settings = await getSettings(tx, ctx.company.id);
-    return { ...printData, settings };
+    // Retur menautkan baris ke baris penerimaan asal (receiptLineId).
+    // Satu kueri lokal di halaman cetak menampilkan GRN/PO asal tanpa
+    // memperluas kontrak getSupplierReturnPrintData yang dipakai bersama.
+    const receiptLineIds = printData.detail.lines
+      .map((line) => line.receiptLineId)
+      .filter((value): value is string => Boolean(value));
+    let sourceDocuments: { receiptNumber: string; purchaseOrderNumber: string | null }[] = [];
+    if (receiptLineIds.length > 0) {
+      const rows = await tx
+        .select({
+          receiptNumber: stockReceipts.number,
+          purchaseOrderNumber: purchaseOrders.number,
+        })
+        .from(stockReceiptLines)
+        .innerJoin(stockReceipts, eq(stockReceiptLines.receiptId, stockReceipts.id))
+        .leftJoin(purchaseOrders, eq(stockReceipts.purchaseOrderId, purchaseOrders.id))
+        .where(
+          and(
+            eq(stockReceiptLines.companyId, ctx.company.id),
+            inArray(stockReceiptLines.id, receiptLineIds),
+          ),
+        );
+      const seen = new Set<string>();
+      sourceDocuments = rows.filter((row) => {
+        if (seen.has(row.receiptNumber)) return false;
+        seen.add(row.receiptNumber);
+        return true;
+      });
+    }
+    return { ...printData, settings, sourceDocuments };
   });
 
   if (!data) notFound();
-  const { detail, settings } = data;
-  const printSettings = toPrintSettings(settings);
+  const { detail, settings, sourceDocuments } = data;
+  const printSettings = toPrintSettings(settings, "retur_pembelian");
   const qrDataUrl = printSettings.showQr ? await documentQrDataUrl(detail.number) : null;
   const isDraft = detail.status === "draft";
   const remaining = d(detail.creditAmount).minus(d(detail.resolvedAmount));
+  const resolutionStatus =
+    detail.status === "draft"
+      ? "Belum diposting"
+      : detail.status === "void"
+        ? "Dibatalkan"
+        : detail.status === "resolved"
+          ? "Selesai"
+          : remaining.gt(0)
+            ? `Sisa klaim ${formatIDR(remaining)}`
+            : "Tidak ada klaim kredit";
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -99,6 +140,14 @@ export default async function SupplierReturnPrintPage({
               <span className="font-medium">{data.warehouseName ?? "—"}</span>
             </div>
             <div>
+              <span className="block text-black/60">Status dokumen</span>
+              <span className="font-medium">{STATUS_LABELS[detail.status] ?? detail.status}</span>
+            </div>
+            <div>
+              <span className="block text-black/60">Status penyelesaian</span>
+              <span className="font-medium">{resolutionStatus}</span>
+            </div>
+            <div>
               <span className="block text-black/60">Kategori alasan</span>
               <span className="font-medium">
                 {SUPPLIER_RETURN_REASON_LABELS[detail.reasonCategory] ?? detail.reasonCategory}
@@ -110,6 +159,19 @@ export default async function SupplierReturnPrintPage({
                 {SUPPLIER_RETURN_RESOLUTION_LABELS[detail.resolutionType] ?? detail.resolutionType}
               </span>
             </div>
+            {sourceDocuments.length > 0 ? (
+              <div className="col-span-2">
+                <span className="block text-black/60">Dokumen asal</span>
+                <span className="font-medium">
+                  {sourceDocuments
+                    .map(
+                      (doc) =>
+                        `GRN ${doc.receiptNumber}${doc.purchaseOrderNumber ? ` (PO ${doc.purchaseOrderNumber})` : ""}`,
+                    )
+                    .join(" · ")}
+                </span>
+              </div>
+            ) : null}
             <div className="col-span-2">
               <span className="block text-black/60">Alasan retur</span>
               <span className="font-medium">{detail.reasonDetail}</span>

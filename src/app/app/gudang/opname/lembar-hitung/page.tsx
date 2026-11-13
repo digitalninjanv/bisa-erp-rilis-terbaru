@@ -65,7 +65,7 @@ export default async function OpnameCountSheetPage({
 
   if (!data) notFound();
   const { warehouse, rows, settings, truncated } = data;
-  const printSettings = toPrintSettings(settings);
+  const printSettings = toPrintSettings(settings, "opname");
   const today = todayISO();
   const reference = `LH-${warehouse.code}-${today}`;
   const qrDataUrl = printSettings.showQr ? await documentQrDataUrl(reference) : null;

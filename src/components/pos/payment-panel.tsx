@@ -12,7 +12,7 @@ import { paymentMethodTypeLabel } from "@/lib/format";
 import type { QuoteResultPublic } from "@/server/pos";
 import type { CartItem, CustomerOption, Method, PaymentEntry } from "@/components/pos/terminal-types";
 import type { ReturnCreditApi } from "@/components/pos/use-return-credit";
-import { CashChips } from "./payment/cash-chips";
+import { CashChips, ChangeBreakdown } from "./payment/cash-chips";
 import { FeeEntryField, methodFeeEligible } from "./payment/fee-field";
 import { MixedEntries } from "./payment/mixed-entries";
 import { ReturnCreditSection } from "./payment/credit-section";
@@ -143,6 +143,7 @@ export function PaymentPanel(props: {
     sessionOpen,
     lastSale,
   } = props;
+  const tenderedAmount = Number(entries[singleMethod]?.tendered ?? 0);
   return (
         <div className="rounded-lg border border-border bg-card">
           <div className="flex items-center justify-between border-b border-border px-3 py-2.5">
@@ -178,7 +179,7 @@ export function PaymentPanel(props: {
                       type="button"
                       onClick={() => setSingleMethod(method.id)}
                       className={cn(
-                        "flex items-center justify-between gap-1 rounded-md border px-2 py-2 text-[12px] font-medium transition-colors",
+                        "flex items-center justify-between gap-1 rounded-md border px-2.5 py-2 text-[13px] font-medium transition-colors",
                         singleMethod === method.id
                           ? "border-primary bg-primary/5 text-foreground"
                           : "border-border bg-background text-muted-foreground hover:bg-muted",
@@ -188,7 +189,7 @@ export function PaymentPanel(props: {
                       {/* POS2-22/23: label tipe dari pemetaan Bahasa
                           Indonesia bersama (bukan teks mentah tipe),
                           ukuran mengikuti lantai label bersama 10px. */}
-                      <span className={cn("rounded px-1 py-0.5 text-[10px] uppercase", methodTone[method.type] ?? "bg-muted")}>
+                      <span className={cn("rounded px-1.5 py-0.5 text-[11px] uppercase", methodTone[method.type] ?? "bg-muted")}>
                         {paymentMethodTypeLabel(method.type)}
                       </span>
                     </button>
@@ -201,14 +202,14 @@ export function PaymentPanel(props: {
                       onClick={() => setSingleMethod(debtMethod.id)}
                       title={debtMethod.name}
                       className={cn(
-                        "flex items-center justify-between gap-1 rounded-md border px-2 py-2 text-[12px] font-medium transition-colors",
+                        "flex items-center justify-between gap-1 rounded-md border px-2.5 py-2 text-[13px] font-medium transition-colors",
                         singleMethod === debtMethod.id
                           ? "border-primary bg-primary/5 text-foreground"
                           : "border-border bg-background text-muted-foreground hover:bg-muted",
                       )}
                     >
                       <span>Utang</span>
-                      <span className={cn("rounded px-1 py-0.5 text-[10px] uppercase", methodTone.credit)}>
+                      <span className={cn("rounded px-1.5 py-0.5 text-[11px] uppercase", methodTone.credit)}>
                         tempo
                       </span>
                     </button>
@@ -218,7 +219,7 @@ export function PaymentPanel(props: {
                 {single?.type === "cash" ? (
                   <div className="grid grid-cols-2 gap-2">
                     <label className="space-y-1">
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Diterima</span>
+                      <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Diterima</span>
                       {/* A-28 UI-1 (UX-B04): Diterima memakai MoneyInput
                           bersama — tampil terformat id-ID saat ketik.
                           Nilai yang disimpan tetap string kanonik yang
@@ -244,28 +245,40 @@ export function PaymentPanel(props: {
                       />
                     </label>
                     <label className="space-y-1">
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Kembalian</span>
-                      <div className="num flex h-9 items-center justify-end rounded-md bg-muted px-2 text-sm font-semibold text-tone-teal">
-                        {formatIDR(change)}
+                      <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Kembalian</span>
+                      <div
+                        className={cn(
+                          "num flex h-9 items-center justify-end rounded-md bg-muted px-2 text-sm font-semibold",
+                          change < 0 ? "text-destructive" : "text-tone-teal",
+                        )}
+                      >
+                        {change < 0 ? `−${formatIDR(Math.abs(change))}` : formatIDR(change)}
                       </div>
                     </label>
                     {/* POS-1: chip uang diterima cepat — mengisi kolom
                         Diterima; kembalian terhitung seperti biasa. */}
                     <div className="col-span-2">
                       <CashChips
-                        pasValue={total}
+                        total={total}
+                        tendered={tenderedAmount}
                         disabled={total <= 0}
-                        onPick={(value) =>
+                        onChange={(value) =>
                           setEntries((current) => ({
                             ...current,
                             [singleMethod]: {
                               amount: String(total),
-                              tendered: String(value),
+                              tendered: value > 0 ? String(value) : "",
                               reference: current[singleMethod]?.reference ?? "",
                             },
                           }))
                         }
                       />
+                      {tenderedAmount > 0 && tenderedAmount < total ? (
+                        <p className="mt-1 text-[11px] font-medium text-destructive">
+                          Uang diterima kurang {formatIDR(total - tenderedAmount)}.
+                        </p>
+                      ) : null}
+                      <ChangeBreakdown amount={change} />
                     </div>
                   </div>
                 ) : null}
@@ -441,7 +454,7 @@ export function PaymentPanel(props: {
               </p>
             ) : null}
 
-            <div className="grid grid-cols-[1fr_auto] gap-2 pt-1">
+            <div className="sticky bottom-0 -mx-3 -mb-3 grid grid-cols-[1fr_auto] gap-2 border-t border-border bg-card px-3 py-3">
               <button
                 type="button"
                 onClick={checkout}

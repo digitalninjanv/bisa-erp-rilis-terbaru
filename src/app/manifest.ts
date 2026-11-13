@@ -21,5 +21,35 @@ export default function manifest(): MetadataRoute.Manifest {
       { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
       { src: "/icon-512.png", sizes: "512x512", type: "image/png" },
     ],
+    shortcuts: [
+      {
+        name: "Transaksi baru",
+        short_name: "Kasir",
+        description: "Buka terminal kasir",
+        url: "/app/pos",
+        icons: [{ src: "/icon-192.png", sizes: "192x192" }],
+      },
+      {
+        name: "Sesi kas",
+        short_name: "Sesi",
+        description: "Buka atau tutup sesi kas",
+        url: "/app/pos/sesi",
+        icons: [{ src: "/icon-192.png", sizes: "192x192" }],
+      },
+      {
+        name: "Piutang pelanggan",
+        short_name: "Piutang",
+        description: "Tagihan tempo pelanggan",
+        url: "/app/pos/piutang",
+        icons: [{ src: "/icon-192.png", sizes: "192x192" }],
+      },
+      {
+        name: "Riwayat sesi",
+        short_name: "Riwayat",
+        description: "Rekonsiliasi sesi kas",
+        url: "/app/pos/sesi/riwayat",
+        icons: [{ src: "/icon-192.png", sizes: "192x192" }],
+      },
+    ],
   };
 }

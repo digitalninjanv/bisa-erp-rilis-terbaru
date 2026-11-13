@@ -4,15 +4,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { newUuid } from "@/lib/uuid";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import * as XLSX from "xlsx";
 import {
   ArrowRight,
   ClipboardList,
   Eraser,
   Eye,
   EyeOff,
+  FileSpreadsheet,
   Info,
   ListPlus,
   Printer,
+  Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -24,6 +27,7 @@ import {
   serializeOpnameDraft,
   summarizeOpnameCount,
   type OpnameCountRow,
+  type OpnameScope,
 } from "@/lib/opname-count";
 import { createOpnameAction } from "@/server/actions/inventory/opname";
 import {
@@ -44,6 +48,8 @@ import { fieldClass, labelClass } from "@/components/blocks/field-classes";
 
 type Row = OpnameCountRow;
 type CountFilter = "all" | "uncounted" | "counted";
+
+const COUNT_PAGE_SIZE = 50;
 
 
 function byProductName(a: { name: string }, b: { name: string }) {
@@ -77,6 +83,8 @@ export function OpnameForm({
   const [warehouseId, setWarehouseId] = useState(defaultWarehouseId || warehouses[0]?.id || "");
   const [date, setDate] = useState(today);
   const [notes, setNotes] = useState("");
+  const [scope, setScope] = useState<OpnameScope>("full");
+  const [fullLoaded, setFullLoaded] = useState(false);
   const [rows, setRows] = useState<Row[]>([]);
   const [step, setStep] = useState<"hitung" | "tinjau">("hitung");
   const [showSystem, setShowSystem] = useState(false);
@@ -84,13 +92,16 @@ export function OpnameForm({
   const [draftNotice, setDraftNotice] = useState(false);
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [countFilter, setCountFilter] = useState<CountFilter>("all");
+  const [countPage, setCountPage] = useState(1);
   const [reviewFilter, setReviewFilter] = useState<OpnameReviewFilter>("diff");
   // GDG3-06: kunci idempotensi per pembukaan form (lihat receipt-form).
   const [idempotencyKey, setIdempotencyKey] = useState(() => newUuid());
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingAll, setLoadingAll] = useState(false);
+  const [importing, setImporting] = useState(false);
   const loadedWarehouseRef = useRef("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   /* ---- Draf: muat saat gudang terpilih berubah ---- */
   useEffect(() => {
@@ -116,6 +127,8 @@ export function OpnameForm({
         setDate(draft.date);
         setNotes(draft.notes);
         setStep(draft.step);
+        setScope(draft.scope ?? "full");
+        setFullLoaded(draft.fullLoaded === true);
         setConfirmed(false);
         setDraftNotice(true);
         setRows(
@@ -137,6 +150,8 @@ export function OpnameForm({
         setDate(today);
         setNotes("");
         setStep("hitung");
+        setScope("full");
+        setFullLoaded(false);
         setDraftNotice(false);
         setRows([]);
       }
@@ -167,6 +182,8 @@ export function OpnameForm({
         date,
         notes,
         step,
+        scope,
+        fullLoaded,
         rows: rows.map((row) => ({
           productId: row.productId,
           name: row.name,
@@ -179,7 +196,7 @@ export function OpnameForm({
         })),
       }),
     );
-  }, [rows, date, notes, step, warehouseId, companyId]);
+  }, [rows, date, notes, step, scope, fullLoaded, warehouseId, companyId]);
 
   // GD-P3-9: mode hitung menyeluruh — muat semua produk aktif terlacak
   // di gudang terpilih (server membatasi 1.000). GDG2-01: baris baru
@@ -211,10 +228,104 @@ export function OpnameForm({
         }));
       return [...current, ...additions];
     });
+    setFullLoaded(true);
     if (result.data.truncated) {
       toast.warning("Produk terlacak melebihi batas 1.000 — hanya 1.000 pertama yang dimuat.");
     } else {
       toast.success(`${result.data.rows.length} produk dimuat untuk dihitung.`);
+    }
+  }
+
+  /**
+   * Impor lembar hitung Excel: baca kolom Fisik, cocokkan per SKU
+   * (fallback nama produk), lalu muat ulang seluruh produk gudang agar
+   * angka sistem yang dipakai adalah stok terkini. Baris yang tidak ada
+   * di file tetap tampil dengan Fisik kosong.
+   */
+  async function importCountSheet(file: File) {
+    if (!warehouseId) {
+      toast.error("Pilih gudang terlebih dahulu.");
+      return;
+    }
+    setImporting(true);
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      if (!sheet) throw new Error("File tidak memiliki lembar kerja.");
+      const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: true, defval: "" });
+
+      let headerIndex = -1;
+      let skuCol = -1;
+      let nameCol = -1;
+      let qtyCol = -1;
+      for (let index = 0; index < Math.min(matrix.length, 15); index += 1) {
+        const cells = (matrix[index] as unknown[]).map((cell) => String(cell ?? "").trim().toLowerCase());
+        const qty = cells.findIndex((cell) => cell === "fisik" || cell.startsWith("fisik"));
+        const sku = cells.findIndex((cell) => cell === "sku" || cell === "kode" || cell === "kode barang");
+        const name = cells.findIndex(
+          (cell) => cell === "nama produk" || cell === "nama" || cell === "produk",
+        );
+        if (qty >= 0 && (sku >= 0 || name >= 0)) {
+          headerIndex = index;
+          skuCol = sku;
+          nameCol = name;
+          qtyCol = qty;
+          break;
+        }
+      }
+      if (headerIndex < 0) {
+        throw new Error("Kolom Fisik dan SKU/Nama Produk tidak ditemukan. Gunakan file ekspor dari halaman ini.");
+      }
+
+      const bySku = new Map<string, string>();
+      const byName = new Map<string, string>();
+      for (const row of matrix.slice(headerIndex + 1)) {
+        if (!Array.isArray(row)) continue;
+        const qty = String(row[qtyCol] ?? "").trim();
+        if (!qty) continue;
+        const sku = skuCol >= 0 ? String(row[skuCol] ?? "").trim().toUpperCase() : "";
+        const name = nameCol >= 0 ? String(row[nameCol] ?? "").trim().toLowerCase() : "";
+        if (sku) bySku.set(sku, qty);
+        else if (name) byName.set(name, qty);
+      }
+      if (bySku.size === 0 && byName.size === 0) {
+        throw new Error("Tidak ada baris dengan kolom Fisik terisi.");
+      }
+
+      const loaded = await loadOpnameProductsAction({ warehouseId });
+      if (!loaded.ok) throw new Error(loaded.message);
+      let applied = 0;
+      const nextRows: Row[] = loaded.data.rows.map((row) => {
+        const counted =
+          bySku.get(row.sku.trim().toUpperCase()) ??
+          byName.get(row.name.trim().toLowerCase()) ??
+          "";
+        if (counted) applied += 1;
+        return {
+          productId: row.productId,
+          name: row.name,
+          sku: row.sku,
+          system: row.system,
+          counted,
+          unitCost: row.costPrice,
+          unitName: row.unitName,
+          packagings: row.packagings,
+          components: {},
+        };
+      });
+      setRows(nextRows);
+      setFullLoaded(true);
+      setStep("hitung");
+      setConfirmed(false);
+      toast.success(
+        `${applied} baris terisi dari Excel. ${nextRows.length - applied} baris lain dikosongkan.`,
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Gagal membaca file Excel.");
+    } finally {
+      setImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }
 
@@ -303,6 +414,17 @@ export function OpnameForm({
 
   function removeRow(productId: string) {
     setRows((current) => current.filter((row) => row.productId !== productId));
+    if (scope === "full") setFullLoaded(false);
+  }
+
+  function markUncountedZero() {
+    const count = rows.filter((row) => effectiveCountedQty(row) === null).length;
+    setRows((current) =>
+      current.map((row) =>
+        effectiveCountedQty(row) === null ? { ...row, counted: "0", components: {} } : row,
+      ),
+    );
+    if (count > 0) toast.success(`${count} baris belum dihitung ditandai 0.`);
   }
 
   /** Masuk langkah tinjau: stok sistem diambil ulang lebih dulu agar
@@ -310,6 +432,17 @@ export function OpnameForm({
   async function goReview() {
     if (rows.length === 0) {
       toast.error("Pilih minimal satu produk untuk dihitung.");
+      return;
+    }
+    if (scope === "full" && !fullLoaded) {
+      toast.error("Full opname: muat semua produk gudang ini terlebih dahulu.");
+      return;
+    }
+    const uncounted = rows.filter((row) => effectiveCountedQty(row) === null).length;
+    if (scope === "full" && uncounted > 0) {
+      toast.error(
+        `Full opname: ${uncounted} produk belum dihitung. Isi fisik atau tandai 0 untuk stok kosong.`,
+      );
       return;
     }
     setRefreshing(true);
@@ -337,6 +470,19 @@ export function OpnameForm({
       toast.error("Belum ada produk yang dihitung. Isi kolom Fisik lebih dulu.");
       return;
     }
+    if (scope === "full") {
+      const uncounted = rows.filter((row) => effectiveCountedQty(row) === null).length;
+      if (!fullLoaded) {
+        toast.error("Full opname: muat semua produk gudang ini terlebih dahulu.");
+        return;
+      }
+      if (uncounted > 0) {
+        toast.error(
+          `Full opname: ${uncounted} produk belum dihitung. Tandai 0 atau lengkapi hitungan.`,
+        );
+        return;
+      }
+    }
     setBusy(true);
     const result = await createOpnameAction({
       warehouseId,
@@ -354,6 +500,7 @@ export function OpnameForm({
     window.localStorage.removeItem(opnameDraftKey(companyId, warehouseId));
     setIdempotencyKey(newUuid());
     setRows([]);
+    setFullLoaded(false);
     setNotes("");
     setStep("hitung");
     setConfirmed(false);
@@ -366,6 +513,7 @@ export function OpnameForm({
   function clearDraft() {
     window.localStorage.removeItem(opnameDraftKey(companyId, warehouseId));
     setRows([]);
+    setFullLoaded(false);
     setNotes("");
     setStep("hitung");
     setConfirmed(false);
@@ -392,6 +540,14 @@ export function OpnameForm({
     return [...filtered].sort(byProductName);
   }, [rows, countFilter]);
 
+  const countPageCount = Math.max(1, Math.ceil(visibleRows.length / COUNT_PAGE_SIZE));
+  const safeCountPage = Math.min(countPage, countPageCount);
+  const pagedRows = visibleRows.slice(
+    (safeCountPage - 1) * COUNT_PAGE_SIZE,
+    safeCountPage * COUNT_PAGE_SIZE,
+  );
+
+
   const countFilters: { key: CountFilter; label: string; count: number }[] = [
     { key: "all", label: "Semua", count: rows.length },
     { key: "uncounted", label: "Belum dihitung", count: rows.length - countedSoFar },
@@ -414,12 +570,15 @@ export function OpnameForm({
       </div>
 
       <div className="space-y-3 p-4">
-        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_180px_minmax(0,1fr)]">
+        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_150px_minmax(0,1fr)_minmax(0,1fr)]">
           <label className="space-y-1">
             <span className={labelClass}>Gudang</span>
             <select
               value={warehouseId}
-              onChange={(event) => setWarehouseId(event.target.value)}
+              onChange={(event) => {
+                setWarehouseId(event.target.value);
+                setCountPage(1);
+              }}
               className={fieldClass}
             >
               {warehouses.map((row) => (
@@ -433,6 +592,17 @@ export function OpnameForm({
             <DateField value={date} onChange={setDate} aria-label="Tanggal opname" />
           </label>
           <label className="space-y-1">
+            <span className={labelClass}>Cakupan</span>
+            <select
+              value={scope}
+              onChange={(event) => setScope(event.target.value as OpnameScope)}
+              className={fieldClass}
+            >
+              <option value="full">Full opname</option>
+              <option value="cycle">Cycle count</option>
+            </select>
+          </label>
+          <label className="space-y-1">
             <span className={labelClass}>Catatan</span>
             <input
               value={notes}
@@ -443,6 +613,29 @@ export function OpnameForm({
             />
           </label>
         </div>
+
+        <p className="text-[11px] text-muted-foreground">
+          {scope === "full"
+            ? "Full opname: seluruh produk aktif dihitung. Produk yang tidak dihitung harus ditandai 0 sebelum posting."
+            : "Cycle count: hitung subset produk saja; baris kosong tidak ikut posting."}
+        </p>
+
+        {scope === "full" && !fullLoaded ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-tone-amber/40 bg-tone-amber-soft px-3 py-2 text-[11px] text-tone-amber">
+            <p>
+              Full opname membutuhkan daftar produk lengkap. Muat semua produk gudang ini agar
+              jumlahnya sama dengan gudang lain.
+            </p>
+            <button
+              type="button"
+              onClick={() => void loadAll()}
+              disabled={loadingAll || !warehouseId}
+              className="h-8 rounded-md border border-tone-amber/40 bg-card px-2.5 text-[11px] font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+            >
+              {loadingAll ? "Memuat…" : "Muat semua produk"}
+            </button>
+          </div>
+        ) : null}
 
         {draftNotice && rows.length > 0 ? (
           <div className="flex items-start gap-2 rounded-md border border-tone-amber/40 bg-tone-amber-soft px-3 py-2 text-[11px] leading-5 text-tone-amber">
@@ -469,7 +662,7 @@ export function OpnameForm({
                   scanMode autoFocus
                 />
               </div>
-              <div className="grid w-full grid-cols-3 gap-1.5 sm:flex sm:w-auto">
+              <div className="grid w-full grid-cols-2 gap-1.5 sm:flex sm:w-auto">
                 <button
                   type="button"
                   onClick={() => void loadAll()}
@@ -485,6 +678,20 @@ export function OpnameForm({
                 >
                   <Printer className="size-3.5" /> Lembar hitung
                 </Link>
+                <a
+                  href={`/api/export/opname-sheet?warehouse=${warehouseId}`}
+                  className="inline-flex h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-border bg-card px-2 text-[10px] font-medium transition-colors hover:bg-muted sm:px-3 sm:text-[12px]"
+                >
+                  <FileSpreadsheet className="size-3.5" /> Ekspor Excel
+                </a>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={importing || !warehouseId}
+                  className="inline-flex h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-border bg-card px-2 text-[10px] font-medium transition-colors hover:bg-muted disabled:opacity-50 sm:px-3 sm:text-[12px]"
+                >
+                  <Upload className="size-3.5" /> {importing ? "Membaca…" : "Impor hasil"}
+                </button>
                 <button
                   type="button"
                   onClick={() => setShowSystem((value) => !value)}
@@ -495,6 +702,16 @@ export function OpnameForm({
                   {showSystem ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
                   Stok sistem
                 </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  className="hidden"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) void importCountSheet(file);
+                  }}
+                />
               </div>
             </div>
 
@@ -523,7 +740,10 @@ export function OpnameForm({
                     <button
                       key={filter.key}
                       type="button"
-                      onClick={() => setCountFilter(filter.key)}
+                      onClick={() => {
+                        setCountFilter(filter.key);
+                        setCountPage(1);
+                      }}
                       aria-pressed={countFilter === filter.key}
                       className={
                         countFilter === filter.key
@@ -536,6 +756,19 @@ export function OpnameForm({
                     </button>
                   ))}
                 </div>
+              </div>
+            ) : null}
+
+            {scope === "full" && rows.length > countedSoFar ? (
+              <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
+                <span>{rows.length - countedSoFar} baris belum dihitung.</span>
+                <button
+                  type="button"
+                  onClick={markUncountedZero}
+                  className="font-medium text-primary hover:underline"
+                >
+                  Tandai 0
+                </button>
               </div>
             ) : null}
           </div>
@@ -563,14 +796,46 @@ export function OpnameForm({
                 </p>
               </div>
             ) : (
-              <OpnameCountTable
-                rows={visibleRows}
-                showSystem={showSystem}
-                onChangeCounted={updateCounted}
-                onChangeComponent={updateComponent}
-                onClearComponents={clearComponents}
-                onDelete={removeRow}
-              />
+              <>
+                <OpnameCountTable
+                  rows={pagedRows}
+                  showSystem={showSystem}
+                  onChangeCounted={updateCounted}
+                  onChangeComponent={updateComponent}
+                  onClearComponents={clearComponents}
+                  onDelete={removeRow}
+                />
+                {visibleRows.length > COUNT_PAGE_SIZE ? (
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
+                    <p className="num text-[11px] text-muted-foreground">
+                      Menampilkan {(safeCountPage - 1) * COUNT_PAGE_SIZE + 1}–
+                      {Math.min(safeCountPage * COUNT_PAGE_SIZE, visibleRows.length)} dari{" "}
+                      {visibleRows.length} produk
+                    </p>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setCountPage(Math.max(1, safeCountPage - 1))}
+                        disabled={safeCountPage <= 1}
+                        className="h-8 rounded-md border border-border bg-card px-2.5 text-[11px] font-medium transition-colors hover:bg-muted disabled:opacity-40"
+                      >
+                        Sebelumnya
+                      </button>
+                      <span className="num text-[11px] text-muted-foreground">
+                        {safeCountPage}/{countPageCount}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setCountPage(Math.min(countPageCount, safeCountPage + 1))}
+                        disabled={safeCountPage >= countPageCount}
+                        className="h-8 rounded-md border border-border bg-card px-2.5 text-[11px] font-medium transition-colors hover:bg-muted disabled:opacity-40"
+                      >
+                        Berikutnya
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </>
             )}
           </div>
 

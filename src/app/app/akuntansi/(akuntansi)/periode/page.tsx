@@ -10,6 +10,7 @@ import { fieldClass, labelClass } from "@/components/akuntansi/field-classes";
 import { MonthEndChecklist } from "@/components/akuntansi/month-end-checklist";
 import { PeriodManager } from "@/components/akuntansi/period-manager";
 import { YearEndClosingPanel } from "@/components/akuntansi/year-end-closing-panel";
+import { AutoFilterForm } from "@/components/blocks/auto-filter-form";
 
 export const metadata = { title: "Periode fiskal" };
 export const dynamic = "force-dynamic";
@@ -66,7 +67,7 @@ export default async function FiscalPeriodsPage({
         description="Buka, tutup, atau kunci periode pembukuan. Posting jurnal ditolak pada periode yang ditutup atau dikunci."
       />
 
-      <form className="mb-3 flex items-end gap-2" action="/app/akuntansi/periode">
+      <AutoFilterForm className="mb-3 flex items-end gap-2" action="/app/akuntansi/periode">
         <label className="space-y-1">
           {/* A-22 K6: label & kontrol memakai kelas form bersama
               (sebelumnya label 11px + input tanpa ring fokus). */}
@@ -85,7 +86,7 @@ export default async function FiscalPeriodsPage({
         <button type="submit" className="h-8 rounded-md border border-border bg-card px-3 text-[12px] font-medium transition-colors hover:bg-muted">
           Tampilkan
         </button>
-      </form>
+      </AutoFilterForm>
 
       <MonthEndChecklist
         year={checklistYear}

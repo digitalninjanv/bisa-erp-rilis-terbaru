@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { and, eq } from "drizzle-orm";
 import { withCompanyReadOnly } from "@/db/tenant";
-import { getSettings } from "@/server/catalog";
+import { purchaseOrders, suppliers } from "@/db/schema";
+import { getSettings, listWarehouses } from "@/server/catalog";
 import { PURCHASE_ORDER_STATUS_LABELS, getPurchaseOrderPrintData } from "@/server/purchasing";
 import { requirePermissionPage } from "@/lib/session";
 import { d, formatIDR, formatQty } from "@/lib/money";
@@ -29,15 +31,41 @@ export default async function PurchaseOrderPrintPage({
   const data = await withCompanyReadOnly(ctx.company.id, async (tx) => {
     const printData = await getPurchaseOrderPrintData(tx, ctx.company.id, id);
     if (!printData) return null;
-    const settings = await getSettings(tx, ctx.company.id);
-    return { ...printData, settings };
+    const [settings, supplierRows, warehouseRows] = await Promise.all([
+      getSettings(tx, ctx.company.id),
+      tx
+        .select({ paymentTermDays: suppliers.paymentTermDays })
+        .from(purchaseOrders)
+        .innerJoin(suppliers, eq(purchaseOrders.supplierId, suppliers.id))
+        .where(and(eq(purchaseOrders.companyId, ctx.company.id), eq(purchaseOrders.id, id)))
+        .limit(1),
+      listWarehouses(tx, ctx.company.id),
+    ]);
+    // PO tidak menyimpan gudang tujuan; gudang bawaan perusahaan adalah
+    // tujuan penerimaan yang wajar dan dicetak sebagai "(bawaan)" agar
+    // tidak disalahartikan sebagai pilihan yang dibekukan di dokumen.
+    const defaultWarehouse =
+      warehouseRows.find((row) => row.id === settings?.defaultWarehouseId) ??
+      warehouseRows.find((row) => row.isDefault) ??
+      null;
+    return {
+      ...printData,
+      settings,
+      paymentTermDays: supplierRows[0]?.paymentTermDays ?? null,
+      defaultWarehouse,
+    };
   });
 
   if (!data) notFound();
-  const { order, lines, settings } = data;
+  const { order, lines, settings, paymentTermDays, defaultWarehouse } = data;
   // Print Engine (T4-4, D-13): shared shell/header/footer; figures unchanged.
-  const printSettings = toPrintSettings(settings);
+  const printSettings = toPrintSettings(settings, "pembelian");
   const qrDataUrl = printSettings.showQr ? await documentQrDataUrl(order.number) : null;
+  const paymentTermLabel =
+    paymentTermDays == null ? null : paymentTermDays > 0 ? `${paymentTermDays} hari` : "Tunai";
+  const destinationAddress = [settings?.legalName, settings?.address?.replace(/\s*\n\s*/g, ", ")]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -97,16 +125,34 @@ export default async function PurchaseOrderPrintPage({
               <span className="font-medium">{order.supplierAddress}</span>
             </div>
           ) : null}
-          {order.expectedDate ? (
-            <div>
-              <span className="block text-black/60">Perkiraan tiba</span>
-              <span className="font-medium">{formatDate(order.expectedDate)}</span>
-            </div>
-          ) : null}
           {order.supplierPhone ? (
             <div>
               <span className="block text-black/60">Telepon pemasok</span>
               <span className="num font-medium">{order.supplierPhone}</span>
+            </div>
+          ) : null}
+          {destinationAddress ? (
+            <div className="col-span-2">
+              <span className="block text-black/60">Alamat pengiriman</span>
+              <span className="font-medium">{destinationAddress}</span>
+            </div>
+          ) : null}
+          {defaultWarehouse ? (
+            <div>
+              <span className="block text-black/60">Gudang tujuan (bawaan)</span>
+              <span className="font-medium">{defaultWarehouse.name}</span>
+            </div>
+          ) : null}
+          {paymentTermLabel ? (
+            <div>
+              <span className="block text-black/60">Termin pembayaran pemasok</span>
+              <span className="font-medium">{paymentTermLabel}</span>
+            </div>
+          ) : null}
+          {order.expectedDate ? (
+            <div>
+              <span className="block text-black/60">Perkiraan tiba</span>
+              <span className="font-medium">{formatDate(order.expectedDate)}</span>
             </div>
           ) : null}
         </div>
@@ -116,37 +162,46 @@ export default async function PurchaseOrderPrintPage({
             <tr className="border-y border-black/60 text-left">
               <th className="py-1.5 pr-2 font-semibold">Produk</th>
               <th className="py-1.5 pr-2 text-right font-semibold">Qty dipesan</th>
-              <th className="py-1.5 pr-2 text-right font-semibold">Sudah diterima</th>
+              <th className="py-1.5 pr-2 text-right font-semibold">Diterima</th>
+              <th className="py-1.5 pr-2 text-right font-semibold">Sisa</th>
               <th className="py-1.5 pr-2 text-right font-semibold">Harga beli</th>
               <th className="py-1.5 text-right font-semibold">Subtotal</th>
             </tr>
           </thead>
           <tbody>
-            {lines.map((line) => (
-              <tr key={line.id} className="border-b border-black/15 align-top">
-                <td className="py-1.5 pr-2">
-                  <p className="font-medium">{line.productName}</p>
-                  <p className="num text-[10px] text-black/60">{line.sku}</p>
-                </td>
-                <td className="num py-1.5 pr-2 text-right whitespace-nowrap">
-                  {/* S2: baris berkemasan dicetak dalam bentuk pesanannya
-                      (10 Dus = 400 satuan dasar) — bentuk yang dipahami
-                      pemasok; subtotal tidak berubah. */}
-                  {line.packagingId
-                    ? `${formatQty(line.qtyInput)} ${line.packagingName ?? "kemasan"} (${formatQty(line.qty)}${line.unitName ? ` ${line.unitName}` : ""})`
-                    : `${formatQty(line.qty)}${line.unitName ? ` ${line.unitName}` : ""}`}
-                </td>
-                <td className="num py-1.5 pr-2 text-right whitespace-nowrap">
-                  {formatQty(line.receivedQty)}
-                </td>
-                <td className="num py-1.5 pr-2 text-right whitespace-nowrap">
-                  {line.packagingId
-                    ? formatIDR(d(line.unitCost).mul(d(line.isiSnapshot)))
-                    : formatIDR(line.unitCost)}
-                </td>
-                <td className="num py-1.5 text-right whitespace-nowrap">{formatIDR(line.lineTotal)}</td>
-              </tr>
-            ))}
+            {lines.map((line) => {
+              const remaining = d(line.qty).minus(d(line.receivedQty));
+              return (
+                <tr key={line.id} className="border-b border-black/15 align-top">
+                  <td className="py-1.5 pr-2">
+                    <p className="font-medium">{line.productName}</p>
+                    <p className="num text-[10px] text-black/60">{line.sku}</p>
+                  </td>
+                  <td className="num py-1.5 pr-2 text-right whitespace-nowrap">
+                    {/* S2: baris berkemasan dicetak dalam bentuk pesanannya
+                        (10 Dus = 400 satuan dasar) — bentuk yang dipahami
+                        pemasok; subtotal tidak berubah. */}
+                    {line.packagingId
+                      ? `${formatQty(line.qtyInput)} ${line.packagingName ?? "kemasan"} (${formatQty(line.qty)}${line.unitName ? ` ${line.unitName}` : ""})`
+                      : `${formatQty(line.qty)}${line.unitName ? ` ${line.unitName}` : ""}`}
+                  </td>
+                  <td className="num py-1.5 pr-2 text-right whitespace-nowrap">
+                    {formatQty(line.receivedQty)}
+                  </td>
+                  <td className="num py-1.5 pr-2 text-right whitespace-nowrap">
+                    {remaining.gt(0)
+                      ? `${formatQty(remaining)}${line.unitName ? ` ${line.unitName}` : ""}`
+                      : "—"}
+                  </td>
+                  <td className="num py-1.5 pr-2 text-right whitespace-nowrap">
+                    {line.packagingId
+                      ? formatIDR(d(line.unitCost).mul(d(line.isiSnapshot)))
+                      : formatIDR(line.unitCost)}
+                  </td>
+                  <td className="num py-1.5 text-right whitespace-nowrap">{formatIDR(line.lineTotal)}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
 

@@ -53,7 +53,7 @@ export default async function JournalPrintPage({
 
   if (!data) notFound();
   const { entry, lines, source, settings, creatorName } = data;
-  const printSettings = toPrintSettings(settings);
+  const printSettings = toPrintSettings(settings, "jurnal");
   const qrDataUrl = printSettings.showQr ? await documentQrDataUrl(entry.number) : null;
   const debit = lines.reduce((acc, line) => acc.plus(d(line.debit)), d(0));
   const credit = lines.reduce((acc, line) => acc.plus(d(line.credit)), d(0));
@@ -94,10 +94,39 @@ export default async function JournalPrintPage({
           />
 
           {entry.description ? <p className="text-[12px]">{entry.description}</p> : null}
-          <p className="mt-1 text-[11px] text-black/60">
-            Sumber {source.label}
-            {source.number ? ` · ${source.number}` : ""} · Status {statusLabel(entry.status)}
-          </p>
+
+          <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 border-y border-black/30 py-2 text-[11px] break-inside-avoid sm:grid-cols-4">
+            <div>
+              <p className="text-[9px] uppercase tracking-wide text-black/50">Status</p>
+              <p className="font-semibold">{statusLabel(entry.status)}</p>
+            </div>
+            <div>
+              <p className="text-[9px] uppercase tracking-wide text-black/50">Jenis sumber</p>
+              <p className="font-semibold">{source.label}</p>
+              {source.number ? <p className="num text-[10px] text-black/60">{source.number}</p> : null}
+            </div>
+            <div>
+              <p className="text-[9px] uppercase tracking-wide text-black/50">Dibuat oleh</p>
+              <p className="font-semibold">{creatorName ?? "—"}</p>
+              <p className="text-[10px] text-black/60">{formatDateTime(entry.createdAt)}</p>
+            </div>
+            <div>
+              <p className="text-[9px] uppercase tracking-wide text-black/50">Diposting pada</p>
+              <p className="font-semibold">
+                {entry.postedAt
+                  ? formatDateTime(entry.postedAt)
+                  : entry.status === "posted"
+                    ? "—"
+                    : "Belum diposting"}
+              </p>
+            </div>
+          </div>
+
+          {entry.status !== "posted" ? (
+            <p className="mt-2 border-y-2 border-double border-black py-1 text-center text-[11px] font-bold uppercase tracking-[0.15em] break-inside-avoid">
+              {entry.status === "void" ? "Jurnal dibatalkan" : "Draf — belum diposting"}
+            </p>
+          ) : null}
 
           <table className="mt-4 w-full text-[12px]">
             <thead>
@@ -137,16 +166,6 @@ export default async function JournalPrintPage({
           <p className="mt-1 text-right text-[11px]">
             {balanced ? "Debit dan kredit seimbang." : "Selisih terdeteksi — jurnal tidak seimbang."}
           </p>
-
-          <div className="mt-4 text-[11px] text-black/70">
-            <p>
-              Sumber: {source.label}
-              {source.number ? ` · ${source.number}` : ""}
-            </p>
-            <p>
-              Dibuat oleh {creatorName ?? "—"} · {formatDateTime(entry.createdAt)}
-            </p>
-          </div>
 
           <PrintFooter
             settings={printSettings}
