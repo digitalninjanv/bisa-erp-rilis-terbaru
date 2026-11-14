@@ -148,6 +148,11 @@ export function SupplierReturnForm({
   const [busy, setBusy] = useState<"" | "draft" | "post">("");
   const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
   const infoSeq = useRef(0);
+  const linesRef = useRef(lines);
+
+  useEffect(() => {
+    linesRef.current = lines;
+  }, [lines]);
 
   function handleCancelClick() {
     if (lines.length > 0 || reasonDetail.trim().length > 0) {
@@ -171,17 +176,27 @@ export function SupplierReturnForm({
   useEffect(() => {
     if (!warehouseId) return;
     const current = ++infoSeq.current;
-    setLines((currentLines) => {
-      if (currentLines.length === 0) return currentLines;
-      void (async () => {
-        const refreshed = await Promise.all(
-          currentLines.map((line) => loadInfo({ ...line, batchId: "", stock: null, batches: [] }, warehouseId)),
-        );
-        if (current !== infoSeq.current) return;
-        setLines(refreshed);
-      })();
-      return currentLines.map((line) => ({ ...line, batchId: "", stock: null, batches: [] }));
+    const currentLines = linesRef.current;
+    if (currentLines.length === 0) return;
+
+    const clearedLines = currentLines.map((line) => ({
+      ...line,
+      batchId: "",
+      stock: null,
+      batches: [],
+    }));
+    linesRef.current = clearedLines;
+    setLines(clearedLines);
+
+    void Promise.all(clearedLines.map((line) => loadInfo(line, warehouseId))).then((refreshed) => {
+      if (current !== infoSeq.current) return;
+      linesRef.current = refreshed;
+      setLines(refreshed);
     });
+
+    return () => {
+      if (current === infoSeq.current) infoSeq.current += 1;
+    };
   }, [warehouseId]);
 
   async function addProduct(product: { id: string; name: string; sku: string; trackBatch?: boolean; costPrice?: string | null; packagings?: PickedPackaging[]; scannedPackagingId?: string | null }) {

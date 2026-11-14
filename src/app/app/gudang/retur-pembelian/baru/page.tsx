@@ -15,6 +15,7 @@ import {
 } from "@/server/supplier-returns";
 import { requirePermissionPageInModule } from "@/lib/session";
 import { todayISO } from "@/lib/format";
+import { parsePageParam } from "@/lib/pagination";
 import { SupplierReturnForm } from "@/components/gudang/supplier-return-form";
 
 export const metadata = { title: "Retur Pembelian Baru" };
@@ -23,7 +24,7 @@ export const dynamic = "force-dynamic";
 export default async function NewSupplierReturnPage({
   searchParams,
 }: {
-  searchParams: Promise<{ receiptId?: string; mode?: string }>;
+  searchParams: Promise<{ receiptId?: string; mode?: string; q?: string; page?: string }>;
 }) {
   const params = await searchParams;
   const ctx = await requirePermissionPageInModule("inventory.manage", "gudang");
@@ -37,7 +38,10 @@ export default async function NewSupplierReturnPage({
       params.receiptId
         ? getReceiptDetail(tx, ctx.company.id, params.receiptId)
         : Promise.resolve(null),
-      listSupplierReturnReceiptOptions(tx, ctx.company.id),
+      listSupplierReturnReceiptOptions(tx, ctx.company.id, {
+        page: parsePageParam(params.page),
+        q: params.q,
+      }),
     ]);
     return {
       warehouseRows,
@@ -48,7 +52,10 @@ export default async function NewSupplierReturnPage({
     };
   });
 
-  const receiptReady = data.receipt?.receipt.status === "posted";
+  const receiptReady =
+    data.receipt?.receipt.status === "posted" &&
+    data.receipt.receipt.source === "purchase" &&
+    Boolean(data.receipt.receipt.supplierId);
   const reasonOptions = Object.entries(SUPPLIER_RETURN_REASON_LABELS).map(([value, label]) => ({ value, label }));
   const resolutionOptions = Object.entries(SUPPLIER_RETURN_RESOLUTION_LABELS).map(([value, label]) => ({ value, label }));
   const prerequisitesMissing = data.warehouseRows.length === 0 || data.supplierRows.length === 0;
@@ -77,7 +84,7 @@ export default async function NewSupplierReturnPage({
               href="/app/gudang/retur-pembelian/baru"
               className="text-[11px] font-medium text-muted-foreground hover:text-foreground"
             >
-              Ganti faktur penerimaan
+              Ganti penerimaan pembelian
             </Link>
           </div>
           <SupplierReturnForm
@@ -119,31 +126,50 @@ export default async function NewSupplierReturnPage({
                 <FileText className="size-4" />
               </span>
               <div>
-                <h2 className="text-[13px] font-semibold">Retur dari faktur penerimaan</h2>
+                <h2 className="text-[13px] font-semibold">Retur dari penerimaan pembelian</h2>
                 <p className="mt-0.5 text-[11px] leading-5 text-muted-foreground">
-                  Pilih penerimaan yang sudah posted. Pemasok, gudang, barang, dan qty terisi otomatis dari dokumen asal.
+                  Cari nomor faktur, pemasok, atau nomor penerimaan. Pemasok, gudang, dan barang terisi dari dokumen asal.
                 </p>
               </div>
             </div>
             {params.receiptId && !receiptReady ? (
               <p className="mt-3 rounded-md border border-tone-amber/40 bg-tone-amber-soft px-3 py-2 text-[11px] text-tone-amber">
-                Faktur penerimaan tidak ditemukan atau belum posted. Pilih dokumen lain.
+                Penerimaan pembelian tidak ditemukan atau belum terposting. Pilih dokumen lain.
               </p>
             ) : null}
-            {data.receiptOptions.length === 0 ? (
-              <p className="mt-3 text-[11px] text-muted-foreground">Belum ada penerimaan posted.</p>
+            <form action="/app/gudang/retur-pembelian/baru" className="mt-3 flex gap-2">
+              <input
+                type="search"
+                name="q"
+                defaultValue={params.q ?? ""}
+                placeholder="Nomor faktur, pemasok, atau penerimaan"
+                aria-label="Cari penerimaan pembelian"
+                className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-[12px]"
+              />
+              <button
+                type="submit"
+                className="h-9 rounded-md border border-border bg-card px-3 text-[12px] font-medium hover:bg-muted"
+              >
+                Cari
+              </button>
+            </form>
+            {data.receiptOptions.rows.length === 0 ? (
+              <p className="mt-3 text-[11px] text-muted-foreground">
+                {params.q ? "Tidak ada penerimaan pembelian yang cocok." : "Belum ada penerimaan pembelian yang dapat diretur."}
+              </p>
             ) : (
-              <form action="/app/gudang/retur-pembelian/baru" className="mt-3 space-y-2">
+              <form action="/app/gudang/retur-pembelian/baru" className="mt-2 space-y-2">
+                {params.q ? <input type="hidden" name="q" value={params.q} /> : null}
                 <select
                   name="receiptId"
                   defaultValue={params.receiptId ?? ""}
-                  aria-label="Pilih faktur penerimaan"
+                  aria-label="Pilih penerimaan pembelian"
                   className="h-9 w-full rounded-md border border-input bg-background px-2 text-[12px]"
                 >
-                  <option value="">Pilih faktur penerimaan…</option>
-                  {data.receiptOptions.map((option) => (
+                  <option value="">Pilih faktur/penerimaan…</option>
+                  {data.receiptOptions.rows.map((option) => (
                     <option key={option.id} value={option.id}>
-                      {option.number} · {option.date} · {option.supplierName ?? "—"}
+                      {option.supplierInvoiceNumber || "No. faktur belum dicatat"} · {option.number} · {option.date} · {option.supplierName}
                       {option.poNumber ? ` · ${option.poNumber}` : ""}
                     </option>
                   ))}
@@ -156,6 +182,29 @@ export default async function NewSupplierReturnPage({
                 </button>
               </form>
             )}
+            {data.receiptOptions.totalPages > 1 ? (
+              <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
+                <span>{data.receiptOptions.total} dokumen · halaman {data.receiptOptions.page}/{data.receiptOptions.totalPages}</span>
+                <div className="flex gap-3">
+                  {data.receiptOptions.page > 1 ? (
+                    <Link
+                      href={`/app/gudang/retur-pembelian/baru?${params.q ? `q=${encodeURIComponent(params.q)}&` : ""}page=${data.receiptOptions.page - 1}`}
+                      className="font-medium text-primary hover:underline"
+                    >
+                      Sebelumnya
+                    </Link>
+                  ) : null}
+                  {data.receiptOptions.page < data.receiptOptions.totalPages ? (
+                    <Link
+                      href={`/app/gudang/retur-pembelian/baru?${params.q ? `q=${encodeURIComponent(params.q)}&` : ""}page=${data.receiptOptions.page + 1}`}
+                      className="font-medium text-primary hover:underline"
+                    >
+                      Berikutnya
+                    </Link>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
           </section>
 
           <section className="rounded-lg border border-border bg-card p-4">
@@ -182,7 +231,7 @@ export default async function NewSupplierReturnPage({
 
       {!receiptReady && !manualMode ? (
         <p className="mt-3 text-[11px] text-muted-foreground">
-          Disarankan memulai dari faktur penerimaan agar qty, batch, dan nilai mengikuti dokumen asal.
+          Mulai dari penerimaan pembelian agar qty dan batch terisi dari dokumen asal; nilai retur dihitung saat posting.
         </p>
       ) : null}
     </div>

@@ -11,6 +11,7 @@ import {
   parseSidebarCollapsedCookie,
 } from "@/lib/sidebar-pref";
 import type { CompanyContext } from "@/lib/session";
+import { MODULE_LIST } from "@/lib/modules";
 
 /**
  * A-24 T1 (SIS-11) — cangkang netral Pengaturan. Sebelumnya halaman
@@ -36,23 +37,27 @@ export async function SettingsShell({
 }) {
   // Validasi 2 (V-01): preferensi ciut sidebar sama dengan ModuleShell.
   const sidebarCookie = (await cookies()).get(SIDEBAR_COLLAPSED_COOKIE);
+  const allowedKeys = MODULE_LIST.filter(
+    (item) => ctx.modules.includes(item.key) && ctx.enabledModules.includes(item.key),
+  ).map((item) => item.key);
 
   return (
     <div className="module-shell theme-erp min-h-dvh bg-background lg:flex">
       <SidebarFrame
         defaultCollapsed={parseSidebarCollapsedCookie(sidebarCookie?.value)}
         hasPreference={sidebarCookie !== undefined}
+        rail
         footer={<SidebarUserCard ctx={ctx} />}
       >
         <ThemedSidebarHead ctx={ctx} activeKey={null} settingsActive />
 
-        <SettingsSidebarNav permissions={ctx.permissions} />
+        <SettingsSidebarNav permissions={ctx.permissions} rail />
       </SidebarFrame>
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="module-topbar no-print sticky top-0 z-30 flex h-[52px] items-center justify-between gap-3 border-b border-border bg-card/95 px-3 backdrop-blur sm:px-5">
           <div className="flex min-w-0 items-center gap-2.5">
-            <SettingsMobileNav permissions={ctx.permissions} />
+            <SettingsMobileNav permissions={ctx.permissions} allowedKeys={allowedKeys} />
             <div className="hidden h-4 w-px bg-border lg:block" />
             <span className="truncate text-xs font-medium">Pengaturan</span>
           </div>

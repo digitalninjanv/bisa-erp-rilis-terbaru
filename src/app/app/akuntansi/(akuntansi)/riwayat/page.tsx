@@ -273,12 +273,12 @@ export default async function AccountingHistoryPage({
                 const href = entityHref(row.entityType, row.entityId);
                 return (
                   <tr key={row.id}>
-                    <td className="num whitespace-nowrap text-[11px]">
+                    <td className="num whitespace-nowrap text-[12px]">
                       {formatDateTime(row.createdAt)}
                     </td>
                     <td className="text-[12px]">{row.userName ?? "Sistem"}</td>
-                    <td className="text-[11px] font-medium">{actionLabel(row.action)}</td>
-                    <td className="text-[11px]">
+                    <td className="text-[12px] font-medium">{actionLabel(row.action)}</td>
+                    <td className="text-[12px]">
                       {href ? (
                         <Link href={href} className="font-medium text-primary hover:underline">
                           {entityLabel(row.entityType)}
@@ -287,15 +287,15 @@ export default async function AccountingHistoryPage({
                         entityLabel(row.entityType)
                       )}
                       {row.entityId ? (
-                        <span className="num ml-1 text-[10px] text-muted-foreground">
+                        <span className="num ml-1 text-[11px] text-muted-foreground">
                           {row.entityId.slice(0, 8)}
                         </span>
                       ) : null}
                     </td>
-                    <td className="max-w-[430px] truncate text-[11px] text-muted-foreground">
+                    <td className="max-w-[430px] whitespace-normal break-words text-[12px] leading-5 text-muted-foreground">
                       {summarizeAuditChange(row.before, row.after)}
                     </td>
-                    <td className="num hidden text-[10px] text-muted-foreground lg:table-cell">
+                    <td className="num hidden text-[11px] text-muted-foreground lg:table-cell">
                       {row.ip ?? "—"}
                     </td>
                   </tr>
@@ -307,8 +307,8 @@ export default async function AccountingHistoryPage({
       </DataList>
 
       <p className="mt-3 text-[10px] leading-4 text-muted-foreground">
-        Audit trail memuat aktivitas sejak {formatDate(from)} sampai {formatDate(to)}. Riwayat
-        jurnal tetap tersedia di menu Jurnal umum.
+        Audit trail memuat aktivitas sejak {formatDate(from)} sampai {formatDate(to)}. Rincian
+        posting dan saldo jurnal tersedia di menu Riwayat jurnal.
       </p>
     </div>
   );

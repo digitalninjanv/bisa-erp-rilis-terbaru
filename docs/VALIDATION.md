@@ -46,7 +46,19 @@ DIRECT_URL="$TEST_DIRECT_URL" DATABASE_URL="$TEST_DATABASE_URL" pnpm exec drizzl
 DATABASE_URL="$TEST_DATABASE_URL" DIRECT_URL="$TEST_DIRECT_URL" pnpm db:seed --force
 
 # 2. Suite
-DATABASE_URL="$TEST_DATABASE_URL" DIRECT_URL="$TEST_DIRECT_URL" pnpm test
+BISA_TEST_DATABASE_URL="$TEST_DATABASE_URL" \
+BISA_TEST_DIRECT_URL="$TEST_DIRECT_URL" \
+pnpm test
+```
+
+Konfigurasi Vitest menolak suite integrasi/simulasi bila URL database test
+tidak diberikan eksplisit, nama DB tidak mengandung segmen `test`, atau host
+bukan loopback. CI dengan service PostgreSQL terisolasi di jaringan container
+harus mengatur `BISA_ALLOW_REMOTE_TEST_DATABASE=1`. Suite `tests/unit` saja
+dapat dijalankan tanpa URL DB test:
+
+```bash
+pnpm exec vitest run tests/unit
 ```
 
 ## Bukti angka

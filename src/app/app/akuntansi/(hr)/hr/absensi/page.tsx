@@ -1,15 +1,16 @@
 import Link from "next/link";
 import { AutoFilterForm } from "@/components/blocks/auto-filter-form";
+import { DateField } from "@/components/date-field";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { requirePermissionPage } from "@/lib/session";
 import { can } from "@/lib/permissions";
-import { periodRange } from "@/lib/hr";
 import { formatDate, formatMonth, todayISO } from "@/lib/format";
 import { PageHeader } from "@/components/blocks/page-header";
 import { SummaryStrip } from "@/components/blocks/summary-strip";
 import { EmptyState } from "@/components/blocks/empty-state";
 import { AttendanceTools } from "@/components/akuntansi/attendance-tools";
 import {
+  AttendanceBatchForm,
   AttendanceEntryForm,
   AttendanceImportForm,
   ShiftAssignmentForm,
@@ -49,20 +50,22 @@ function percent(value: number | null): string {
 export default async function AttendancePage({
   searchParams,
 }: {
-  searchParams: Promise<{ period?: string }>;
+  searchParams: Promise<{ date?: string; period?: string }>;
 }) {
   const ctx = await requirePermissionPage("payroll.view");
   const manageable = can(ctx, "payroll.manage");
-  const { period = todayISO().slice(0, 7) } = await searchParams;
-  const activePeriod = /^\d{4}-\d{2}$/.test(period) ? period : todayISO().slice(0, 7);
-  const { start, end } = periodRange(activePeriod);
+  const params = await searchParams;
+  const fallbackDate = params.period && /^\d{4}-\d{2}$/.test(params.period) ? `${params.period}-01` : todayISO();
+  const requestedDate = params.date ?? fallbackDate;
+  const activeDate = /^\d{4}-\d{2}-\d{2}$/.test(requestedDate) ? requestedDate : todayISO();
+  const activePeriod = activeDate.slice(0, 7);
 
   const data = await withCompanyReadOnly(ctx.company.id, async (tx) => {
     const [shifts, staff, recap, recent] = await Promise.all([
       listWorkShifts(tx, ctx.company.id),
       listEmployeeOptions(tx, ctx.company.id, { activeOnly: true }),
       getAttendanceRecap(tx, ctx.company.id, activePeriod),
-      listRecentAttendance(tx, ctx.company.id, { start, end }),
+      listRecentAttendance(tx, ctx.company.id, { start: activeDate, end: activeDate }),
     ]);
     return { shifts, staff, recap, recent };
   });
@@ -86,18 +89,17 @@ export default async function AttendancePage({
     <div>
       <PageHeader
         title="Absensi"
-        description="Catat kehadiran harian dan pantau rekap periode. Absensi tidak mengubah payroll kecuali fitur terkait diaktifkan."
+        description="Isi status dan jam hadir dari satu daftar harian; rekap bulanan tersedia di bawah."
         actions={
           <AutoFilterForm className="flex items-center gap-1.5" action="/app/akuntansi/hr/absensi">
-            <label className="text-[12px] text-muted-foreground" htmlFor="period">
-              Periode
+            <label className="text-[12px] text-muted-foreground" htmlFor="date">
+              Tanggal
             </label>
-            <input
-              id="period"
-              type="month"
-              name="period"
-              defaultValue={activePeriod}
-              className="h-9 rounded-md border border-input bg-background px-2 text-[12px]"
+            <DateField
+              id="date"
+              name="date"
+              defaultValue={activeDate}
+              aria-label="Tanggal absensi"
             />
             <button
               type="submit"
@@ -108,6 +110,23 @@ export default async function AttendancePage({
           </AutoFilterForm>
         }
       />
+
+      {manageable ? (
+        <div className="mt-3">
+          <AttendanceBatchForm
+            key={activeDate}
+            date={activeDate}
+            employees={data.staff}
+            records={data.recent.map((row) => ({
+              employeeId: row.employeeId,
+              status: row.status as "present" | "permit" | "sick" | "leave" | "absent",
+              checkIn: row.checkIn,
+              checkOut: row.checkOut,
+              note: row.note,
+            }))}
+          />
+        </div>
+      ) : null}
 
       <SummaryStrip
         items={[
@@ -146,12 +165,6 @@ export default async function AttendancePage({
           },
         ]}
       />
-
-      {manageable ? (
-        <div id="catat" className="mt-3 scroll-mt-4">
-          <AttendanceEntryForm employees={data.staff} />
-        </div>
-      ) : null}
 
       <section className="mt-3 overflow-hidden rounded-lg border border-border bg-card">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
@@ -257,15 +270,14 @@ export default async function AttendancePage({
         )}
       </section>
 
-      {data.recent.length > 0 ? (
-        <details className="mt-3 rounded-lg border border-border bg-card">
-          <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 [&::-webkit-details-marker]:hidden">
-            <span className="text-[13px] font-semibold">Catatan harian</span>
-            <span className="num rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
-              {data.recent.length}
-            </span>
-            <span className="ml-auto text-[11px] text-muted-foreground">Lihat rincian</span>
-          </summary>
+      <section className="mt-3 overflow-hidden rounded-lg border border-border bg-card">
+        <div className="flex items-center gap-2 px-4 py-3">
+          <h2 className="text-[13px] font-semibold">Catatan tanggal {formatDate(activeDate)}</h2>
+          <span className="num rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
+            {data.recent.length}
+          </span>
+        </div>
+        {data.recent.length > 0 ? (
           <div className="overflow-x-auto border-t border-border">
             <table className="data-table">
               <thead>
@@ -303,6 +315,20 @@ export default async function AttendancePage({
                 ))}
               </tbody>
             </table>
+          </div>
+        ) : (
+          <p className="border-t border-border px-4 py-4 text-[12px] text-muted-foreground">Belum ada catatan pada tanggal ini.</p>
+        )}
+      </section>
+
+      {manageable ? (
+        <details className="mt-3 rounded-lg border border-border bg-card">
+          <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 [&::-webkit-details-marker]:hidden">
+            <span className="text-[13px] font-semibold">Koreksi satu catatan</span>
+            <span className="ml-auto text-[11px] text-muted-foreground">Termasuk catatan tambahan</span>
+          </summary>
+          <div className="border-t border-border p-3">
+            <AttendanceEntryForm employees={data.staff} defaultDate={activeDate} />
           </div>
         </details>
       ) : null}

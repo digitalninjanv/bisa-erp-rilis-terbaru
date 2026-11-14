@@ -114,12 +114,14 @@ export default async function AccountsPage({
             >
               <Download className="size-3.5" /> Unduh Excel
             </Link>
-            <Link
-              href="/app/gudang/impor?jenis=accounts"
-              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] font-medium transition-colors hover:bg-muted"
-            >
-              <Upload className="size-3.5" /> Impor Excel
-            </Link>
+            {can(ctx, "import.manage") ? (
+              <Link
+                href="/app/akuntansi/akun/impor"
+                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] font-medium transition-colors hover:bg-muted"
+              >
+                <Upload className="size-3.5" /> Impor Excel
+              </Link>
+            ) : null}
             {canManage ? <AccountForm parents={parentOptions} /> : null}
           </>
         }

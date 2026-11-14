@@ -12,7 +12,7 @@ Status: audit read-only + perbaikan putaran ini. Temuan terbuka ada di `docs/BLO
 - **Upload**: batas 20 MB/25.000 baris, hanya `.xlsx/.xls/.csv`; parser XLSX.
 - **Excel/CSV injection**: CSV menetralkan `= + - @`; XLSX memakai `cellFormula:false` (diuji).
 - **Audit log**: dokumen, user, role, harga, void/refund, penyesuaian, payroll.
-- **Backup**: `scripts/backup.sh` mendukung dump custom, enkripsi opsional, manifest; restore di `scripts/restore.sh`.
+- **Backup**: `scripts/backup.sh` membuat dump custom terenkripsi dan terautentikasi (AES-256-GCM, PBKDF2-SHA256 600.000 iterasi) dan manifest; tanpa passphrase, backup gagal tertutup. Restore tersedia di `scripts/restore.sh`. Restore CBC historis tidak memberi autentikasi dan memerlukan override operator eksplisit.
 - **Header**: CSP, HSTS, X-Frame-Options, nosniff.
 
 ## Perbaikan putaran ini
@@ -43,6 +43,6 @@ Status: audit read-only + perbaikan putaran ini. Temuan terbuka ada di `docs/BLO
 ## Aturan operasi
 
 - Jangan pernah menaruh secret di kode/commit; gunakan env.
-- Produksi wajib HTTPS dan backup terenkripsi.
+- Produksi wajib HTTPS, backup terenkripsi, dan passphrase disimpan di luar host yang menyimpan dump.
 - Akses DB memakai role aplikasi; migrasi memakai `DIRECT_URL` owner.
 - Setelah perubahan role/membership, cabut session/token terkait (sebagian sudah dilakukan untuk reset password).

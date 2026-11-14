@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { Users } from "lucide-react";
+import { HandCoins, Users } from "lucide-react";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { requirePermissionPage } from "@/lib/session";
 import { can } from "@/lib/permissions";
-import { formatIDR } from "@/lib/money";
+import { d, formatIDR } from "@/lib/money";
 import { formatMonth, todayISO } from "@/lib/format";
 import { PageHeader } from "@/components/blocks/page-header";
 import { SummaryStrip } from "@/components/blocks/summary-strip";
@@ -18,14 +18,8 @@ export const metadata = { title: "Payroll" };
 export const dynamic = "force-dynamic";
 
 /**
- * A-25 U5 — halaman Payroll & Karyawan ke pola baru:
- * - Navigasi chip ganda dihapus (HR-02): sidebar modul adalah
- *   satu-satunya navigasi HR.
- * - Proses payroll menjadi PayrollWizard 3 langkah menggantikan
- *   form sekali-tekan (aksi server & payload tidak berubah).
- * - Daftar karyawan memakai DataList; Riwayat payroll tidak lagi
- *   menyempitkan tabel utama di rel 360px (HR-06) — ia menjadi
- *   daftar penuh di bawah daftar karyawan.
+ * Satu halaman sederhana untuk direktori karyawan, komponen gaji,
+ * pemrosesan payroll bulanan, dan riwayat run.
  */
 export default async function PayrollPage() {
   const ctx = await requirePermissionPage("payroll.view");
@@ -43,23 +37,29 @@ export default async function PayrollPage() {
 
   const active = data.staff.filter((row) => row.isActive);
   const monthlyGross = active.reduce(
-    (acc, row) => acc + Number(row.baseSalary) + Number(row.allowances),
-    0,
+    (acc, row) => acc.plus(d(row.baseSalary)).plus(d(row.allowances)),
+    d(0),
   );
   const monthlyNet = active.reduce(
-    (acc, row) => acc + Number(row.baseSalary) + Number(row.allowances) - Number(row.deductions),
-    0,
+    (acc, row) => acc.plus(d(row.baseSalary)).plus(d(row.allowances)).minus(d(row.deductions)),
+    d(0),
   );
 
   return (
     <div>
       <PageHeader
-        title="Karyawan & Payroll"
-        description="Data karyawan, gaji pokok, tunjangan, potongan, dan proses gaji bulanan dengan jurnal otomatis."
+        title="Karyawan"
+        description="Data karyawan, gaji bulanan, dan riwayat pembayaran di satu tempat."
         actions={
-          manageable ? (
-            <EmployeeForm orgOptions={data.orgOptions} />
-          ) : null
+          <div className="flex items-center gap-2">
+            <Link
+              href="/app/akuntansi/kasbon"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] font-medium transition-colors hover:bg-muted"
+            >
+              <HandCoins className="size-3.5" /> Kasbon karyawan
+            </Link>
+            {manageable ? <EmployeeForm /> : null}
+          </div>
         }
       />
 
@@ -76,9 +76,9 @@ export default async function PayrollPage() {
             hint: canSeeSalary ? "Pokok + tunjangan tetap" : "Butuh izin lihat angka gaji",
           },
           {
-            label: "Gaji bersih / bulan",
+            label: "Perkiraan gaji / bulan",
             value: canSeeSalary ? formatIDR(monthlyNet) : "Dirahasiakan",
-            hint: canSeeSalary ? "Setelah potongan tetap" : "Butuh izin lihat angka gaji",
+            hint: canSeeSalary ? "Setelah potongan tetap, sebelum cicilan kasbon" : "Butuh izin lihat angka gaji",
           },
           {
             label: "Payroll diproses",
@@ -98,7 +98,12 @@ export default async function PayrollPage() {
             processedRuns={data.runs
               .filter((run) => run.kind === "regular" && run.status !== "void")
               .map((run) => ({ id: run.id, number: run.number, period: run.period }))}
-            advanceProposals={data.advanceProposals}
+            advanceProposals={data.advanceProposals.map((row) => ({
+              employeeId: row.employeeId,
+              employeeName: row.employeeName,
+              openTotal: row.openTotal,
+              proposed: row.proposed,
+            }))}
             staff={data.staff.map((row) => ({
               id: row.id,
               code: row.code,
@@ -108,9 +113,6 @@ export default async function PayrollPage() {
               allowances: row.allowances,
               deductions: row.deductions,
               isActive: row.isActive,
-              nik: row.nik,
-              npwp: row.npwp,
-              ptkpStatus: row.ptkpStatus,
             }))}
           />
         </div>
@@ -147,7 +149,7 @@ export default async function PayrollPage() {
             </thead>
             <tbody>
               {data.staff.map((row) => {
-                const net = Number(row.baseSalary) + Number(row.allowances) - Number(row.deductions);
+                const net = d(row.baseSalary).plus(d(row.allowances)).minus(d(row.deductions));
                 return (
                   <tr key={row.id}>
                     <td>
@@ -183,7 +185,6 @@ export default async function PayrollPage() {
                     {manageable ? (
                       <td className="text-right">
                         <EmployeeForm
-                          orgOptions={data.orgOptions}
                           employee={{
                             id: row.id,
                             code: row.code,
@@ -193,21 +194,6 @@ export default async function PayrollPage() {
                             allowances: row.allowances,
                             deductions: row.deductions,
                             isActive: row.isActive,
-                            nik: row.nik,
-                            npwp: row.npwp,
-                            ptkpStatus: row.ptkpStatus,
-                            birthDate: row.birthDate,
-                            gender: row.gender,
-                            contractType: row.contractType,
-                            jkkRiskClass: row.jkkRiskClass,
-                            workRegionCode: row.workRegionCode,
-                            statutoryEnrollments: data.enrollmentsByEmployee.get(row.id),
-                            departmentId: row.departmentId,
-                            positionId: row.positionId,
-                            managerEmployeeId: row.managerEmployeeId,
-                            branchId: row.branchId,
-                            contractStart: row.contractStart,
-                            contractEnd: row.contractEnd,
                           }}
                         />
                       </td>

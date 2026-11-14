@@ -97,6 +97,8 @@ describe("committed concurrency and DB lifecycle (disposable fixtures)", () => {
     expect(results.every(r => r.ok)).toBe(true);
     const replay = await checkoutAction(input);
     expect(replay.ok).toBe(true);
+    const changedReplay = await checkoutAction({ ...input, payments: payment(20001) });
+    expect(changedReplay.ok).toBe(false);
     if (results[0].ok && results[1].ok && replay.ok) {
       expect(results[1].data.id).toBe(results[0].data.id);
       expect(replay.data.id).toBe(results[0].data.id);

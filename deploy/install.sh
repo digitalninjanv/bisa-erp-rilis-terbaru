@@ -199,8 +199,8 @@ say "menyiapkan peran & database (idempoten)…"
 # gets the same effect because POSTGRES_USER there is cluster superuser.
 admin_sql "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='erp') THEN CREATE ROLE erp LOGIN NOSUPERUSER CREATEDB NOCREATEROLE BYPASSRLS; END IF; END \$\$;"
 admin_sql "ALTER ROLE erp WITH LOGIN BYPASSRLS PASSWORD '$erp_pw';"
-admin_sql "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='app_user') THEN CREATE ROLE app_user LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE; END IF; END \$\$;"
-admin_sql "ALTER ROLE app_user WITH LOGIN PASSWORD '$app_pw';"
+admin_sql "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='app_user') THEN CREATE ROLE app_user LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS; END IF; END \$\$;"
+admin_sql "ALTER ROLE app_user WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS PASSWORD '$app_pw';"
 admin_sql "SELECT 1" >/dev/null 2>&1 || die "tidak bisa menjangkau PostgreSQL sebagai superuser."
 db_count="$(admin_sql "SELECT count(*) FROM pg_database WHERE datname='$PG_DB'" | tr -d '[:space:]')"
 if [[ "$db_count" == "0" ]]; then
@@ -236,20 +236,66 @@ else
   chmod 600 "$CONFDIR/backup.conf"
   say "backup.conf dibuat (retensi bawaan 14 harian + 4 mingguan)."
 fi
+source "$RELEASE_DIR/deploy/backup-credentials.sh"
+backup_passphrase_file="/etc/credstore/bisa-erp-backup-passphrase"
+mkdir -p /etc/credstore
+migrate_backup_credential "$CONFDIR/backup.conf" "$backup_passphrase_file" \
+  || die "gagal memigrasikan kunci backup ke credential file. Periksa $CONFDIR/backup.conf dan $backup_passphrase_file."
+if [[ -e "$backup_passphrase_file" ]]; then
+  chown root:root "$backup_passphrase_file"
+  chmod 600 "$backup_passphrase_file"
+fi
+if ! grep -q '^BACKUP_STATUS_GROUP=' "$CONFDIR/backup.conf"; then
+  printf '\nBACKUP_STATUS_GROUP=%s\n' "$APP_OS_USER" >> "$CONFDIR/backup.conf"
+  chmod 600 "$CONFDIR/backup.conf"
+fi
+config_backup_dir="$(sed -n 's/^BACKUP_DIR=//p' "$CONFDIR/backup.conf" | tail -1)"
+[[ -n "$config_backup_dir" ]] || die "BACKUP_DIR tidak tersedia pada $CONFDIR/backup.conf."
+configured_status_dir="$(sed -n 's/^BISA_BACKUP_DIR=//p' "$ENV_FILE" | tail -1)"
+if [[ -n "$configured_status_dir" && "$configured_status_dir" != "$config_backup_dir" ]]; then
+  die "BISA_BACKUP_DIR pada $ENV_FILE berbeda dari BACKUP_DIR pada $CONFDIR/backup.conf; samakan keduanya sebelum instalasi."
+fi
+if [[ -z "$configured_status_dir" ]]; then
+  printf '\nBISA_BACKUP_DIR=%s\n' "$config_backup_dir" >> "$ENV_FILE"
+  chmod 600 "$ENV_FILE"
+fi
+if [[ ! -s "$backup_passphrase_file" ]]; then
+  say "PERHATIAN: backup otomatis belum dapat berjalan. Simpan kunci di luar server dan buat credential $backup_passphrase_file; backup plaintext ditolak."
+fi
+mkdir -p "$config_backup_dir"
+chown root:"$APP_OS_USER" "$config_backup_dir"
+chmod 750 "$config_backup_dir"
 
 # ---------------------------------------------------------------- systemd
 ln -sfn "$RELEASE_DIR" "$BISA_ROOT/current"
 if systemctl is-system-running >/dev/null 2>&1 || [[ "$(systemctl is-system-running 2>/dev/null || true)" == "degraded" ]]; then
+  systemd_version="$(systemctl --version | awk 'NR == 1 { print $2 }')"
+  [[ "$systemd_version" =~ ^[0-9]+$ && "$systemd_version" -ge 247 ]] || die "systemd >= 247 diperlukan untuk mengirim kunci backup melalui LoadCredential (ditemukan: ${systemd_version:-tidak diketahui})."
   install -m 644 "$RELEASE_DIR/deploy/systemd/bisa-erp.service" "$SYSTEMD_DIR/bisa-erp.service"
   install -m 644 "$RELEASE_DIR/deploy/systemd/bisa-erp-backup.service" "$SYSTEMD_DIR/bisa-erp-backup.service"
   install -m 644 "$RELEASE_DIR/deploy/systemd/bisa-erp-backup.timer" "$SYSTEMD_DIR/bisa-erp-backup.timer"
+  install -m 644 "$RELEASE_DIR/deploy/systemd/bisa-erp-restore-drill.service" "$SYSTEMD_DIR/bisa-erp-restore-drill.service"
+  install -m 644 "$RELEASE_DIR/deploy/systemd/bisa-erp-restore-drill.timer" "$SYSTEMD_DIR/bisa-erp-restore-drill.timer"
   systemctl daemon-reload
-  systemctl enable --now bisa-erp.service >/dev/null 2>&1 || systemctl restart bisa-erp.service
-  systemctl enable --now bisa-erp-backup.timer >/dev/null 2>&1 || true
-  say "unit systemd terpasang & aktif."
+  systemctl enable --now bisa-erp.service >/dev/null 2>&1 || die "gagal mengaktifkan bisa-erp.service; periksa unit dan journal systemd."
+  if [[ -s "$backup_passphrase_file" ]]; then
+    systemctl enable --now bisa-erp-backup.timer >/dev/null 2>&1 || die "gagal mengaktifkan bisa-erp-backup.timer; backup terjadwal belum aktif."
+    systemctl enable --now bisa-erp-restore-drill.timer >/dev/null 2>&1 || die "gagal mengaktifkan bisa-erp-restore-drill.timer; restore drill terjadwal belum aktif."
+    say "timer backup dan restore drill aktif."
+  else
+    # Tanpa kunci, kedua pekerjaan selalu gagal tertutup. Pastikan instalasi
+    # baru maupun upgrade tidak menampilkan timer seolah-olah siap dipakai.
+    systemctl disable --now bisa-erp-backup.timer bisa-erp-restore-drill.timer >/dev/null 2>&1 || die "gagal menonaktifkan timer backup tanpa kunci; periksa status systemd sebelum melanjutkan."
+    say "PERINGATAN: timer backup dan restore drill tidak aktif karena credential kunci belum tersedia. Simpan kunci di luar server, buat $backup_passphrase_file, lalu aktifkan kedua timer secara manual."
+  fi
+  say "service aplikasi aktif."
 else
   say "PERINGATAN: systemd tidak berjalan di mesin ini — unit disalin tetapi tidak diaktifkan."
-  say "Aktifkan manual: systemctl daemon-reload && systemctl enable --now bisa-erp bisa-erp-backup.timer"
+  if [[ -s "$backup_passphrase_file" ]]; then
+    say "Aktifkan manual: systemctl daemon-reload && systemctl enable --now bisa-erp bisa-erp-backup.timer bisa-erp-restore-drill.timer"
+  else
+    say "Aktifkan aplikasi manual: systemctl daemon-reload && systemctl enable --now bisa-erp.service. Simpan kunci di luar server dan buat $backup_passphrase_file sebelum mengaktifkan timer backup dan restore drill."
+  fi
 fi
 
 # ---------------------------------------------------------------- health gate

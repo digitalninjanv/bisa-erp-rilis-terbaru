@@ -9,6 +9,8 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
+    // Local remediation build output, like .next, is generated code.
+    ".next-remediation/**",
     "out/**",
     "build/**",
     "next-env.d.ts",

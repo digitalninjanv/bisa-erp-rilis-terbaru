@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { toCsv } from "@/lib/csv";
+import { csvRow, csvStreamResponse, toCsv } from "@/lib/csv";
 
 /**
  * SIM-2 S6 (SEC-07): injeksi formula CSV. Nama produk/pelanggan/
@@ -8,6 +8,29 @@ import { toCsv } from "@/lib/csv";
  * sebagai formula saat berkas dibuka.
  */
 describe("toCsv — netralisasi injeksi formula (SEC-07)", () => {
+  it("menjaga serializer baris konsisten untuk ekspor bertahap", () => {
+    const header = ["Nama", "Catatan"];
+    const row = ["=Produk", 'Toko "Baru", Jaya'];
+    expect(csvRow(header)).toBe("Nama,Catatan");
+    expect(csvRow(row)).toBe("'=Produk,\"Toko \"\"Baru\"\", Jaya\"");
+    expect(toCsv(header, [row])).toBe(`${csvRow(header)}\r\n${csvRow(row)}`);
+  });
+
+  it("mengirim stream dengan metadata CSV dan BOM yang sama", async () => {
+    const bytes = new TextEncoder().encode("Nama\r\nProduk");
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(bytes);
+        controller.close();
+      },
+    });
+    const response = csvStreamResponse("produk.csv", body);
+    expect(response.headers.get("Content-Type")).toBe("text/csv; charset=utf-8");
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(response.headers.get("Content-Disposition")).toBe('attachment; filename="produk.csv"');
+    expect(await response.text()).toBe("Nama\r\nProduk");
+  });
+
   it("mengawali sel berawalan =, +, -, @ dengan kutip tunggal", () => {
     const csv = toCsv(["Nama"], [["=2+5+cmd|' /C calc'!A0"], ["+SUM(A1:A9)"], ["-2+3+cmd"], ["@SUM(1+1)"]]);
     const lines = csv.split("\r\n");

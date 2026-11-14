@@ -13,7 +13,7 @@
 
 1. **Backup** database produksi:
    ```bash
-   BACKUP_PASSPHRASE='...' pnpm db:backup
+   BACKUP_PASSPHRASE_FILE=/path/aman/backup-passphrase pnpm db:backup
    ```
 2. **Pasang kode** dan dependency:
    ```bash

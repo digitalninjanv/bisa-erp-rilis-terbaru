@@ -35,6 +35,8 @@ export type CreateSaleInput = {
   payments: PaymentInput[];
   notes?: string;
   idempotencyKey: string;
+  /** Fingerprint payload bisnis asli untuk membedakan retry identik dari penggunaan ulang key. */
+  idempotencyFingerprint?: string;
   // POS-DISC-01: diteruskan ke quoteCart (izin `pos.discount` aktor).
   canDiscount?: boolean;
   // FIX-POS Tahap 2 (POS3-02): sesi kas target yang eksplisit —

@@ -228,7 +228,21 @@ export function CustomFieldsForm({ initial }: { initial: CustomFieldDefinitions 
                         <div className="flex justify-end">
                           <button
                             type="button"
-                            onClick={() => setEntityRows(entity.key, rows[entity.key].filter((_, i) => i !== index))}
+                            onClick={() => {
+                              if (row.key && baselineRef.current[entity.key]?.some((b) => b.key === row.key)) {
+                                if (
+                                  !window.confirm(
+                                    `Menghapus definisi kolom "${row.label || row.key}" tidak akan menghapus nilai yang sudah tersimpan pada database entitas, tetapi nilai tersebut tidak akan ditampilkan lagi. Tetap hapus?`,
+                                  )
+                                ) {
+                                  return;
+                                }
+                              }
+                              setEntityRows(
+                                entity.key,
+                                rows[entity.key].filter((_, i) => i !== index),
+                              );
+                            }}
                             className="inline-flex h-8 items-center rounded border border-border px-2 text-[11px] text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
                           >
                             Hapus

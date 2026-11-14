@@ -4,6 +4,9 @@
 .git
 .local
 .next
+.next-remediation
+.codegraph
+.repowise
 node_modules
 graphify-out
 dist-release

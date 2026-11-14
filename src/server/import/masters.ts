@@ -46,24 +46,23 @@ import type { Mapping, RowData } from "./shared";
 
 export type MasterEntity = Exclude<ImportEntity, "products">;
 
-/**
- * T5R-3: required custom fields of one entity, read from the company's
- * definitions. Imports never carry custom values (there is no CSV
- * column for them), so an imported row can never satisfy a required
- * custom field — instead of letting that pass silently, every imported
- * row is marked with `requiredCustomFieldsNote` as its result message
- * and the user completes the fields through the edit form. The import
- * itself is never blocked.
- */
-export async function loadRequiredCustomFields(
+/** Custom field definitions for the requested party entity. */
+export async function loadCustomFields(
   tx: Tx,
   companyId: string,
   entity: CustomFieldEntity,
 ): Promise<CustomFieldDefinition[]> {
   const settings = await getCompanySettingsRow(tx, companyId);
-  return customFieldDefinitionsFor(settings?.customFields, entity).filter(
-    (field) => field.required,
-  );
+  return customFieldDefinitionsFor(settings?.customFields, entity);
+}
+
+/** Required definitions retained for product import's existing warning path. */
+export async function loadRequiredCustomFields(
+  tx: Tx,
+  companyId: string,
+  entity: CustomFieldEntity,
+): Promise<CustomFieldDefinition[]> {
+  return (await loadCustomFields(tx, companyId, entity)).filter((field) => field.required);
 }
 
 export function requiredCustomFieldsNote(labels: string[]): string {

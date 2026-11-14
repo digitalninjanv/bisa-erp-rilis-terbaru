@@ -14,6 +14,9 @@ import { requirePermission } from "@/lib/session";
 import { AppError, guard } from "@/lib/errors";
 import { parseInput } from "@/lib/action-validation";
 import { ENTITY_FIELDS, IMPORT_FIELDS, type ImportField } from "@/lib/import-parse";
+import { customFieldDefinitionsFor } from "@/lib/custom-fields";
+import { customFieldImportField } from "@/lib/import/import-custom-fields";
+import { getCompanySettingsRow } from "@/server/settings";
 import { analyzeMasterImport, assertMasterEntity } from "@/server/import-masters";
 import { analyzeProductJob } from "./shared";
 
@@ -42,16 +45,23 @@ export async function analyzeImportAction(input: { jobId: string; mapping?: Reco
         // dengan kerangka isu-per-baris yang sama; jalur produk di bawah
         // tidak berubah sama sekali.
         const entity = assertMasterEntity(job.entity);
+        const customEntity =
+          entity === "suppliers" ? "supplier" : entity === "customers" ? "customer" : null;
+        const settings = customEntity ? await getCompanySettingsRow(tx, ctx.company.id) : null;
+        const customFields = customEntity
+          ? customFieldDefinitionsFor(settings?.customFields, customEntity)
+          : [];
         const result = await analyzeMasterImport(tx, {
           companyId: ctx.company.id,
           job,
           mapping: mapping as Partial<Record<string, string>>,
+          customFields,
         });
         return {
           summary: result.summary,
           preview: result.preview,
           mapping,
-          fields: ENTITY_FIELDS[entity].map((f) => ({
+          fields: [...ENTITY_FIELDS[entity], ...customFields.map(customFieldImportField)].map((f) => ({
             key: f.key,
             label: f.label,
             required: f.required ?? false,

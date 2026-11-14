@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { SidebarNav } from "@/components/shell/sidebar-nav";
 import { MobileNav } from "@/components/shell/mobile-nav";
+import type { ModuleKey } from "@/lib/modules";
 import { SETTINGS_NAV, settingsActiveHref } from "@/lib/settings-nav";
 
 /**
@@ -13,7 +14,7 @@ import { SETTINGS_NAV, settingsActiveHref } from "@/lib/settings-nav";
  * Suspense karena useSearchParams menangguhkan subpohon ini saat
  * prarender; fallback menampilkan nav yang sama tanpa sorotan.
  */
-function SettingsNavInner({ permissions }: { permissions: string[] }) {
+function SettingsNavInner({ permissions, rail }: { permissions: string[]; rail: boolean }) {
   const pathname = usePathname();
   const params = useSearchParams();
   return (
@@ -21,16 +22,17 @@ function SettingsNavInner({ permissions }: { permissions: string[] }) {
       items={SETTINGS_NAV}
       permissions={permissions}
       activeHref={settingsActiveHref(pathname, params.get("tab"))}
+      rail={rail}
     />
   );
 }
 
-export function SettingsSidebarNav({ permissions }: { permissions: string[] }) {
+export function SettingsSidebarNav({ permissions, rail = false }: { permissions: string[]; rail?: boolean }) {
   return (
     <Suspense
-      fallback={<SidebarNav items={SETTINGS_NAV} permissions={permissions} activeHref={null} />}
+      fallback={<SidebarNav items={SETTINGS_NAV} permissions={permissions} activeHref={null} rail={rail} />}
     >
-      <SettingsNavInner permissions={permissions} />
+      <SettingsNavInner permissions={permissions} rail={rail} />
     </Suspense>
   );
 }
@@ -40,6 +42,25 @@ export function SettingsSidebarNav({ permissions }: { permissions: string[] }) {
  * diimpor di sisi klien di sini — meneruskannya dari cangkang server
  * sebagai prop melintasi batas RSC tidak bisa diserialisasi.
  */
-export function SettingsMobileNav({ permissions }: { permissions: string[] }) {
-  return <MobileNav items={SETTINGS_NAV} permissions={permissions} title="Pengaturan" />;
+function SettingsMobileNavInner({ permissions, allowedKeys }: { permissions: string[]; allowedKeys: ModuleKey[] }) {
+  const pathname = usePathname();
+  const params = useSearchParams();
+  return (
+    <MobileNav
+      items={SETTINGS_NAV}
+      permissions={permissions}
+      title="Pengaturan"
+      activeHref={settingsActiveHref(pathname, params.get("tab"))}
+      allowedKeys={allowedKeys}
+      settingsMode
+    />
+  );
+}
+
+export function SettingsMobileNav({ permissions, allowedKeys }: { permissions: string[]; allowedKeys: ModuleKey[] }) {
+  return (
+    <Suspense fallback={<MobileNav items={SETTINGS_NAV} permissions={permissions} title="Pengaturan" allowedKeys={allowedKeys} settingsMode />}>
+      <SettingsMobileNavInner permissions={permissions} allowedKeys={allowedKeys} />
+    </Suspense>
+  );
 }

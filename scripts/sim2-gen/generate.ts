@@ -1,4 +1,7 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import postgres from "postgres";
+import { configureVitestDatabase } from "../../tests/vitest-db-guard.mjs";
 
 /**
  * SIM-2 S4 — generator data sintetis benchmark (mandat §10).
@@ -13,13 +16,24 @@ import postgres from "postgres";
  * Perusahaan benchmark dapat dihapus bersih dengan cleanup.ts (semua
  * barisnya membawa satu company_id; tidak menyentuh perusahaan lain).
  *
- * Jalan:  pnpm tsx --env-file=.env.local scripts/sim2-gen/generate.ts --scale=A
- *         pnpm tsx --env-file=.env.local scripts/sim2-gen/generate.ts --scale=B
+ * Wajib memakai BISA_TEST_DATABASE_URL / BISA_TEST_DIRECT_URL.
+ * Default dry-run; untuk menulis dataset tambahkan --apply.
+ * Jalan:  pnpm exec tsx scripts/sim2-gen/generate.ts --scale=A --apply
+ *         pnpm exec tsx scripts/sim2-gen/generate.ts --scale=B --apply
  */
 
-const url = process.env.DIRECT_URL ?? process.env.DATABASE_URL;
-if (!url) throw new Error("DIRECT_URL/DATABASE_URL tidak ter-set");
-const sql = postgres(url, { max: 1 });
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+configureVitestDatabase(["tests/integration/sim2-generate"], process.env, root);
+const testDirectUrl = process.env.BISA_TEST_DIRECT_URL as string | undefined;
+if (!testDirectUrl) throw new Error("BISA_TEST_DIRECT_URL wajib menunjuk database sintetis khusus.");
+const args = process.argv.slice(2);
+const scaleArgs = args.filter((arg) => arg.startsWith("--scale="));
+const unknownArgs = args.filter((arg) => arg !== "--apply" && !arg.startsWith("--scale="));
+if (unknownArgs.length > 0 || scaleArgs.length > 1) {
+  throw new Error("Argumen valid: --scale=A|B dan --apply (opsional; default dry-run).");
+}
+const apply = args.includes("--apply");
+const sql = postgres(testDirectUrl as string, { max: 1 });
 
 type Scale = {
   tag: string;
@@ -147,9 +161,17 @@ function log(step: string, startedAt: number) {
 }
 
 async function main() {
-  const scaleArg = (process.argv.find((a) => a.startsWith("--scale=")) ?? "--scale=A").split("=")[1];
+  const scaleArg = scaleArgs[0]?.slice("--scale=".length) ?? "A";
   const cfg = SCALES[scaleArg as "A" | "B"];
   if (!cfg) throw new Error(`Skala tidak dikenal: ${scaleArg} (pakai A atau B)`);
+  if (!apply) {
+    const target = new URL(testDirectUrl as string);
+    console.log(`Target test DB: ${target.hostname}/${decodeURIComponent(target.pathname.slice(1))}`);
+    console.log(`Rencana dataset skala ${cfg.tag}: ${cfg.products} produk, ${cfg.sales} penjualan, ${cfg.journalEntries} jurnal.`);
+    console.log("MODE DRY-RUN: database tidak diubah. Tambahkan --apply untuk membuat dataset sintetis.");
+    await sql.end();
+    return;
+  }
   const C = cfg.companyId;
   const started = Date.now();
 

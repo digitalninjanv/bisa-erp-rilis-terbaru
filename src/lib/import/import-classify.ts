@@ -73,6 +73,11 @@ export type ProductCatalogIndex = {
   barcodeToSkuKey: ReadonlyMap<string, string>;
 };
 
+export type ProductCatalogLookupKeys = {
+  skuKeys: string[];
+  barcodes: string[];
+};
+
 export type ProductImportFilter =
   | "all"
   | "valid"
@@ -92,6 +97,19 @@ function effectiveSkuKey(row: ClassifiableProductRow): string {
 function effectiveBarcode(row: ClassifiableProductRow): string | null {
   if (row.mapped.value) return row.mapped.value.barcode;
   return normalizeBarcode(row.barcodeRaw);
+}
+
+/**
+ * Distinct catalog keys needed to classify this import. Keeping the lookup
+ * bounded to these keys avoids loading the company's full product catalog.
+ */
+export function productCatalogLookupKeys(
+  rows: ClassifiableProductRow[],
+): ProductCatalogLookupKeys {
+  return {
+    skuKeys: [...new Set(rows.map(effectiveSkuKey))],
+    barcodes: [...new Set(rows.map(effectiveBarcode).filter((value): value is string => value !== null))],
+  };
 }
 
 export function classifyProductImportRows(

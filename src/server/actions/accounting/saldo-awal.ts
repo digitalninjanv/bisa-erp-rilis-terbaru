@@ -5,6 +5,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { withCompany } from "@/db/tenant";
+import { runIdempotentPayment } from "@/server/idempotency";
 
 import {
   createOpeningBalance,
@@ -109,6 +110,7 @@ function assertOpeningPaymentModule(
 
 export async function payOpeningBalanceAction(input: {
   openingId: string;
+  idempotencyKey: string;
   amount: string | number;
   accountId?: string;
   /** A-21 (R3-02): sumber dana kredit pihak (pengganti akun). */
@@ -134,6 +136,7 @@ export async function payOpeningBalanceAction(input: {
     const data = parseInput(
       z.object({
         openingId: z.string().uuid(),
+        idempotencyKey: z.string().uuid(),
         amount: moneyString("Nominal pembayaran"),
         accountId: z.string().uuid().optional(),
         creditId: z.string().uuid().optional(),
@@ -148,20 +151,30 @@ export async function payOpeningBalanceAction(input: {
       }),
       input,
     );
+    const payDate = data.date ?? todayISO();
     const result = await withCompany(ctx.company.id, (tx) =>
-      payOpeningBalance(tx, {
-        companyId: ctx.company.id,
-        userId: ctx.user.id,
-        openingId: data.openingId,
-        date: data.date ?? todayISO(),
-        amount: data.amount,
-        accountId: data.accountId,
-        creditId: data.creditId,
-        fee: data.fee,
-        withholding: buildWithholdingInput(data),
-        notes: data.notes,
-        reference: data.reference,
-      }),
+      runIdempotentPayment(
+        tx,
+        {
+          companyId: ctx.company.id,
+          key: data.idempotencyKey,
+          request: { kind: "opening-balance", ...data, date: payDate },
+        },
+        () =>
+          payOpeningBalance(tx, {
+            companyId: ctx.company.id,
+            userId: ctx.user.id,
+            openingId: data.openingId,
+            date: payDate,
+            amount: data.amount,
+            accountId: data.accountId,
+            creditId: data.creditId,
+            fee: data.fee,
+            withholding: buildWithholdingInput(data),
+            notes: data.notes,
+            reference: data.reference,
+          }),
+      ),
     );
     revalidatePath("/app/akuntansi/piutang-utang");
     revalidatePath("/app/akuntansi");

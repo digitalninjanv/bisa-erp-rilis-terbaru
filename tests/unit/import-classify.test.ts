@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   classifyProductImportRows,
   countProductImportRows,
+  productCatalogLookupKeys,
   productRowMatchesFilter,
   type ClassifiableProductRow,
   type ProductCatalogIndex,
@@ -53,6 +54,42 @@ const EMPTY_CATALOG: ProductCatalogIndex = {
   skuKeys: new Set<string>(),
   barcodeToSkuKey: new Map<string, string>(),
 };
+
+describe("kunci lookup katalog impor", () => {
+  it("menghasilkan SKU efektif dan barcode unik sesuai pemetaan/fallback", () => {
+    const keys = productCatalogLookupKeys([
+      row({
+        rowNumber: 1,
+        rawSku: "SKU-1",
+        mapped: { value: value({ sku: "SKU-1", barcode: "8990001" }) },
+        barcodeRaw: "8990001",
+      }),
+      row({
+        rowNumber: 2,
+        rawSku: "SKU-1",
+        mapped: { value: value({ sku: "SKU-1", barcode: "8990001" }) },
+        barcodeRaw: "8990001",
+      }),
+      row({
+        rowNumber: 3,
+        rawSku: "RAW-3",
+        mapped: { error: "Harga jual tidak terbaca" },
+        barcodeRaw: "8990003",
+      }),
+      row({
+        rowNumber: 4,
+        rawSku: "",
+        mapped: { error: "Nama barang kosong" },
+        barcodeRaw: "",
+      }),
+    ]);
+
+    expect(keys).toEqual({
+      skuKeys: ["sku-1", "raw-3", "imp-000004"],
+      barcodes: ["8990001", "8990003"],
+    });
+  });
+});
 
 describe("klasifikasi baris impor produk (A-10/D-21)", () => {
   it("barcode kosong adalah bendera informatif, tetapi belum lengkap", () => {

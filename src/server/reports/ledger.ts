@@ -117,6 +117,7 @@ export async function getLedger(tx: Tx, input: {
       d(priorRow?.debit ?? 0).minus(priorRow?.credit ?? 0).mul(sign),
     );
   }
+  const pageOpening = balance;
 
   const rows = await (paginated
     ? linesQuery().where(rangeWhere).orderBy(...order).limit(pageSize).offset(offset)
@@ -134,6 +135,7 @@ export async function getLedger(tx: Tx, input: {
 
   return {
     opening: opening.toNumber(),
+    pageOpening: pageOpening.toNumber(),
     items,
     closing: closing.toNumber(),
     totalDebit: totalDebit.toNumber(),

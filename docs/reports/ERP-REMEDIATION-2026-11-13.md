@@ -144,3 +144,14 @@ Smoke browser **aplikasi aktif localhost3000**: login PASS; GET POS, Produk, Lap
 Gate akhir: unit991/991, integration+sim21289/1289, E2E standalone12/12, typecheck/lint/build/migrasi PASS. Test font HR campuran masihFAILdi luar scope; scanner/printer/native dan stressbenchmark tetapNOT RUN. Kebijakan akuntansi/pajak yang belum disahkan tidak dianggap selesai hanya karena kode lulus test.
 
 Server testing3100dihentikan setelah verifikasi; aplikasi aktif3000tetap berjalan. Container testing55439dipertahankan untuk reproduksi. Perubahan pengguna .claude/CLAUDE.md dipertahankan dan tsconfig kembali baseline. Tidak ada koreksi saldo historis atau restore data pengguna.
+
+## Checkpoint lanjutan — 14 November 2026
+
+Catatan database aktif di atas adalah snapshot setelah migrasi 0073. Pada checkpoint ini dilakukan backup dan migrasi berikutnya:
+
+- Backup lokal terenkripsi AES-256-GCM: `backups/bisa-20261114-172714-293357.dump.enc`; mode file `0600`. Manifest dan sidecar cocok dengan SHA-256. Secret disimpan pada desktop Secret Service keyring dengan label `Bisa ERP local database backup key` dan attribute `purpose=local-db-backup-20261114`; nilai tidak dicetak. Backup berhasil didekripsi secara terautentikasi dan arsip hasilnya lolos `pg_restore --list`. Backup ini lokal, belum offsite, dan belum di-restore ke host lain.
+- Migrasi aktif lokal: `MIGRASI sebelum=74 sesudah=80 diterapkan=6` (0074–0079). Rerun: `80 → 80`, `diterapkan=0`. Tidak ada transaksi database lain yang aktif saat preflight.
+- Pemeriksaan read-only sebelum migrasi mencocokkan 25 relasi tenant yang baru diberi constraint: **0 mismatch**. Setelah migrasi, katalog DB menunjukkan 25 FK komposit baru aktif sebagai `NOT VALID`, 11 unique parent index, dan `app_user` tetap dapat membaca migration journal. Constraint menegakkan pasangan tenant untuk tulis baru; validasi penuh baris historis sengaja belum dijalankan.
+- Tes PostgreSQL sintetis: `tenant-product-fks.test.ts` **16/16 PASS**; lima suite `erp-remediation`, `erp-concurrency-remediation`, `accounting-integrity`, `goods-receipt`, dan `supplier-returns` **46/46 PASS** setelah demo seed non-destructive pada database test. Typecheck, lint target, Drizzle check, production build terisolasi, dan diff check **PASS**.
+
+Kesiapan produksi tetap belum tersertifikasi: salinan backup offsite, restore lintas-host, validasi constraint historis, DDL timing pada volume produksi representatif, native hardware dan stress test tetap terbuka. Tidak ada perubahan saldo historis.

@@ -92,9 +92,9 @@ describe("UX-C06 — wizard menandai periode yang sudah diproses di langkah 1", 
         processedRuns: [{ id: "run-1", number: "PRL-2026-00001", period: "2026-11" }],
       }),
     );
-    expect(html).toContain("Sudah diproses — PRL-2026-00001");
+    expect(html).toContain("sudah diproses dengan nomor PRL-2026-00001");
     expect(html).toContain('href="/app/akuntansi/payroll/run-1"');
-    expect(html).toContain("Buka run PRL-2026-00001");
+    expect(html).toContain("Lihat payroll");
   });
 
   it("tanpa run pada periode terpilih: tidak ada tanda", () => {
@@ -114,14 +114,14 @@ describe("UX-C06 — wizard menandai periode yang sudah diproses di langkah 1", 
 });
 
 describe("UX-C02 — panel selesai wizard menautkan nomor run", () => {
-  it("tautan utama berbunyi 'Buka run PRL-…' menuju detail run", () => {
+  it("tautan utama memuat nomor run dan menuju detail payroll", () => {
     const html = renderToStaticMarkup(
       createElement(PayrollPostedPanel, {
         posted: { id: "run-1", number: "PRL-2026-00001", totalNet: 5000000, employees: 3 },
         onReset: () => undefined,
       }),
     );
-    expect(html).toContain("Buka run PRL-2026-00001");
+    expect(html).toContain("Lihat payroll PRL-2026-00001");
     expect(html).toContain('href="/app/akuntansi/payroll/run-1"');
     expect(html).not.toContain("Buka payroll &amp; bayar");
   });

@@ -12,6 +12,7 @@ import {
   products,
   stockBatches,
   stockMovements,
+  stockReceiptLines,
   supplierReturnAllocations,
   supplierReturnResolutions,
   supplierReturnLines,
@@ -38,7 +39,7 @@ import {
   refreshReceiptPaymentStatus,
   type OpenPayableDoc,
 } from "./payables";
-import { assertReturnWithinProvenance } from "./provenance";
+import { assertReturnWithinProvenance, assertReturnWithinReceiptLines } from "./provenance";
 import { convertSupplierCreditToAdvance } from "./resolutions";
 import { lockSupplierReturn } from "./returns";
 import { DecimalMin, SUPPLIER_RETURN_REASON_LABELS } from "./shared";
@@ -362,6 +363,36 @@ export async function postSupplierReturn(
     .where(and(eq(products.companyId, input.companyId), inArray(products.id, productIds)));
   const productById = new Map(productRows.map((row) => [row.id, row]));
 
+  const linkedReceiptLineIds = lines
+    .map((line) => line.receiptLineId)
+    .filter((id): id is string => Boolean(id));
+  const sourceReceiptIds = new Set<string>();
+  if (linkedReceiptLineIds.length > 0) {
+    if (linkedReceiptLineIds.length !== lines.length) {
+      throw new AppError(
+        "VALIDATION",
+        "Retur dari penerimaan harus memakai satu dokumen sumber yang sama untuk semua barang.",
+      );
+    }
+    const originRows = await tx
+      .select({ receiptId: stockReceiptLines.receiptId })
+      .from(stockReceiptLines)
+      .where(
+        and(
+          eq(stockReceiptLines.companyId, input.companyId),
+          inArray(stockReceiptLines.id, linkedReceiptLineIds),
+        ),
+      );
+    originRows.forEach((row) => sourceReceiptIds.add(row.receiptId));
+    if (sourceReceiptIds.size !== 1 || originRows.length !== linkedReceiptLineIds.length) {
+      throw new AppError(
+        "VALIDATION",
+        "Satu retur dari penerimaan hanya dapat merujuk satu dokumen asal yang valid.",
+      );
+    }
+  }
+  const sourceReceiptId = [...sourceReceiptIds][0] ?? null;
+
   // GDG1-01 (otoritatif): plafon asal-usul dinilai ulang di sini —
   // retur ini sendiri masih berstatus draft sehingga belum ikut
   // terhitung di kumulatif terposting.
@@ -374,6 +405,15 @@ export async function postSupplierReturn(
     supplierId: header.supplierId,
     requested: postedRequested,
     productName: (productId) => productById.get(productId)?.name ?? productId,
+  });
+  await assertReturnWithinReceiptLines(tx, {
+    companyId: input.companyId,
+    supplierId: header.supplierId,
+    lines: lines.map((line) => ({
+      receiptLineId: line.receiptLineId,
+      qty: d(line.qty),
+      productName: productById.get(line.productId)?.name ?? line.productId,
+    })),
   });
 
   const { frozenLines, totalValue } = await freezeReturnLineValues(tx, {
@@ -389,12 +429,19 @@ export async function postSupplierReturn(
   });
 
   const openDocs = await listOpenPayableDocs(tx, input.companyId, header.supplierId);
-  const openPayable = openDocs.reduce((acc, doc) => acc.plus(doc.outstanding), d(0));
+  // A receipt-linked return reduces that receipt's payable first. Any
+  // remaining value becomes a supplier credit; it is never silently
+  // allocated to a different purchase invoice. Manual returns retain the
+  // existing supplier-wide oldest-first policy.
+  const allocationDocs = sourceReceiptId
+    ? openDocs.filter((doc) => doc.kind === "receipt" && doc.id === sourceReceiptId)
+    : openDocs;
+  const openPayable = allocationDocs.reduce((acc, doc) => acc.plus(doc.outstanding), d(0));
   const payableAmount = DecimalMin(totalValue, openPayable);
   const creditAmount = totalValue.minus(payableAmount);
 
   const { allocationPlan, taxReversal, unallocatedNet } = planReturnAllocations(
-    openDocs,
+    allocationDocs,
     payableAmount,
   );
 

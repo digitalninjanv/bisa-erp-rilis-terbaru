@@ -428,6 +428,86 @@ export default async function AccountingDashboard({
         ]}
       />
 
+      <WorkQueue
+        className="mt-5"
+        title="Perlu tindakan"
+        items={[
+          {
+            key: "piutang-terlambat",
+            label: "Piutang terlambat",
+            count: data.queues.receivables.overdueCount,
+            headline: `${data.queues.receivables.overdueCount} nota · ${formatIDR(data.queues.receivables.overdueTotal)}`,
+            detail: `${data.queues.receivables.openCount} nota belum lunas · total ${formatIDR(data.queues.receivables.openTotal)}`,
+            href: "/app/akuntansi/piutang-utang?status=terlambat",
+            actionLabel: "Buka piutang",
+            tone: "red",
+            icon: <AlarmClock className="size-4" />,
+          },
+          {
+            key: "utang-jatuh-tempo",
+            label: "Utang jatuh tempo",
+            count: data.queues.payables.overdueCount + data.queues.payables.dueSoonCount,
+            headline: `${data.queues.payables.overdueCount + data.queues.payables.dueSoonCount} tagihan · ${formatIDR(data.queues.payables.overdueTotal + data.queues.payables.dueSoonTotal)}`,
+            detail: [
+              data.queues.payables.overdueCount > 0
+                ? `${data.queues.payables.overdueCount} terlambat · ${formatIDR(data.queues.payables.overdueTotal)}`
+                : null,
+              data.queues.payables.dueSoonCount > 0
+                ? `${data.queues.payables.dueSoonCount} jatuh tempo ≤ 7 hari · ${formatIDR(data.queues.payables.dueSoonTotal)}`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" · "),
+            href: "/app/akuntansi/piutang-utang?tab=utang&status=jatuh-tempo",
+            actionLabel: "Buka utang",
+            tone: data.queues.payables.overdueCount > 0 ? "red" : "amber",
+            icon: <Banknote className="size-4" />,
+          },
+          {
+            key: "mutasi-bank",
+            label: "Mutasi bank belum cocok",
+            count: data.unmatchedBank.count,
+            headline: `${data.unmatchedBank.count} baris · neto ${formatIDR(data.unmatchedBank.netTotal)}`,
+            detail: "Mutasi rekening koran yang belum terpasangkan ke jurnal",
+            href: "/app/akuntansi/rekonsiliasi",
+            actionLabel: "Rekonsiliasi sekarang",
+            tone: "teal",
+            icon: <ArrowLeftRight className="size-4" />,
+          },
+          {
+            key: "klaim",
+            label: "Klaim menunggu persetujuan",
+            count: data.pendingClaims.count,
+            headline: `${data.pendingClaims.count} klaim · ${formatIDR(data.pendingClaims.total)}`,
+            detail: "Klaim reimbursement yang menunggu keputusan penyetuju",
+            href: "/app/akuntansi/klaim",
+            actionLabel: "Tinjau klaim",
+            tone: "amber",
+            icon: <ClipboardCheck className="size-4" />,
+          },
+          {
+            key: "kredit-pihak",
+            label: "Kredit pihak tersedia",
+            count: data.credits.count,
+            headline: `${data.credits.count} dokumen · ${formatIDR(data.credits.totalRemaining)}`,
+            detail: [
+              data.credits.customer.count > 0
+                ? `Pelanggan ${data.credits.customer.count} · ${formatIDR(data.credits.customer.totalRemaining)}`
+                : null,
+              data.credits.supplier.count > 0
+                ? `Pemasok ${data.credits.supplier.count} · ${formatIDR(data.credits.supplier.totalRemaining)}`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" · "),
+            href: "/app/akuntansi/piutang-utang",
+            actionLabel: "Pakai kredit",
+            tone: "plum",
+            icon: <HandCoins className="size-4" />,
+          },
+        ]}
+      />
+
       <div className="mt-3 grid items-start gap-3 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
         <ProfitLossStatement
           periodLabel={periodLabel}
@@ -547,86 +627,6 @@ export default async function AccountingDashboard({
           </div>
         </section>
       </div>
-
-      <WorkQueue
-        className="mt-5"
-        title="Perlu tindakan"
-        items={[
-          {
-            key: "piutang-terlambat",
-            label: "Piutang terlambat",
-            count: data.queues.receivables.overdueCount,
-            headline: `${data.queues.receivables.overdueCount} nota · ${formatIDR(data.queues.receivables.overdueTotal)}`,
-            detail: `${data.queues.receivables.openCount} nota belum lunas · total ${formatIDR(data.queues.receivables.openTotal)}`,
-            href: "/app/akuntansi/piutang-utang?status=terlambat",
-            actionLabel: "Buka piutang",
-            tone: "red",
-            icon: <AlarmClock className="size-4" />,
-          },
-          {
-            key: "utang-jatuh-tempo",
-            label: "Utang jatuh tempo",
-            count: data.queues.payables.overdueCount + data.queues.payables.dueSoonCount,
-            headline: `${data.queues.payables.overdueCount + data.queues.payables.dueSoonCount} tagihan · ${formatIDR(data.queues.payables.overdueTotal + data.queues.payables.dueSoonTotal)}`,
-            detail: [
-              data.queues.payables.overdueCount > 0
-                ? `${data.queues.payables.overdueCount} terlambat · ${formatIDR(data.queues.payables.overdueTotal)}`
-                : null,
-              data.queues.payables.dueSoonCount > 0
-                ? `${data.queues.payables.dueSoonCount} jatuh tempo ≤ 7 hari · ${formatIDR(data.queues.payables.dueSoonTotal)}`
-                : null,
-            ]
-              .filter(Boolean)
-              .join(" · "),
-            href: "/app/akuntansi/piutang-utang?tab=utang&status=jatuh-tempo",
-            actionLabel: "Buka utang",
-            tone: data.queues.payables.overdueCount > 0 ? "red" : "amber",
-            icon: <Banknote className="size-4" />,
-          },
-          {
-            key: "mutasi-bank",
-            label: "Mutasi bank belum cocok",
-            count: data.unmatchedBank.count,
-            headline: `${data.unmatchedBank.count} baris · neto ${formatIDR(data.unmatchedBank.netTotal)}`,
-            detail: "Mutasi rekening koran yang belum terpasangkan ke jurnal",
-            href: "/app/akuntansi/rekonsiliasi",
-            actionLabel: "Rekonsiliasi sekarang",
-            tone: "teal",
-            icon: <ArrowLeftRight className="size-4" />,
-          },
-          {
-            key: "klaim",
-            label: "Klaim menunggu persetujuan",
-            count: data.pendingClaims.count,
-            headline: `${data.pendingClaims.count} klaim · ${formatIDR(data.pendingClaims.total)}`,
-            detail: "Klaim reimbursement yang menunggu keputusan penyetuju",
-            href: "/app/akuntansi/klaim",
-            actionLabel: "Tinjau klaim",
-            tone: "amber",
-            icon: <ClipboardCheck className="size-4" />,
-          },
-          {
-            key: "kredit-pihak",
-            label: "Kredit pihak tersedia",
-            count: data.credits.count,
-            headline: `${data.credits.count} dokumen · ${formatIDR(data.credits.totalRemaining)}`,
-            detail: [
-              data.credits.customer.count > 0
-                ? `Pelanggan ${data.credits.customer.count} · ${formatIDR(data.credits.customer.totalRemaining)}`
-                : null,
-              data.credits.supplier.count > 0
-                ? `Pemasok ${data.credits.supplier.count} · ${formatIDR(data.credits.supplier.totalRemaining)}`
-                : null,
-            ]
-              .filter(Boolean)
-              .join(" · "),
-            href: "/app/akuntansi/piutang-utang",
-            actionLabel: "Pakai kredit",
-            tone: "plum",
-            icon: <HandCoins className="size-4" />,
-          },
-        ]}
-      />
 
       <div className="mt-4">
         <QuickInputPanel {...quickInputVisibility} />

@@ -5,7 +5,9 @@ import { CheckCircle2, Loader2 } from "lucide-react";
 import { DateField } from "@/components/date-field";
 import { todayISO } from "@/lib/format";
 import { formatNumber } from "@/lib/money";
+import type { CustomFieldDefinition } from "@/lib/custom-fields";
 import { ENTITY_FIELDS, type ImportEntity } from "@/lib/import-parse";
+import { customFieldImportField } from "@/lib/import/import-custom-fields";
 import { StatCard } from "@/components/blocks/stat-card";
 import { useImportWizard } from "./import/use-import-wizard";
 import {
@@ -56,6 +58,7 @@ export function MasterImportWizard({
   entity,
   title,
   description,
+  customFields,
   warehouses,
   defaultWarehouseId,
   history,
@@ -63,11 +66,15 @@ export function MasterImportWizard({
   entity: MasterEntity;
   title: string;
   description: string;
+  customFields?: CustomFieldDefinition[];
   warehouses: { id: string; name: string }[];
   defaultWarehouseId?: string;
   history: ImportHistoryJob[];
 }) {
-  const fields = ENTITY_FIELDS[entity];
+  const fields = [
+    ...ENTITY_FIELDS[entity],
+    ...(customFields ?? []).map(customFieldImportField),
+  ];
   const [warehouseId, setWarehouseId] = useState(defaultWarehouseId || warehouses[0]?.id || "");
   // Tanggal cut-off impor stok awal; baris dengan kolom Tanggal menang.
   const [stockDate, setStockDate] = useState(todayISO());

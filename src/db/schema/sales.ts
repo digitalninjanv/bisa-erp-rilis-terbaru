@@ -6,6 +6,7 @@
 import { sql, desc } from "drizzle-orm";
 import {
   date,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -16,7 +17,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { customers, productPackagings } from "./catalog";
+import { customers, productPackagings, products } from "./catalog";
 
 /* ------------------------------------------------------------------ */
 /* Sales / POS                                                         */
@@ -60,6 +61,7 @@ export const sales = pgTable(
     voidReason: text("void_reason"),
   },
   (t) => [
+    uniqueIndex("sales_company_id_id_uq").on(t.companyId, t.id),
     uniqueIndex("sales_company_number_uq").on(t.companyId, t.number),
     uniqueIndex("sales_company_idem_uq").on(t.companyId, t.idempotencyKey),
     index("sales_company_date_idx").on(t.companyId, t.date),
@@ -76,9 +78,7 @@ export const saleLines = pgTable(
   {
     id: uuid("id").primaryKey().default(sql`uuidv7()`),
     companyId: text("company_id").notNull(),
-    saleId: uuid("sale_id")
-      .notNull()
-      .references(() => sales.id, { onDelete: "cascade" }),
+    saleId: uuid("sale_id").notNull(),
     productId: uuid("product_id").notNull(),
     lineNo: integer("line_no").notNull().default(0),
     qty: numeric("qty", { precision: 19, scale: 4 }).notNull(),
@@ -98,20 +98,37 @@ export const saleLines = pgTable(
     // saat baris diposting. Kolom qty/unitPrice yang tersimpan tetap
     // SATUAN DASAR (qty = qtyInput × isiSnapshot, unitPrice = harga
     // kemasan ÷ isi) sehingga ledger, AVCO, dan laporan tak berubah.
-    packagingId: uuid("packaging_id").references(() => productPackagings.id),
+    packagingId: uuid("packaging_id"),
     qtyInput: numeric("qty_input", { precision: 19, scale: 4 }).notNull(),
     isiSnapshot: numeric("isi_snapshot", { precision: 19, scale: 4 }).notNull().default("1"),
   },
-  (t) => [index("sale_lines_sale_idx").on(t.saleId)],
+  (t) => [
+    foreignKey({
+      name: "sale_lines_company_sale_fk",
+      columns: [t.companyId, t.saleId],
+      foreignColumns: [sales.companyId, sales.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "sale_lines_company_product_fk",
+      columns: [t.companyId, t.productId],
+      foreignColumns: [products.companyId, products.id],
+    }),
+    foreignKey({
+      name: "sale_lines_company_packaging_fk",
+      columns: [t.companyId, t.packagingId],
+      foreignColumns: [productPackagings.companyId, productPackagings.id],
+    }),
+    uniqueIndex("sale_lines_company_id_id_uq").on(t.companyId, t.id),
+    index("sale_lines_sale_idx").on(t.saleId),
+    index("sale_lines_company_product_idx").on(t.companyId, t.productId),
+  ],
 );
 export const salePayments = pgTable(
   "sale_payments",
   {
     id: uuid("id").primaryKey().default(sql`uuidv7()`),
     companyId: text("company_id").notNull(),
-    saleId: uuid("sale_id")
-      .notNull()
-      .references(() => sales.id, { onDelete: "cascade" }),
+    saleId: uuid("sale_id").notNull(),
     methodId: uuid("method_id").notNull(),
     amount: numeric("amount", { precision: 19, scale: 4 }).notNull(),
     // A-21 Tahap R3-A (R3-01): fee/MDR yang benar-benar dipotong dari
@@ -123,7 +140,14 @@ export const salePayments = pgTable(
     reference: text("reference"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("sale_payments_sale_idx").on(t.saleId)],
+  (t) => [
+    foreignKey({
+      name: "sale_payments_company_sale_fk",
+      columns: [t.companyId, t.saleId],
+      foreignColumns: [sales.companyId, sales.id],
+    }).onDelete("cascade"),
+    index("sale_payments_sale_idx").on(t.saleId),
+  ],
 );
 export const saleReturns = pgTable(
   "sale_returns",
@@ -150,6 +174,12 @@ export const saleReturns = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    foreignKey({
+      name: "sale_returns_company_sale_fk",
+      columns: [t.companyId, t.saleId],
+      foreignColumns: [sales.companyId, sales.id],
+    }),
+    uniqueIndex("sale_returns_company_id_id_uq").on(t.companyId, t.id),
     uniqueIndex("sale_returns_company_idem_uq").on(t.companyId, t.idempotencyKey),
     uniqueIndex("sale_returns_company_number_uq").on(t.companyId, t.number),
     index("sale_returns_company_date_idx").on(t.companyId, t.date),
@@ -160,9 +190,7 @@ export const saleReturnLines = pgTable(
   {
     id: uuid("id").primaryKey().default(sql`uuidv7()`),
     companyId: text("company_id").notNull(),
-    returnId: uuid("return_id")
-      .notNull()
-      .references(() => saleReturns.id, { onDelete: "cascade" }),
+    returnId: uuid("return_id").notNull(),
     productId: uuid("product_id").notNull(),
     qty: numeric("qty", { precision: 19, scale: 4 }).notNull(),
     unitPrice: numeric("unit_price", { precision: 19, scale: 4 }).notNull(),
@@ -177,12 +205,35 @@ export const saleReturnLines = pgTable(
     // 1 Dus) sementara qty tetap satuan dasar (qtyInput × isiSnapshot).
     // unitPrice tetap per satuan dasar, disalin dari baris asal.
     // Baris warisan (pra-S4) saleLineId-nya null.
-    saleLineId: uuid("sale_line_id").references(() => saleLines.id),
-    packagingId: uuid("packaging_id").references(() => productPackagings.id),
+    saleLineId: uuid("sale_line_id"),
+    packagingId: uuid("packaging_id"),
     qtyInput: numeric("qty_input", { precision: 19, scale: 4 }).notNull(),
     isiSnapshot: numeric("isi_snapshot", { precision: 19, scale: 4 }).notNull().default("1"),
   },
-  (t) => [index("sale_return_lines_return_idx").on(t.returnId)],
+  (t) => [
+    foreignKey({
+      name: "sale_return_lines_company_return_fk",
+      columns: [t.companyId, t.returnId],
+      foreignColumns: [saleReturns.companyId, saleReturns.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "sale_return_lines_company_sale_line_fk",
+      columns: [t.companyId, t.saleLineId],
+      foreignColumns: [saleLines.companyId, saleLines.id],
+    }),
+    foreignKey({
+      name: "sale_return_lines_company_product_fk",
+      columns: [t.companyId, t.productId],
+      foreignColumns: [products.companyId, products.id],
+    }),
+    foreignKey({
+      name: "sale_return_lines_company_packaging_fk",
+      columns: [t.companyId, t.packagingId],
+      foreignColumns: [productPackagings.companyId, productPackagings.id],
+    }),
+    index("sale_return_lines_return_idx").on(t.returnId),
+    index("sale_return_lines_company_product_idx").on(t.companyId, t.productId),
+  ],
 );
 export const cashSessions = pgTable(
   "cash_sessions",

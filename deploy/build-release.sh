@@ -12,7 +12,7 @@
 #   server.js, .next/static, public/   the application
 #   migrations/, migrate.mjs           explicit migration step (drizzle-orm
 #                                      runtime migrator — no dev tooling)
-#   scripts/backup.sh, restore.sh     the project's proven backup tooling
+#   scripts/                            backup, restore, crypto and drill tooling
 #   deploy/                            install.sh, update.sh, backup-run.sh,
 #                                      systemd units, this script
 #   VERSION                            release version stamp
@@ -49,12 +49,18 @@ mkdir -p "$stage"
 
 echo "== merakit $stage =="
 cp -r .next/standalone/. "$stage/"
+# Next's traced standalone tree can contain repository-local runtime data.
+# Never ship database backups that happened to be under the source workspace;
+# production backup storage is configured outside the release directory.
+rm -rf "$stage/backups"
+find "$stage" -type f \( -name '*.dump' -o -name '*.dump.*' \) -delete
 cp -r .next/static "$stage/.next/static"
 cp -r public "$stage/public"
 cp -r src/db/migrations "$stage/migrations"
 cp deploy/migrate.mjs "$stage/migrate.mjs"
 mkdir -p "$stage/scripts" "$stage/deploy"
-cp scripts/backup.sh scripts/restore.sh "$stage/scripts/"
+cp scripts/backup.sh scripts/restore.sh scripts/restore-drill.sh \
+  scripts/backup-crypto.mjs scripts/verify-backup-manifest.mjs "$stage/scripts/"
 cp -r deploy/. "$stage/deploy/"
 # Turbopack bundles the app's server dependencies into .next/server, so
 # the standalone tree has no drizzle-orm/postgres packages — but the

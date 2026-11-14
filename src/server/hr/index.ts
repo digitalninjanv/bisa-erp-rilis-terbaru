@@ -33,5 +33,5 @@ export { DEFAULT_LEAVE_TYPES, ensureDefaultLeaveTypes, saveLeaveType, setLeaveTy
 export type { LeaveBalance } from "./leave";
 export { processFinalPay } from "./final-pay";
 export type { FinalPayInput, FinalPayResult } from "./final-pay";
-export { listEmployeeOptions, listEmployees, listWorkShifts, listRecentAttendance, listLeaveTypes, listLeaveRequests, listLeaveBalances, listOvertimeRequests, listThrDrafts, listOrgMasters, listDepartmentOptions, getEmployeeDetail, getPayrollPageData, getPayrollRunDetail, getPayrollSlipData, listPayrollRunsByIds } from "./reads";
+export { listEmployeeOptions, listEmployees, listWorkShifts, listRecentAttendance, listLeaveTypes, listLeaveRequests, countPendingLeaveRequests, listLeaveBalances, listOvertimeRequests, countPendingOvertimeRequests, listThrDrafts, listOrgMasters, listDepartmentOptions, getEmployeeDetail, getPayrollPageData, getPayrollRunDetail, getPayrollSlipData, listPayrollRunsByIds } from "./reads";
 export type { LeaveBalanceRow } from "./reads";

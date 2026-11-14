@@ -74,11 +74,13 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 function backupBadge(status: BackupStatus) {
   switch (status.backup.state) {
     case "fresh":
-      return <Badge tone="teal">Tercatat & segar</Badge>;
+      return <Badge tone="teal">Tersedia & segar</Badge>;
     case "stale":
       return <Badge tone="red">Melewati ambang umur</Badge>;
     default:
-      return <Badge tone="amber">Belum ada catatan</Badge>;
+      return status.backup.manifest
+        ? <Badge tone="red">Berkas tidak tersedia / ukuran berbeda</Badge>
+        : <Badge tone="amber">Belum ada catatan</Badge>;
   }
 }
 
@@ -114,7 +116,9 @@ export default async function SystemStatusPage() {
             <div className="rounded-lg border border-tone-amber/40 bg-tone-amber-soft px-4 py-3 text-[12px] text-tone-amber">
               <span className="font-semibold">Perlu perhatian: </span>
               {backup.state === "missing"
-                ? "belum ada catatan backup di server. "
+                ? backup.manifest
+                  ? "catatan backup ada, tetapi berkasnya tidak tersedia atau ukurannya berbeda. "
+                  : "belum ada catatan backup di server. "
                 : backup.state === "stale"
                   ? `backup terakhir berumur ${formatAge(backup.ageHours, null)} — melewati ambang ${status.maxAgeHours} jam. `
                   : ""}
@@ -140,16 +144,22 @@ export default async function SystemStatusPage() {
                   {formatDateTime(backup.manifest.finishedAt)} ({formatAge(backup.ageHours, null)})
                 </Row>
                 <Row label="Ukuran">{formatBytes(backup.manifest.sizeBytes)}</Row>
+                <Row label="Berkas">
+                  {backup.artifactAvailable ? "Tersedia dan ukuran cocok" : "Tidak tersedia atau ukuran berbeda"}
+                </Row>
                 <Row label="SHA-256">
                   <span className="font-mono text-[11px]">{backup.manifest.sha256.slice(0, 16)}…</span>
                 </Row>
+                <p className="pt-2 text-[11px] leading-5 text-muted-foreground">
+                  Halaman ini memeriksa keberadaan dan ukuran berkas. SHA-256 diverifikasi penuh saat restore atau latihan restore.
+                </p>
                 <Row label="Enkripsi">{backup.manifest.encrypted ? "Terenkripsi (AES-256)" : "Tidak terenkripsi"}</Row>
               </div>
             ) : (
               <div className="py-3">
                 <p className="text-[12px] text-muted-foreground">
-                  Belum ada catatan backup. Backup berjalan otomatis lewat jadwal harian di server produksi, dan
-                  setiap keberhasilannya meninggalkan catatan yang dibaca halaman ini. Selama catatan itu belum ada,
+                  Belum ada catatan backup. Pada instalasi produksi dengan timer backup aktif, proses berjalan harian
+                  dan setiap keberhasilannya meninggalkan catatan yang dibaca halaman ini. Selama catatan itu belum ada,
                   halaman ini memang belum bisa membuktikan backup apa pun — jalankan backup pertama lewat perintah
                   operasional di server (lihat Detail teknis).
                 </p>
@@ -189,39 +199,80 @@ export default async function SystemStatusPage() {
                     Database sementara
                     <span className="text-muted-foreground"> (dihapus sesudah latihan)</span>
                   </Row>
-                  <Row label="Hasil verifikasi">{drill.manifest.ok ? "Semua angka cocok" : "ADA ANGKA TIDAK COCOK"}</Row>
+                  <Row label="Hasil verifikasi">
+                    {drill.manifest.ok
+                      ? "Restore berhasil dan pemeriksaan integritas lulus"
+                      : "Restore atau pemeriksaan integritas gagal"}
+                  </Row>
                 </div>
-                <table className="mt-2 w-full text-[12px]">
-                  <thead>
-                    <tr className="border-b border-border text-left text-[11px] text-muted-foreground">
-                      <th className="py-1 font-medium">Pemeriksaan</th>
-                      <th className="py-1 font-medium">Sumber</th>
-                      <th className="py-1 font-medium">Hasil restore</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="border-b border-border/60">
-                      <td className="py-1">Jumlah akun</td>
-                      <td className="num py-1">{formatNumber(drill.manifest.checks.accounts.source)}</td>
-                      <td className="num py-1">{formatNumber(drill.manifest.checks.accounts.restored)}</td>
-                    </tr>
-                    <tr className="border-b border-border/60">
-                      <td className="py-1">Jumlah produk</td>
-                      <td className="num py-1">{formatNumber(drill.manifest.checks.products.source)}</td>
-                      <td className="num py-1">{formatNumber(drill.manifest.checks.products.restored)}</td>
-                    </tr>
-                    <tr className="border-b border-border/60">
-                      <td className="py-1">Nilai persediaan</td>
-                      <td className="num py-1">{drill.manifest.checks.inventoryValue.source}</td>
-                      <td className="num py-1">{drill.manifest.checks.inventoryValue.restored}</td>
-                    </tr>
-                    <tr>
-                      <td className="py-1">Selisih neraca saldo</td>
-                      <td className="num py-1">{drill.manifest.checks.trialBalanceDifference.source}</td>
-                      <td className="num py-1">{drill.manifest.checks.trialBalanceDifference.restored}</td>
-                    </tr>
-                  </tbody>
-                </table>
+                {"postedJournals" in drill.manifest.checks ? (
+                  <table className="mt-2 w-full text-[12px]">
+                    <thead>
+                      <tr className="border-b border-border text-left text-[11px] text-muted-foreground">
+                        <th className="py-1 font-medium">Pemeriksaan pada hasil restore</th>
+                        <th className="py-1 text-right font-medium">Hasil</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="border-b border-border/60">
+                        <td className="py-1">Akun</td>
+                        <td className="num py-1 text-right">{formatNumber(drill.manifest.checks.accounts)}</td>
+                      </tr>
+                      <tr className="border-b border-border/60">
+                        <td className="py-1">Produk</td>
+                        <td className="num py-1 text-right">{formatNumber(drill.manifest.checks.products)}</td>
+                      </tr>
+                      <tr className="border-b border-border/60">
+                        <td className="py-1">Nilai persediaan</td>
+                        <td className="num py-1 text-right">{drill.manifest.checks.inventoryValue}</td>
+                      </tr>
+                      <tr className="border-b border-border/60">
+                        <td className="py-1">Jurnal posted</td>
+                        <td className="num py-1 text-right">{formatNumber(drill.manifest.checks.postedJournals)}</td>
+                      </tr>
+                      <tr className="border-b border-border/60">
+                        <td className="py-1">Jurnal tidak seimbang</td>
+                        <td className="num py-1 text-right">{formatNumber(drill.manifest.checks.unbalancedJournals)}</td>
+                      </tr>
+                      <tr>
+                        <td className="py-1">Baris jurnal tanpa header</td>
+                        <td className="num py-1 text-right">{formatNumber(drill.manifest.checks.orphanJournalLines)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                ) : (
+                  <table className="mt-2 w-full text-[12px]">
+                    <thead>
+                      <tr className="border-b border-border text-left text-[11px] text-muted-foreground">
+                        <th className="py-1 font-medium">Pemeriksaan legacy</th>
+                        <th className="py-1 font-medium">Sumber</th>
+                        <th className="py-1 font-medium">Hasil restore</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="border-b border-border/60">
+                        <td className="py-1">Jumlah akun</td>
+                        <td className="num py-1">{formatNumber(drill.manifest.checks.accounts.source)}</td>
+                        <td className="num py-1">{formatNumber(drill.manifest.checks.accounts.restored)}</td>
+                      </tr>
+                      <tr className="border-b border-border/60">
+                        <td className="py-1">Jumlah produk</td>
+                        <td className="num py-1">{formatNumber(drill.manifest.checks.products.source)}</td>
+                        <td className="num py-1">{formatNumber(drill.manifest.checks.products.restored)}</td>
+                      </tr>
+                      <tr className="border-b border-border/60">
+                        <td className="py-1">Nilai persediaan</td>
+                        <td className="num py-1">{drill.manifest.checks.inventoryValue.source}</td>
+                        <td className="num py-1">{drill.manifest.checks.inventoryValue.restored}</td>
+                      </tr>
+                      <tr>
+                        <td className="py-1">Selisih neraca saldo</td>
+                        <td className="num py-1">{drill.manifest.checks.trialBalanceDifference.source}</td>
+                        <td className="num py-1">{drill.manifest.checks.trialBalanceDifference.restored}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                )}
               </div>
             ) : (
               <div className="py-3">

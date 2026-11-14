@@ -14,8 +14,9 @@ import { ACCOUNT_MAPPING_KEYS, mappingAllowsAccountType, MAPPING_LABELS } from "
 import { defaultSection } from "@/lib/accounting";
 import { toDb } from "@/lib/money";
 import type { MappedCustomer, MappedSupplier } from "@/lib/import-parse";
+import { importCustomFieldValues } from "@/lib/import/import-custom-fields";
 import {
-  loadRequiredCustomFields,
+  loadCustomFields,
   mapMasterRow,
   requiredCustomFieldsNote,
   type MasterEntity,
@@ -225,18 +226,10 @@ export async function commitMasterBatch(
   let skipped = 0;
   let failed = 0;
 
-  // T5R-3: pesan hasil untuk baris pemasok/pelanggan yang terimpor
-  // selama ada kolom kustom wajib yang belum terisi untuk entitas itu.
-  const requiredNote =
+  const customFields =
     entity === "suppliers" || entity === "customers"
-      ? await loadRequiredCustomFields(
-          tx,
-          companyId,
-          entity === "suppliers" ? "supplier" : "customer",
-        ).then((defs) =>
-          defs.length > 0 ? requiredCustomFieldsNote(defs.map((field) => field.label)) : null,
-        )
-      : null;
+      ? await loadCustomFields(tx, companyId, entity === "suppliers" ? "supplier" : "customer")
+      : [];
 
   const nextCode = (prefix: string, seq: number): { code: string; seq: number } => {
     let next = seq;
@@ -274,6 +267,21 @@ export async function commitMasterBatch(
         continue;
       }
 
+      const custom = importCustomFieldValues({
+        entity: value.kind === "suppliers" ? "supplier" : "customer",
+        definitions: customFields,
+        row: (row.data ?? {}) as RowData,
+        mapping,
+      });
+      if (custom.error) {
+        failed += 1;
+        await markRow(tx, row.id, "error", custom.error);
+        continue;
+      }
+      const customNote = custom.missingRequiredLabels.length
+        ? requiredCustomFieldsNote(custom.missingRequiredLabels)
+        : null;
+
       if (value.kind === "suppliers") {
         const supplier = party as MappedSupplier;
         let code = party.code;
@@ -297,6 +305,7 @@ export async function commitMasterBatch(
             bankAccountNumber: supplier.bankAccountNumber,
             bankAccountName: supplier.bankAccountName,
             paymentTermDays: supplier.paymentTermDays,
+            attributes: custom.attributes ?? undefined,
           })
           .onConflictDoNothing()
           .returning({ id: suppliers.id });
@@ -308,7 +317,7 @@ export async function commitMasterBatch(
         existingNames.set(nameKey, created.id);
         existingCodes.set(code.toLowerCase(), created.id);
         imported += 1;
-        await markRow(tx, row.id, "imported", requiredNote, created.id);
+        await markRow(tx, row.id, "imported", customNote, created.id);
       } else {
         const customer = party as MappedCustomer;
         let groupId: string | null = null;
@@ -340,6 +349,7 @@ export async function commitMasterBatch(
             notes: party.notes,
             taxId: customer.taxId,
             paymentTermDays: customer.paymentTermDays,
+            attributes: custom.attributes ?? undefined,
           })
           .onConflictDoNothing()
           .returning({ id: customers.id });
@@ -351,7 +361,7 @@ export async function commitMasterBatch(
         existingNames.set(nameKey, created.id);
         existingCodes.set(code.toLowerCase(), created.id);
         imported += 1;
-        await markRow(tx, row.id, "imported", requiredNote, created.id);
+        await markRow(tx, row.id, "imported", customNote, created.id);
       }
       continue;
     }

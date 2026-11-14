@@ -86,7 +86,7 @@ export default async function JournalPage({
       <PageHeader
         eyebrow="Akuntansi"
         title="Riwayat jurnal"
-        description="Audit trail seluruh jurnal: jurnal otomatis dari POS, gudang, beban, payroll, dan jurnal manual. Saring, telusuri, lalu buka detail atau ekspor."
+        description="Daftar jurnal otomatis dari POS, gudang, beban, payroll, serta jurnal manual. Saring berdasarkan periode, sumber, akun, atau status; buka detail atau ekspor."
         actions={
           <>
             <Link

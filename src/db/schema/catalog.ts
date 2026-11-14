@@ -6,6 +6,7 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -101,6 +102,7 @@ export const suppliers = pgTable(
   },
   (t) => [
     uniqueIndex("suppliers_company_code_uq").on(t.companyId, t.code),
+    uniqueIndex("suppliers_company_id_id_uq").on(t.companyId, t.id),
     index("suppliers_company_name_idx").on(t.companyId, t.name),
   ],
 );
@@ -116,7 +118,10 @@ export const categories = pgTable(
     parentId: uuid("parent_id").references((): AnyPgColumn => categories.id),
     isActive: boolean("is_active").notNull().default(true),
   },
-  (t) => [uniqueIndex("categories_company_name_uq").on(t.companyId, t.name)],
+  (t) => [
+    uniqueIndex("categories_company_name_uq").on(t.companyId, t.name),
+    uniqueIndex("categories_company_id_id_uq").on(t.companyId, t.id),
+  ],
 );
 export const units = pgTable(
   "units",
@@ -129,7 +134,10 @@ export const units = pgTable(
     // are not offered in pickers but stay resolvable on existing rows.
     isActive: boolean("is_active").notNull().default(true),
   },
-  (t) => [uniqueIndex("units_company_code_uq").on(t.companyId, t.code)],
+  (t) => [
+    uniqueIndex("units_company_code_uq").on(t.companyId, t.code),
+    uniqueIndex("units_company_id_id_uq").on(t.companyId, t.id),
+  ],
 );
 export const products = pgTable(
   "products",
@@ -142,9 +150,9 @@ export const products = pgTable(
     // SIM-2 S7 (REM-01): master references are real database FKs since
     // migration 0031 — before that they were bare uuids guarded only by
     // the application, which let test fixtures orphan stock rows (RT-07).
-    categoryId: uuid("category_id").references(() => categories.id),
-    unitId: uuid("unit_id").references(() => units.id),
-    supplierId: uuid("supplier_id").references(() => suppliers.id),
+    categoryId: uuid("category_id"),
+    unitId: uuid("unit_id"),
+    supplierId: uuid("supplier_id"),
     costPrice: numeric("cost_price", { precision: 19, scale: 4 }).notNull().default("0"),
     salePrice: numeric("sale_price", { precision: 19, scale: 4 }).notNull().default("0"),
     minStock: numeric("min_stock", { precision: 19, scale: 4 }).notNull().default("0"),
@@ -167,7 +175,23 @@ export const products = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    foreignKey({
+      name: "products_company_category_fk",
+      columns: [t.companyId, t.categoryId],
+      foreignColumns: [categories.companyId, categories.id],
+    }),
+    foreignKey({
+      name: "products_company_unit_fk",
+      columns: [t.companyId, t.unitId],
+      foreignColumns: [units.companyId, units.id],
+    }),
+    foreignKey({
+      name: "products_company_supplier_fk",
+      columns: [t.companyId, t.supplierId],
+      foreignColumns: [suppliers.companyId, suppliers.id],
+    }),
     uniqueIndex("products_company_sku_uq").on(t.companyId, t.sku),
+    index("products_company_sku_lower_idx").on(t.companyId, sql`lower(${t.sku})`),
     uniqueIndex("products_company_barcode_uq").on(t.companyId, t.barcode),
     index("products_company_name_trgm_idx").using("gin", sql`${t.name} gin_trgm_ops`),
     // SIM-2 S4 (PERF-03): trigram untuk sku/barcode SENGAJA tidak
@@ -180,6 +204,7 @@ export const products = pgTable(
     // (terukur: daftar 134 ms & cari-kosong POS 76 ms pada 100 rb produk).
     index("products_company_name_idx").on(t.companyId, t.name),
     index("products_company_active_idx").on(t.companyId, t.isActive),
+    uniqueIndex("products_company_id_id_uq").on(t.companyId, t.id),
   ],
 );
 /**
@@ -200,9 +225,7 @@ export const productPackagings = pgTable(
   {
     id: uuid("id").primaryKey().default(sql`uuidv7()`),
     companyId: text("company_id").notNull(),
-    productId: uuid("product_id")
-      .notNull()
-      .references(() => products.id, { onDelete: "cascade" }),
+    productId: uuid("product_id").notNull(),
     name: text("name").notNull(),
     isi: numeric("isi", { precision: 19, scale: 4 }).notNull(),
     buyPrice: numeric("buy_price", { precision: 19, scale: 4 }),
@@ -216,6 +239,12 @@ export const productPackagings = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    foreignKey({
+      name: "product_packagings_company_product_fk",
+      columns: [t.companyId, t.productId],
+      foreignColumns: [products.companyId, products.id],
+    }).onDelete("cascade"),
+    uniqueIndex("product_packagings_company_id_id_uq").on(t.companyId, t.id),
     uniqueIndex("product_packagings_company_product_name_uq").on(t.companyId, t.productId, t.name),
     uniqueIndex("product_packagings_company_barcode_uq").on(t.companyId, t.barcode),
     index("product_packagings_company_product_idx").on(t.companyId, t.productId),

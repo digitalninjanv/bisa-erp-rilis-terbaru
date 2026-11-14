@@ -21,7 +21,7 @@ function backupManifest(finishedAt: string): BackupManifest {
     version: 1,
     file: "bisa-20261107-020000.dump",
     finishedAt,
-    sizeBytes: 2_800_000,
+    sizeBytes: 4,
     sha256: "a".repeat(64),
     encrypted: false,
   };
@@ -92,6 +92,7 @@ describe("getBackupStatus — baca manifest dari disk", () => {
     expect(empty.drill.state).toBe("missing");
     expect(empty.manifestDir).toBe(dir);
 
+    await fs.writeFile(path.join(dir, "bisa-20261107-020000.dump"), "dump");
     await fs.writeFile(
       path.join(dir, "backup-manifest.json"),
       JSON.stringify(backupManifest("2026-11-07T02:00:00Z")),
@@ -103,8 +104,31 @@ describe("getBackupStatus — baca manifest dari disk", () => {
     const filled = await getBackupStatus({ dir, now: NOW });
     expect(filled.backup.state).toBe("fresh");
     expect(filled.backup.manifest?.file).toBe("bisa-20261107-020000.dump");
+    expect(filled.backup.artifactAvailable).toBe(true);
     expect(filled.drill.state).toBe("fresh");
-    expect(filled.drill.manifest?.checks.products.restored).toBe(65);
+    const legacyChecks = filled.drill.manifest?.checks;
+    expect(legacyChecks && !("postedJournals" in legacyChecks) ? legacyChecks.products.restored : null).toBe(65);
+
+    await fs.rm(path.join(dir, "bisa-20261107-020000.dump"));
+    const removed = await getBackupStatus({ dir, now: NOW });
+    expect(removed.backup.state).toBe("missing");
+    expect(removed.backup.manifest?.file).toBe("bisa-20261107-020000.dump");
+    expect(removed.backup.artifactAvailable).toBe(false);
+  });
+
+  it("menolak manifest yang menunjuk keluar dari direktori backup", async () => {
+    const unsafe = await fs.mkdtemp(path.join(os.tmpdir(), "bisa-backup-status-unsafe-"));
+    try {
+      await fs.writeFile(
+        path.join(unsafe, "backup-manifest.json"),
+        JSON.stringify({ ...backupManifest("2026-11-07T02:00:00Z"), file: "../outside.dump" }),
+      );
+      const status = await getBackupStatus({ dir: unsafe, now: NOW });
+      expect(status.backup.state).toBe("missing");
+      expect(status.backup.artifactAvailable).toBe(false);
+    } finally {
+      await fs.rm(unsafe, { recursive: true, force: true });
+    }
   });
 
   it("manifest rusak bentuknya diperlakukan sebagai tidak ada catatan", async () => {
@@ -112,5 +136,64 @@ describe("getBackupStatus — baca manifest dari disk", () => {
     const status = await getBackupStatus({ dir, now: NOW });
     expect(status.backup.state).toBe("missing");
     expect(status.backup.manifest).toBeNull();
+
+    await fs.writeFile(
+      path.join(dir, "backup-manifest.json"),
+      JSON.stringify({ ...backupManifest("2026-11-07T02:00:00Z"), sha256: "not-a-sha256" }),
+    );
+    expect((await getBackupStatus({ dir, now: NOW })).backup.manifest).toBeNull();
+  });
+
+  it("membaca manifest drill v2 dengan pemeriksaan integritas hasil restore", async () => {
+    const v2Dir = await fs.mkdtemp(path.join(os.tmpdir(), "bisa-backup-status-v2-"));
+    try {
+      await fs.writeFile(
+        path.join(v2Dir, "restore-drill-manifest.json"),
+        JSON.stringify({
+          version: 2,
+          at: "2026-11-07T11:00:00Z",
+          sourceFile: "bisa-20261107-020000.dump",
+          targetDatabase: "bisa_restore_test_20261107",
+          ok: true,
+          checks: {
+            accounts: 124,
+            products: 65,
+            inventoryValue: "28349600.0000",
+            postedJournals: 320,
+            unbalancedJournals: 0,
+            orphanJournalLines: 0,
+          },
+        }),
+      );
+      const status = await getBackupStatus({ dir: v2Dir, now: NOW });
+      expect(status.drill.state).toBe("fresh");
+      expect(status.drill.manifest?.checks).toMatchObject({
+        accounts: 124,
+        postedJournals: 320,
+        unbalancedJournals: 0,
+      });
+
+      await fs.writeFile(
+        path.join(v2Dir, "restore-drill-manifest.json"),
+        JSON.stringify({
+          version: 2,
+          at: "2026-11-07T11:00:00Z",
+          sourceFile: "bisa-20261107-020000.dump",
+          targetDatabase: "bisa_restore_test_20261107",
+          ok: true,
+          checks: {
+            accounts: 124,
+            products: 65,
+            inventoryValue: "28349600.0000",
+            postedJournals: 320,
+            unbalancedJournals: -1,
+            orphanJournalLines: 0,
+          },
+        }),
+      );
+      expect((await getBackupStatus({ dir: v2Dir, now: NOW })).drill.state).toBe("missing");
+    } finally {
+      await fs.rm(v2Dir, { recursive: true, force: true });
+    }
   });
 });

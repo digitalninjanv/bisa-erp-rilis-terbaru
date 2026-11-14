@@ -1,5 +1,8 @@
 import type { Tx } from "@/db";
 import { idempotencyKeys } from "@/db/schema";
+import { createHash } from "node:crypto";
+import { and, eq } from "drizzle-orm";
+import { AppError } from "@/lib/errors";
 
 /**
  * GDG3-06 — klaim kunci idempotensi dokumen, pola yang sama dengan
@@ -28,4 +31,92 @@ export async function claimIdempotencyKey(
     .onConflictDoNothing({ target: [idempotencyKeys.companyId, idempotencyKeys.scope, idempotencyKeys.key] })
     .returning({ id: idempotencyKeys.id });
   return Boolean(claim);
+}
+
+const PAYMENT_IDEMPOTENCY_SCOPE = "accounting.payment";
+const PAYMENT_RESULT_TYPE = "accounting-payment-result";
+
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, entry]) => entry !== undefined)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, entry]) => [key, canonicalize(entry)]),
+    );
+  }
+  return value;
+}
+
+/** Stable digest of the normalized business request; raw payment details are not duplicated in the key registry. */
+export function paymentRequestFingerprint(request: unknown): string {
+  return createHash("sha256").update(JSON.stringify(canonicalize(request))).digest("hex");
+}
+
+/**
+ * Run one accounting payment once per client key, in the same transaction
+ * as its journal and balance changes. A replay with the same request returns
+ * the stored result; reuse of the key for different data is a conflict.
+ */
+export async function runIdempotentPayment<T>(
+  tx: Tx,
+  input: { companyId: string; key: string; request: unknown },
+  run: () => Promise<T>,
+): Promise<T> {
+  const fingerprint = paymentRequestFingerprint(input.request);
+  const claimed = await claimIdempotencyKey(tx, {
+    companyId: input.companyId,
+    key: input.key,
+    scope: PAYMENT_IDEMPOTENCY_SCOPE,
+  });
+
+  if (!claimed) {
+    const [existing] = await tx
+      .select({ resultRef: idempotencyKeys.resultRef })
+      .from(idempotencyKeys)
+      .where(
+        and(
+          eq(idempotencyKeys.companyId, input.companyId),
+          eq(idempotencyKeys.scope, PAYMENT_IDEMPOTENCY_SCOPE),
+          eq(idempotencyKeys.key, input.key),
+        ),
+      )
+      .limit(1);
+    if (!existing?.resultRef) {
+      throw new AppError("CONFLICT", "Pembayaran dengan kunci ini belum memiliki hasil tersimpan. Muat ulang sebelum mencoba lagi.");
+    }
+
+    let stored: unknown;
+    try {
+      stored = JSON.parse(existing.resultRef);
+    } catch {
+      throw new AppError("CONFLICT", "Hasil pembayaran sebelumnya tidak dapat dibaca. Jangan kirim ulang transaksi ini.");
+    }
+    if (
+      !stored ||
+      typeof stored !== "object" ||
+      !("type" in stored) ||
+      stored.type !== PAYMENT_RESULT_TYPE ||
+      !("fingerprint" in stored) ||
+      stored.fingerprint !== fingerprint ||
+      !("result" in stored)
+    ) {
+      throw new AppError("CONFLICT", "Kunci pembayaran sudah digunakan untuk data yang berbeda.");
+    }
+    return stored.result as T;
+  }
+
+  const result = await run();
+  await tx
+    .update(idempotencyKeys)
+    .set({ resultRef: JSON.stringify({ type: PAYMENT_RESULT_TYPE, fingerprint, result }) })
+    .where(
+      and(
+        eq(idempotencyKeys.companyId, input.companyId),
+        eq(idempotencyKeys.scope, PAYMENT_IDEMPOTENCY_SCOPE),
+        eq(idempotencyKeys.key, input.key),
+      ),
+    );
+  return result;
 }

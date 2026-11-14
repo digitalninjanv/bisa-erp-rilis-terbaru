@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   importAttendanceCsvAction,
+  recordAttendanceBatchAction,
   recordAttendanceAction,
 } from "@/server/actions/hr/presensi";
 import { DateField } from "@/components/date-field";
@@ -25,10 +26,188 @@ const ATTENDANCE_STATUS_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "absent", label: "Alpa" },
 ];
 
-export function AttendanceEntryForm({ employees }: { employees: SimpleEmployee[] }) {
+type AttendanceDraft = {
+  status: "" | "present" | "permit" | "sick" | "leave" | "absent";
+  checkIn: string;
+  checkOut: string;
+  note: string;
+};
+
+type ExistingAttendance = {
+  employeeId: string;
+  status: AttendanceDraft["status"];
+  checkIn: string | null;
+  checkOut: string | null;
+  note: string | null;
+};
+
+/** Roster harian: status beberapa karyawan dapat disimpan sekaligus dalam satu transaksi. */
+export function AttendanceBatchForm({
+  employees,
+  date,
+  records,
+}: {
+  employees: SimpleEmployee[];
+  date: string;
+  records: ExistingAttendance[];
+}) {
+  const router = useRouter();
+  const [query, setQuery] = useState("");
+  const [busy, setBusy] = useState(false);
+  const existingByEmployee = new Map(records.map((row) => [row.employeeId, row]));
+  const [drafts, setDrafts] = useState<Record<string, AttendanceDraft>>(() =>
+    Object.fromEntries(
+      employees.map((employee) => {
+        const existing = existingByEmployee.get(employee.id);
+        return [employee.id, {
+          status: existing?.status ?? "",
+          checkIn: existing?.checkIn?.slice(0, 5) ?? "",
+          checkOut: existing?.checkOut?.slice(0, 5) ?? "",
+          note: existing?.note ?? "",
+        }];
+      }),
+    ),
+  );
+  const filteredEmployees = employees.filter((employee) =>
+    `${employee.code} ${employee.name}`.toLowerCase().includes(query.trim().toLowerCase()),
+  );
+  const markedCount = Object.values(drafts).filter((entry) => entry.status !== "").length;
+
+  function update(employeeId: string, patch: Partial<AttendanceDraft>) {
+    setDrafts((current) => ({
+      ...current,
+      [employeeId]: { ...current[employeeId], ...patch },
+    }));
+  }
+
+  async function submit() {
+    const entries = employees.flatMap((employee) => {
+      const entry = drafts[employee.id];
+      return entry?.status
+        ? [{ employeeId: employee.id, status: entry.status, checkIn: entry.checkIn || null, checkOut: entry.checkOut || null, note: entry.note || null }]
+        : [];
+    });
+    if (entries.length === 0) {
+      toast.error("Pilih status untuk minimal satu karyawan.");
+      return;
+    }
+    setBusy(true);
+    const result = await recordAttendanceBatchAction({ date, entries });
+    setBusy(false);
+    if (!result.ok) {
+      toast.error(result.message);
+      return;
+    }
+    toast.success(`${result.data.saved} catatan presensi tersimpan untuk ${date}.`);
+    router.refresh();
+  }
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-border bg-card">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
+        <div>
+          <h2 className="text-[13px] font-semibold">Daftar hadir · {date}</h2>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
+            Pilih status tiap karyawan. Jam masuk dan pulang opsional; yang kosong tidak menghalangi penyimpanan.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setDrafts((current) => Object.fromEntries(
+              Object.entries(current).map(([employeeId, entry]) => [
+                employeeId,
+                entry.status ? entry : { ...entry, status: "present" },
+              ]),
+            ))}
+            className="h-8 rounded-md border border-border bg-card px-2.5 text-[11px] font-medium transition-colors hover:bg-muted"
+          >
+            Isi yang belum dicatat sebagai hadir
+          </button>
+          <label className="sr-only" htmlFor="attendance-roster-search">Cari karyawan</label>
+          <input
+            id="attendance-roster-search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            className="h-8 w-44 rounded-md border border-input bg-background px-2.5 text-[12px]"
+            placeholder="Cari karyawan…"
+          />
+        </div>
+      </div>
+
+      <div className="divide-y divide-border/70">
+        {filteredEmployees.map((employee) => {
+          const entry = drafts[employee.id] ?? { status: "", checkIn: "", checkOut: "", note: "" };
+          return (
+            <div key={employee.id} className="grid gap-2 px-4 py-3 sm:grid-cols-[minmax(140px,1fr)_150px_108px_108px] sm:items-center">
+              <div className="min-w-0">
+                <p className="truncate text-[12px] font-medium">{employee.name}</p>
+                <p className="num text-[10px] text-muted-foreground">{employee.code}</p>
+              </div>
+              <label className="space-y-1">
+                <span className={`${labelClass} sm:sr-only`}>Status</span>
+                <select
+                  value={entry.status}
+                  onChange={(event) => update(employee.id, { status: event.target.value as AttendanceDraft["status"] })}
+                  className={fieldClass}
+                  aria-label={`Status presensi ${employee.name}`}
+                >
+                  <option value="">Belum dicatat</option>
+                  {ATTENDANCE_STATUS_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1">
+                <span className={`${labelClass} sm:sr-only`}>Masuk</span>
+                <input
+                  type="time"
+                  value={entry.checkIn}
+                  onChange={(event) => update(employee.id, { checkIn: event.target.value })}
+                  className={fieldClass}
+                  aria-label={`Jam masuk ${employee.name}`}
+                />
+              </label>
+              <label className="space-y-1">
+                <span className={`${labelClass} sm:sr-only`}>Pulang</span>
+                <input
+                  type="time"
+                  value={entry.checkOut}
+                  onChange={(event) => update(employee.id, { checkOut: event.target.value })}
+                  className={fieldClass}
+                  aria-label={`Jam pulang ${employee.name}`}
+                />
+              </label>
+            </div>
+          );
+        })}
+        {filteredEmployees.length === 0 ? (
+          <p className="px-4 py-6 text-center text-[12px] text-muted-foreground">Karyawan tidak ditemukan.</p>
+        ) : null}
+        {employees.length === 0 ? (
+          <p className="px-4 py-6 text-center text-[12px] text-muted-foreground">Belum ada karyawan aktif.</p>
+        ) : null}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-muted/20 px-4 py-3">
+        <p className="text-[11px] text-muted-foreground">{markedCount} dari {employees.length} karyawan diberi status.</p>
+        <button
+          type="button"
+          onClick={() => void submit()}
+          disabled={busy || markedCount === 0}
+          className="h-9 rounded-md bg-primary px-4 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {busy ? "Menyimpan…" : `Simpan ${markedCount} catatan`}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+export function AttendanceEntryForm({ employees, defaultDate = "" }: { employees: SimpleEmployee[]; defaultDate?: string }) {
   const router = useRouter();
   const [employeeId, setEmployeeId] = useState("");
-  const [date, setDate] = useState("");
+  const [date, setDate] = useState(defaultDate);
   const [status, setStatus] = useState("present");
   const [checkIn, setCheckIn] = useState("");
   const [checkOut, setCheckOut] = useState("");

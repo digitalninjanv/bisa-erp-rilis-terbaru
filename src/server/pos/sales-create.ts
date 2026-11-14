@@ -10,6 +10,7 @@ import { cashSessions, customers, idempotencyKeys, paymentMethods, sales } from 
 import { AppError } from "@/lib/errors";
 import { d, toDb, Decimal } from "@/lib/money";
 import { assertPeriodOpen, getAccountMap } from "@/server/accounting";
+import { paymentRequestFingerprint } from "@/server/idempotency";
 import { writeAudit } from "@/server/audit";
 import { consumeReservationForSale, getReservedQuantities } from "@/server/reservations";
 import { quoteCart } from "./quote";
@@ -22,7 +23,10 @@ export async function createSale(
   tx: Tx,
   input: CreateSaleInput,
 ): Promise<{ id: string; number: string; total: number; change: number; overageAbsorbed?: number }> {
-  const replayedSale = await claimSaleIdempotency(tx, input);
+  const replayedSale = await claimSaleIdempotency(tx, {
+    ...input,
+    idempotencyFingerprint: input.idempotencyFingerprint ?? saleRequestFingerprint(input),
+  });
   if (replayedSale) return replayedSale;
 
   await assertPeriodOpen(tx, input.companyId, input.date);
@@ -141,6 +145,14 @@ export async function createSale(
   };
 }
 
+/** Hash only transaction data; the client key and fingerprint are excluded. */
+export function saleRequestFingerprint(input: CreateSaleInput): string {
+  const request = Object.fromEntries(
+    Object.entries(input).filter(([key]) => key !== "idempotencyKey" && key !== "idempotencyFingerprint"),
+  );
+  return paymentRequestFingerprint(request);
+}
+
 /**
  * FIX-ARS Tahap 4: fase dari createSale — badan dipindah apa adanya;
  * klaim kunci idempotensi (POS-IDEM-01) — replay mengembalikan
@@ -151,6 +163,8 @@ export async function createSale(
 
 async function claimSaleIdempotency(tx: Tx, input: CreateSaleInput) {
   if (!input.idempotencyKey) throw new AppError("VALIDATION", "Kunci transaksi tidak ada.");
+  const fingerprint = input.idempotencyFingerprint;
+  if (!fingerprint) throw new AppError("VALIDATION", "Fingerprint transaksi tidak tersedia.");
 
   const findExisting = async () => {
     const [row] = await tx
@@ -160,8 +174,28 @@ async function claimSaleIdempotency(tx: Tx, input: CreateSaleInput) {
       .limit(1);
     return row;
   };
+  const assertSameRequest = async () => {
+    const [claim] = await tx
+      .select({ resultRef: idempotencyKeys.resultRef })
+      .from(idempotencyKeys)
+      .where(and(
+        eq(idempotencyKeys.companyId, input.companyId),
+        eq(idempotencyKeys.scope, "pos.sale"),
+        eq(idempotencyKeys.key, input.idempotencyKey),
+      ))
+      .limit(1);
+    if (claim?.resultRef !== fingerprint) {
+      throw new AppError(
+        "CONFLICT",
+        claim?.resultRef
+          ? "Kunci transaksi sudah digunakan untuk data checkout yang berbeda. Periksa riwayat sebelum mencoba lagi."
+          : "Transaksi sebelumnya belum memiliki fingerprint retry. Periksa riwayat sebelum mencoba lagi.",
+      );
+    }
+  };
   const existing = await findExisting();
   if (existing) {
+    await assertSameRequest();
     return {
       id: existing.id,
       number: existing.number,
@@ -179,10 +213,11 @@ async function claimSaleIdempotency(tx: Tx, input: CreateSaleInput) {
   // the same transaction as the sale, so a failed checkout releases it.
   const [claim] = await tx
     .insert(idempotencyKeys)
-    .values({ companyId: input.companyId, key: input.idempotencyKey, scope: "pos.sale" })
+    .values({ companyId: input.companyId, key: input.idempotencyKey, scope: "pos.sale", resultRef: fingerprint })
     .onConflictDoNothing({ target: [idempotencyKeys.companyId, idempotencyKeys.scope, idempotencyKeys.key] })
     .returning({ id: idempotencyKeys.id });
   if (!claim) {
+    await assertSameRequest();
     const winner = await findExisting();
     if (winner) {
       return {

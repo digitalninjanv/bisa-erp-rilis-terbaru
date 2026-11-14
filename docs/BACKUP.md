@@ -2,20 +2,19 @@
 
 ## Backup
 
-Perintah proyek:
+Perintah proyek (gunakan file credential yang hanya dapat dibaca operator):
 
 ```bash
-pnpm db:backup
+BACKUP_PASSPHRASE_FILE=/path/aman/backup-passphrase pnpm db:backup
 ```
 
 - Menggunakan `DIRECT_URL` (owner) agar dump memuat RLS/policy/grant.
 - Default folder `backups/`; produksi dapat memakai `BACKUP_DIR`.
-- Format custom (`pg_dump -Fc`), nama `bisa-YYYYMMDD-HHMMSS.dump`.
-- Enkripsi opsional:
-  ```bash
-  BACKUP_PASSPHRASE='...' pnpm db:backup
-  ```
-  menghasilkan `.dump.enc` (AES-256-CBC/PBKDF2).
+- Format custom (`pg_dump -Fc`), nama `bisa-YYYYMMDD-HHMMSS-PID.dump.enc`; PID membedakan backup yang dimulai pada detik yang sama.
+- Proses backup memakai file lock di direktori tujuan dan menunggu paling lama 30 menit agar dua dump tidak menulis nama arsip/manifest yang sama.
+- Enkripsi autentikasi AES-256-GCM dengan kunci turunan PBKDF2-SHA256 (600.000 iterasi) wajib; bila passphrase kosong, skrip berhenti sebelum menjalankan `pg_dump` dan tidak membuat backup plaintext.
+- Untuk pemakaian systemd produksi, installer memakai `LoadCredential` dari `/etc/credstore/bisa-erp-backup-passphrase`; isi file credential tidak diekspor sebagai environment variable.
+- Simpan salinan passphrase terpisah dari server dan backup agar pemulihan tetap mungkin bila host hilang. Nilai di file dipakai persis, termasuk newline akhir bila editor menambahkannya.
 - Manifest `backups/backup-manifest.json` mencatat file, waktu, ukuran, SHA-256.
 
 ### Backup yang dibuat pada audit ini
@@ -23,7 +22,7 @@ pnpm db:backup
 - `backups/bisa-pre-reset-20261111-082109.dump` — sebelum reset data.
 - `backups/bisa-pre-migration-20261111-103520.dump` — sebelum migrasi `0070`/`0071`.
 
-Keduanya dibuat dengan `pg_dump` dari container `bisa-erp-db`, diverifikasi dengan `pg_restore --list`.
+Keduanya adalah backup historis plaintext yang dibuat sebelum kebijakan enkripsi wajib. Backup baru plaintext tidak diizinkan. Keduanya dibuat dengan `pg_dump` dari container `bisa-erp-db`, diverifikasi dengan `pg_restore --list`. Format `.dump.enc` CBC historis hanya dapat dipulihkan setelah operator memberi `RESTORE_ALLOW_LEGACY_CBC=1`; format itu tidak memiliki autentikasi kriptografis dan perlu diganti dengan backup AES-GCM baru.
 
 ## Restore
 
@@ -34,7 +33,8 @@ podman exec -i bisa-erp-db pg_restore -U erp --no-owner --no-privileges \
   --dbname=bisa_erp_restore_test < backups/bisa-pre-reset-20261111-082109.dump
 ```
 
-Atau gunakan `scripts/restore.sh` dengan `BACKUP_FILE`/`BACKUP_PASSPHRASE`.
+Atau gunakan `scripts/restore.sh` dengan `BACKUP_FILE` dan
+`BACKUP_PASSPHRASE_FILE=/path/aman/backup-passphrase`.
 
 ## Uji restore yang sudah dilakukan
 

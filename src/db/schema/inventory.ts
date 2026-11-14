@@ -7,6 +7,7 @@ import { sql } from "drizzle-orm";
 import {
   boolean,
   date,
+  foreignKey,
   index,
   jsonb,
   numeric,
@@ -31,12 +32,22 @@ export const stockOnHand = pgTable(
   "stock_on_hand",
   {
     companyId: text("company_id").notNull(),
-    warehouseId: uuid("warehouse_id").notNull().references(() => warehouses.id),
-    productId: uuid("product_id").notNull().references(() => products.id),
+    warehouseId: uuid("warehouse_id").notNull(),
+    productId: uuid("product_id").notNull(),
     qty: numeric("qty", { precision: 19, scale: 4 }).notNull().default("0"),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    foreignKey({
+      name: "stock_on_hand_company_warehouse_fk",
+      columns: [t.companyId, t.warehouseId],
+      foreignColumns: [warehouses.companyId, warehouses.id],
+    }),
+    foreignKey({
+      name: "stock_on_hand_company_product_fk",
+      columns: [t.companyId, t.productId],
+      foreignColumns: [products.companyId, products.id],
+    }),
     primaryKey({ columns: [t.companyId, t.warehouseId, t.productId] }),
     index("stock_on_hand_company_product_idx").on(t.companyId, t.productId),
   ],
@@ -59,8 +70,8 @@ export const stockBatches = pgTable(
   {
     id: uuid("id").primaryKey().default(sql`uuidv7()`),
     companyId: text("company_id").notNull(),
-    productId: uuid("product_id").notNull().references(() => products.id),
-    warehouseId: uuid("warehouse_id").notNull().references(() => warehouses.id),
+    productId: uuid("product_id").notNull(),
+    warehouseId: uuid("warehouse_id").notNull(),
     batchNumber: text("batch_number"),
     expiryDate: date("expiry_date"),
     qty: numeric("qty", { precision: 19, scale: 4 }).notNull().default("0"),
@@ -68,6 +79,17 @@ export const stockBatches = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    foreignKey({
+      name: "stock_batches_company_product_fk",
+      columns: [t.companyId, t.productId],
+      foreignColumns: [products.companyId, products.id],
+    }),
+    foreignKey({
+      name: "stock_batches_company_warehouse_fk",
+      columns: [t.companyId, t.warehouseId],
+      foreignColumns: [warehouses.companyId, warehouses.id],
+    }),
+    uniqueIndex("stock_batches_company_id_id_uq").on(t.companyId, t.id),
     uniqueIndex("stock_batches_identity_uq").on(
       t.companyId,
       t.productId,
@@ -83,11 +105,11 @@ export const stockMovements = pgTable(
   {
     id: uuid("id").primaryKey().default(sql`uuidv7()`),
     companyId: text("company_id").notNull(),
-    warehouseId: uuid("warehouse_id").notNull().references(() => warehouses.id),
-    productId: uuid("product_id").notNull().references(() => products.id),
+    warehouseId: uuid("warehouse_id").notNull(),
+    productId: uuid("product_id").notNull(),
     // Batch slice this movement belongs to (G8/D-7); null for products
     // without batch tracking and for movements predating migration 0011.
-    batchId: uuid("batch_id").references(() => stockBatches.id),
+    batchId: uuid("batch_id"),
     movementType: text("movement_type").notNull(), // opening | purchase | sale | sale_return | purchase_return | adjustment | transfer_in | transfer_out | opname | damaged | expired | lost | quarantine
     // FIX-GDG Tahap 2 (GDG3-03): tanggal BISNIS gerakan = tanggal
     // dokumen sumbernya (bukan waktu posting created_at). Rekonsiliasi
@@ -109,6 +131,21 @@ export const stockMovements = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    foreignKey({
+      name: "stock_movements_company_warehouse_fk",
+      columns: [t.companyId, t.warehouseId],
+      foreignColumns: [warehouses.companyId, warehouses.id],
+    }),
+    foreignKey({
+      name: "stock_movements_company_product_fk",
+      columns: [t.companyId, t.productId],
+      foreignColumns: [products.companyId, products.id],
+    }),
+    foreignKey({
+      name: "stock_movements_company_batch_fk",
+      columns: [t.companyId, t.batchId],
+      foreignColumns: [stockBatches.companyId, stockBatches.id],
+    }),
     index("stock_movements_company_product_idx").on(t.companyId, t.productId, t.createdAt),
     index("stock_movements_company_warehouse_idx").on(t.companyId, t.warehouseId, t.createdAt),
     index("stock_movements_company_ref_idx").on(t.companyId, t.referenceType, t.referenceId),
@@ -128,7 +165,7 @@ export const purchaseOrders = pgTable(
     id: uuid("id").primaryKey().default(sql`uuidv7()`),
     companyId: text("company_id").notNull(),
     number: text("number").notNull(),
-    supplierId: uuid("supplier_id").notNull().references(() => suppliers.id),
+    supplierId: uuid("supplier_id").notNull(),
     date: date("date").notNull(),
     expectedDate: date("expected_date"),
     // draft | sent | partial | received | cancelled
@@ -140,7 +177,13 @@ export const purchaseOrders = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    foreignKey({
+      name: "purchase_orders_company_supplier_fk",
+      columns: [t.companyId, t.supplierId],
+      foreignColumns: [suppliers.companyId, suppliers.id],
+    }),
     uniqueIndex("purchase_orders_company_number_uq").on(t.companyId, t.number),
+    uniqueIndex("purchase_orders_company_id_id_uq").on(t.companyId, t.id),
     index("purchase_orders_company_supplier_idx").on(t.companyId, t.supplierId, t.status),
     index("purchase_orders_company_date_idx").on(t.companyId, t.date),
   ],
@@ -150,10 +193,8 @@ export const purchaseOrderLines = pgTable(
   {
     id: uuid("id").primaryKey().default(sql`uuidv7()`),
     companyId: text("company_id").notNull(),
-    orderId: uuid("order_id")
-      .notNull()
-      .references(() => purchaseOrders.id, { onDelete: "cascade" }),
-    productId: uuid("product_id").notNull().references(() => products.id),
+    orderId: uuid("order_id").notNull(),
+    productId: uuid("product_id").notNull(),
     // SIM-2 S7 (REM-02): name/SKU snapshot frozen at creation, like
     // sale_lines — renaming the master must not rewrite history.
     productName: text("product_name"),
@@ -168,27 +209,44 @@ export const purchaseOrderLines = pgTable(
     // dibuat. `qty`/`unitCost` di atas SELALU satuan dasar
     // (qty = qtyInput × isiSnapshot, unitCost = harga kemasan ÷ isi)
     // — ledger, AVCO & pencocokan tiga arah hanya membaca qty dasar.
-    packagingId: uuid("packaging_id").references(() => productPackagings.id),
+    packagingId: uuid("packaging_id"),
     qtyInput: numeric("qty_input", { precision: 19, scale: 4 }).notNull(),
     isiSnapshot: numeric("isi_snapshot", { precision: 19, scale: 4 }).notNull().default("1"),
   },
-  (t) => [index("purchase_order_lines_order_idx").on(t.orderId)],
+  (t) => [
+    foreignKey({
+      name: "purchase_order_lines_company_order_fk",
+      columns: [t.companyId, t.orderId],
+      foreignColumns: [purchaseOrders.companyId, purchaseOrders.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "purchase_order_lines_company_product_fk",
+      columns: [t.companyId, t.productId],
+      foreignColumns: [products.companyId, products.id],
+    }),
+    foreignKey({
+      name: "purchase_order_lines_company_packaging_fk",
+      columns: [t.companyId, t.packagingId],
+      foreignColumns: [productPackagings.companyId, productPackagings.id],
+    }),
+    index("purchase_order_lines_order_idx").on(t.orderId),
+  ],
 );
 export const stockReceipts = pgTable(
   "stock_receipts",
   {
     id: uuid("id").primaryKey().default(sql`uuidv7()`),
     companyId: text("company_id").notNull(),
-    warehouseId: uuid("warehouse_id").notNull().references(() => warehouses.id),
+    warehouseId: uuid("warehouse_id").notNull(),
     // Optional link to the purchase order this receipt fulfils (G7/D-6).
-    purchaseOrderId: uuid("purchase_order_id").references(() => purchaseOrders.id),
+    purchaseOrderId: uuid("purchase_order_id"),
     // Nullable since G6/D-5: only purchase receipts require a supplier.
-    supplierId: uuid("supplier_id").references(() => suppliers.id),
+    supplierId: uuid("supplier_id"),
     // purchase | opening | bonus | customer_return | other (D-5)
     source: text("source").notNull().default("purchase"),
     // Set only for cash purchases: the cash/bank account paid from, which
     // makes the receipt born fully paid instead of becoming a payable.
-    paymentAccountId: uuid("payment_account_id").references(() => accounts.id),
+    paymentAccountId: uuid("payment_account_id"),
     supplierInvoiceNumber: text("supplier_invoice_number"),
     // GDG3-06: kunci idempotensi dari klien (pola POS) — submit ulang
     // berkunci sama mengembalikan penerimaan pertama, bukan dokumen baru.
@@ -213,7 +271,28 @@ export const stockReceipts = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    foreignKey({
+      name: "stock_receipts_company_warehouse_fk",
+      columns: [t.companyId, t.warehouseId],
+      foreignColumns: [warehouses.companyId, warehouses.id],
+    }),
+    foreignKey({
+      name: "stock_receipts_company_purchase_order_fk",
+      columns: [t.companyId, t.purchaseOrderId],
+      foreignColumns: [purchaseOrders.companyId, purchaseOrders.id],
+    }),
+    foreignKey({
+      name: "stock_receipts_company_supplier_fk",
+      columns: [t.companyId, t.supplierId],
+      foreignColumns: [suppliers.companyId, suppliers.id],
+    }),
+    foreignKey({
+      name: "stock_receipts_company_payment_account_fk",
+      columns: [t.companyId, t.paymentAccountId],
+      foreignColumns: [accounts.companyId, accounts.id],
+    }),
     uniqueIndex("stock_receipts_company_number_uq").on(t.companyId, t.number),
+    uniqueIndex("stock_receipts_company_id_id_uq").on(t.companyId, t.id),
     uniqueIndex("stock_receipts_company_idem_uq").on(t.companyId, t.idempotencyKey),
     index("stock_receipts_company_date_idx").on(t.companyId, t.date),
   ],
@@ -223,10 +302,8 @@ export const stockReceiptLines = pgTable(
   {
     id: uuid("id").primaryKey().default(sql`uuidv7()`),
     companyId: text("company_id").notNull(),
-    receiptId: uuid("receipt_id")
-      .notNull()
-      .references(() => stockReceipts.id, { onDelete: "cascade" }),
-    productId: uuid("product_id").notNull().references(() => products.id),
+    receiptId: uuid("receipt_id").notNull(),
+    productId: uuid("product_id").notNull(),
     // SIM-2 S7 (REM-02): name/SKU snapshot frozen at posting.
     productName: text("product_name"),
     productSku: text("product_sku"),
@@ -243,7 +320,7 @@ export const stockReceiptLines = pgTable(
     // Program Satuan Kemasan S2: cuplikan kemasan baris — semantik
     // sama seperti purchase_order_lines (qty/unitCost selalu satuan
     // dasar; qtyInput & isiSnapshot membekukan bentuk masukan).
-    packagingId: uuid("packaging_id").references(() => productPackagings.id),
+    packagingId: uuid("packaging_id"),
     qtyInput: numeric("qty_input", { precision: 19, scale: 4 }).notNull(),
     isiSnapshot: numeric("isi_snapshot", { precision: 19, scale: 4 }).notNull().default("1"),
     // Batch identity received on this line (G8/D-7); batchNumber is
@@ -251,7 +328,24 @@ export const stockReceiptLines = pgTable(
     batchNumber: text("batch_number"),
     expiryDate: date("expiry_date"),
   },
-  (t) => [index("stock_receipt_lines_receipt_idx").on(t.receiptId)],
+  (t) => [
+    foreignKey({
+      name: "stock_receipt_lines_company_receipt_fk",
+      columns: [t.companyId, t.receiptId],
+      foreignColumns: [stockReceipts.companyId, stockReceipts.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "stock_receipt_lines_company_product_fk",
+      columns: [t.companyId, t.productId],
+      foreignColumns: [products.companyId, products.id],
+    }),
+    foreignKey({
+      name: "stock_receipt_lines_company_packaging_fk",
+      columns: [t.companyId, t.packagingId],
+      foreignColumns: [productPackagings.companyId, productPackagings.id],
+    }),
+    index("stock_receipt_lines_receipt_idx").on(t.receiptId),
+  ],
 );
 /**
  * Uang muka / DP pembelian (Accurate-style purchase advance). Dana

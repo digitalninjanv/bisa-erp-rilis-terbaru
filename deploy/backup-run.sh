@@ -14,22 +14,39 @@ set -euo pipefail
 
 CONF="${BISA_BACKUP_CONF:-/etc/bisa-erp/backup.conf}"
 if [[ -f "$CONF" ]]; then
-  set -a
   # shellcheck disable=SC1090
   source "$CONF"
-  set +a
 fi
 
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/bisa-erp}"
 RETENTION_DAILY="${RETENTION_DAILY:-14}"
 RETENTION_WEEKLY="${RETENTION_WEEKLY:-4}"
+BACKUP_STATUS_GROUP="${BACKUP_STATUS_GROUP:-}"
 APP_HOME="${BISA_HOME:-/opt/bisa-erp/current}"
-export BACKUP_DIR
+export BACKUP_DIR BACKUP_STATUS_GROUP
 if [[ -n "${PG_BIN:-}" ]]; then
   export PATH="${PG_BIN}:$PATH"
 fi
 
 log() { echo "[backup $(date -Is)] $*"; }
+
+if [[ -n "${CREDENTIALS_DIRECTORY:-}" ]]; then
+  passphrase_file="$CREDENTIALS_DIRECTORY/backup-passphrase"
+  if [[ ! -r "$passphrase_file" || ! -s "$passphrase_file" ]]; then
+    log "GAGAL: credential backup-passphrase tidak tersedia; backup plaintext tidak diizinkan."
+    exit 1
+  fi
+  export BACKUP_PASSPHRASE_FILE="$passphrase_file"
+  unset BACKUP_PASSPHRASE
+elif [[ -s "${BISA_BACKUP_PASSPHRASE_FILE:-/etc/credstore/bisa-erp-backup-passphrase}" ]]; then
+  # deploy/update.sh and manual runs are not started by systemd, so read
+  # the same root-only secret file directly without exporting its contents.
+  export BACKUP_PASSPHRASE_FILE="${BISA_BACKUP_PASSPHRASE_FILE:-/etc/credstore/bisa-erp-backup-passphrase}"
+  unset BACKUP_PASSPHRASE
+elif [[ -z "${BACKUP_PASSPHRASE:-}" ]]; then
+  log "GAGAL: kunci backup tidak tersedia; backup plaintext tidak diizinkan. Atur credential systemd atau BACKUP_PASSPHRASE untuk pemakaian manual."
+  exit 1
+fi
 
 [[ -x "$APP_HOME/scripts/backup.sh" ]] || {
   log "GAGAL: $APP_HOME/scripts/backup.sh tidak ditemukan."
@@ -39,19 +56,23 @@ mkdir -p "$BACKUP_DIR"
 
 # Snapshot of what exists before, so we can name the new file afterwards.
 before_list="$(mktemp)"
-find "$BACKUP_DIR" -maxdepth 1 -type f -name 'bisa-*.dump*' | sort > "$before_list" || true
+find "$BACKUP_DIR" -maxdepth 1 -type f \( -name 'bisa-*.dump' -o -name 'bisa-*.dump.enc' \) | sort > "$before_list" || true
 
 log "menjalankan pg_dump melalui scripts/backup.sh …"
 # backup.sh cd's to its own tree root (the active release) and sources
 # the release's .env.local, which install.sh symlinks to the production
 # env file — so DIRECT_URL here is always the production database.
-BACKUP_PASSPHRASE="${BACKUP_PASSPHRASE:-}" bash "$APP_HOME/scripts/backup.sh"
+if [[ -n "${BACKUP_PASSPHRASE_FILE:-}" ]]; then
+  BACKUP_PASSPHRASE_FILE="$BACKUP_PASSPHRASE_FILE" bash "$APP_HOME/scripts/backup.sh"
+else
+  BACKUP_PASSPHRASE="$BACKUP_PASSPHRASE" bash "$APP_HOME/scripts/backup.sh"
+fi
 
-new_file="$(find "$BACKUP_DIR" -maxdepth 1 -type f -name 'bisa-*.dump*' -newer "$before_list" | sort | tail -1 || true)"
+new_file="$(find "$BACKUP_DIR" -maxdepth 1 -type f \( -name 'bisa-*.dump' -o -name 'bisa-*.dump.enc' \) -newer "$before_list" | sort | tail -1 || true)"
 rm -f "$before_list"
 if [[ -z "$new_file" ]]; then
   # Fallback: the newest file by mtime (same-second runs can confuse -newer).
-  new_file="$(ls -t "$BACKUP_DIR"/bisa-*.dump* 2>/dev/null | head -1 || true)"
+  new_file="$(ls -t "$BACKUP_DIR"/bisa-*.dump "$BACKUP_DIR"/bisa-*.dump.enc 2>/dev/null | head -1 || true)"
 fi
 [[ -n "$new_file" && -s "$new_file" ]] || {
   log "GAGAL: tidak ada berkas cadangan baru yang valid."
@@ -62,8 +83,8 @@ log "cadangan baru: $new_file ($(du -h "$new_file" | awk '{print $1}'))"
 # --- Retention -------------------------------------------------------
 # Keep the newest RETENTION_DAILY files. From the remainder, also keep
 # the newest file of each of the last RETENTION_WEEKLY distinct ISO
-# weeks. Delete the rest. Only ever touches bisa-*.dump* in BACKUP_DIR.
-mapfile -t files < <(find "$BACKUP_DIR" -maxdepth 1 -type f -name 'bisa-*.dump*' -printf '%T@ %p\n' | sort -rn | awk '{print $2}')
+# weeks. Delete the rest. Only dump artifacts and matching sidecars are touched.
+mapfile -t files < <(find "$BACKUP_DIR" -maxdepth 1 -type f \( -name 'bisa-*.dump' -o -name 'bisa-*.dump.enc' \) -printf '%T@ %p\n' | sort -rn | awk '{print $2}')
 total=${#files[@]}
 declare -A keep=()
 for ((i = 0; i < total && i < RETENTION_DAILY; i++)); do
@@ -84,7 +105,7 @@ removed=0
 for f in "${files[@]}"; do
   if [[ -z "${keep[$f]:-}" ]]; then
     log "retensi: menghapus $f"
-    rm -f "$f"
+    rm -f -- "$f" "$f.json"
     removed=$((removed + 1))
   fi
 done

@@ -1,7 +1,6 @@
 import {
   Activity,
   ArrowLeftRight,
-  BadgeDollarSign,
   BarChart3,
   Banknote,
   Bookmark,
@@ -13,6 +12,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   CloudOff,
+  Database,
   FileBarChart,
   FileSpreadsheet,
   HandCoins,
@@ -32,6 +32,7 @@ import {
   ShieldAlert,
   Scale,
   ScanBarcode,
+  Shapes,
   Settings,
   ShoppingCart,
   TrendingUp,
@@ -53,15 +54,21 @@ export type NavItem = {
   icon: LucideIcon;
   description?: string;
   permission?: Permission;
+  /** Path families that should keep this item active without changing its destination. */
+  activePaths?: string[];
   /**
-   * A-22 Tahap K5 (UX-07): kepala kelompok sidebar. Dipakai modul
-   * akuntansi dan — sejak A-24 T3 (SIS-09) — gudang; modul tanpa
-   * grup dirender persis seperti sebelumnya (satu daftar datar).
+   * Kepala kelompok sidebar. Item dalam modul yang sama dikelompokkan
+   * berurutan; modul tanpa grup tetap dirender sebagai daftar datar.
    */
   group?: string;
 };
 
 export type NavGroup = { group: string | null; items: NavItem[] };
+
+export function navGroupId(group: NavGroup): string {
+  const stablePart = group.items[0]?.href ?? group.group ?? "ungrouped";
+  return `nav-group-${stablePart.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+}
 
 /**
  * Mengelompokkan item navigasi yang BERURUTAN menurut `group`-nya.
@@ -78,6 +85,36 @@ export function groupNavItems(items: NavItem[]): NavGroup[] {
     else groups.push({ group: name, items: [item] });
   }
   return groups;
+}
+
+/** Resolve the same active destination for desktop and mobile navigation. */
+export function resolveActiveNavItem(
+  items: NavItem[],
+  pathname: string,
+  hash: string,
+  activeHref?: string | null,
+): NavItem | undefined {
+  if (activeHref !== undefined) return items.find((item) => item.href === activeHref);
+
+  return items
+    .map((item, index) => {
+      const [itemPath, itemHash = ""] = item.href.split("#", 2);
+      if (itemHash) {
+        return pathname === itemPath && hash === `#${itemHash}`
+          ? { item, index, specificity: itemPath.length + itemHash.length + 1 }
+          : null;
+      }
+      if (hash && pathname === itemPath) return null;
+
+      const paths = [itemPath, ...(item.activePaths ?? [])];
+      const specificity = paths.reduce((best, path) => {
+        const matches = pathname === path || pathname.startsWith(`${path}/`);
+        return matches ? Math.max(best, path.length) : best;
+      }, -1);
+      return specificity >= 0 ? { item, index, specificity } : null;
+    })
+    .filter((match): match is { item: NavItem; index: number; specificity: number } => match !== null)
+    .sort((a, b) => b.specificity - a.specificity || a.index - b.index)[0]?.item;
 }
 
 export type ModuleConfig = {
@@ -101,16 +138,16 @@ export const MODULES: Record<ModuleKey, ModuleConfig> = {
     icon: ShoppingCart,
     accent: "#0e9384",
     nav: [
-      { label: "Kasir", href: "/app/pos", icon: ShoppingCart, description: "Mulai transaksi baru", permission: "pos.sell", group: "Harian" },
-      { label: "Riwayat transaksi", href: "/app/pos/riwayat", icon: ReceiptText, permission: "pos.sell", group: "Harian" },
-      { label: "Retur penjualan", href: "/app/pos/retur", icon: RotateCcw, permission: "pos.return", group: "Harian" },
-      { label: "Pesanan ditahan", href: "/app/pos/ditahan", icon: PauseCircle, permission: "pos.sell", group: "Harian" },
-      { label: "Piutang pelanggan", href: "/app/pos/piutang", icon: ReceiptText, permission: "pos.sell", group: "Harian" },
-      { label: "Sesi kas", href: "/app/pos/sesi", icon: Wallet, permission: "pos.session", group: "Kas & Perangkat" },
-      { label: "Riwayat sesi", href: "/app/pos/sesi/riwayat", icon: History, permission: "pos.session", group: "Kas & Perangkat" },
-      { label: "Terminal desktop", href: "/app/pos/terminal", icon: MonitorSmartphone, permission: "pos.session", group: "Kas & Perangkat" },
-      { label: "Peninjauan offline", href: "/app/pos/offline", icon: CloudOff, permission: "pos.sell", group: "Lainnya" },
-      { label: "Kelompok harga", href: "/app/pos/grup", icon: Users, permission: "pos.sell", group: "Lainnya" },
+      { label: "Kasir", href: "/app/pos", icon: ShoppingCart, description: "Mulai transaksi baru", permission: "pos.sell", group: "Penjualan" },
+      { label: "Pesanan ditahan", href: "/app/pos/ditahan", icon: PauseCircle, permission: "pos.sell", group: "Penjualan" },
+      { label: "Riwayat transaksi", href: "/app/pos/riwayat", icon: ReceiptText, permission: "pos.sell", group: "Penjualan" },
+      { label: "Retur penjualan", href: "/app/pos/retur", icon: RotateCcw, permission: "pos.return", group: "Penjualan" },
+      { label: "Piutang pelanggan", href: "/app/pos/piutang", icon: Banknote, permission: "pos.sell", group: "Penjualan" },
+      { label: "Kelompok harga", href: "/app/pos/grup", icon: Users, permission: "pos.sell", group: "Pengaturan penjualan" },
+      { label: "Sesi kas", href: "/app/pos/sesi", icon: Wallet, permission: "pos.session", group: "Sesi & Perangkat" },
+      { label: "Riwayat sesi", href: "/app/pos/sesi/riwayat", icon: History, permission: "pos.session", group: "Sesi & Perangkat" },
+      { label: "Terminal desktop", href: "/app/pos/terminal", icon: MonitorSmartphone, permission: "pos.session", group: "Sesi & Perangkat" },
+      { label: "Peninjauan offline", href: "/app/pos/offline", icon: CloudOff, permission: "pos.sell", group: "Sesi & Perangkat" },
     ],
   },
   gudang: {
@@ -121,30 +158,30 @@ export const MODULES: Record<ModuleKey, ModuleConfig> = {
     href: "/app/gudang",
     icon: Warehouse,
     accent: "#c28b36",
-    // A-24 T3 (SIS-09): sidebar gudang dikelompokkan per jenis kerja
-    // dengan komponen kelompok yang sama seperti akuntansi — Harian
-    // (kerja operasi), Master & Stok, Pembelian — nol href lama
-    // berubah; "Purchase Request" menjadi "Permintaan Pembelian"
-    // (label Indonesia penuh) dan Mode Operasi (pola G1) masuk
-    // kelompok Harian. Impor data tetap berdiri sendiri tanpa grup.
+    // Ringkasan didahulukan; grup kerja mengikuti pengadaan, pemantauan
+    // persediaan, operasi stok, lalu pemeliharaan data. Semua href
+    // dipertahankan agar tautan, akses, dan deep-link yang ada tetap berlaku.
     nav: [
-      { label: "Ringkasan", href: "/app/gudang", icon: LayoutDashboard, permission: "inventory.view", group: "Harian" },
-      { label: "Mode Operasi", href: "/app/gudang/operasi", icon: ScanBarcode, permission: "inventory.view", group: "Harian" },
-      { label: "Penerimaan", href: "/app/gudang/penerimaan", icon: PackageCheck, permission: "inventory.view", group: "Harian" },
-      { label: "Penyesuaian", href: "/app/gudang/penyesuaian", icon: ClipboardList, permission: "inventory.view", group: "Harian" },
-      { label: "Transfer", href: "/app/gudang/transfer", icon: Truck, permission: "inventory.view", group: "Harian" },
-      { label: "Stok opname", href: "/app/gudang/opname", icon: ClipboardCheck, permission: "inventory.view", group: "Harian" },
-      { label: "Produk", href: "/app/gudang/produk", icon: Package, permission: "inventory.view", group: "Master & Stok" },
-      { label: "Pergerakan stok", href: "/app/gudang/pergerakan", icon: Boxes, permission: "inventory.view", group: "Master & Stok" },
-      { label: "Reservasi stok", href: "/app/gudang/reservasi", icon: Bookmark, permission: "inventory.view", group: "Master & Stok" },
-      { label: "Nilai persediaan", href: "/app/gudang/nilai", icon: Calculator, permission: "inventory.view", group: "Master & Stok" },
-      { label: "Permintaan Pembelian", href: "/app/gudang/purchase-request", icon: ClipboardList, permission: "inventory.view", group: "Pembelian" },
-      { label: "Pesanan pembelian", href: "/app/gudang/pembelian", icon: ClipboardList, permission: "inventory.view", group: "Pembelian" },
-      { label: "Uang muka pembelian", href: "/app/gudang/uang-muka", icon: HandCoins, permission: "inventory.view", group: "Pembelian" },
-      { label: "Retur Pembelian", href: "/app/gudang/retur-pembelian", icon: Undo2, permission: "inventory.view", group: "Pembelian" },
-      { label: "Rekomendasi beli", href: "/app/gudang/rekomendasi", icon: Lightbulb, permission: "inventory.view", group: "Pembelian" },
-      { label: "Pemasok & pelanggan", href: "/app/gudang/pemasok", icon: Users, permission: "inventory.view", group: "Pembelian" },
-      { label: "Impor data", href: "/app/gudang/impor", icon: FileSpreadsheet, permission: "import.manage" },
+      { label: "Ringkasan", href: "/app/gudang", icon: LayoutDashboard, permission: "inventory.view" },
+      { label: "Rekomendasi pembelian", href: "/app/gudang/rekomendasi", icon: Lightbulb, permission: "inventory.view", group: "Pengadaan" },
+      { label: "Permintaan pembelian", href: "/app/gudang/purchase-request", icon: ListChecks, permission: "inventory.view", group: "Pengadaan" },
+      { label: "Pesanan pembelian", href: "/app/gudang/pembelian", icon: ShoppingCart, permission: "inventory.view", group: "Pengadaan" },
+      { label: "Penerimaan barang", href: "/app/gudang/penerimaan", icon: PackageCheck, permission: "inventory.view", group: "Pengadaan" },
+      { label: "Riwayat penerimaan", href: "/app/gudang/penerimaan/riwayat", icon: ReceiptText, permission: "inventory.view", group: "Pengadaan" },
+      { label: "Retur pembelian", href: "/app/gudang/retur-pembelian", icon: Undo2, permission: "inventory.view", group: "Pengadaan" },
+      { label: "Uang muka pembelian", href: "/app/gudang/uang-muka", icon: HandCoins, permission: "inventory.view", group: "Pengadaan" },
+      { label: "Pergerakan stok", href: "/app/gudang/pergerakan", icon: Boxes, permission: "inventory.view", group: "Persediaan" },
+      { label: "Reservasi stok", href: "/app/gudang/reservasi", icon: Bookmark, permission: "inventory.view", group: "Persediaan" },
+      { label: "Nilai persediaan", href: "/app/gudang/nilai", icon: Calculator, permission: "inventory.view", group: "Persediaan" },
+      { label: "Mode Operasi", href: "/app/gudang/operasi", icon: ScanBarcode, permission: "inventory.view", group: "Operasi Stok" },
+      { label: "Penyesuaian", href: "/app/gudang/penyesuaian", icon: ClipboardList, permission: "inventory.view", group: "Operasi Stok" },
+      { label: "Transfer", href: "/app/gudang/transfer", icon: Truck, permission: "inventory.view", group: "Operasi Stok" },
+      { label: "Stok opname", href: "/app/gudang/opname", icon: ClipboardCheck, permission: "inventory.view", group: "Operasi Stok" },
+      { label: "Ringkasan data master", href: "/app/gudang/master-data", icon: Database, permission: "inventory.view", group: "Data Master" },
+      { label: "Produk", href: "/app/gudang/produk", icon: Package, permission: "inventory.view", group: "Data Master" },
+      { label: "Pemasok & pelanggan", href: "/app/gudang/pemasok", icon: Users, permission: "inventory.view", group: "Data Master" },
+      { label: "Kategori & satuan", href: "/app/gudang/kategori-satuan", icon: Shapes, permission: "inventory.manage", group: "Data Master" },
+      { label: "Impor data", href: "/app/gudang/impor", icon: FileSpreadsheet, permission: "import.manage", group: "Data Master" },
     ],
   },
   akuntansi: {
@@ -160,31 +197,27 @@ export const MODULES: Record<ModuleKey, ModuleConfig> = {
     // Laporan (pembukuan & pelaporan), Lainnya (master & pengaturan).
     // A-24 T2: grup "SDM & Payroll" yang dulu hidup di sini berpindah
     // apa adanya menjadi nav modul HR (lihat MODULES.hr di bawah).
-    // Overhaul UX (Accurate-like): menu dikelompokkan menurut cara
-    // kerja akuntan minimarket — Dashboard, Kas & Bank, Buku Besar,
-    // Laporan, Setting. Form Beban dan Piutang & Utang yang berdiri
-    // sendiri TIDAK lagi dipromosikan di menu: pencatatan manual lewat
-    // Jurnal Umum, sementara piutang/utang tetap lahir otomatis dari
-    // penjualan/pembelian dan tampil di laporan. Rutenya dipertahankan
-    // untuk kompatibilitas tautan lama.
+    // Menu dikelompokkan menurut pekerjaan akuntansi. Transfer baru tetap
+    // tersedia di Kas & bank; tautan khususnya tidak diduplikasi di sidebar.
+    // Migrasi COA dipisahkan dari pembukuan rutin dan tetap dibatasi izin manage.
+    // Rute Beban dan Piutang & Utang lama dipertahankan untuk kompatibilitas.
     nav: [
-      { label: "Ringkasan", href: "/app/akuntansi", icon: LayoutDashboard, permission: "accounting.view", group: "Dashboard" },
-      { label: "Audit trail", href: "/app/akuntansi/riwayat", icon: History, permission: "accounting.view", group: "Dashboard" },
-      { label: "Kas & bank", href: "/app/akuntansi/bank", icon: Landmark, permission: "accounting.view", group: "Kas & Bank" },
-      { label: "Piutang & utang", href: "/app/akuntansi/piutang-utang", icon: Scale, permission: "accounting.view", group: "Kas & Bank" },
-      { label: "Transfer bank", href: "/app/akuntansi/bank#transfer-bank", icon: ArrowLeftRight, permission: "accounting.view", group: "Kas & Bank" },
-      { label: "Riwayat transfer", href: "/app/akuntansi/bank/transfer", icon: History, permission: "accounting.view", group: "Kas & Bank" },
-      { label: "Rekonsiliasi bank", href: "/app/akuntansi/rekonsiliasi", icon: Scale, permission: "accounting.view", group: "Kas & Bank" },
-      { label: "Jurnal umum", href: "/app/akuntansi/jurnal", icon: BookOpen, permission: "accounting.view", group: "Buku Besar" },
-      { label: "Riwayat jurnal", href: "/app/akuntansi/jurnal/riwayat", icon: History, permission: "accounting.view", group: "Buku Besar" },
-      { label: "Buku besar", href: "/app/akuntansi/buku-besar", icon: NotebookText, permission: "accounting.view", group: "Buku Besar" },
-      { label: "Bagan akun", href: "/app/akuntansi/akun", icon: ListTree, permission: "accounting.view", group: "Buku Besar" },
-      { label: "Aset tetap", href: "/app/akuntansi/aset", icon: Building2, permission: "accounting.view", group: "Buku Besar" },
-      { label: "Laporan", href: "/app/akuntansi/laporan", icon: FileBarChart, permission: "accounting.view", group: "Laporan" },
-      { label: "Pajak (PPN)", href: "/app/akuntansi/pajak", icon: ReceiptText, permission: "accounting.view", group: "Laporan" },
-      { label: "Periode fiskal", href: "/app/akuntansi/periode", icon: CalendarCheck, permission: "accounting.view", group: "Laporan" },
-      { label: "Rekonsiliasi kontrol", href: "/app/akuntansi/rekonsiliasi-kontrol", icon: ClipboardCheck, permission: "accounting.view", group: "Laporan" },
-      { label: "Migrasi bagan akun", href: "/app/akuntansi/migrasi-coa", icon: ArrowLeftRight, permission: "accounting.manage", group: "Pengaturan" },
+      { label: "Ringkasan", href: "/app/akuntansi", icon: LayoutDashboard, permission: "accounting.view", group: "Keuangan harian" },
+      { label: "Kas & bank", href: "/app/akuntansi/bank", icon: Landmark, permission: "accounting.view", group: "Keuangan harian" },
+      { label: "Piutang & utang", href: "/app/akuntansi/piutang-utang", icon: Wallet, permission: "accounting.view", group: "Keuangan harian" },
+      { label: "Riwayat transfer", href: "/app/akuntansi/bank/transfer", icon: ArrowLeftRight, permission: "accounting.view", group: "Keuangan harian" },
+      { label: "Jurnal baru", href: "/app/akuntansi/jurnal", icon: BookOpen, permission: "accounting.post", group: "Pembukuan" },
+      { label: "Riwayat jurnal", href: "/app/akuntansi/jurnal/riwayat", icon: History, permission: "accounting.view", group: "Pembukuan" },
+      { label: "Buku besar", href: "/app/akuntansi/buku-besar", icon: NotebookText, permission: "accounting.view", group: "Pembukuan" },
+      { label: "Aset tetap", href: "/app/akuntansi/aset", icon: Building2, permission: "accounting.view", group: "Pembukuan" },
+      { label: "Bagan akun", href: "/app/akuntansi/akun", icon: ListTree, permission: "accounting.view", group: "Bagan akun & pengaturan" },
+      { label: "Migrasi bagan akun", href: "/app/akuntansi/migrasi-coa", icon: FileSpreadsheet, permission: "accounting.manage", group: "Bagan akun & pengaturan" },
+      { label: "Laporan", href: "/app/akuntansi/laporan", icon: FileBarChart, permission: "accounting.view", group: "Laporan & pengendalian" },
+      { label: "Pajak (PPN)", href: "/app/akuntansi/pajak", icon: ReceiptText, permission: "accounting.view", group: "Laporan & pengendalian" },
+      { label: "Periode fiskal", href: "/app/akuntansi/periode", icon: CalendarCheck, permission: "accounting.view", group: "Laporan & pengendalian" },
+      { label: "Rekonsiliasi bank", href: "/app/akuntansi/rekonsiliasi", icon: Scale, permission: "accounting.view", group: "Laporan & pengendalian" },
+      { label: "Rekonsiliasi kontrol", href: "/app/akuntansi/rekonsiliasi-kontrol", icon: ClipboardCheck, permission: "accounting.view", group: "Laporan & pengendalian" },
+      { label: "Audit trail", href: "/app/akuntansi/riwayat", icon: Activity, permission: "accounting.view", group: "Laporan & pengendalian" },
     ],
   },
   analisa: {
@@ -205,28 +238,15 @@ export const MODULES: Record<ModuleKey, ModuleConfig> = {
   hr: {
     key: "hr",
     name: "HR",
-    tagline: "Karyawan & payroll",
-    description: "Karyawan, absensi, cuti, lembur, kasbon, pinjaman, reimbursement, dan payroll bulanan.",
-    // Modul HR punya beranda sendiri: ringkasan angka tim, kehadiran,
-    // kasbon, dan payroll. Rute lama tetap hidup — karyawan & gaji di
-    // /app/akuntansi/payroll, absensi/cuti/lembur di /app/akuntansi/hr,
-    // dan organisasi kini pindah ke /app/akuntansi/hr/pengaturan.
-    href: "/app/akuntansi/hr",
+    tagline: "Karyawan & operasional tim",
+    description: "Kelola karyawan, gaji, kasbon, dan presensi harian.",
+    href: "/app/akuntansi/payroll",
     icon: Users,
     accent: "#3b6ea5",
     nav: [
-      { label: "Ringkasan", href: "/app/akuntansi/hr", icon: LayoutDashboard, permission: "payroll.view", group: "Dashboard" },
-      { label: "Karyawan & Payroll", href: "/app/akuntansi/payroll", icon: BadgeDollarSign, permission: "payroll.view", group: "Karyawan" },
-      { label: "Absensi", href: "/app/akuntansi/hr/absensi", icon: CalendarCheck, permission: "payroll.view", group: "Karyawan" },
-      { label: "Cuti", href: "/app/akuntansi/hr/cuti", icon: ClipboardList, permission: "payroll.view", group: "Karyawan" },
-      { label: "Lembur & THR", href: "/app/akuntansi/hr/lembur", icon: History, permission: "payroll.view", group: "Karyawan" },
-      // Antrean persetujuan gabungan (cuti, lembur, klaim) — lencana
-      // sidebar menunjuk ke sini.
-      { label: "Persetujuan", href: "/app/akuntansi/hr/persetujuan", icon: ListChecks, permission: "payroll.view", group: "Karyawan" },
-      { label: "Kasbon", href: "/app/akuntansi/kasbon", icon: HandCoins, permission: "payroll.view", group: "Kesejahteraan" },
-      { label: "Pinjaman", href: "/app/akuntansi/pinjaman", icon: Wallet, permission: "payroll.view", group: "Kesejahteraan" },
-      { label: "Klaim reimbursement", href: "/app/akuntansi/klaim", icon: ClipboardCheck, permission: "payroll.view", group: "Kesejahteraan" },
-      { label: "Pengaturan HR", href: "/app/akuntansi/hr/pengaturan", icon: Building2, permission: "payroll.view", group: "Pengaturan" },
+      { label: "Karyawan & gaji", href: "/app/akuntansi/payroll", icon: Users, permission: "payroll.view", group: "Karyawan & gaji", activePaths: ["/app/akuntansi/karyawan"] },
+      { label: "Kasbon", href: "/app/akuntansi/kasbon", icon: HandCoins, permission: "payroll.view", group: "Karyawan & gaji" },
+      { label: "Presensi", href: "/app/akuntansi/hr/absensi", icon: CalendarCheck, permission: "payroll.view", group: "Operasi harian" },
     ],
   },
 };

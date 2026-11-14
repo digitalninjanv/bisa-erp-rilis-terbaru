@@ -5,6 +5,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { withCompany } from "@/db/tenant";
+import { runIdempotentPayment } from "@/server/idempotency";
 
 
 
@@ -40,6 +41,7 @@ import { buildWithholdingInput } from "./shared";
 
 export async function payPayableAction(input: {
   receiptId: string;
+  idempotencyKey: string;
   amount: string | number;
   accountId?: string;
   /** A-21 (R3-02): sumber dana kredit pemasok (pengganti akun). */
@@ -59,6 +61,7 @@ export async function payPayableAction(input: {
     const data = parseInput(
       z.object({
         receiptId: z.string().uuid(),
+        idempotencyKey: z.string().uuid(),
         amount: moneyString("Nominal pembayaran"),
         accountId: z.string().uuid().optional(),
         creditId: z.string().uuid().optional(),
@@ -83,19 +86,28 @@ export async function payPayableAction(input: {
     // Domain di src/server/payables.ts — dipakai bersama pembayaran
     // FIFO modal Catat Transaksi (A-12).
     const result = await withCompany(ctx.company.id, (tx) =>
-      payPayableDocument(tx, {
-        companyId: ctx.company.id,
-        userId: ctx.user.id,
-        receiptId: data.receiptId,
-        date: payDate,
-        amount: data.amount,
-        accountId: data.accountId,
-        creditId: data.creditId,
-        fee: data.fee,
-        withholding: buildWithholdingInput(data),
-        notes: data.notes,
-        reference: data.reference,
-      }),
+      runIdempotentPayment(
+        tx,
+        {
+          companyId: ctx.company.id,
+          key: data.idempotencyKey,
+          request: { kind: "payable", ...data, date: payDate },
+        },
+        () =>
+          payPayableDocument(tx, {
+            companyId: ctx.company.id,
+            userId: ctx.user.id,
+            receiptId: data.receiptId,
+            date: payDate,
+            amount: data.amount,
+            accountId: data.accountId,
+            creditId: data.creditId,
+            fee: data.fee,
+            withholding: buildWithholdingInput(data),
+            notes: data.notes,
+            reference: data.reference,
+          }),
+      ),
     );
 
     revalidatePath("/app/akuntansi/piutang-utang");
@@ -111,6 +123,7 @@ export async function payPayableAction(input: {
  */
 export async function payExpensePayableAction(input: {
   expenseId: string;
+  idempotencyKey: string;
   amount: string | number;
   accountId?: string;
   /** A-21 (R3-02): sumber dana kredit pemasok (pengganti akun). */
@@ -130,6 +143,7 @@ export async function payExpensePayableAction(input: {
     const data = parseInput(
       z.object({
         expenseId: z.string().uuid(),
+        idempotencyKey: z.string().uuid(),
         amount: moneyString("Nominal pembayaran"),
         accountId: z.string().uuid().optional(),
         creditId: z.string().uuid().optional(),
@@ -148,19 +162,28 @@ export async function payExpensePayableAction(input: {
     const payDate = data.date ?? todayISO();
 
     const result = await withCompany(ctx.company.id, (tx) =>
-      payExpensePayable(tx, {
-        companyId: ctx.company.id,
-        userId: ctx.user.id,
-        expenseId: data.expenseId,
-        date: payDate,
-        amount: data.amount,
-        accountId: data.accountId,
-        creditId: data.creditId,
-        fee: data.fee,
-        withholding: buildWithholdingInput(data),
-        notes: data.notes,
-        reference: data.reference,
-      }),
+      runIdempotentPayment(
+        tx,
+        {
+          companyId: ctx.company.id,
+          key: data.idempotencyKey,
+          request: { kind: "expense-payable", ...data, date: payDate },
+        },
+        () =>
+          payExpensePayable(tx, {
+            companyId: ctx.company.id,
+            userId: ctx.user.id,
+            expenseId: data.expenseId,
+            date: payDate,
+            amount: data.amount,
+            accountId: data.accountId,
+            creditId: data.creditId,
+            fee: data.fee,
+            withholding: buildWithholdingInput(data),
+            notes: data.notes,
+            reference: data.reference,
+          }),
+      ),
     );
 
     revalidatePath("/app/akuntansi/piutang-utang");

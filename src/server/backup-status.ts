@@ -9,7 +9,7 @@ import path from "node:path";
  * - `backup-manifest.json` ditulis `scripts/backup.sh` setiap backup
  *   berhasil (nama berkas, waktu selesai, ukuran, sha256, enkripsi).
  * - `restore-drill-manifest.json` ditulis `scripts/restore-drill.sh`
- *   setiap latihan restore (angka verifikasi sumber vs hasil restore).
+ *   setiap latihan restore (v2 berisi pemeriksaan hasil restore; v1 tetap dibaca).
  *
  * Modul ini HANYA membaca berkas itu. Tanpa manifest, statusnya
  * "missing" — aplikasi tidak pernah mengarang backup yang tidak
@@ -29,11 +29,20 @@ export type BackupManifest = {
   encrypted: boolean;
 };
 
-export type RestoreDrillChecks = {
+export type RestoreDrillChecksLegacy = {
   accounts: { source: number; restored: number };
   products: { source: number; restored: number };
   inventoryValue: { source: string; restored: string };
   trialBalanceDifference: { source: string; restored: string };
+};
+
+export type RestoreDrillChecks = {
+  accounts: number;
+  products: number;
+  inventoryValue: string;
+  postedJournals: number;
+  unbalancedJournals: number;
+  orphanJournalLines: number;
 };
 
 export type RestoreDrillManifest = {
@@ -42,7 +51,7 @@ export type RestoreDrillManifest = {
   sourceFile: string;
   targetDatabase: string;
   ok: boolean;
-  checks: RestoreDrillChecks;
+  checks: RestoreDrillChecks | RestoreDrillChecksLegacy;
 };
 
 export type BackupFreshness = "fresh" | "stale" | "missing";
@@ -52,7 +61,12 @@ export type BackupStatus = {
   manifestDir: string;
   maxAgeHours: number;
   drillMaxAgeDays: number;
-  backup: { state: BackupFreshness; manifest: BackupManifest | null; ageHours: number | null };
+  backup: {
+    state: BackupFreshness;
+    manifest: BackupManifest | null;
+    ageHours: number | null;
+    artifactAvailable: boolean | null;
+  };
   drill: { state: DrillFreshness; manifest: RestoreDrillManifest | null; ageDays: number | null };
 };
 
@@ -66,7 +80,10 @@ function parseBackupManifest(raw: unknown): BackupManifest | null {
     typeof raw.file !== "string" ||
     typeof raw.finishedAt !== "string" ||
     typeof raw.sizeBytes !== "number" ||
+    !Number.isSafeInteger(raw.sizeBytes) ||
+    raw.sizeBytes <= 0 ||
     typeof raw.sha256 !== "string" ||
+    !/^[a-f0-9]{64}$/i.test(raw.sha256) ||
     typeof raw.encrypted !== "boolean" ||
     Number.isNaN(Date.parse(raw.finishedAt))
   ) {
@@ -85,6 +102,42 @@ function parseBackupManifest(raw: unknown): BackupManifest | null {
 function parseDrillManifest(raw: unknown): RestoreDrillManifest | null {
   if (!isRecord(raw) || !isRecord(raw.checks)) return null;
   const { checks } = raw;
+  const version = typeof raw.version === "number" ? raw.version : 0;
+  if (version >= 2) {
+    const validCount = (value: unknown): value is number =>
+      typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+    if (
+      typeof raw.at !== "string" ||
+      typeof raw.sourceFile !== "string" ||
+      typeof raw.targetDatabase !== "string" ||
+      typeof raw.ok !== "boolean" ||
+      Number.isNaN(Date.parse(raw.at)) ||
+      !validCount(checks.accounts) ||
+      !validCount(checks.products) ||
+      typeof checks.inventoryValue !== "string" ||
+      !validCount(checks.postedJournals) ||
+      !validCount(checks.unbalancedJournals) ||
+      !validCount(checks.orphanJournalLines)
+    ) {
+      return null;
+    }
+    return {
+      version,
+      at: raw.at,
+      sourceFile: raw.sourceFile,
+      targetDatabase: raw.targetDatabase,
+      ok: raw.ok,
+      checks: {
+        accounts: checks.accounts,
+        products: checks.products,
+        inventoryValue: checks.inventoryValue,
+        postedJournals: checks.postedJournals,
+        unbalancedJournals: checks.unbalancedJournals,
+        orphanJournalLines: checks.orphanJournalLines,
+      },
+    };
+  }
+
   const pair = (value: unknown): { source: number; restored: number } | null =>
     isRecord(value) && typeof value.source === "number" && typeof value.restored === "number"
       ? { source: value.source, restored: value.restored }
@@ -111,7 +164,7 @@ function parseDrillManifest(raw: unknown): RestoreDrillManifest | null {
     return null;
   }
   return {
-    version: typeof raw.version === "number" ? raw.version : 0,
+    version,
     at: raw.at,
     sourceFile: raw.sourceFile,
     targetDatabase: raw.targetDatabase,
@@ -123,21 +176,36 @@ function parseDrillManifest(raw: unknown): RestoreDrillManifest | null {
 /** Penilaian murni atas isi manifest — terpisah agar teruji unit. */
 export function evaluateBackupStatus(input: {
   backupManifest: BackupManifest | null;
+  backupArtifactAvailable?: boolean;
   drillManifest: RestoreDrillManifest | null;
   now: Date;
   maxAgeHours: number;
   drillMaxAgeDays: number;
   manifestDir: string;
 }): BackupStatus {
-  const { backupManifest, drillManifest, now, maxAgeHours, drillMaxAgeDays, manifestDir } = input;
+  const {
+    backupManifest,
+    backupArtifactAvailable = true,
+    drillManifest,
+    now,
+    maxAgeHours,
+    drillMaxAgeDays,
+    manifestDir,
+  } = input;
 
-  let backup: BackupStatus["backup"] = { state: "missing", manifest: null, ageHours: null };
+  let backup: BackupStatus["backup"] = {
+    state: "missing",
+    manifest: null,
+    ageHours: null,
+    artifactAvailable: null,
+  };
   if (backupManifest) {
     const ageHours = (now.getTime() - Date.parse(backupManifest.finishedAt)) / 3_600_000;
     backup = {
-      state: ageHours <= maxAgeHours ? "fresh" : "stale",
+      state: !backupArtifactAvailable ? "missing" : ageHours <= maxAgeHours ? "fresh" : "stale",
       manifest: backupManifest,
       ageHours,
+      artifactAvailable: backupArtifactAvailable,
     };
   }
 
@@ -164,6 +232,20 @@ async function readManifest<T>(filePath: string, parse: (raw: unknown) => T | nu
   }
 }
 
+async function backupArtifactAvailable(manifestDir: string, manifest: BackupManifest | null): Promise<boolean> {
+  if (!manifest || path.basename(manifest.file) !== manifest.file) return false;
+  if (!/^bisa-[\w.-]+\.dump(?:\.enc)?$/.test(manifest.file)) return false;
+  const directory = path.resolve(manifestDir);
+  const filePath = path.resolve(directory, manifest.file);
+  if (path.dirname(filePath) !== directory) return false;
+  try {
+    const artifact = await fs.lstat(filePath);
+    return artifact.isFile() && artifact.size === manifest.sizeBytes;
+  } catch {
+    return false;
+  }
+}
+
 function envPositiveNumber(name: string, fallback: number): number {
   const raw = process.env[name];
   if (!raw) return fallback;
@@ -184,8 +266,10 @@ export async function getBackupStatus(options?: {
     readManifest(path.join(manifestDir, "backup-manifest.json"), parseBackupManifest),
     readManifest(path.join(manifestDir, "restore-drill-manifest.json"), parseDrillManifest),
   ]);
+  const artifactAvailable = await backupArtifactAvailable(manifestDir, backupManifest);
   return evaluateBackupStatus({
     backupManifest,
+    backupArtifactAvailable: artifactAvailable,
     drillManifest,
     now: options?.now ?? new Date(),
     maxAgeHours: envPositiveNumber("BISA_BACKUP_MAX_AGE_HOURS", 26),

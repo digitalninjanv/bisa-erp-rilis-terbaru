@@ -8,6 +8,7 @@ import { MODULE_LIST, MODULES, type ModuleKey } from "@/lib/modules";
 import { singleModuleLanding } from "@/lib/landing";
 import { requireAuth } from "@/lib/session";
 import { can } from "@/lib/permissions";
+import { resolveHomeDashboardScope } from "@/lib/home-dashboard-scope";
 import { withCompanyReadOnly } from "@/db/tenant";
 import {
   getHomeSummary,
@@ -79,22 +80,30 @@ export default async function AppHomePage({
   // modul yang benar-benar bisa diakses pengguna ini.
   const visibleKeys = new Set<ModuleKey>(visibleModules.map((module) => module.key));
   const canSeePos = visibleKeys.has("pos");
-  const canSeeGudang = visibleKeys.has("gudang");
-  const canSeeAkuntansi = visibleKeys.has("akuntansi");
+  const canSeeGudang = visibleKeys.has("gudang") && can(ctx, "inventory.view");
+  const canSeeAkuntansi = visibleKeys.has("akuntansi") && can(ctx, "accounting.view");
   const canSeeHr = visibleKeys.has("hr");
-  const canSeeCost = can(ctx, "inventory.cost");
+  const canSeeCost = canSeeGudang && can(ctx, "inventory.cost");
+  const canSeePosSales = canSeePos && can(ctx, "pos.sell");
+  const summaryScope = resolveHomeDashboardScope({
+    canSeePosSales,
+    canSeeInventory: canSeeGudang,
+    canSeeInventoryCost: canSeeCost,
+    canSeeAccounting: canSeeAkuntansi,
+    canSeePosSession: canSeePos && can(ctx, "pos.session"),
+  });
 
   const data = await withCompanyReadOnly(ctx.company.id, async (tx) => {
     const [summary, recent, trendRows, topProducts, periodSummary, staff] = await Promise.all([
-      getHomeSummary(tx, ctx.company.id, today),
-      listSales(tx, { companyId: ctx.company.id, pageSize: 6 }),
-      canSeePos
+      getHomeSummary(tx, ctx.company.id, today, summaryScope),
+      canSeePosSales ? listSales(tx, { companyId: ctx.company.id, pageSize: 6 }) : Promise.resolve(null),
+      canSeePosSales
         ? getSalesByDay(tx, ctx.company.id, { from, to })
         : Promise.resolve([]),
-      canSeePos
+      canSeePosSales
         ? getTopProducts(tx, ctx.company.id, { from, to }, 6)
         : Promise.resolve([]),
-      canSeePos
+      canSeePosSales
         ? getSalesSummary(tx, ctx.company.id, { from, to })
         : Promise.resolve(null),
       // A-24 T2: statistik kartu HR hanya dibaca bila modul HR memang
@@ -112,7 +121,7 @@ export default async function AppHomePage({
         transactions: row?.transactions ?? 0,
       });
     }
-    return { summary, recent: recent.rows, trend, topProducts, periodSummary, staff };
+    return { summary, recent: recent?.rows ?? [], trend, topProducts, periodSummary, staff };
   });
 
   const { summary } = data;
@@ -138,7 +147,7 @@ export default async function AppHomePage({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {canSeePos && ctx.permissions.includes("pos.session") ? (
+            {canSeePos && can(ctx, "pos.session") ? (
               summary.openSession ? (
                 <span className="inline-flex items-center gap-1.5 rounded-md border border-tone-teal/25 bg-tone-teal-soft px-2.5 py-1.5 text-[11px] font-medium text-tone-teal">
                   <span className="size-1.5 rounded-full bg-tone-teal" /> Sesi kas terbuka
@@ -167,7 +176,7 @@ export default async function AppHomePage({
             teal/plum/amber/green di sini dekoratif, bukan bermakna
             (arah desain §2.1: satu gaya netral untuk semua kartu). */}
         <div className="mt-5 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-          {canSeePos ? (
+          {canSeePosSales ? (
             <StatCard
               label="Penjualan hari ini"
               value={formatIDR(summary.todaySales)}
@@ -175,7 +184,7 @@ export default async function AppHomePage({
               icon={Banknote}
             />
           ) : null}
-          {canSeePos ? (
+          {canSeePosSales ? (
             <StatCard
               label={`Penjualan ${periodShortLabel}`}
               value={formatIDR(data.periodSummary?.total ?? 0)}
@@ -183,7 +192,7 @@ export default async function AppHomePage({
               icon={ReceiptText}
             />
           ) : null}
-          {canSeePos ? (
+          {canSeePosSales ? (
             <StatCard
               label={`Transaksi ${periodShortLabel}`}
               value={formatNumber(data.periodSummary?.transactions ?? 0)}
@@ -227,7 +236,7 @@ export default async function AppHomePage({
           </div>
         ) : null}
 
-        {canSeePos ? (
+        {canSeePosSales ? (
           <>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-2.5">
               <div className="flex flex-wrap items-center gap-1.5">
@@ -349,7 +358,7 @@ export default async function AppHomePage({
         <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           {visibleModules.map((module) => {
             const Icon = module.icon;
-            const meta = moduleStats(module.key, summary, data.staff);
+            const meta = moduleStats(module.key, summary, data.staff, canSeeCost);
             return (
               <Link
                 key={module.key}
@@ -386,15 +395,15 @@ export default async function AppHomePage({
         </div>
         )}
 
-        {canSeePos || canSeeGudang || canSeeAkuntansi ? (
+        {canSeePosSales || canSeeGudang || canSeeAkuntansi ? (
         <div
           className={
-            canSeePos
+            canSeePosSales
               ? "mt-6 grid gap-3 lg:grid-cols-[minmax(0,1fr)_330px]"
               : "mt-6 grid gap-3 lg:max-w-[420px]"
           }
         >
-          {canSeePos ? (
+          {canSeePosSales ? (
           <section className="min-w-0 overflow-hidden rounded-lg border border-border bg-card">
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
               <div>
@@ -450,7 +459,7 @@ export default async function AppHomePage({
           ) : null}
 
           <aside className="space-y-3">
-            {canSeePos || canSeeGudang ? (
+            {canSeePosSales || canSeeGudang ? (
               <div className="rounded-lg border border-border bg-card p-4">
                 <h2 className="text-[13px] font-semibold">Perlu perhatian</h2>
                 <ul className="mt-2 space-y-2.5">
@@ -462,7 +471,7 @@ export default async function AppHomePage({
                       tone={summary.lowStockCount > 0 ? "red" : "neutral"}
                     />
                   ) : null}
-                  {canSeePos ? (
+                  {canSeePos && can(ctx, "pos.session") ? (
                     <Attention
                       label="Sesi kas"
                       value={summary.openSession ? "Sedang berjalan" : "Belum dibuka"}
@@ -470,7 +479,7 @@ export default async function AppHomePage({
                       tone={summary.openSession ? "green" : "amber"}
                     />
                   ) : null}
-                  {canSeePos ? (
+                  {canSeePosSales ? (
                     <Attention label="Pesanan ditahan" value="Lihat daftar" href="/app/pos/ditahan" />
                   ) : null}
                   {canSeeGudang ? (
@@ -486,7 +495,7 @@ export default async function AppHomePage({
                 {(
                   [
                     ["Mulai transaksi kasir", "/app/pos", canSeePos && ctx.permissions.includes("pos.sell")],
-                    ["Terima barang masuk", "/app/gudang/penerimaan", canSeeGudang],
+                    ["Terima barang masuk", "/app/gudang/penerimaan", canSeeGudang && can(ctx, "inventory.manage")],
                     ["Catat beban / jurnal", "/app/akuntansi/jurnal/baru", ctx.permissions.includes("accounting.post")],
                     ["Lihat laporan keuangan", "/app/akuntansi/laporan", canSeeAkuntansi],
                     // A-24 T1 (SIS-11): Pengaturan kini dunia sendiri —
@@ -549,6 +558,7 @@ function moduleStats(
   key: ModuleKey,
   summary: Awaited<ReturnType<typeof getHomeSummary>>,
   staff: Awaited<ReturnType<typeof listEmployees>> = [],
+  canSeeCost = false,
 ) {
   if (key === "pos") {
     return [
@@ -558,7 +568,7 @@ function moduleStats(
   }
   if (key === "gudang") {
     return [
-      { label: "Persediaan (GL)", value: formatIDR(summary.inventoryValue) },
+      ...(canSeeCost ? [{ label: "Persediaan (GL)", value: formatIDR(summary.inventoryValue) }] : []),
       { label: "Stok tipis", value: `${summary.lowStockCount} SKU` },
     ];
   }

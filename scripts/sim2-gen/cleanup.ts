@@ -1,64 +1,98 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import postgres from "postgres";
+import { configureVitestDatabase } from "../../tests/vitest-db-guard.mjs";
 
 /**
- * SIM-2 S4 — menghapus perusahaan benchmark yang dibuat generate.ts.
- * Menemukan semua tabel publik berkolom company_id dan menghapus baris
- * milik perusahaan benchmark saja, lalu menghapus organization/member.
- * Teardown memakai session_replication_role='replica' pada koneksi
- * owner: jurnal posted & stock_movements dilindungi trigger append-only
- * yang memang melarang DELETE biasa, dan FK antar-tabel perusahaan
- * membuat urutan hapus tidak bebas. Ini aman di sini karena (1) hanya
- * berjalan dengan kredensial owner atas perusahaan sintetis milik
- * benchmark ini sendiri, (2) filter company_id tetap diterapkan di
- * setiap DELETE. Perusahaan lain tidak disentuh.
- *
- * Jalan:  pnpm tsx --env-file=.env.local scripts/sim2-gen/cleanup.ts --scale=A
- *         pnpm tsx --env-file=.env.local scripts/sim2-gen/cleanup.ts --scale=ALL
+ * SIM-2 S4 — cleanup perusahaan sintetis benchmark.
+ * Wajib memakai BISA_TEST_DATABASE_URL / BISA_TEST_DIRECT_URL.
+ * Default hanya menghitung kandidat; --apply menghapus secara atomik.
+ * Contoh: pnpm exec tsx scripts/sim2-gen/cleanup.ts --scale=A --apply
  */
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+configureVitestDatabase(["tests/integration/sim2-cleanup"], process.env, root);
 
-const url = process.env.DIRECT_URL ?? process.env.DATABASE_URL;
-if (!url) throw new Error("DIRECT_URL/DATABASE_URL tidak ter-set");
-const sql = postgres(url, { max: 1 });
+const directUrl = process.env.BISA_TEST_DIRECT_URL;
+if (!directUrl) throw new Error("BISA_TEST_DIRECT_URL wajib menunjuk database sintetis khusus.");
 
 const COMPANIES: Record<string, string> = {
   A: "01900000-0000-7000-8000-00000000bea1",
   B: "01900000-0000-7000-8000-00000000bea2",
 };
+const args = process.argv.slice(2);
+const apply = args.includes("--apply");
+const scaleArgs = args.filter((arg) => arg.startsWith("--scale="));
+const unknownArgs = args.filter((arg) => arg !== "--apply" && !arg.startsWith("--scale="));
+if (unknownArgs.length > 0 || scaleArgs.length > 1) {
+  throw new Error("Argumen valid: --scale=A|B|ALL dan --apply (opsional; default dry-run).");
+}
+const scale = scaleArgs[0]?.slice("--scale=".length) ?? "A";
+const targets = scale === "ALL" ? Object.values(COMPANIES) : [COMPANIES[scale]];
+if (targets.some((companyId) => !companyId)) {
+  throw new Error(`Skala tidak dikenal: ${scale}. Pilih A, B, atau ALL.`);
+}
+
+const target = new URL(directUrl);
+console.log(`Target test DB: ${target.hostname}/${decodeURIComponent(target.pathname.slice(1))}`);
+console.log(`Perusahaan benchmark: ${scale}`);
+if (!apply) console.log("MODE DRY-RUN: tidak ada baris yang akan dihapus. Tambahkan --apply untuk menerapkan.");
+
+const sql = postgres(directUrl, { max: 1 });
 
 async function cleanupCompany(companyId: string) {
-  const tables = await sql`
-    select table_name from information_schema.columns
-    where table_schema = 'public' and column_name = 'company_id'
-    group by table_name order by table_name`;
-  let total = 0;
-  await sql`set session_replication_role = 'replica'`;
-  try {
+  await sql.begin(async (tx) => {
+    const tables = await tx`
+      select t.table_name
+      from information_schema.tables t
+      where t.table_schema = 'public' and t.table_type = 'BASE TABLE'
+        and exists (
+          select 1 from information_schema.columns c
+          where c.table_schema = t.table_schema
+            and c.table_name = t.table_name and c.column_name = 'company_id'
+        )
+      order by t.table_name`;
+
+    if (apply) await tx`set local session_replication_role = 'replica'`;
+    let total = 0;
     for (const { table_name } of tables) {
-      const res = await sql`
-        delete from ${sql(table_name)} where company_id = ${companyId}`;
-      if (res.count > 0) {
-        total += res.count;
-        console.log(`  ${table_name}: ${res.count} baris terhapus`);
+      const [count] = await tx`
+        select count(*)::int as count from ${tx(table_name)} where company_id = ${companyId}`;
+      const rows = Number(count.count);
+      if (rows > 0) {
+        total += rows;
+        if (apply) {
+          const deleted = await tx`
+            delete from ${tx(table_name)} where company_id = ${companyId}`;
+          console.log(`  ${table_name}: ${deleted.count} baris dihapus`);
+        } else {
+          console.log(`  ${table_name}: ${rows} kandidat`);
+        }
       }
     }
-    await sql`delete from member where organization_id = ${companyId}`;
-    await sql`delete from organization where id = ${companyId}`;
-  } finally {
-    await sql`set session_replication_role = 'origin'`;
-  }
-  console.log(`Perusahaan ${companyId}: total ${total} baris perusahaan terhapus.`);
+
+    const [memberCount] = await tx`select count(*)::int as count from member where organization_id = ${companyId}`;
+    const [organizationCount] = await tx`select count(*)::int as count from organization where id = ${companyId}`;
+    total += Number(memberCount.count) + Number(organizationCount.count);
+    if (apply) {
+      await tx`delete from member where organization_id = ${companyId}`;
+      await tx`delete from organization where id = ${companyId}`;
+    } else {
+      if (Number(memberCount.count) > 0) console.log(`  member: ${memberCount.count} kandidat`);
+      if (Number(organizationCount.count) > 0) console.log(`  organization: ${organizationCount.count} kandidat`);
+    }
+    console.log(`Perusahaan ${companyId}: ${apply ? "terhapus" : "kandidat"} ${total} baris.`);
+  });
 }
 
 async function main() {
-  const arg = (process.argv.find((a) => a.startsWith("--scale=")) ?? "--scale=A").split("=")[1];
-  const targets = arg === "ALL" ? Object.values(COMPANIES) : [COMPANIES[arg]];
-  if (targets.some((t) => !t)) throw new Error(`Skala tidak dikenal: ${arg}`);
   for (const companyId of targets) await cleanupCompany(companyId);
-  await sql.end();
 }
 
-main().catch(async (err) => {
-  console.error(err);
-  await sql.end({ timeout: 1 }).catch(() => undefined);
-  process.exit(1);
-});
+main()
+  .catch((error: unknown) => {
+    console.error("Cleanup benchmark gagal; transaksi perusahaan yang sedang diproses dibatalkan:", error);
+    process.exitCode = 1;
+  })
+  .finally(async () => {
+    await sql.end({ timeout: 1 });
+  });

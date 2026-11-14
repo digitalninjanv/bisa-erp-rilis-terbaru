@@ -19,7 +19,7 @@ import {
   removeCompanyUserAction,
   resetUserPasswordAction,
   saveCompanyRoleAction,
-  updateUserRoleAction,
+  updateUserRolesBatchAction,
 } from "@/server/actions/users";
 
 export type UserRow = {
@@ -121,9 +121,8 @@ function UsersPanel({
   const [busy, setBusy] = useState<string | null>(null);
   const [removingUser, setRemovingUser] = useState<UserRow | null>(null);
 
-  // A-25 U6 (POLA-05/PNG-06): tombol Simpan peran per baris dibuang —
-  // perubahan peran semua pengguna tersimpan lewat satu saver seksi
-  // SettingsLayout yang memanggil updateUserRoleAction yang sama
+  // A-25 U6 (POLA-05/PNG-06, diperkuat MD-03): perubahan peran semua pengguna
+  // tersimpan atomik dalam satu transaksi via updateUserRolesBatchAction
   // (aturan owner/diri sendiri tidak berubah: baris diri sendiri
   // tetap terkunci dan tidak pernah ikut tersimpan).
   async function saveAllRoles() {
@@ -132,19 +131,18 @@ function UsersPanel({
         user.userId !== currentUserId &&
         (roleDraft[user.userId] ?? user.role) !== user.role,
     );
-    let failed = false;
-    for (const user of changed) {
-      const result = await updateUserRoleAction({
-        userId: user.userId,
-        role: roleDraft[user.userId] ?? user.role,
-      });
-      if (!result.ok) {
-        toast.error(result.message);
-        failed = true;
-      }
+    if (changed.length === 0) return;
+    const updates = changed.map((user) => ({
+      userId: user.userId,
+      role: roleDraft[user.userId] ?? user.role,
+    }));
+    const result = await updateUserRolesBatchAction({ updates });
+    if (!result.ok) {
+      toast.error(result.message);
+      throw new Error(result.message);
     }
-    if (failed) throw new Error("Sebagian peran gagal disimpan.");
-    if (changed.length > 0) router.refresh();
+    toast.success("Perubahan peran berhasil disimpan.");
+    router.refresh();
   }
 
   const { setDirty } = useSettingsSection("peran-pengguna", saveAllRoles);

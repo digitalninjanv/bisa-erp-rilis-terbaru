@@ -24,7 +24,7 @@ export const metadata = { title: "Piutang & utang" };
 export const dynamic = "force-dynamic";
 
 type Tab = "piutang" | "utang";
-type DueFilter = "" | "terlambat" | "segera";
+type DueFilter = "" | "terlambat" | "segera" | "jatuh-tempo";
 
 const SOURCE_LABELS: Record<string, string> = {
   document: "Dokumen",
@@ -72,7 +72,9 @@ export default async function ReceivablePayablePage({
   const params = await searchParams;
   const tab: Tab = params.tab === "utang" ? "utang" : "piutang";
   const status: DueFilter =
-    params.status === "terlambat" || params.status === "segera" ? params.status : "";
+    params.status === "terlambat" || params.status === "segera" || params.status === "jatuh-tempo"
+      ? params.status
+      : "";
   const q = params.q?.trim().toLowerCase() ?? "";
   const today = todayISO();
 
@@ -131,7 +133,9 @@ export default async function ReceivablePayablePage({
   const soonTotal = soon.reduce((acc, row) => acc + row.outstanding, 0);
 
   const rows = allRows.filter((row) => {
-    if (status && dueState(row.dueDate) !== status) return false;
+    if (status === "jatuh-tempo") {
+      if (!row.dueDate || row.dueDate > addDaysISO(today, 7)) return false;
+    } else if (status && dueState(row.dueDate) !== status) return false;
     if (!q) return true;
     return (
       row.number.toLowerCase().includes(q) ||
@@ -231,6 +235,7 @@ export default async function ReceivablePayablePage({
                   { label: "Semua", value: "" },
                   { label: "Lewat jatuh tempo", value: "terlambat" },
                   { label: "Jatuh tempo ≤ 7 hari", value: "segera" },
+                  { label: "Semua jatuh tempo", value: "jatuh-tempo" },
                 ]}
                 value={status}
                 basePath="/app/akuntansi/piutang-utang"

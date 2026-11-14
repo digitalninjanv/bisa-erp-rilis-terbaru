@@ -7,6 +7,7 @@ import { sql } from "drizzle-orm";
 import {
   boolean,
   date,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -72,7 +73,10 @@ export const accounts = pgTable(
     isActive: boolean("is_active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("accounts_company_code_uq").on(t.companyId, t.code)],
+  (t) => [
+    uniqueIndex("accounts_company_code_uq").on(t.companyId, t.code),
+    uniqueIndex("accounts_company_id_id_uq").on(t.companyId, t.id),
+  ],
 );
 export const accountMappings = pgTable(
   "account_mappings",
@@ -118,6 +122,7 @@ export const journalEntries = pgTable(
   (t) => [
     uniqueIndex("journal_entries_company_number_uq").on(t.companyId, t.number),
     uniqueIndex("journal_entries_company_idem_uq").on(t.companyId, t.idempotencyKey),
+    uniqueIndex("journal_entries_company_id_id_uq").on(t.companyId, t.id),
     index("journal_entries_company_date_idx").on(t.companyId, t.date),
     index("journal_entries_company_source_idx").on(t.companyId, t.sourceType, t.sourceId),
     // SIM-2 S4 (PERF-03): indeks trigram untuk pencarian ilike jurnal
@@ -134,12 +139,8 @@ export const journalLines = pgTable(
   {
     id: uuid("id").primaryKey().default(sql`uuidv7()`),
     companyId: text("company_id").notNull(),
-    entryId: uuid("entry_id")
-      .notNull()
-      .references(() => journalEntries.id, { onDelete: "cascade" }),
-    accountId: uuid("account_id")
-      .notNull()
-      .references(() => accounts.id),
+    entryId: uuid("entry_id").notNull(),
+    accountId: uuid("account_id").notNull(),
     debit: numeric("debit", { precision: 19, scale: 4 }).notNull().default("0"),
     credit: numeric("credit", { precision: 19, scale: 4 }).notNull().default("0"),
     description: text("description"),
@@ -148,6 +149,16 @@ export const journalLines = pgTable(
     lineNo: integer("line_no").notNull().default(0),
   },
   (t) => [
+    foreignKey({
+      name: "journal_lines_company_entry_fk",
+      columns: [t.companyId, t.entryId],
+      foreignColumns: [journalEntries.companyId, journalEntries.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "journal_lines_company_account_fk",
+      columns: [t.companyId, t.accountId],
+      foreignColumns: [accounts.companyId, accounts.id],
+    }),
     index("journal_lines_entry_idx").on(t.entryId),
     index("journal_lines_company_account_idx").on(t.companyId, t.accountId),
   ],
@@ -169,15 +180,18 @@ export const accountMonthlyBalances = pgTable(
   {
     id: uuid("id").primaryKey().default(sql`uuidv7()`),
     companyId: text("company_id").notNull(),
-    accountId: uuid("account_id")
-      .notNull()
-      .references(() => accounts.id),
+    accountId: uuid("account_id").notNull(),
     yearMonth: text("year_month").notNull(), // 'YYYY-MM' dari tanggal jurnal
     totalDebit: numeric("total_debit", { precision: 19, scale: 4 }).notNull().default("0"),
     totalCredit: numeric("total_credit", { precision: 19, scale: 4 }).notNull().default("0"),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    foreignKey({
+      name: "account_monthly_balances_company_account_fk",
+      columns: [t.companyId, t.accountId],
+      foreignColumns: [accounts.companyId, accounts.id],
+    }),
     uniqueIndex("account_monthly_balances_company_account_month_uq").on(
       t.companyId,
       t.accountId,

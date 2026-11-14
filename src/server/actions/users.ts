@@ -194,6 +194,90 @@ export async function updateUserRoleAction(input: { userId: string; role: string
   });
 }
 
+export async function updateUserRolesBatchAction(input: {
+  updates: { userId: string; role: string }[];
+}) {
+  return guard(async () => {
+    const ctx = await requirePermission("users.manage");
+    requireFreshSession(ctx);
+    const data = parseInput(
+      z.object({
+        updates: z
+          .array(
+            z.object({
+              userId: z.string().min(1, "Pengguna tidak valid."),
+              role: roleKeySchema,
+            }),
+          )
+          .min(1, "Daftar perubahan peran kosong."),
+      }),
+      input,
+    );
+
+    for (const item of data.updates) {
+      if (item.userId === ctx.user.id) {
+        throw new AppError("VALIDATION", "Tidak bisa mengubah peran akun sendiri.");
+      }
+      assertCanAssignRole(ctx.role, item.role);
+    }
+
+    await withCompany(ctx.company.id, async (tx) => {
+      const uniqueRoles = [...new Set(data.updates.map((u) => u.role))];
+      for (const r of uniqueRoles) {
+        await assertRoleExists(tx, ctx.company.id, r);
+      }
+
+      const [ownersCountRow] = await tx
+        .select({ value: sql<number>`count(*)::int` })
+        .from(member)
+        .where(and(eq(member.organizationId, ctx.company.id), eq(member.role, "owner")));
+      let remainingOwners = ownersCountRow?.value ?? 0;
+
+      for (const item of data.updates) {
+        const [target] = await tx
+          .select({ role: member.role })
+          .from(member)
+          .where(and(eq(member.organizationId, ctx.company.id), eq(member.userId, item.userId)))
+          .limit(1);
+        if (!target) throw new AppError("NOT_FOUND", `Anggota dengan ID ${item.userId} tidak ditemukan.`);
+        if (target.role === "owner" && ctx.role !== "owner") {
+          throw new AppError("FORBIDDEN", "Hanya owner yang dapat mengubah peran owner.");
+        }
+        if (target.role === "owner" && item.role !== "owner") {
+          remainingOwners -= 1;
+        } else if (target.role !== "owner" && item.role === "owner") {
+          remainingOwners += 1;
+        }
+      }
+
+      if (remainingOwners < 1) {
+        throw new AppError("VALIDATION", "Minimal harus ada satu owner di perusahaan.");
+      }
+
+      for (const item of data.updates) {
+        const [row] = await tx
+          .update(member)
+          .set({ role: item.role })
+          .where(and(eq(member.organizationId, ctx.company.id), eq(member.userId, item.userId)))
+          .returning({ id: member.id });
+        if (row) {
+          await writeAudit(tx, {
+            companyId: ctx.company.id,
+            userId: ctx.user.id,
+            action: "user.role.update",
+            entityType: "member",
+            entityId: row.id,
+            after: { userId: item.userId, role: item.role },
+          });
+        }
+      }
+    });
+
+    revalidatePath("/app/pengaturan/pengguna");
+    return data;
+  });
+}
+
 export async function resetUserPasswordAction(input: { userId: string; password: string }) {
   return guard(async () => {
     const ctx = await requirePermission("users.manage");

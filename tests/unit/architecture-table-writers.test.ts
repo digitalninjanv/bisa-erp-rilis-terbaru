@@ -144,6 +144,7 @@ const FROZEN: Record<string, string[]> = {
     "server/reservations.ts",
   ],
   stockReceipts: [
+    "server/inventory/receipt-invoice.ts",
     "server/inventory/receipt-void.ts",
     "server/inventory/receipts.ts",
     "server/master-data/merge.ts",

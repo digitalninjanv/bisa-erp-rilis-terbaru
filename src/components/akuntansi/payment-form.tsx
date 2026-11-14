@@ -211,10 +211,10 @@ export function PaymentForm({
       kind === "receivable"
         ? await payReceivableAction({ saleId: id, amount, ...fundingInput, ...feeInput, date, notes: notes || undefined, reference: reference.trim() || undefined, idempotencyKey: paymentKey || undefined })
         : kind === "payable"
-          ? await payPayableAction({ receiptId: id, amount, ...fundingInput, ...feeInput, ...withholdingInput, date, notes: notes || undefined, reference: reference.trim() || undefined })
+          ? await payPayableAction({ receiptId: id, idempotencyKey: paymentKey, amount, ...fundingInput, ...feeInput, ...withholdingInput, date, notes: notes || undefined, reference: reference.trim() || undefined })
           : kind === "expense-payable"
-            ? await payExpensePayableAction({ expenseId: id, amount, ...fundingInput, ...feeInput, ...withholdingInput, date, notes: notes || undefined, reference: reference.trim() || undefined })
-            : await payOpeningBalanceAction({ openingId: id, amount, ...fundingInput, ...feeInput, ...withholdingInput, date, notes: notes || undefined, reference: reference.trim() || undefined });
+            ? await payExpensePayableAction({ expenseId: id, idempotencyKey: paymentKey, amount, ...fundingInput, ...feeInput, ...withholdingInput, date, notes: notes || undefined, reference: reference.trim() || undefined })
+            : await payOpeningBalanceAction({ openingId: id, idempotencyKey: paymentKey, amount, ...fundingInput, ...feeInput, ...withholdingInput, date, notes: notes || undefined, reference: reference.trim() || undefined });
     setBusy(false);
     if (!result.ok) {
       toast.error(result.message);

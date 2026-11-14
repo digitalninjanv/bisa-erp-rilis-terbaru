@@ -1,5 +1,7 @@
 import { and, asc, eq, ne } from "drizzle-orm";
 import type { Tx } from "@/db";
+import type { CustomFieldDefinition } from "@/lib/custom-fields";
+import { importCustomFieldValues } from "@/lib/import/import-custom-fields";
 import {
   accountMappings,
   accounts,
@@ -15,13 +17,13 @@ import {
 } from "@/db/schema";
 import { ACCOUNT_MAPPING_KEYS, mappingAllowsAccountType, MAPPING_LABELS } from "@/lib/account-mappings";
 import {
-  loadRequiredCustomFields,
   mapMasterRow,
   masterPreview,
   requiredCustomFieldsNote,
   type MasterEntity,
 } from "./masters";
 import { loadImportedOpeningStockProductIds, openingBalanceKey } from "./opening";
+import { persistPendingImportRowIssues } from "@/server/import-row-issues";
 import type { JobRow, Mapping, RowData } from "./shared";
 
 /**
@@ -70,10 +72,16 @@ type PreviewItem = {
 
 export async function analyzeMasterImport(
   tx: Tx,
-  input: { companyId: string; job: JobRow; mapping: Mapping },
+  input: {
+    companyId: string;
+    job: JobRow;
+    mapping: Mapping;
+    customFields?: CustomFieldDefinition[];
+  },
 ): Promise<{ summary: MasterSummary; preview: PreviewItem[] }> {
   const { companyId, job, mapping } = input;
   const entity = job.entity as MasterEntity;
+  const customFields = input.customFields ?? [];
 
   const rows = await tx
     .select({ id: importRows.id, rowNumber: importRows.rowNumber, data: importRows.data, status: importRows.status })
@@ -230,20 +238,6 @@ export async function analyzeMasterImport(
     }
   }
 
-  // T5R-3: catatan hasil untuk baris pemasok/pelanggan yang akan
-  // terimpor sementara perusahaan punya kolom kustom wajib untuk
-  // entitas itu (impor tidak membawa nilai kustom sama sekali).
-  const requiredNote =
-    entity === "suppliers" || entity === "customers"
-      ? await loadRequiredCustomFields(
-          tx,
-          companyId,
-          entity === "suppliers" ? "supplier" : "customer",
-        ).then((defs) =>
-          defs.length > 0 ? requiredCustomFieldsNote(defs.map((field) => field.label)) : null,
-        )
-      : null;
-
   const summary: MasterSummary = {
     totalRows: rows.length,
     valid: 0,
@@ -273,6 +267,7 @@ export async function analyzeMasterImport(
     const mapped = mapMasterRow(entity, source, mapping);
     let issue: string | null = null;
     let storedIssue: string | null = null;
+    let validWithWarning = false;
     let action: PreviewItem["action"] = "insert";
     let label: string | null = null;
     let detail: string | null = null;
@@ -464,16 +459,29 @@ export async function analyzeMasterImport(
         }
       }
 
-      if (!issue) summary.valid += 1;
-    }
+      if (
+        action === "insert" &&
+        (value.kind === "suppliers" || value.kind === "customers")
+      ) {
+        const custom = importCustomFieldValues({
+          entity: value.kind === "suppliers" ? "supplier" : "customer",
+          definitions: customFields,
+          row: source,
+          mapping,
+        });
+        if (custom.error) {
+          summary.invalidRows += 1;
+          issue = custom.error;
+          storedIssue = issue;
+          action = "error";
+        } else if (custom.missingRequiredLabels.length > 0) {
+          issue = requiredCustomFieldsNote(custom.missingRequiredLabels);
+          storedIssue = issue;
+          validWithWarning = true;
+        }
+      }
 
-    // T5R-3: baris yang akan terimpor (bukan dilewati/error) membawa
-    // catatan kolom wajib — ditampilkan di pratinjau dan disimpan agar
-    // tabel wizard menampilkannya di semua halaman. Catatan ini bukan
-    // error: baris tetap valid dan tetap terimpor.
-    if (mapped.value && action === "insert" && !issue && requiredNote) {
-      issue = requiredNote;
-      storedIssue = requiredNote;
+      if (!issue || validWithWarning) summary.valid += 1;
     }
 
     rowIssues.push({ id: row.id, status: row.status, issue: storedIssue });
@@ -484,10 +492,7 @@ export async function analyzeMasterImport(
 
   // Sama seperti produk (GD-P2-7): isu baris bermasalah disimpan agar
   // tabel wizard membaca masalah nyata dari data baris di semua halaman.
-  for (const item of rowIssues) {
-    if (item.status !== "pending") continue;
-    await tx.update(importRows).set({ error: item.issue }).where(eq(importRows.id, item.id));
-  }
+  await persistPendingImportRowIssues(tx, companyId, job.id, rowIssues);
 
   await tx
     .update(importJobs)

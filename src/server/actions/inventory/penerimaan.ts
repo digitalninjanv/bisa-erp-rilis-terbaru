@@ -13,6 +13,7 @@ import { withCompany } from "@/db/tenant";
 import { products } from "@/db/schema";
 import {
   createReceipt,
+  recordReceiptInvoiceNumber,
   voidReceipt,
   voidStockDocument,
 } from "@/server/inventory";
@@ -177,6 +178,33 @@ export async function receiveStockAction(input: z.input<typeof receiptSchema>) {
     revalidatePath("/app/gudang/pembelian");
     revalidatePath("/app/gudang");
     revalidatePath("/app/akuntansi");
+    return result;
+  });
+}
+
+const recordReceiptInvoiceSchema = z.object({
+  receiptId: z.string().uuid(),
+  supplierInvoiceNumber: z.string().trim().min(1).max(80),
+});
+
+/** Catat atau koreksi nomor faktur setelah barang diterima; tidak mengubah
+ * stok, nilai persediaan, utang, atau jurnal yang sudah diposting. */
+export async function recordReceiptInvoiceNumberAction(
+  input: z.input<typeof recordReceiptInvoiceSchema>,
+) {
+  return guard(async () => {
+    const ctx = await requirePermissionInModule("inventory.manage", "gudang");
+    const data = parseInput(recordReceiptInvoiceSchema, input);
+    const result = await withCompany(ctx.company.id, (tx) =>
+      recordReceiptInvoiceNumber(tx, {
+        companyId: ctx.company.id,
+        userId: ctx.user.id,
+        receiptId: data.receiptId,
+        supplierInvoiceNumber: data.supplierInvoiceNumber,
+      }),
+    );
+    revalidatePath("/app/gudang/penerimaan");
+    revalidatePath(`/app/gudang/penerimaan/${result.id}`);
     return result;
   });
 }

@@ -7,7 +7,9 @@ import {
   asc,
   desc,
   eq,
+  ilike,
   inArray,
+  or,
   sql,
 } from "drizzle-orm";
 import type { Tx } from "@/db";
@@ -123,13 +125,67 @@ export async function listSupplierReturns(
 export async function listSupplierReturnsPage(
   tx: Tx,
   companyId: string,
-  opts: { supplierId?: string; status?: string; page?: number; pageSize?: number } = {},
+  opts: { supplierId?: string; status?: string; q?: string; page?: number; pageSize?: number } = {},
 ) {
   const { page, pageSize } = normalizePageParams(opts, 40);
+  const q = opts.q?.trim();
   const filters = and(
     eq(supplierReturns.companyId, companyId),
     opts.supplierId ? eq(supplierReturns.supplierId, opts.supplierId) : sql`true`,
     opts.status ? eq(supplierReturns.status, opts.status) : sql`true`,
+    q
+      ? or(
+          ilike(supplierReturns.number, `%${q}%`),
+          ilike(suppliers.name, `%${q}%`),
+        )
+      : sql`true`,
+  );
+  const [countRow] = await tx
+    .select({ value: sql<number>`count(*)::int` })
+    .from(supplierReturns)
+    .leftJoin(suppliers, eq(supplierReturns.supplierId, suppliers.id))
+    .where(filters);
+  const rows = await tx
+    .select({
+      id: supplierReturns.id,
+      number: supplierReturns.number,
+      date: supplierReturns.date,
+      status: supplierReturns.status,
+      reasonCategory: supplierReturns.reasonCategory,
+      resolutionType: supplierReturns.resolutionType,
+      totalValue: supplierReturns.totalValue,
+      creditAmount: supplierReturns.creditAmount,
+      resolvedAmount: supplierReturns.resolvedAmount,
+      supplierId: supplierReturns.supplierId,
+      supplierName: suppliers.name,
+      warehouseId: supplierReturns.warehouseId,
+      warehouseName: warehouses.name,
+    })
+    .from(supplierReturns)
+    .leftJoin(suppliers, eq(supplierReturns.supplierId, suppliers.id))
+    .leftJoin(warehouses, eq(supplierReturns.warehouseId, warehouses.id))
+    .where(filters)
+    .orderBy(desc(supplierReturns.date), desc(supplierReturns.number))
+    .limit(pageSize)
+    .offset(pageOffset(page, pageSize));
+  return pageResult(rows, countRow?.value ?? 0, page, pageSize);
+}
+
+/** Draf dan klaim kredit yang masih perlu diselesaikan untuk beranda retur. */
+export async function listSupplierReturnWorkQueue(
+  tx: Tx,
+  companyId: string,
+  limit = 8,
+) {
+  const filters = and(
+    eq(supplierReturns.companyId, companyId),
+    or(
+      eq(supplierReturns.status, "draft"),
+      and(
+        inArray(supplierReturns.status, ["posted", "partially_resolved"]),
+        sql`${supplierReturns.creditAmount} > ${supplierReturns.resolvedAmount}`,
+      ),
+    ),
   );
   const [countRow] = await tx
     .select({ value: sql<number>`count(*)::int` })
@@ -156,9 +212,8 @@ export async function listSupplierReturnsPage(
     .leftJoin(warehouses, eq(supplierReturns.warehouseId, warehouses.id))
     .where(filters)
     .orderBy(desc(supplierReturns.date), desc(supplierReturns.number))
-    .limit(pageSize)
-    .offset(pageOffset(page, pageSize));
-  return pageResult(rows, countRow?.value ?? 0, page, pageSize);
+    .limit(limit);
+  return { rows, total: countRow?.value ?? 0 };
 }
 
 /**

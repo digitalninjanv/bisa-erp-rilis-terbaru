@@ -16,6 +16,7 @@ import { EmptyState } from "@/components/blocks/empty-state";
 import { Pagination } from "@/components/blocks/pagination";
 import { ReportPrintHeader } from "@/components/akuntansi/report-print-header";
 import { LedgerFilters } from "@/components/akuntansi/ledger-filters";
+import { LedgerTable } from "@/components/akuntansi/ledger-table";
 import { getCompanySettingsRow } from "@/server/settings";
 
 export const metadata = { title: "Buku besar" };
@@ -26,6 +27,12 @@ function nominal(value: number, zeroDash = false) {
   return formatIDRReport(value, { symbol: false, zeroDash });
 }
 
+function isISODate(value: string | undefined): value is string {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
 export default async function LedgerPage({
   searchParams,
 }: {
@@ -33,8 +40,9 @@ export default async function LedgerPage({
 }) {
   const params = await searchParams;
   const ctx = await requirePermissionPage("accounting.view");
-  const from = params.from || monthStartISO();
-  const to = params.to || todayISO();
+  const from = isISODate(params.from) ? params.from : monthStartISO();
+  const to = isISODate(params.to) ? params.to : todayISO();
+  const rangeValid = from <= to;
 
   const data = await withCompanyReadOnly(ctx.company.id, async (tx) => {
     const allAccounts = await listAccountBalances(tx, ctx.company.id);
@@ -51,8 +59,10 @@ export default async function LedgerPage({
       : undefined;
     const accountId = requested
       ? requested.id
-      : await resolveDefaultLedgerAccountId(tx, ctx.company.id, filtered, { from, to });
-    const ledger = accountId
+      : rangeValid
+        ? await resolveDefaultLedgerAccountId(tx, ctx.company.id, filtered, { from, to })
+        : filtered[0]?.id ?? "";
+    const ledger = accountId && rangeValid
       ? await getLedger(tx, {
           companyId: ctx.company.id,
           accountId,
@@ -79,7 +89,7 @@ export default async function LedgerPage({
       <PageHeader
         title="Buku besar"
         description="Mutasi per akun dengan saldo berjalan. Pilih akun dan periode untuk menelusuri jurnal terkait."
-        actions={
+        actions={account && rangeValid ? (
           <>
             <div className="flex items-center overflow-hidden rounded-md border border-border bg-card">
               <Link
@@ -103,7 +113,7 @@ export default async function LedgerPage({
               <Printer className="size-3.5" /> Cetak
             </Link>
           </>
-        }
+        ) : undefined}
       />
 
       <div className="paged-print report-print">
@@ -135,11 +145,26 @@ export default async function LedgerPage({
           />
         </div>
 
-        {!account || !data.ledger ? (
+        {!account ? (
           <div className="mt-3 rounded-lg border border-border bg-card p-4">
             <EmptyState
               title="Pilih akun"
               description="Pilih akun dan rentang tanggal untuk melihat mutasi."
+              icon={<BookOpen className="size-5" />}
+            />
+          </div>
+        ) : !rangeValid ? (
+          <div role="alert" className="mt-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3">
+            <p className="text-[13px] font-semibold text-destructive">Rentang tanggal tidak valid</p>
+            <p className="mt-1 text-[12px] text-muted-foreground">
+              Tanggal mulai harus sama dengan atau sebelum tanggal akhir. Perbarui periode, lalu pilih Tampilkan.
+            </p>
+          </div>
+        ) : !data.ledger ? (
+          <div className="mt-3 rounded-lg border border-border bg-card p-4">
+            <EmptyState
+              title="Belum ada mutasi"
+              description="Tidak ada jurnal terposting untuk akun ini pada periode yang dipilih."
               icon={<BookOpen className="size-5" />}
             />
           </div>
@@ -159,109 +184,37 @@ export default async function LedgerPage({
                 </div>
               </div>
               <div className="shrink-0 text-right">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Periode
+                <p className="num text-[12px] font-medium">
+                  Total {data.ledger.total.toLocaleString("id-ID")} mutasi
                 </p>
-                <p className="num mt-1 text-[12px]">
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
                   {formatDate(from)} — {formatDate(to)}
                 </p>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-px border-y border-border bg-border sm:grid-cols-4">
-              <div className="bg-card px-4 py-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Saldo awal
-                </p>
-                <p className="num mt-1 text-[15px] font-semibold">{nominal(data.ledger.opening)}</p>
+            <div className="grid grid-cols-1 divide-y divide-border border-y border-border bg-muted/15 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+              <div className="flex items-center justify-between px-4 py-2.5 sm:block">
+                <p className="text-[10px] font-medium text-muted-foreground">Saldo awal</p>
+                <p className="num mt-0.5 text-[13px] font-semibold">{nominal(data.ledger.opening)}</p>
               </div>
-              <div className="bg-card px-4 py-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Total debit
-                </p>
-                <p className="num mt-1 text-[15px] font-semibold">{nominal(data.ledger.totalDebit)}</p>
+              <div className="flex items-center justify-between px-4 py-2.5 sm:block">
+                <p className="text-[10px] font-medium text-muted-foreground">Mutasi debit</p>
+                <p className="num mt-0.5 text-[13px] font-semibold">{nominal(data.ledger.totalDebit)}</p>
               </div>
-              <div className="bg-card px-4 py-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Total kredit
-                </p>
-                <p className="num mt-1 text-[15px] font-semibold">{nominal(data.ledger.totalCredit)}</p>
-              </div>
-              <div className="bg-card px-4 py-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Saldo akhir
-                </p>
-                <p className="num mt-1 text-[15px] font-semibold">{nominal(data.ledger.closing)}</p>
+              <div className="flex items-center justify-between px-4 py-2.5 sm:block">
+                <p className="text-[10px] font-medium text-muted-foreground">Mutasi kredit</p>
+                <p className="num mt-0.5 text-[13px] font-semibold">{nominal(data.ledger.totalCredit)}</p>
               </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="data-table sticky-head">
-                <thead>
-                  <tr>
-                    <th className="w-[90px]" aria-sort="ascending">Tanggal</th>
-                    <th className="w-[116px]">No. jurnal</th>
-                    <th>Keterangan</th>
-                    <th className="w-[126px] text-right">Debit</th>
-                    <th className="w-[126px] text-right">Kredit</th>
-                    <th className="w-[138px] text-right">Saldo</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr className="bg-muted/20">
-                    <td colSpan={5} className="text-[11px] font-medium text-muted-foreground">
-                      Saldo awal periode
-                    </td>
-                    <td className="num text-right text-[12px] font-medium">
-                      {nominal(data.ledger.opening)}
-                    </td>
-                  </tr>
-                  {data.ledger.items.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="py-8 text-center text-[12px] text-muted-foreground">
-                        Tidak ada mutasi pada periode ini.
-                      </td>
-                    </tr>
-                  ) : (
-                    data.ledger.items.map((row) => (
-                      <tr key={row.id}>
-                        <td className="num whitespace-nowrap text-[12px] text-muted-foreground">
-                          {formatDate(row.date)}
-                        </td>
-                        <td className="num text-[12px]">
-                          <Link
-                            href={`/app/akuntansi/jurnal/${row.entryId}`}
-                            className="text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
-                          >
-                            {row.number}
-                          </Link>
-                        </td>
-                        <td className="cell-wrap max-w-[520px] text-[12px] leading-5">
-                          {row.description || "—"}
-                        </td>
-                        <td className="num text-right text-[12px]">
-                          {row.debit > 0 ? (
-                            nominal(row.debit)
-                          ) : (
-                            <span className="text-muted-foreground/50">—</span>
-                          )}
-                        </td>
-                        <td className="num text-right text-[12px]">
-                          {row.credit > 0 ? (
-                            nominal(row.credit)
-                          ) : (
-                            <span className="text-muted-foreground/50">—</span>
-                          )}
-                        </td>
-                        <td className="num text-right text-[12px] font-semibold">
-                          {nominal(row.balance)}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <LedgerTable
+              rows={data.ledger.items}
+              total={data.ledger.total}
+              page={data.ledger.page}
+              pageSize={data.ledger.pageSize}
+              pageOpening={data.ledger.pageOpening}
+            />
 
             <div className="flex items-baseline justify-between border-t border-border bg-muted/30 px-4 py-2.5">
               <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">

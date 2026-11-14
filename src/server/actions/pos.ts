@@ -4,7 +4,7 @@ import { and, eq, ilike, or, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { withCompany, withCompanyReadOnly } from "@/db/tenant";
-import { cashMovements, customers, journalEntries, partyPayments, sales, warehouses } from "@/db/schema";
+import { cashMovements, customers, idempotencyKeys, journalEntries, partyPayments, sales, warehouses } from "@/db/schema";
 import { reverseJournalEntry } from "@/server/accounting";
 import { writeAudit } from "@/server/audit";
 import {
@@ -32,6 +32,7 @@ import { can } from "@/lib/permissions";
 import { AppError, guard, type ActionResult } from "@/lib/errors";
 import { parseInput } from "@/lib/action-validation";
 import { d, toDb } from "@/lib/money";
+import { paymentRequestFingerprint } from "@/server/idempotency";
 import { todayISO } from "@/lib/format";
 
 const cartLine = z.object({
@@ -250,9 +251,50 @@ export async function checkoutAction(input: z.input<typeof checkoutSchema>) {
     const ctx = await requirePermissionInModule("pos.sell", "pos");
     const data = parseInput(checkoutSchema, input);
     const result = await withCompany(ctx.company.id, async (tx) => {
+      const saleInput = {
+        companyId: ctx.company.id,
+        userId: ctx.user.id,
+        warehouseId: data.warehouseId,
+        customerId: data.customerId,
+        dueDate: data.dueDate,
+        groupId: data.groupId,
+        date: todayISO(),
+        lines: data.lines,
+        payments: data.payments,
+        notes: data.notes,
+        idempotencyKey: data.idempotencyKey,
+        canDiscount: can(ctx, "pos.discount"),
+        reservationId: data.reservationId ?? null,
+      };
+      // `date` is server-generated for checkout and may change at midnight;
+      // heldSaleId affects the workflow and must remain part of the request.
+      const fingerprint = paymentRequestFingerprint({
+        ...saleInput,
+        date: undefined,
+        heldSaleId: data.heldSaleId ?? null,
+      });
       const findReplay = async () => {
         const [row] = await tx.select({ id: sales.id, number: sales.number, total: sales.total, changeTotal: sales.changeTotal })
           .from(sales).where(and(eq(sales.companyId, ctx.company.id), eq(sales.idempotencyKey, data.idempotencyKey))).limit(1);
+        if (row) {
+          const [claim] = await tx
+            .select({ resultRef: idempotencyKeys.resultRef })
+            .from(idempotencyKeys)
+            .where(and(
+              eq(idempotencyKeys.companyId, ctx.company.id),
+              eq(idempotencyKeys.scope, "pos.sale"),
+              eq(idempotencyKeys.key, data.idempotencyKey),
+            ))
+            .limit(1);
+          if (claim?.resultRef !== fingerprint) {
+            throw new AppError(
+              "CONFLICT",
+              claim?.resultRef
+                ? "Kunci transaksi sudah digunakan untuk data checkout yang berbeda. Periksa riwayat sebelum mencoba lagi."
+                : "Transaksi sebelumnya belum memiliki fingerprint retry. Periksa riwayat sebelum mencoba lagi.",
+            );
+          }
+        }
         return row ? { id: row.id, number: row.number, total: Number(row.total), change: Number(row.changeTotal) } : null;
       };
       const replayed = await findReplay();
@@ -281,19 +323,8 @@ export async function checkoutAction(input: z.input<typeof checkoutSchema>) {
         }
       }
       const sale = await createSale(tx, {
-        companyId: ctx.company.id,
-        userId: ctx.user.id,
-        warehouseId: data.warehouseId,
-        customerId: data.customerId,
-        dueDate: data.dueDate,
-        groupId: data.groupId,
-        date: todayISO(),
-        lines: data.lines,
-        payments: data.payments,
-        notes: data.notes,
-        idempotencyKey: data.idempotencyKey,
-        canDiscount: can(ctx, "pos.discount"),
-        reservationId: data.reservationId ?? null,
+        ...saleInput,
+        idempotencyFingerprint: fingerprint,
       });
       if (data.heldSaleId) {
         // Baris tahanan masih terkunci oleh klaim di atas dan statusnya

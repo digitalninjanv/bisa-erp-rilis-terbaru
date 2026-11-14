@@ -13,9 +13,9 @@ import { checkoutAction } from "@/server/actions/pos";
 import { formatIDR } from "@/lib/money";
 import { todayISO } from "@/lib/format";
 import {
-  countQueued,
   enqueueOfflineSale,
   getBrowserOfflineStorage,
+  getOfflineQueueSummary,
   getOrCreateDeviceId,
   type OfflineSalePayload,
   type OfflineSalePayment,
@@ -87,6 +87,7 @@ export function useTerminalCheckout(params: {
   setLastSale: Dispatch<SetStateAction<{ id: string; number: string } | null>>;
   setReservationId: Dispatch<SetStateAction<string | null>>;
   setQueuedCount: Dispatch<SetStateAction<number>>;
+  setOldestQueuedAt: Dispatch<SetStateAction<string | null>>;
   idempotencyKeyRef: RefObject<string>;
   checkoutAttemptedRef: RefObject<boolean>;
   /** A-28 UI-1 (UX-B01): dipanggil sesudah penjualan terantre offline
@@ -96,7 +97,7 @@ export function useTerminalCheckout(params: {
 }) {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
-  const { cart, sessionOpen, mode, singleMethod, single, cashTendered, entries, methodById, outstanding, debtActive, customer, dueDate, total, quote, cache, posOfflineEnabled, reservationId, selectedWarehouse, groupId, storageKey, sessionId, userId, receivableDefaultTermDays, appliedCredit, setCart, setEntries, setCustomer, setCustomerQuery, setCustomerResults, setDueDate, resetCredit, setQuoteResult, heldSaleId, setHeldSaleId, setHeldTotal, setLastSale, setReservationId, setQueuedCount, idempotencyKeyRef, checkoutAttemptedRef, onSaleQueued } = params;
+  const { cart, sessionOpen, mode, singleMethod, single, cashTendered, entries, methodById, outstanding, debtActive, customer, dueDate, total, quote, cache, posOfflineEnabled, reservationId, selectedWarehouse, groupId, storageKey, sessionId, userId, receivableDefaultTermDays, appliedCredit, setCart, setEntries, setCustomer, setCustomerQuery, setCustomerResults, setDueDate, resetCredit, setQuoteResult, heldSaleId, setHeldSaleId, setHeldTotal, setLastSale, setReservationId, setQueuedCount, setOldestQueuedAt, idempotencyKeyRef, checkoutAttemptedRef, onSaleQueued } = params;
 
   // A-24 T6 (T6-01/T6-02): antrekan penjualan ini ke antrean offline
   // lokal. Dipakai oleh DUA pemicu dengan semantik yang sama persis:
@@ -173,7 +174,9 @@ export function useTerminalCheckout(params: {
     try {
       const storage = getBrowserOfflineStorage();
       await enqueueOfflineSale(storage, payload);
-      setQueuedCount(await countQueued(storage));
+      const summary = await getOfflineQueueSummary(storage);
+      setQueuedCount(summary.count);
+      setOldestQueuedAt(summary.oldestQueuedAt);
     } catch {
       toast.error("Antrean offline tidak dapat disimpan di browser ini. Transaksi dibatalkan.");
       return;

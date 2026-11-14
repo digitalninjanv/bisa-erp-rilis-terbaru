@@ -13,7 +13,7 @@ export {
   type ShiftRow,
 } from "./hr/shifts";
 export type { SimpleEmployee, SimpleShift } from "./hr/shared";
-export { AttendanceEntryForm, AttendanceImportForm } from "./hr/attendance";
+export { AttendanceBatchForm, AttendanceEntryForm, AttendanceImportForm } from "./hr/attendance";
 export { OvertimeDecisionButtons, OvertimeRequestForm } from "./hr/overtime";
 export { ThrComputeForm, ThrDraftVoidButton } from "./hr/thr";
 export {

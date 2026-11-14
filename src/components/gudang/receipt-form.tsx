@@ -15,13 +15,13 @@ import {
   type DocLine,
 } from "@/components/gudang/line-editor";
 import type { PickedPackaging } from "@/components/gudang/product-picker";
-import { ConfirmDialog } from "@/components/blocks/confirm-dialog";
 import { d, formatIDR, formatQty } from "@/lib/money";
 import { labelClass, fieldClass } from "@/components/blocks/field-classes";
 import { DocumentForm, DocumentFormAdvanced } from "@/components/blocks/document-form";
 import { DateField } from "@/components/date-field";
 import { PercentInput } from "@/components/percent-input";
 import { ReceiptAdvanceField } from "@/components/gudang/receipt-advance-field";
+import { ReceiptConfirmations } from "@/components/gudang/receipt-confirmations";
 import { requireFilled } from "@/components/use-action-runner";
 
 type OpenPurchaseOrder = {
@@ -213,6 +213,21 @@ export function ReceiptForm({
           .map((line) => ({ name: line.name, expected: d(0), confirmed: docLineBaseQty(line) })),
       ]
     : [];
+  const confirmationDifferences = receiptDiffs.map((row) => {
+    const difference = row.confirmed.minus(row.expected);
+    return {
+      name: row.name,
+      requested: formatQty(row.expected),
+      received: formatQty(row.confirmed),
+      status: difference.eq(0)
+        ? "pas"
+        : difference.lt(0)
+          ? `kurang ${formatQty(difference.negated())}`
+          : row.expected.eq(0)
+            ? "baris di luar PO"
+            : `lebih ${formatQty(difference)}`,
+    };
+  });
 
   useEffect(() => {
     if (!isPurchase || !supplierId) return;
@@ -404,9 +419,9 @@ export function ReceiptForm({
   }
 
   // A-25 U3: form penerimaan memakai DocumentForm bersama — kepala
-  // inti (sumber, gudang, tanggal, pemasok, tautan PO) di kartu
-  // kepala; nomor invoice pemasok & opsi PPN terlipat di Opsi
-  // lanjutan; total hidup di rel ringkasan. Kontrak e2e dijaga:
+  // inti (sumber, gudang, tanggal, pemasok, nomor faktur, PPN, dan
+  // tautan PO) tetap dalam satu formulir; total hidup di rel ringkasan.
+  // Kontrak e2e dijaga:
   // label "Sumber penerimaan", tombol "Posting penerimaan", dan teks
   // toast sukses tidak berubah.
   const total = lines.reduce((acc, line) => acc.plus(docLineReceiptNet(line)), d(0));
@@ -559,13 +574,16 @@ export function ReceiptForm({
 
                   {isPurchase ? (
                     <label className="space-y-1">
-                      <span className={labelClass}>No. invoice (opsional)</span>
+                      <span className={labelClass}>No. faktur pemasok (opsional)</span>
                       <input
                         value={supplierInvoiceNumber}
                         onChange={(event) => setSupplierInvoiceNumber(event.target.value)}
                         className={fieldClass}
-                        placeholder="INV/2026/XI/001"
+                        placeholder="INV/2026/001"
                       />
+                      <span className="block text-[10px] leading-4 text-muted-foreground">
+                        Isi jika faktur sudah diterima bersama barang; nomor bisa dicari di riwayat pembelian.
+                      </span>
                     </label>
                   ) : null}
 
@@ -747,49 +765,22 @@ export function ReceiptForm({
             </div>
           </DocumentForm>
 
-          {/* A-24 T3 (G2): ringkasan selisih terhadap sisa PO. */}
-          <ConfirmDialog
-            open={confirmOpen}
-            title={pickedOrder ? `Ringkasan selisih — ${pickedOrder.number}` : "Ringkasan selisih"}
-            confirmLabel="Ya, posting penerimaan"
+          <ReceiptConfirmations
+            confirmOpen={confirmOpen}
+            cancelOpen={cancelConfirmOpen}
             busy={busy}
-            onCancel={() => setConfirmOpen(false)}
-            onConfirm={() => {
+            orderNumber={pickedOrder?.number}
+            differences={confirmationDifferences}
+            onConfirmDifference={() => {
               setConfirmOpen(false);
               void doSubmit();
             }}
-            description={
-              <div className="space-y-2">
-                <p>Isi penerimaan berbeda dari sisa pesanan:</p>
-                <ul className="list-disc space-y-1 pl-4">
-                  {receiptDiffs.map((row) => {
-                    const diff = row.confirmed.minus(row.expected);
-                    return (
-                      <li key={row.name}>
-                        <span className="font-medium text-foreground">{row.name}</span> — diminta {formatQty(row.expected)}, diterima {formatQty(row.confirmed)}, {diff.eq(0) ? "pas" : diff.lt(0) ? `kurang ${formatQty(diff.negated())}` : row.expected.eq(0) ? "baris di luar PO" : `lebih ${formatQty(diff)}`}
-                      </li>
-                    );
-                  })}
-                </ul>
-                <p>
-                  Kekurangan berarti penerimaan SEBAGIAN: PO tetap terbuka untuk sisa yang belum tiba. Kelebihan di atas sisa PO ditolak server. Baris di luar PO diterima sebagai penerimaan tanpa tautan pesanan.
-                </p>
-              </div>
-            }
-          />
-
-          <ConfirmDialog
-            open={cancelConfirmOpen}
-            title="Batalkan penerimaan?"
-            confirmLabel="Ya, buang draf"
-            cancelLabel="Lanjutkan mengisi"
-            danger
-            onCancel={() => setCancelConfirmOpen(false)}
-            onConfirm={() => {
+            onCancelDifference={() => setConfirmOpen(false)}
+            onDiscard={() => {
               setCancelConfirmOpen(false);
               setOpen(false);
             }}
-            description="Perubahan dan baris barang yang sudah Anda masukkan belum disimpan dan akan hilang."
+            onContinue={() => setCancelConfirmOpen(false)}
           />
         </>
       ) : null}

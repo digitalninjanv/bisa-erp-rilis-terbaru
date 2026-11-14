@@ -15,3 +15,4 @@ export * from "./group-prices";
 export * from "./settings-reads";
 
 export * from "./receipt-links";
+export * from "./product-xlsx-stream";

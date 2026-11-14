@@ -38,24 +38,36 @@ if (!url) {
 const sql = postgres(url, { max: 1, connect_timeout: 15, onnotice: () => {} });
 
 async function appliedCount() {
-  try {
-    const rows = await sql`select count(*)::int as n from drizzle.__drizzle_migrations`;
-    return rows[0].n;
-  } catch {
-    return 0; // table does not exist yet on a fresh database
-  }
+  const [catalog] = await sql`
+    select to_regclass('drizzle.__drizzle_migrations') as relation
+  `;
+  if (!catalog?.relation) return 0; // no migration table on a fresh database
+  const rows = await sql`select count(*)::int as n from drizzle.__drizzle_migrations`;
+  return rows[0].n;
 }
 
+let before = null;
+let migrationStarted = false;
 try {
-  const before = await appliedCount();
+  before = await appliedCount();
   const db = drizzle(sql);
+  migrationStarted = true;
   await migrate(db, { migrationsFolder });
   const after = await appliedCount();
   console.log(
     `MIGRASI sebelum=${before} sesudah=${after} diterapkan=${after - before}`,
   );
 } catch (error) {
-  console.error(`MIGRASI GAGAL: ${error?.message ?? error}`);
+  let outcome = "keadaan=unknown";
+  if (migrationStarted && before !== null) {
+    try {
+      const after = await appliedCount();
+      outcome = `sebelum=${before} sesudah=${after} diterapkan=${after - before}`;
+    } catch {
+      outcome = `sebelum=${before} sesudah=unknown diterapkan=unknown`;
+    }
+  }
+  console.error(`MIGRASI GAGAL ${outcome}: ${error?.message ?? error}`);
   process.exitCode = 2;
 } finally {
   await sql.end({ timeout: 5 });

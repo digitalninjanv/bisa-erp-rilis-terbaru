@@ -88,6 +88,16 @@ export default async function FiscalPeriodsPage({
         </button>
       </AutoFilterForm>
 
+      <div className="mb-3 rounded-lg border border-border bg-card px-4 py-3 text-[12px] leading-5 text-muted-foreground">
+        <p className="font-semibold text-foreground">Urutan tutup periode</p>
+        <ol className="mt-1 list-decimal space-y-0.5 pl-5">
+          <li>Selesaikan rekonsiliasi kas, bank, piutang, utang, dan persediaan.</li>
+          <li>Pastikan jurnal periode sudah final, lalu tutup periode.</li>
+          <li>Kunci setelah pemeriksaan internal selesai; pembukaan kembali perlu persetujuan.</li>
+          <li>Akhir tahun, posting jurnal penutup lalu kunci seluruh 12 periode secara terpisah.</li>
+        </ol>
+      </div>
+
       <MonthEndChecklist
         year={checklistYear}
         month={checklistMonth}
@@ -119,14 +129,6 @@ export default async function FiscalPeriodsPage({
           accounts: data.closingPreview.accounts,
         }}
       />
-
-      <div className="mt-3 rounded-lg border border-border bg-card px-4 py-3 text-[11px] leading-5 text-muted-foreground">
-        <p className="font-medium text-foreground">Alur yang disarankan</p>
-        <p>1. Selesaikan rekonsiliasi kas, bank, piutang, utang, dan persediaan.</p>
-        <p>2. Tutup periode setelah semua jurnal periode itu final.</p>
-        <p>3. Kunci periode bila audit internal selesai; membuka kembali hanya untuk koreksi yang disetujui.</p>
-        <p>4. Akhir tahun: posting jurnal penutup lewat panel Tutup Buku Tahunan di atas, lalu kunci ke-12 periode tahun itu sebagai langkah terpisah.</p>
-      </div>
     </div>
   );
 }

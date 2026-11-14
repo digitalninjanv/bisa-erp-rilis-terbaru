@@ -68,19 +68,6 @@ export default async function EmployeeDetailPage({
     { key: "riwayat", label: `Riwayat perubahan (${data.history.length})` },
   ];
 
-  // A-25 U5 (HR-05): field inti yang kosong diberi nama secara
-  // eksplisit beserta jalan melengkapinya — bukan lagi deretan
-  // "—" yang terlihat seperti profil rusak tanpa petunjuk.
-  const missingCore: string[] = [
-    !data.department ? "Departemen" : null,
-    !data.manager ? "Atasan langsung" : null,
-    !data.branch ? "Cabang" : null,
-    !person.contractType ? "Jenis kontrak" : null,
-    !person.nik ? "NIK" : null,
-    !person.npwp ? "NPWP" : null,
-    !person.ptkpStatus ? "Status PTKP" : null,
-  ].filter((value): value is string => value !== null);
-
   return (
     <div>
       <PageHeader
@@ -90,25 +77,12 @@ export default async function EmployeeDetailPage({
       />
       <div className="mb-3 flex flex-wrap gap-1.5">
         <Link href="/app/akuntansi/payroll" className="inline-flex h-8 items-center rounded border border-border bg-card px-2 text-[11px] transition-colors hover:bg-muted">
-          ← Payroll & karyawan
+          ← Daftar karyawan
         </Link>
         <Link href={`/app/akuntansi/kasbon/${person.id}`} className="inline-flex h-8 items-center rounded border border-border bg-card px-2 text-[11px] transition-colors hover:bg-muted">
           Kasbon karyawan ini
         </Link>
       </div>
-
-      {tab === "ringkasan" && manageable && person.employmentStatus !== "terminated" && missingCore.length > 0 ? (
-        <div className="mb-3 rounded-lg border border-amber-300/60 bg-amber-50 px-4 py-3 dark:bg-amber-950/30">
-          <p className="text-[12px]">
-            <span className="font-semibold">Data kepegawaian belum lengkap:</span> {missingCore.join(", ")} masih
-            kosong. Lengkapi lewat tombol <span className="font-medium">Ubah</span> pada baris karyawan ini di{" "}
-            <Link href="/app/akuntansi/payroll" className="font-medium underline underline-offset-2">
-              Payroll &amp; Karyawan
-            </Link>
-            .
-          </p>
-        </div>
-      ) : null}
 
       <div className="mb-3 flex gap-1 border-b border-border">
         {tabs.map((entry) => (
@@ -162,22 +136,10 @@ export default async function EmployeeDetailPage({
               <h2 className="text-[13px] font-semibold">Data kepegawaian</h2>
             </div>
             <dl className="grid grid-cols-[140px_1fr] gap-x-3 gap-y-2 px-4 py-3 text-[12px]">
-              <dt className="text-muted-foreground">Departemen</dt>
-              <dd>{data.department ?? "—"}</dd>
               <dt className="text-muted-foreground">Jabatan</dt>
               <dd>{data.positionName ?? "—"}</dd>
-              <dt className="text-muted-foreground">Atasan langsung</dt>
-              <dd>{data.manager ?? "—"}</dd>
-              <dt className="text-muted-foreground">Cabang</dt>
-              <dd>{data.branch ?? "—"}</dd>
-              <dt className="text-muted-foreground">Jenis kontrak</dt>
-              <dd>{person.contractType ?? "—"}</dd>
               <dt className="text-muted-foreground">Tanggal masuk</dt>
               <dd>{formatDate(person.joinedAt)}</dd>
-              <dt className="text-muted-foreground">Kontrak</dt>
-              <dd>
-                {formatDate(person.contractStart)} s.d. {formatDate(person.contractEnd)}
-              </dd>
               <dt className="text-muted-foreground">Status</dt>
               <dd>
                 {person.employmentStatus === "terminated"
@@ -214,10 +176,6 @@ export default async function EmployeeDetailPage({
                   <dd className="text-muted-foreground">Tidak ditampilkan (butuh izin lihat angka gaji)</dd>
                 </>
               )}
-              <dt className="text-muted-foreground">NIK / NPWP</dt>
-              <dd>{person.nik ?? "—"} / {person.npwp ?? "—"}</dd>
-              <dt className="text-muted-foreground">Status PTKP</dt>
-              <dd>{person.ptkpStatus ?? "—"}</dd>
             </dl>
             {canSeeSalary && data.items.length > 0 ? (
               <div className="border-t border-border px-4 py-3">

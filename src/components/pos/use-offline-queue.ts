@@ -4,8 +4,8 @@ import { toast } from "sonner";
 import { syncOfflineSalesAction } from "@/server/actions/pos-offline";
 import {
   applySyncResults,
-  countQueued,
   getBrowserOfflineStorage,
+  getOfflineQueueSummary,
   type OfflineSyncItemResult,
 } from "@/lib/pos-offline";
 
@@ -21,6 +21,7 @@ export function useOfflineQueue(params: { posOfflineEnabled: boolean }) {
     () => typeof navigator === "undefined" || navigator.onLine,
   );
   const [queuedCount, setQueuedCount] = useState(0);
+  const [oldestQueuedAt, setOldestQueuedAt] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
 
   // SIM-2 S7B-2 Batch 6: sinkronisasi antrean offline — mengirim semua
@@ -28,14 +29,15 @@ export function useOfflineQueue(params: { posOfflineEnabled: boolean }) {
   // lalu menerapkan hasilnya ke antrean lokal.
   const syncOfflineQueue = useCallback(async () => {
     if (!posOfflineEnabled || syncing) return;
-    const storage = getBrowserOfflineStorage();
-    const items = await storage.list();
-    if (items.length === 0) {
-      setQueuedCount(0);
-      return;
-    }
-    setSyncing(true);
     try {
+      const storage = getBrowserOfflineStorage();
+      const items = await storage.list();
+      if (items.length === 0) {
+        setQueuedCount(0);
+        setOldestQueuedAt(null);
+        return;
+      }
+      setSyncing(true);
       // FIX-POS Tahap 2 (POS3-01/16): antrean dikirim BERPOTONG 25
       // item per panggilan — plafon server adalah per request, bukan
       // per antrean, jadi antrean sebesar apa pun tersinkron; hasil
@@ -51,7 +53,9 @@ export function useOfflineQueue(params: { posOfflineEnabled: boolean }) {
         }
         await applySyncResults(storage, result.data);
         allResults.push(...result.data);
-        setQueuedCount(await countQueued(storage));
+        const summary = await getOfflineQueueSummary(storage);
+        setQueuedCount(summary.count);
+        setOldestQueuedAt(summary.oldestQueuedAt);
       }
       if (chunkFailed && allResults.length === 0) return;
       const synced = allResults.filter((row) => row.status === "synced").length;
@@ -70,7 +74,7 @@ export function useOfflineQueue(params: { posOfflineEnabled: boolean }) {
       }
       router.refresh();
     } catch {
-      toast.error("Sinkronisasi offline gagal. Periksa koneksi lalu coba lagi.");
+      toast.error("Antrean offline tidak dapat dibaca atau disinkronkan. Periksa penyimpanan dan koneksi sebelum melanjutkan.");
     } finally {
       setSyncing(false);
     }
@@ -81,8 +85,14 @@ export function useOfflineQueue(params: { posOfflineEnabled: boolean }) {
     const updateOnline = () => setOnline(navigator.onLine);
     updateOnline();
     void (async () => {
-      setQueuedCount(await countQueued(getBrowserOfflineStorage()));
-      if (navigator.onLine) void syncOfflineQueue();
+      try {
+        const summary = await getOfflineQueueSummary(getBrowserOfflineStorage());
+        setQueuedCount(summary.count);
+        setOldestQueuedAt(summary.oldestQueuedAt);
+        if (navigator.onLine) void syncOfflineQueue();
+      } catch {
+        toast.error("Penyimpanan antrean offline tidak tersedia. Transaksi offline tidak dapat disimpan dengan aman.");
+      }
     })();
     const onOnline = () => {
       setOnline(true);
@@ -100,5 +110,13 @@ export function useOfflineQueue(params: { posOfflineEnabled: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [posOfflineEnabled]);
 
-  return { online, queuedCount, setQueuedCount, syncing, syncOfflineQueue };
+  return {
+    online,
+    queuedCount,
+    setQueuedCount,
+    oldestQueuedAt,
+    setOldestQueuedAt,
+    syncing,
+    syncOfflineQueue,
+  };
 }

@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
 import { accounts, employees, reimbursementClaims } from "@/db/schema";
 import { AppError } from "@/lib/errors";
@@ -314,8 +314,11 @@ export async function countPendingReimbursementClaims(
   tx: Tx,
   companyId: string,
 ): Promise<{ count: number; total: string }> {
-  const rows = await tx
-    .select({ amount: reimbursementClaims.amount })
+  const [row] = await tx
+    .select({
+      count: count(),
+      total: sql<string>`coalesce(sum(${reimbursementClaims.amount}), 0)::text`,
+    })
     .from(reimbursementClaims)
     .where(
       and(
@@ -323,10 +326,7 @@ export async function countPendingReimbursementClaims(
         eq(reimbursementClaims.status, "submitted"),
       ),
     );
-  return {
-    count: rows.length,
-    total: toDb(rows.reduce((acc, row) => acc.plus(d(row.amount)), d(0))),
-  };
+  return { count: row?.count ?? 0, total: toDb(row?.total ?? 0) };
 }
 
 export async function listReimbursementClaims(tx: Tx, companyId: string) {

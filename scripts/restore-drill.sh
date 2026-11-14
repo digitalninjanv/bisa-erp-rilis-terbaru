@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # A-28 Tahap 6 (H-X-01) — latihan restore BERKALA yang benar-benar
 # dijalankan: backup terbaru dipulihkan ke database UJI sekali pakai,
-# isinya diverifikasi terhadap database sumber, lalu DB uji dihapus.
+# integritas internal hasil restore diverifikasi, lalu DB uji dihapus.
 #
 # KEAMANAN (keras):
 # - Database tujuan SELALU bernama mengandung "restore_test" dan
 #   dibuat baru oleh skrip ini; skrip menolak nama lain dan menolak
 #   nama yang sama dengan database sumber.
-# - Database sumber tidak pernah ditulis; hanya dibaca (verifikasi).
+# - Database sumber tidak pernah ditulis atau dibaca untuk verifikasi.
 # - DB uji dihapus di akhir dalam semua keadaan (trap EXIT).
 #
 # Usage:
@@ -15,8 +15,9 @@
 # Tanpa argumen: dump terbaru di BACKUP_DIR (bawaan ./backups) dipakai.
 # Hasil dicatat ke restore-drill-manifest.json di direktori backup
 # yang sama — dibaca aplikasi (Pengaturan → Status sistem).
-# Exit 0 = semua pemeriksaan cocok; exit 1 = ada yang tidak cocok.
-set -uo pipefail
+# Exit 0 = restore dan seluruh pemeriksaan internal lulus; exit 1 = gagal.
+set -euo pipefail
+umask 077
 
 cd "$(dirname "$0")/.."
 
@@ -25,6 +26,27 @@ if [[ -f .env.local ]]; then
   # shellcheck disable=SC1091
   source .env.local
   set +a
+fi
+
+# Operational settings are loaded as shell variables, not exported to the
+# unit's process environment. The passphrase is supplied separately by
+# systemd's credential directory when this runs as a scheduled service.
+backup_conf="${BISA_BACKUP_CONF:-/etc/bisa-erp/backup.conf}"
+if [[ -f "$backup_conf" ]]; then
+  # shellcheck disable=SC1090
+  source "$backup_conf"
+fi
+passphrase_file=""
+if [[ -n "${CREDENTIALS_DIRECTORY:-}" ]]; then
+  passphrase_file="$CREDENTIALS_DIRECTORY/backup-passphrase"
+elif [[ -n "${BISA_BACKUP_PASSPHRASE_FILE:-}" ]]; then
+  passphrase_file="$BISA_BACKUP_PASSPHRASE_FILE"
+elif [[ -s /etc/credstore/bisa-erp-backup-passphrase ]]; then
+  passphrase_file="/etc/credstore/bisa-erp-backup-passphrase"
+fi
+if [[ -n "$passphrase_file" ]]; then
+  # The key remains available only through the credential file path.
+  export -n BACKUP_PASSPHRASE 2>/dev/null || true
 fi
 
 : "${DIRECT_URL:?DIRECT_URL is required}"
@@ -45,12 +67,16 @@ command -v psql >/dev/null 2>&1 || { echo "psql tidak ditemukan." >&2; exit 1; }
 backup_dir="${BACKUP_DIR:-backups}"
 file="${1:-}"
 if [[ -z "$file" ]]; then
-  file="$(ls -t "$backup_dir"/bisa-*.dump* 2>/dev/null | head -1 || true)"
+  file="$(ls -t "$backup_dir"/bisa-*.dump "$backup_dir"/bisa-*.dump.enc 2>/dev/null | head -1 || true)"
 fi
 [[ -n "$file" && -f "$file" ]] || {
   echo "Berkas dump tidak ditemukan (argumen atau terbaru di $backup_dir)." >&2
   exit 1
 }
+if ! node scripts/verify-backup-manifest.mjs "$file"; then
+  echo "Latihan restore berhenti: validasi manifest/hash backup gagal." >&2
+  exit 1
+fi
 
 # --- Turunkan URL tujuan dari DIRECT_URL (ganti nama database saja) --
 url_base="${DIRECT_URL%%\?*}"
@@ -69,10 +95,14 @@ maint_url="${url_prefix}/postgres${url_query}"
 target_url="${url_prefix}/${target_db}${url_query}"
 
 created=0
+decrypted=""
 cleanup() {
   if [[ "$created" == 1 ]]; then
     psql "$maint_url" -v ON_ERROR_STOP=1 -q -c "DROP DATABASE IF EXISTS \"$target_db\"" >/dev/null 2>&1 || true
     echo "DB uji $target_db dihapus."
+  fi
+  if [[ -n "$decrypted" ]]; then
+    rm -f -- "$decrypted" || true
   fi
 }
 trap cleanup EXIT
@@ -89,11 +119,34 @@ created=1
 
 # Dekripsi bila perlu (pola yang sama dengan scripts/restore.sh).
 restore_file="$file"
-decrypted=""
 if [[ "$file" == *.enc ]]; then
-  [[ -n "${BACKUP_PASSPHRASE:-}" ]] || { echo "Berkas terenkripsi: atur BACKUP_PASSPHRASE." >&2; exit 1; }
+  if [[ -n "$passphrase_file" ]]; then
+    [[ -r "$passphrase_file" && -s "$passphrase_file" ]] || { echo "Credential backup-passphrase tidak dapat dibaca atau kosong." >&2; exit 1; }
+  elif [[ -z "${BACKUP_PASSPHRASE:-}" ]]; then
+    echo "Berkas terenkripsi: atur BACKUP_PASSPHRASE_FILE atau BACKUP_PASSPHRASE." >&2
+    exit 1
+  fi
   decrypted="$(mktemp /tmp/bisa-drill-XXXXXX.dump)"
-  openssl enc -d -aes-256-cbc -salt -pbkdf2 -pass env:BACKUP_PASSPHRASE -in "$file" -out "$decrypted" || {
+  if node scripts/backup-crypto.mjs is-v1 "$file"; then
+    if [[ -n "$passphrase_file" ]]; then
+      BACKUP_PASSPHRASE_FILE="$passphrase_file" node scripts/backup-crypto.mjs decrypt "$file" "$decrypted"
+    else
+      BACKUP_PASSPHRASE="$BACKUP_PASSPHRASE" node scripts/backup-crypto.mjs decrypt "$file" "$decrypted"
+    fi
+  elif node scripts/backup-crypto.mjs is-legacy-cbc "$file" && [[ "${RESTORE_ALLOW_LEGACY_CBC:-}" == "1" ]]; then
+    # Compatibility path for historical AES-CBC archives without authentication.
+    if [[ -n "$passphrase_file" ]]; then
+      openssl enc -d -aes-256-cbc -salt -pbkdf2 -pass "file:$passphrase_file" -in "$file" -out "$decrypted"
+    else
+      openssl enc -d -aes-256-cbc -salt -pbkdf2 -pass env:BACKUP_PASSPHRASE -in "$file" -out "$decrypted"
+    fi
+  elif node scripts/backup-crypto.mjs is-legacy-cbc "$file"; then
+    echo "Drill CBC lama ditolak secara default; setelah memverifikasi arsip, set RESTORE_ALLOW_LEGACY_CBC=1 untuk latihan ini." >&2
+    exit 1
+  else
+    echo "Format backup terenkripsi tidak dikenal; drill dihentikan." >&2
+    exit 1
+  fi || {
     rm -f "$decrypted"
     echo "Dekripsi gagal." >&2
     exit 1
@@ -101,7 +154,7 @@ if [[ "$file" == *.enc ]]; then
   restore_file="$decrypted"
 fi
 
-pg_restore --clean --if-exists --no-owner --no-privileges --dbname="$target_url" "$restore_file" || {
+pg_restore --clean --if-exists --exit-on-error --single-transaction --no-owner --no-privileges --dbname="$target_url" "$restore_file" || {
   [[ -n "$decrypted" ]] && rm -f "$decrypted"
   echo "pg_restore GAGAL." >&2
   exit 1
@@ -120,54 +173,82 @@ ALTER DEFAULT PRIVILEGES FOR ROLE erp IN SCHEMA public
   GRANT USAGE, SELECT ON SEQUENCES TO app_user;
 SQL
 
-# --- Verifikasi: angka sumber vs angka hasil restore -----------------
+# --- Verifikasi mandiri pada snapshot hasil restore -----------------
+# Jangan bandingkan dengan database sumber yang sudah terus menerima
+# transaksi setelah waktu backup. pg_dump adalah snapshot konsisten pada
+# waktunya; kesetaraan dengan source live akan gagal palsu setelah ada
+# penjualan/pembayaran baru dan tidak membuktikan snapshot yang sama.
 q_accounts='SELECT count(*) FROM accounts'
 q_products='SELECT count(*) FROM products'
 q_inventory='SELECT coalesce(sum(soh.qty * p.cost_price), 0) FROM stock_on_hand soh JOIN products p ON p.id = soh.product_id'
-q_trial='SELECT coalesce(sum(jl.debit) - sum(jl.credit), 0) FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id WHERE je.status = '"'"'posted'"'"''
+q_posted_journals="SELECT count(*) FROM journal_entries WHERE status = 'posted'"
+q_unbalanced_journals="SELECT count(*) FROM (SELECT je.id FROM journal_entries je LEFT JOIN journal_lines jl ON jl.entry_id = je.id AND jl.company_id = je.company_id WHERE je.status = 'posted' GROUP BY je.id HAVING abs(coalesce(sum(jl.debit), 0) - coalesce(sum(jl.credit), 0)) > 0.0001) unbalanced"
+q_orphan_journal_lines="SELECT count(*) FROM journal_lines jl LEFT JOIN journal_entries je ON je.id = jl.entry_id AND je.company_id = jl.company_id WHERE je.id IS NULL"
 
 run_q() { psql "$1" -At -v ON_ERROR_STOP=1 -c "$2"; }
 
-src_accounts="$(run_q "$DIRECT_URL" "$q_accounts")"
 tgt_accounts="$(run_q "$target_url" "$q_accounts")"
-src_products="$(run_q "$DIRECT_URL" "$q_products")"
 tgt_products="$(run_q "$target_url" "$q_products")"
-src_inventory="$(run_q "$DIRECT_URL" "$q_inventory")"
 tgt_inventory="$(run_q "$target_url" "$q_inventory")"
-src_trial="$(run_q "$DIRECT_URL" "$q_trial")"
-tgt_trial="$(run_q "$target_url" "$q_trial")"
+posted_journals="$(run_q "$target_url" "$q_posted_journals")"
+unbalanced_journals="$(run_q "$target_url" "$q_unbalanced_journals")"
+orphan_journal_lines="$(run_q "$target_url" "$q_orphan_journal_lines")"
 
 ok=1
-check() { # nama, sumber, target
-  if [[ "$2" == "$3" ]]; then
-    echo "  COCOK  $1: $2"
+check_zero() { # nama, jumlah temuan
+  if [[ "$2" == "0" ]]; then
+    echo "  COCOK  $1: tidak ada"
   else
-    echo "  BEDA   $1: sumber=$2 restore=$3" >&2
+    echo "  GAGAL  $1: $2" >&2
     ok=0
   fi
 }
-echo "Verifikasi isi:"
-check "jumlah akun" "$src_accounts" "$tgt_accounts"
-check "jumlah produk" "$src_products" "$tgt_products"
-check "nilai persediaan" "$src_inventory" "$tgt_inventory"
-check "selisih neraca saldo" "$src_trial" "$tgt_trial"
-# Neraca saldo sumber sendiri harus 0 — restore yang cocok dengan
-# sumber yang tidak seimbang tetap dicatat tidak ok.
-if [[ "$src_trial" != "0" && "$src_trial" != "0.0000" ]]; then
-  echo "  BEDA   neraca saldo sumber tidak nol: $src_trial" >&2
-  ok=0
-fi
+echo "Pemeriksaan internal hasil restore (bukan perbandingan source live):"
+echo "  INFO   jumlah akun: $tgt_accounts"
+echo "  INFO   jumlah produk: $tgt_products"
+echo "  INFO   nilai persediaan: $tgt_inventory"
+echo "  INFO   jurnal posted: $posted_journals"
+check_zero "jurnal posted tidak seimbang" "$unbalanced_journals"
+check_zero "baris jurnal tanpa header yang cocok" "$orphan_journal_lines"
 
 # --- Manifest latihan (dibaca halaman Status sistem) ------------------
 mkdir -p "$backup_dir"
 manifest="$backup_dir/restore-drill-manifest.json"
 manifest_tmp="${manifest}.tmp"
 at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-ok_json="true"; [[ "$ok" == 1 ]] || ok_json="false"
-printf '{\n  "version": 1,\n  "at": "%s",\n  "sourceFile": "%s",\n  "targetDatabase": "%s",\n  "ok": %s,\n  "checks": {\n    "accounts": { "source": %s, "restored": %s },\n    "products": { "source": %s, "restored": %s },\n    "inventoryValue": { "source": "%s", "restored": "%s" },\n    "trialBalanceDifference": { "source": "%s", "restored": "%s" }\n  }\n}\n' \
-  "$at" "$(basename "$file")" "$target_db" "$ok_json" \
-  "$src_accounts" "$tgt_accounts" "$src_products" "$tgt_products" \
-  "$src_inventory" "$tgt_inventory" "$src_trial" "$tgt_trial" > "$manifest_tmp"
+DRILL_AT="$at" \
+DRILL_SOURCE_FILE="$(basename "$file")" \
+DRILL_TARGET_DB="$target_db" \
+DRILL_OK="$ok" \
+DRILL_ACCOUNTS="$tgt_accounts" \
+DRILL_PRODUCTS="$tgt_products" \
+DRILL_INVENTORY_VALUE="$tgt_inventory" \
+DRILL_POSTED_JOURNALS="$posted_journals" \
+DRILL_UNBALANCED_JOURNALS="$unbalanced_journals" \
+DRILL_ORPHAN_JOURNAL_LINES="$orphan_journal_lines" \
+node --input-type=module -e '
+const number = (name) => Number(process.env[name]);
+const manifest = {
+  version: 2,
+  at: process.env.DRILL_AT,
+  sourceFile: process.env.DRILL_SOURCE_FILE,
+  targetDatabase: process.env.DRILL_TARGET_DB,
+  ok: process.env.DRILL_OK === "1",
+  checks: {
+    accounts: number("DRILL_ACCOUNTS"),
+    products: number("DRILL_PRODUCTS"),
+    inventoryValue: process.env.DRILL_INVENTORY_VALUE,
+    postedJournals: number("DRILL_POSTED_JOURNALS"),
+    unbalancedJournals: number("DRILL_UNBALANCED_JOURNALS"),
+    orphanJournalLines: number("DRILL_ORPHAN_JOURNAL_LINES"),
+  },
+};
+process.stdout.write(`${JSON.stringify(manifest, null, 2)}\n`);
+' > "$manifest_tmp"
+if [[ -n "${BACKUP_STATUS_GROUP:-}" ]]; then
+  chgrp "$BACKUP_STATUS_GROUP" "$manifest_tmp"
+  chmod 640 "$manifest_tmp"
+fi
 mv "$manifest_tmp" "$manifest"
 echo "Manifest latihan diperbarui: $manifest"
 

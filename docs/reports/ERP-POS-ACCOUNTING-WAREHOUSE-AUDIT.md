@@ -1,20 +1,34 @@
 # ERP POS · Accounting · Warehouse — Evidence-Based Audit
 
-Tanggal audit: **13 November 2026**. Repository: `/home/najib/Downloads/bisa-erp-rilis-terbaru/bisa-erp`.
+## Current-state update — 14 November 2026
 
-**Status: audit source dan verifikasi aman selesai; penerimaan runtime end-to-end dan visual modul BLOCKED. Bukan sertifikasi siap produksi.** Semua fase memiliki status di §2. Tidak ada perbaikan aplikasi atau perubahan database.
+The detailed register and scorecards below preserve the **13 November pre-remediation baseline**; their open-defect wording is historical. The implementation report `ERP-REMEDIATION-2026-11-13.md` records F01–F17 as implemented. This session re-ran a PostgreSQL 18.6 isolated test database: the tenant-reference integration suite passed **16/16**, and five POS/accounting/warehouse workflow suites passed **46/46** after loading the demo fixture. Typecheck, scoped ESLint, Drizzle migration check, production build and `git diff --check` also passed. This verifies selected code paths; it does not certify every menu, physical device, production restore or store-scale workload.
+
+| Area | Current evidence / disposition |
+|---|---|
+| F01–F17 | Source remediation and historical regression results are recorded in the remediation report. The current selected integration run covers F01–F13 workflows; not every F-code was independently rerun in this checkpoint. |
+| POS returns F08/F09 | Request idempotency and sellable/write-off disposition are implemented and covered in the current `erp-remediation`/concurrency run. Disposition still applies to the whole return; mixed conditions require separate returns, a **medium design gap** if line-level mixed disposition is needed operationally. |
+| Tenant data references | Fresh migration chain is at 0079 (80 migration records); tenant FK suite passed 16/16 on the isolated DB. A read-only scan of 25 related edges on local `bisa_erp` found 0 company mismatches. |
+| Local database | Backup baru `backups/bisa-20261114-172714-293357.dump.enc` terenkripsi AES-256-GCM; manifest/hash cocok, autentikasi decrypt dan `pg_restore --list` lulus. Kunci backup disimpan pada desktop Secret Service keyring, nilainya tidak dicetak. Migrasi aktif kini 80/80 sampai 0079; 25 FK komposit baru ada sebagai `NOT VALID` dan menegakkan penulisan baru. Scan sebelum migrasi menemukan 0 mismatch dari 25 relasi. Database aktif tidak dipakai sebagai test DB. |
+| Tables and workflow references | The installed `@tanstack/react-table` line is v8 (`^8.21.3`). Its v8 guide supports manual server pagination with a supplied row count; filtering and sorting must use the same full dataset when paging server-side. This is a review criterion, not a claim that every screen follows it. [TanStack Table v8 pagination](https://tanstack.com/table/v8/docs/guide/pagination), [TanStack Table v8 column filtering](https://tanstack.com/table/v8/docs/guide/column-filtering). |
+
+Operational comparisons remain recommendations, not newly invented requirements: Microsoft Dynamics documents barcode-oriented inbound/outbound, stock count, adjustment and movement operations for store inventory. [Microsoft Learn — Store inventory management](https://learn.microsoft.com/en-us/dynamics365/commerce/work-with-store-inventory). The ERP’s actual rendered screens and task efficiency still need per-role browser review.
+
+Tanggal baseline audit: **13 November 2026**. Repository: `/home/najib/Downloads/bisa-erp-rilis-terbaru/bisa-erp`.
+
+**Status baseline: audit source dan verifikasi aman selesai; penerimaan runtime end-to-end dan visual modul BLOCKED.** Status terkini dirangkum pada bagian pembaruan di atas. Laporan ini bukan sertifikasi siap produksi.
 
 ## 1. Executive Summary
 
-Implementasi ini memiliki domain transaksi yang nyata dan cukup luas, bukan sekadar kumpulan halaman. POS terhubung dengan mutasi stok dan jurnal, penerimaan membentuk persediaan serta utang/pembayaran, dan retur pemasok memiliki alokasi utang, kredit, refund, barang pengganti, serta konversi ke uang muka. Banyak kontrol yang layak dipertahankan: RLS, authorization pada action, transaksi database bersama, idempotensi checkout, lock stok, validasi jurnal dan periode, serta reversal append-only.
+Implementasi ini memiliki domain transaksi yang nyata dan cukup luas, bukan sekadar kumpulan halaman. POS terhubung dengan mutasi stok dan jurnal, penerimaan membentuk persediaan serta utang/pembayaran, dan retur pemasok memiliki alokasi utang, kredit, refund, barang pengganti, serta konversi ke uang muka. Banyak kontrol yang layak dipertahankan: RLS, authorization pada action, transaksi database bersama, idempotensi checkout/retur, lock stok, validasi jurnal dan periode, serta reversal append-only.
 
-Namun, **integritas valuasi persediaan belum dapat dipercaya untuk semua jalur yang diizinkan aplikasi**. Edit massal dan impor dapat menimpa AVCO tanpa jurnal; produk nonaktif hilang dari valuasi; penerimaan transfer setelah perubahan biaya tidak memperbarui AVCO; dan penyesuaian dengan biaya berbeda tidak merekonsiliasi harga pokok. Sebagian masalah dibuktikan dengan menjalankan fungsi aktual memakai adapter in-memory, tanpa menyentuh database.
+Pada baseline, valuasi persediaan, pembulatan jurnal, dan retur POS memiliki temuan F01–F09. Temuan kode tersebut sudah ditangani menurut laporan remediasi; lima suite integrasi terpilih lulus di database sintetis pada verifikasi terbaru. Data historis yang telah ada sebelum perbaikan belum direkonsiliasi otomatis, dan kesamaan semua laporan dengan ledger pada database aktif masih memerlukan verifikasi lanjutan.
 
-Akuntansi juga memiliki cacat pembulatan: detail jurnal dibulatkan per baris, tetapi ringkasan bulanan dibulatkan setelah dijumlahkan. Detail yang seimbang dapat menghasilkan ringkasan akun yang berbeda. Laporan yang memakai ringkasan bulanan berpotensi berbeda dengan buku besar detail. Kasus jurnal lain lolos validasi domain tetapi menjadi tidak seimbang setelah serialisasi; trigger DB semestinya menolak commit, sehingga risikonya kegagalan transaksi, bukan otomatis jurnal korup yang berhasil tersimpan.
+Temuan pembulatan F06/F07 pada baseline telah diremediasi dengan nilai jurnal kanonis sebelum detail dan ringkasan ditulis. Suite `accounting-integrity` ikut lulus dalam run terbaru. Rekonsiliasi laporan lengkap dengan saldo ledger serta data historis tetap belum dinyatakan selesai.
 
-POS mempunyai risiko pengulangan retur parsial tanpa kunci idempotensi dan tidak memiliki pemilahan barang retur layak jual versus rusak pada jalur retur. Risiko authorization pada identitas kasir dan faktor kemasan offline perlu pengujian lanjutan pada database khusus testing.
+POS kini memiliki request idempotency untuk retur dan pilihan disposisi layak jual atau write-off. Form menerapkan disposisi yang sama ke semua baris retur, sehingga retur dengan kondisi campuran harus dipecah; kelayakan alur itu perlu diuji dengan kasir. Identitas kasir dan faktor kemasan offline sudah mendapat perbaikan source/test, tetapi skenario pemulihan perangkat fisik tetap belum diverifikasi.
 
-Verifikasi aktual: **typecheck PASS**, **lint area inti PASS**, **133/134 test unit PASS, 1 FAIL**. Perhitungan laba rugi sintetis melalui fungsi aktual cocok dengan perhitungan independen. Integrasi DB, build baru, dan E2E transaksi tidak dijalankan karena isolasi database belum terbukti dan aturan hanya mengizinkan perubahan laporan. Browser aktual tersedia, tetapi sesi test diarahkan ke login di seluruh enam kombinasi halaman/viewport; visual halaman ERP tidak terverifikasi.
+Verifikasi baseline tercatat di bagian metodologi. Verifikasi terkini: **46/46** test pada lima suite integrasi lintas modul, **16/16** test tenant-FK, typecheck, lint terpilih, Drizzle check, build, dan diff check lulus pada source kerja. Full E2E dan visual audit seluruh halaman tidak dijalankan.
 
 Register memuat **17 temuan: 2 CRITICAL, 9 HIGH, 5 MEDIUM, 1 LOW**; statusnya 11 CONFIRMED (source/harness), 4 DESIGN GAP dan 2 SUSPECTED. Tidak seluruhnya merupakan bug yang sudah direproduksi pada database.
 
@@ -301,7 +315,7 @@ Rekomendasi spesifik mengikuti F08/F09/F17: receipt/retry harus kembali ke dokum
 Seluruh path pada register di bawah relatif terhadap root absolut di awal laporan, dengan line source saat audit. Reproduksi yang menyentuh data **hanya untuk test DB disposable di masa mendatang**, tidak dilakukan pada DB pengguna. Harness yang sudah dijalankan disebut eksplisit.
 
 
-### Register temuan
+### Register temuan — baseline 13 November (status kini pada current-state update)
 
 | ID | Modul / fitur | Severity | Status |
 |---|---|---|---|
@@ -651,7 +665,7 @@ Tidak ada label MISSING baru yang dipaksakan berdasarkan fitur ERP lain. Kebutuh
 | Arbitrary UOM / rak-bin / multi-cabang advanced / promo kompleks | Tidak menjadi requirement pasti dalam audit ini; fixed packaging dan gudang ada | **NOT APPLICABLE sebagai tuntutan wajib baru**, kebutuhan bisnis dapat menetapkan kemudian |
 | e-Faktur/SPT compliance | Buku PPN GL ada; integrasi pelaporan resmi tidak dibuktikan | **UNVERIFIED**, tidak menyatakan compliant hukum/pajak dari saldo GL |
 
-## 15. Quality Scorecards
+## 15. Quality Scorecards — baseline sebelum remediasi
 
 Skor hanya untuk aspek yang mempunyai bukti cukup pada review ini; **bukan readiness certification**. Confidence menyatakan kekuatan bukti, bukan peluang tidak ada bug. 0–5 mengikuti skala permintaan. Tidak ada angka keseluruhan.
 
@@ -670,7 +684,7 @@ Skor hanya untuk aspek yang mempunyai bukti cukup pada review ini; **bukan readi
 
 Tidak memberikan code coverage percentage karena tidak menjalankan instrumentation. Banyak file test dan laporan historis tidak setara coverage operasional matang.
 
-## 16. Prioritized Improvement Roadmap
+## 16. Prioritized Improvement Roadmap — baseline sebelum remediasi
 
 Ini rekomendasi audit, **belum diimplementasikan**.
 
@@ -914,3 +928,86 @@ Native/backend-only code paths teridentifikasi: device pair/snapshot/sync/update
 ## Tindak lanjut implementasi — 13 November 2026
 
 Laporan di atas tetap merupakan bukti **baseline sebelum perbaikan**. Setelah pengguna meminta implementasi, F01–F17 ditangani dan diverifikasi; pengguna kemudian menyetujui backup+migrasi database aktif. Rincian perubahan, test aktual, batas verifikasi, backup, migrasi0073 dan smoke aplikasi aktif dicatat di [ERP-REMEDIATION-2026-11-13.md](ERP-REMEDIATION-2026-11-13.md). Temuan dan skor historis pada laporan ini tidak dihapus atau diubah menjadi klaim verifikasi baru.
+
+## Addendum — Alur Penerimaan, Faktur Pembelian, dan Retur Pemasok
+
+Tanggal pemeriksaan: **13 November 2026**. Cakupan khusus: halaman penerimaan, riwayat penerimaan yang diberi label faktur, dan retur pemasok. Pemeriksaan source/route/schema dilakukan melalui CodeGraph dan pencarian terarah. Repowise MCP tersedia tetapi menjawab bahwa repository belum memiliki indeks; hasil Repowise tidak dipakai. Tidak ada database, source aplikasi, atau konfigurasi yang diubah. Test, browser, dan transaksi runtime **NOT RUN** pada addendum ini; temuan berikut adalah pemeriksaan source, bukan bukti kondisi data aktif.
+
+### Alur yang ditemukan
+
+```mermaid
+flowchart LR
+  PO[PO draft] -->|kirim| Sent[PO terkirim]
+  Sent --> GRN[Form Penerimaan]
+  GRN -->|satu aksi posting| Stock[Stok + batch/serial]
+  GRN -->|satu aksi posting| AP[Utang atau kas/bank + jurnal]
+  GRN --> History[Riwayat Penerimaan]
+  History --> Return[Retur dari penerimaan]
+  Return -->|posting| StockOut[Stok keluar]
+  Return -->|posting| APAdj[Alokasi utang / kredit pemasok]
+  APAdj --> Resolve[Refund / kredit ke utang / uang muka / pengganti]
+```
+
+Garis besar ini bersumber dari `PurchaseOrderActions.sendAndReceive` (`src/components/gudang/purchase-order-actions.tsx:51-62`), `createReceipt` (`src/server/inventory/receipts.ts:124-208`), `postReceiptJournal` (`src/server/inventory/receipt-journal.ts:27-78`), dan `postSupplierReturn` (`src/server/supplier-returns/posting.ts:305-417`). Fungsi domain dipanggil dari server action dalam transaksi `withCompany`; jalur penerimaan juga memakai idempotency key bila dikirim form. Ini bukti susunan kode, bukan validasi transaksi PostgreSQL aktif.
+
+Referensi eksternal dipakai sebagai pembanding praktik dan variasi dokumen, bukan sebagai requirement bisnis perusahaan ini. Dokumentasi Accurate Online menunjukkan PO, penerimaan, tagihan/faktur, pembayaran, uang muka, dan retur sebagai dokumen/tahap yang dapat saling ditautkan; ada jalur faktur sebelum penerimaan dan penerimaan parsial setelah uang muka. Hal tersebut menegaskan bahwa satu urutan wajib tidak boleh diasumsikan. Lihat [fitur pembelian Accurate](https://accurate.id/online/fitur/pembelian/), [faktur mendahului penerimaan](https://help.accurate.id/product/accurate-online/fitur-aol/pembelian/faktur-pembelian/membuat-faktur-pembelian-mendahului-terima-barang/), [uang muka dan penerimaan parsial](https://help.accurate.id/product/accurate-online/fitur-aol/pembelian/uang-muka-pembelian/cara-membuat-uang-muka-pembelian-partial/), dan [fungsi retur pembelian](https://help.accurate.id/product/accurate-online/fitur-aol/pembelian/retur-pembelian/penjelasan-dan-fungsi-retur-pembelian/). Apakah skenario faktur datang sebelum/sesudah barang wajib didukung tetap **unresolved business policy**.
+
+### Temuan addendum
+
+| ID | Modul / fitur | Severity | Status / confidence | Temuan |
+|---|---|---:|---|---|
+| PBR-01 | Gudang / Faktur pembelian | HIGH | DESIGN GAP / sedang | Dokumen faktur pemasok belum terpisah dari penerimaan barang. `stock_receipts` menyimpan `supplierInvoiceNumber`, total, tax, pembayaran dan status; penerimaan yang sama menaikkan stok dan membukukan utang/kas. Pencarian terarah di schema/server/route gudang hanya menemukan nomor invoice sebagai field penerimaan, tanpa entity atau route faktur pembelian tersendiri. Faktur sebelum barang atau faktur aktual setelah GRN tidak terlihat sebagai alur terpisah. Dampak bergantung pada kebijakan operasional; bila invoice bisa datang terpisah, staf tidak dapat mencatat tanggal/tagihan, nilai utang, dan pajak dari dokumen supplier secara independen dari waktu stok diterima. |
+| PBR-02 | Gudang / navigasi dan riwayat | MEDIUM | CONFIRMED / tinggi | Menu/halaman berlabel “Faktur pembelian” menunjuk `/app/gudang/penerimaan/riwayat`, tetapi halaman itu mendeskripsikan riwayat penerimaan pembelian, stok awal, bonus, dan retur pelanggan (`src/app/app/gudang/penerimaan/riwayat/page.tsx:81-91`). Nomor invoice memang dapat dicari pada history, tetapi daftar tersebut bukan daftar faktur murni. Label membuat staf utang berpotensi mengira semua baris adalah invoice yang menunggu pembayaran. |
+| PBR-03 | Gudang / sumber retur | MEDIUM | CONFIRMED pada source / tinggi | Picker “Retur dari faktur penerimaan” mengambil semua penerimaan `posted`, tidak membatasi sumber pembelian atau supplier yang terisi, dan hanya mengambil 100 terbaru (`src/server/catalog/receipt-links.ts:28-34`). UI menampilkan sumber tanpa supplier sebagai `—` dan tetap dapat dipilih (`src/app/app/gudang/retur-pembelian/baru/page.tsx:133-157`). Pada sumber tanpa supplier, `SupplierReturnForm` memilih supplier pertama sebagai fallback (`src/components/gudang/supplier-return-form.tsx:120`); server kemudian menolak karena supplier receipt line tidak sama dengan supplier retur (`src/server/supplier-returns/returns.ts:312-338`). Dokumen lama di luar 100 hasil juga tidak dapat dipilih lewat picker tersebut. |
+| PBR-04 | Gudang / keterlacakan retur ke invoice | MEDIUM | DESIGN GAP / sedang | Form dari GRN menyimpan `receiptLineId`, tetapi plafon retur dihitung agregat per pemasok dan produk (`src/server/supplier-returns/provenance.ts:20-28,42-83`), bukan sisa qty baris penerimaan yang dipilih. Posting retur juga membangun alokasi dari daftar seluruh utang terbuka pemasok (`src/server/supplier-returns/posting.ts:391-417`), bukan selalu dari invoice/receipt asal. Jadi tautan asal membantu audit tetapi tidak menjamin qty retur maupun pengurangan utang dibatasi/dipasangkan ke dokumen tersebut. Apakah retur harus mengurangi invoice asal, utang tertua (FIFO), atau menjadi klaim pemasok tersendiri belum ditetapkan; jangan menganggap FIFO sebagai kesalahan tanpa keputusan itu. |
+
+#### Bukti, reproduksi, dan rekomendasi
+
+**PBR-01 — Faktur dan penerimaan digabung.** Bukti utama: `src/db/schema/inventory.ts:177-210` (satu tabel receipt berisi supplier invoice number/total/tax/payment status), `src/app/app/gudang/penerimaan/page.tsx:60-63` (form penerimaan), `src/server/actions/inventory/penerimaan.ts:118-161`, `src/server/inventory/receipts.ts:124-208` (create receipt mengaplikasikan stok dan memanggil jurnal), `src/server/inventory/receipt-journal.ts:55-78` (kredit AP atau akun pembayaran). Nomor faktur dapat kosong pada action schema (`src/server/actions/inventory/penerimaan.ts:44`); tidak ada route `faktur`/`invoice` khusus di bawah gudang. Reproduksi: buka Penerimaan baru, amati satu form sumber/pemasok/nomor faktur/barang/nilai; simpan, lalu stok dan jurnal pembelian berasal dari penerimaan yang sama. Ekspektasi bila kebijakan mengizinkan dokumen terpisah: terima fisik tanpa mengunci nilai invoice final, lalu cocokkan invoice vendor dan receipt/PO, termasuk qty/harga/PPN/biaya selisih. Rekomendasi: putuskan dulu apakah minimarket menerima invoice selalu bersama barang. Jika ya, beri label “Penerimaan & Faktur” dan validasi field faktur sesuai aturan perusahaan. Jika tidak, modelkan faktur vendor serta pencocokan PO–GRN–invoice, termasuk invoice-before-receipt, penerimaan parsial, selisih nilai, duplikasi nomor per supplier, DP, pembayaran, dan reversal. Required regression: receipt-before-invoice, invoice-before-receipt, partial receipt/invoice, price/tax variance, duplicate supplier invoice, void/reversal, stok–AP–PPN–GL reconciliation.
+
+**PBR-02 — label riwayat menyesatkan.** Bukti: `src/app/app/gudang/penerimaan/riwayat/page.tsx:81-91`; filter `source` tersedia namun defaultnya tidak memisahkan invoice dari penerimaan lain (`:27-36,41-54`). Reproduksi: buka menu Faktur pembelian tanpa filter; judulnya faktur, deskripsi daftar mencakup stok awal, bonus dan retur pelanggan. Rekomendasi: selama modelnya tetap berbasis receipt, ubah label menjadi “Riwayat penerimaan” dan tampilkan nomor invoice sebagai kolom/filter. Jika entity faktur dibuat, arahkan menu ke daftar faktur khusus dengan status belum ditagih/terbayar/parsial dan tautan ke receipt/PO. Required regression: pencarian/filter invoice dan receipt tidak mencampur status dokumen.
+
+**PBR-03 — picker retur mengizinkan asal yang tidak dapat diproses.** Reproduksi: buat atau pilih penerimaan posted tanpa supplier (misalnya stok awal/retur pelanggan), buka Retur Pembelian baru, pilih dokumen yang menampilkan pemasok `—`, muat baris, lalu simpan/post; server memvalidasi `receiptLine.supplierId !== input.supplierId` dan menolak. Reproduksi ini diturunkan dari source; **tidak dijalankan pada database**. Rekomendasi: filter picker ke sumber yang secara bisnis dapat dikembalikan ke supplier dan supplier-nya terisi; bila bonus pemasok boleh diretur, tampilkan tipe sumber dengan jelas. Ganti batas 100 tetap dengan pencarian/paginasi. Required regression: picker tidak menawarkan receipt tanpa supplier; dokumen lama tetap dapat dicari; sumber yang memang didukung berhasil diproses.
+
+**PBR-04 — referensi asal tidak menjadi batas/alokasi dokumen.** Reproduksi konseptual: supplier A menerima SKU X pada receipt R1 sebanyak 10 dan R2 sebanyak 10; mulai retur dari R1 sebanyak 15. Validasi provenance menghitung 20 unit diterima supplier-wide, sehingga source line R1 bukan batas 10 unit. Saat posting, alokasi utang disusun terhadap open payables pemasok, tidak otomatis hanya terhadap R1. Ini pembacaan langsung query dan panggilan domain, belum dites pada DB. Rekomendasi: tetapkan kebijakan; bila retur harus berasal dari faktur tertentu, simpan/alokasikan qty retur secara kumulatif per receipt line dan kaitkan credit/payable ke invoice tersebut dengan locking. Bila retur boleh supplier-wide/FIFO, nyatakan dokumen tujuan alokasi dengan jelas dan sediakan audit trail per dokumen. Required regression: dua receipt supplier yang sama, retur parsial lintas receipt, dua retur bersamaan, invoice lunas vs terbuka, return void, dan rekonsiliasi nilai stok/AP/PPN/GL.
+
+### Hasil riset dan verifikasi addendum
+
+| Pemeriksaan | Hasil |
+|---|---|
+| Riset referensi | `web-search` skill dipakai. CLI awal memberi hasil lexical yang tidak relevan; hasil itu tidak dipakai sebagai bukti. Pencarian web lanjutan memakai dokumen resmi Accurate Online untuk variasi PO/receipt/invoice/DP/retur. Referensi adalah pembanding praktik, bukan definisi kebutuhan pengguna. |
+| CodeGraph | Dipakai untuk route, form, action, domain, schema, provenance dan posting; respons source current on-disk, tanpa stale banner. |
+| Repowise | `get_overview` menyatakan repo tidak memiliki index; tidak mengandalkan jawaban Repowise atau menjalankan init. |
+| Test/runtime/browser | **NOT RUN** untuk pemeriksaan fokus ini. Test penerimaan/retur tercatat ada melalui penelusuran simbol, namun keberadaan test tidak dihitung sebagai lulus. Login/session UI tidak diuji ulang. |
+| Kebijakan unresolved | Invoice boleh datang terpisah atau tidak; retur bonus pemasok didukung atau tidak; retur dialokasikan ke invoice asal atau FIFO; nilai retur memakai AVCO berjalan atau nilai asal. |
+
+### Status tindak lanjut penerimaan dan retur — 13 November 2026
+
+Temuan addendum tetap dipertahankan sebagai baseline; bagian ini mencatat perubahan setelah pengguna meminta perbaikan. Perubahan source terkait penerimaan dan retur:
+
+| Temuan | Status implementasi | Bukti pada working tree |
+|---|---|---|
+| PBR-01 | **Parsial; kebijakan masih unresolved.** Satu posting pembelian menambah stok sekaligus membukukan utang/pembayaran. Nomor faktur opsional saat penerimaan, lalu dapat dicatat/dikoreksi dari detail penerimaan setelah barang masuk tanpa mengubah nilai, pajak, stok, atau jurnal. Siklus faktur terpisah, faktur mendahului barang, dan selisih nilai/PPN belum dibuat karena kebijakan perusahaan belum terdefinisi. | `src/app/app/gudang/penerimaan/page.tsx`; `src/components/gudang/receipt-form.tsx`; `src/app/app/gudang/penerimaan/[id]/page.tsx`; `src/components/gudang/receipt-invoice-number-form.tsx`; `src/server/actions/inventory/penerimaan.ts`; `src/server/inventory/receipts.ts` |
+| PBR-02 | **Diperbaiki pada UI.** Menu dan halaman menjadi “Riwayat pembelian”, filter awal hanya pembelian, filter “Semua sumber” tetap tersedia, dan nomor faktur/status belum dicatat ditampilkan di desktop serta mobile. | `src/lib/modules.ts`; `src/app/app/gudang/penerimaan/riwayat/page.tsx` |
+| PBR-03 | **Diperbaiki pada picker.** Picker hanya mengambil penerimaan pembelian terposting dengan pemasok, menyediakan pencarian nomor penerimaan/faktur/pemasok dan pagination, serta jumlah hasil tidak dibatasi diam-diam pada 100. | `src/server/catalog/receipt-links.ts`; `src/app/app/gudang/retur-pembelian/baru/page.tsx` |
+| PBR-04 | **Diperbaiki pada batas kuantitas dan alokasi posting.** Kuantitas kumulatif per baris penerimaan diverifikasi saat membuat draft dan diverifikasi ulang saat posting. Posting retur dari receipt menargetkan saldo utang receipt asal; nilai yang melampaui saldo itu dicatat sebagai kredit pemasok. Retur manual tetap mengikuti alokasi supplier-wide yang sudah ada. | `src/server/supplier-returns/provenance.ts`; `src/server/supplier-returns/returns.ts`; `src/server/supplier-returns/posting.ts` |
+
+**Batas yang tetap terbuka:** (1) PBR-01 memerlukan keputusan apakah faktur vendor boleh datang sebelum/terpisah dari barang dan bagaimana selisih harga, pajak, serta tanggal pembukuan ditangani; model faktur terpisah dan migrasi tidak ditambahkan tanpa aturan itu. (2) Kebijakan bisnis apakah retur melebihi utang receipt asal menjadi kredit pemasok sudah dipilih di implementasi ini sebagai perilaku aman, tetapi perlu dikonfirmasi pemilik proses. (3) Validasi dijalankan ulang pada supplier row lock saat posting; pengujian race condition database belum dijalankan pada sesi ini.
+
+**Verifikasi sesi tindak lanjut:** ESLint terarah pada sebelas file terkait **PASS**; `git diff --check` **PASS**; `pnpm typecheck` **PASS**; `pnpm exec vitest run tests/unit/a28-ui5-consistency.test.ts` **PASS** (1 file, 12 tests). Browser visual audit dan test DB khusus penerimaan/retur **NOT RUN**.
+
+**Catatan insiden verifikasi:** pemanggilan awal `pnpm test -- tests/unit/a28-ui5-consistency.test.ts` salah meneruskan filter sehingga Vitest mulai suite integrasi. Suite ini memuat `.env.local`; target yang terkonfigurasi adalah `localhost:5433/bisa_erp`. `tests/integration/fix-p1-retur-void.test.ts` menjalankan `beforeAll → ensureFixtureCompany()` dan dapat meng-commit fixture bernama `01900000-0000-7000-8000-00000000f101` bila fixture belum ada. Proses dihentikan setelah output menunjukkan 8 kegagalan pada test retur/void penjualan yang tidak terkait; hasil tersebut tidak dihitung sebagai verifikasi perbaikan ini. Pemeriksaan SQL **read-only** sesudahnya tidak menemukan baris untuk ID tersebut pada `organization`, `company_settings`, ataupun tabel tenant yang memiliki `company_id`, sehingga tidak ada fixture perusahaan tersisa yang teramati. Seluruh skenario test file itu sendiri dibungkus transaksi rollback. Tidak ada perubahan database lanjutan pada sesi ini.
+
+### Tindak lanjut UI/UX Retur Pembelian — 13 November 2026
+
+Setelah analisa UX, rute `/app/gudang/retur-pembelian` menjadi beranda kerja untuk draf dan klaim kredit yang belum selesai; tombol **Riwayat** membuka `/app/gudang/retur-pembelian/riwayat`. Riwayat penuh mempertahankan pagination, kini pencarian benar-benar menyaring nomor retur/pemasok, memakai satu kontrol status, dan menggunakan kartu ringkas di viewport di bawah desktop. Aksi **Buka** terlihat di setiap entri; URL lama dengan query filter diteruskan ke rute riwayat. Pada detail retur, ringkasan klaim tetap terlihat sementara formulir penyelesaian berada di disclosure yang bisa dibuka.
+
+Verifikasi UI follow-up: `pnpm typecheck`, ESLint terarah, `git diff --check`, dan `pnpm exec vitest run tests/unit/a28-ui5-consistency.test.ts` (12 test) **PASS**. Browser/screenshot **NOT RUN**; perubahan responsif belum diperiksa pada render browser.
+
+### Pembaruan POS retry — 14 November 2026
+
+Risiko penggunaan ulang kunci POS dengan payload berbeda telah dimitigasi pada source dan diverifikasi. Fingerprint SHA-256 payload checkout tersimpan bersama klaim idempotensi; jalur online maupun antrean POS offline membedakan replay identik dari payload berbeda. Bukti: `src/server/actions/pos.ts:251-327`, `src/server/pos/sales-create.ts:22-220`, `src/server/pos-offline.ts:118-132, 292-321, 589-689`; tes integrasi checkout dan offline **19/19 PASS**, typecheck, ESLint target, serta `git diff --check` **PASS**. Kunci transaksi lama yang tidak memiliki fingerprint menghasilkan konflik aman dan harus dicocokkan manual lewat riwayat.
+
+### Pembaruan integritas tenant POS — 14 November 2026
+
+Migrasi **0080** memperkuat sembilan relasi POS/retur dengan composite FK `(company_id, foreign_id)`: sale line ke penjualan/produk/kemasan; pembayaran ke penjualan; retur ke penjualan; baris retur ke dokumen retur, baris penjualan asal, produk, dan kemasan. Constraint baru dipasang `NOT VALID` sebelum FK ID-only lama dilepas agar data historis tidak dipindai saat rollout. Tes PostgreSQL sintetis **18/18 PASS** dan katalog mengonfirmasi 9/9 constraint hadir; typecheck, lint, `drizzle-kit check`, dan `git diff --check` juga lulus. Database aktif tidak diubah. Riwayat lama belum divalidasi; header POS dan referensi accounting/warehouse lain masih menjadi tindak lanjut.

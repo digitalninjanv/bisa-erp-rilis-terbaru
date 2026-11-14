@@ -24,8 +24,14 @@ import {
   isImportEntity,
 } from "@/lib/import-parse";
 import { requirePermission } from "@/lib/session";
-import { csvResponse } from "@/lib/csv";
+import { csvResponse, toCsv } from "@/lib/csv";
 import { buildImportTemplate, type XlsxCell } from "@/lib/xlsx";
+import { customFieldDefinitionsFor } from "@/lib/custom-fields";
+import {
+  customFieldImportField,
+  customFieldImportHeader,
+} from "@/lib/import/import-custom-fields";
+import { getCompanySettingsRow } from "@/server/settings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -112,9 +118,20 @@ export async function GET(
   const ctx = await requirePermission("import.manage");
   const format = new URL(request.url).searchParams.get("format") === "xlsx" ? "xlsx" : "csv";
   const sample = IMPORT_SAMPLES[entity];
+  const customEntity = entity === "suppliers" ? "supplier" : entity === "customers" ? "customer" : null;
+  const customFields = customEntity
+    ? await withCompanyReadOnly(ctx.company.id, async (tx) => {
+        const settings = await getCompanySettingsRow(tx, ctx.company.id);
+        return customFieldDefinitionsFor(settings?.customFields, customEntity);
+      })
+    : [];
 
   if (format === "csv") {
-    return csvResponse(sample.fileName, sample.csv);
+    if (customFields.length === 0) return csvResponse(sample.fileName, sample.csv);
+    const sampleData = sampleMatrix(sample.csv);
+    const headers = [...sampleData.headers, ...customFields.map(customFieldImportHeader)];
+    const rows = sampleData.rows.map((row) => [...row, ...customFields.map(() => "")]);
+    return csvResponse(sample.fileName, toCsv(headers, rows));
   }
 
   const references = await withCompanyReadOnly(ctx.company.id, async (tx): Promise<Reference[]> => {
@@ -216,14 +233,25 @@ export async function GET(
 
   const sampleData = sampleMatrix(sample.csv);
   const fileBase = sample.fileName.replace(/\.csv$/i, "");
+  const customFieldInstructions = customFields.map((field) => {
+    const type =
+      field.type === "select"
+        ? ` Pilihan yang diterima: ${(field.options ?? []).join(", ")}.`
+        : field.type === "date"
+          ? " Gunakan format YYYY-MM-DD."
+          : field.type === "number"
+            ? " Isi dengan angka yang valid."
+            : "";
+    return `Kolom kustom ${field.label}.${type}${field.required ? " Kolom kosong tetap dapat diimpor dan akan diberi catatan untuk dilengkapi." : ""}`;
+  });
   return new Response(
     new Uint8Array(
       buildImportTemplate({
         entityLabel: IMPORT_ENTITY_LABELS[entity],
-        headers: sampleData.headers,
-        exampleRows: sampleData.rows,
-        fields: ENTITY_FIELDS[entity],
-        instructions: INSTRUCTIONS[entity] ?? [],
+        headers: [...sampleData.headers, ...customFields.map(customFieldImportHeader)],
+        exampleRows: sampleData.rows.map((row) => [...row, ...customFields.map(() => "")]),
+        fields: [...ENTITY_FIELDS[entity], ...customFields.map(customFieldImportField)],
+        instructions: [...(INSTRUCTIONS[entity] ?? []), ...customFieldInstructions],
         references,
       }),
     ),

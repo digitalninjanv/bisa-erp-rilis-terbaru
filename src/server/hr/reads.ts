@@ -5,6 +5,7 @@
 import {
   and,
   asc,
+  count,
   desc,
   eq,
   gte,
@@ -132,6 +133,15 @@ export async function listLeaveRequests(tx: Tx, companyId: string) {
     .limit(100);
 }
 
+/** Count every pending leave request for the HR shell badge without loading request details. */
+export async function countPendingLeaveRequests(tx: Tx, companyId: string): Promise<number> {
+  const [row] = await tx
+    .select({ value: count() })
+    .from(leaveRequests)
+    .where(and(eq(leaveRequests.companyId, companyId), eq(leaveRequests.status, "pending")));
+  return row?.value ?? 0;
+}
+
 export type LeaveBalanceRow = {
   employeeId: string;
   employeeName: string;
@@ -194,6 +204,15 @@ export async function listOvertimeRequests(
       ),
     )
     .orderBy(desc(overtimeRequests.date));
+}
+
+/** Count every pending overtime request for the HR shell badge. */
+export async function countPendingOvertimeRequests(tx: Tx, companyId: string): Promise<number> {
+  const [row] = await tx
+    .select({ value: count() })
+    .from(overtimeRequests)
+    .where(and(eq(overtimeRequests.companyId, companyId), eq(overtimeRequests.status, "pending")));
+  return row?.value ?? 0;
 }
 
 export async function listThrDrafts(tx: Tx, companyId: string, period: string) {

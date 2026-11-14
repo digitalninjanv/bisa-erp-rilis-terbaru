@@ -3,6 +3,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { importJobs } from "@/db/schema";
 import { getSettings, listLinkedJournalsBySourceIds, listWarehouses, pickDefaultWarehouseId } from "@/server/catalog";
+import { customFieldDefinitionsFor } from "@/lib/custom-fields";
 import { requirePermissionPage } from "@/lib/session";
 import { IMPORT_ENTITY_LABELS, type ImportEntity } from "@/lib/import-parse";
 import { PageHeader } from "@/components/blocks/page-header";
@@ -89,8 +90,10 @@ export default async function ImportPage({
       );
       return { ...job, journalId: opening?.id ?? null, journalNumber: opening?.number ?? null };
     });
+    const customEntity = entity === "suppliers" ? "supplier" : entity === "customers" ? "customer" : null;
     return {
       warehouses,
+      customFields: customEntity ? customFieldDefinitionsFor(settings?.customFields, customEntity) : [],
       jobs: jobsWithJournal,
       defaultWarehouseId: pickDefaultWarehouseId(warehouses, settings?.defaultWarehouseId),
     };
@@ -132,6 +135,7 @@ export default async function ImportPage({
           entity={entity}
           title={MASTER_TITLES[entity]}
           description={activeTab.hint}
+          customFields={data.customFields}
           warehouses={data.warehouses}
           defaultWarehouseId={data.defaultWarehouseId}
           history={history}

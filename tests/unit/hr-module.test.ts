@@ -32,32 +32,18 @@ import { buildPalettePages } from "@/lib/palette";
  * A-24 T2 — HR menjadi modul shell sendiri (Opsi A riset teknologi):
  * `ModuleKey` bertambah "hr"; sebagian besar rute tetap di
  * /app/akuntansi/... (payroll, kasbon, pinjaman, klaim, absensi).
- * Overhaul HR menambahkan beranda ringkasan /app/akuntansi/hr dan
- * memindahkan organisasi ke /app/akuntansi/hr/pengaturan; grup
- * "SDM & Payroll" tetap keluar dari sidebar akuntansi; izin tetap
- * payroll.* tetapi modul pemiliknya kini hr; saklar perusahaan
- * berbasis ModuleKey sehingga hr otomatis ikut; pendaratan
- * memperlakukan hr seperti modul lain.
+ * Kontrak navigasi HR saat ini sengaja ringkas: karyawan & gaji, kasbon,
+ * dan presensi. Izin payroll.* dimiliki modul hr; Payroll Indonesia tidak
+ * menjadi item menu; pendaratan dan saklar mengikuti ModuleKey.
  */
 
 const HR_HREFS = [
   "/app/akuntansi/payroll",
-  // A-25 U5: halaman Persetujuan gabungan ditambahkan disengaja
-  // (pola penambahan T3 untuk Mode Operasi) — bukan rute berpindah.
-  "/app/akuntansi/hr/persetujuan",
-  "/app/akuntansi/hr/absensi",
-  "/app/akuntansi/hr/lembur",
-  "/app/akuntansi/hr/cuti",
   "/app/akuntansi/kasbon",
-  "/app/akuntansi/pinjaman",
-  "/app/akuntansi/klaim",
-  "/app/akuntansi/hr",
-  // Overhaul HR: organisasi & parameter pindah ke rute sendiri agar
-  // beranda HR menjadi ringkasan operasional, bukan halaman setting.
-  "/app/akuntansi/hr/pengaturan",
+  "/app/akuntansi/hr/absensi",
 ];
 
-describe("definisi modul HR (beranda ringkasan sendiri)", () => {
+describe("definisi modul HR (workflow ringkas)", () => {
   it("hr terdaftar sebagai ModuleKey, di MODULES & MODULE_LIST", () => {
     expect(ALL_MODULE_KEYS).toContain("hr");
     expect(MODULES.hr.key).toBe("hr");
@@ -65,11 +51,11 @@ describe("definisi modul HR (beranda ringkasan sendiri)", () => {
     expect(MODULE_LIST.map((m) => m.key)).toContain("hr");
   });
 
-  it("beranda modul HR adalah ringkasan HR, bukan halaman payroll", () => {
-    expect(MODULES.hr.href).toBe("/app/akuntansi/hr");
+  it("beranda modul HR langsung menuju daftar karyawan dan gaji", () => {
+    expect(MODULES.hr.href).toBe("/app/akuntansi/payroll");
   });
 
-  it("nav HR menunjuk keluarga rute HR (termasuk pengaturan) tanpa duplikat", () => {
+  it("nav HR hanya menampilkan karyawan/gaji, kasbon, dan presensi", () => {
     const hrefs = MODULES.hr.nav.map((item) => item.href);
     expect(new Set(hrefs).size).toBe(hrefs.length);
     expect([...hrefs].sort()).toEqual([...HR_HREFS].sort());
@@ -83,10 +69,8 @@ describe("definisi modul HR (beranda ringkasan sendiri)", () => {
   it("nav HR dikelompokkan per pekerjaan", () => {
     const groups = groupNavItems(MODULES.hr.nav);
     expect(groups.map((group) => group.group)).toEqual([
-      "Dashboard",
-      "Karyawan",
-      "Kesejahteraan",
-      "Pengaturan",
+      "Karyawan & gaji",
+      "Operasi harian",
     ]);
   });
 });
@@ -100,19 +84,17 @@ describe("sidebar akuntansi kehilangan grup SDM & Payroll", () => {
   it("grup akuntansi mengikuti IA Accurate-like", () => {
     const groups = groupNavItems(MODULES.akuntansi.nav);
     expect(groups.map((g) => g.group)).toEqual([
-      "Dashboard",
-      "Kas & Bank",
-      "Buku Besar",
-      "Laporan",
-      "Pengaturan",
+      "Keuangan harian",
+      "Pembukuan",
+      "Bagan akun & pengaturan",
+      "Laporan & pengendalian",
     ]);
   });
 
-  it("gabungan href semua modul = 58 item tanpa dobel", () => {
+  it("gabungan href seluruh modul tidak memiliki tujuan duplikat", () => {
     const all = MODULE_LIST.flatMap((m) => m.nav.map((i) => i.href));
     expect(new Set(all).size).toBe(all.length);
-    // 9 POS + 18 Gudang + 17 Akuntansi + 10 HR + 4 Analisa = 58 item nav.
-    expect(all).toHaveLength(58);
+    expect(all).toHaveLength(53);
   });
 });
 
@@ -228,7 +210,7 @@ describe("pendaratan memperlakukan hr seperti modul lain", () => {
       enabledModules: [...ALL_MODULE_KEYS],
     };
     expect(denialRedirectPath(access, "payroll.manage")).toBe(
-      "/app/akuntansi/hr?forbidden=payroll.manage",
+      "/app/akuntansi/payroll?forbidden=payroll.manage",
     );
   });
 

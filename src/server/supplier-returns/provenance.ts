@@ -120,3 +120,90 @@ export async function assertReturnWithinProvenance(
     }
   }
 }
+
+/**
+ * Enforce the remaining quantity of each selected purchase-receipt line.
+ * Supplier/product provenance is intentionally broader for manual returns;
+ * a return started from a receipt must also stay within that exact line.
+ * Re-run this at posting while the supplier row is locked so concurrent
+ * drafts cannot collectively return more than the source receipt supplied.
+ */
+export async function assertReturnWithinReceiptLines(
+  tx: Tx,
+  input: {
+    companyId: string;
+    supplierId: string;
+    lines: { receiptLineId: string | null | undefined; qty: Decimal; productName: string }[];
+  },
+): Promise<void> {
+  const requested = new Map<string, { qty: Decimal; productName: string }>();
+  for (const line of input.lines) {
+    if (!line.receiptLineId) continue;
+    const current = requested.get(line.receiptLineId);
+    requested.set(line.receiptLineId, {
+      qty: (current?.qty ?? d(0)).plus(line.qty),
+      productName: line.productName,
+    });
+  }
+  const receiptLineIds = [...requested.keys()];
+  if (receiptLineIds.length === 0) return;
+
+  const origins = await tx
+    .select({
+      id: stockReceiptLines.id,
+      qty: stockReceiptLines.qty,
+      productId: stockReceiptLines.productId,
+      supplierId: stockReceipts.supplierId,
+      source: stockReceipts.source,
+      status: stockReceipts.status,
+    })
+    .from(stockReceiptLines)
+    .innerJoin(stockReceipts, eq(stockReceiptLines.receiptId, stockReceipts.id))
+    .where(
+      and(
+        eq(stockReceiptLines.companyId, input.companyId),
+        inArray(stockReceiptLines.id, receiptLineIds),
+      ),
+    );
+  if (origins.length !== receiptLineIds.length) {
+    throw new AppError("VALIDATION", "Baris penerimaan asal tidak ditemukan.");
+  }
+
+  const returnedRows = await tx
+    .select({
+      receiptLineId: supplierReturnLines.receiptLineId,
+      qty: sql<string>`coalesce(sum(${supplierReturnLines.qty}), 0)`,
+    })
+    .from(supplierReturnLines)
+    .innerJoin(supplierReturns, eq(supplierReturnLines.returnId, supplierReturns.id))
+    .where(
+      and(
+        eq(supplierReturnLines.companyId, input.companyId),
+        inArray(supplierReturnLines.receiptLineId, receiptLineIds),
+        inArray(supplierReturns.status, [...POSTED_RETURN_STATUSES]),
+      ),
+    )
+    .groupBy(supplierReturnLines.receiptLineId);
+  const returnedByLine = new Map(returnedRows.map((row) => [row.receiptLineId, d(row.qty)]));
+
+  for (const origin of origins) {
+    if (
+      origin.source !== "purchase" ||
+      origin.status !== "posted" ||
+      origin.supplierId !== input.supplierId
+    ) {
+      throw new AppError(
+        "VALIDATION",
+        "Retur dari dokumen harus memakai penerimaan pembelian terposting milik pemasok yang sama.",
+      );
+    }
+    const line = requested.get(origin.id)!;
+    const remaining = d(origin.qty).minus(returnedByLine.get(origin.id) ?? d(0));
+    if (line.qty.gt(remaining)) {
+      throw new AppError(
+        "VALIDATION",
+        `Qty retur ${line.productName} melebihi sisa pada penerimaan asal (${remaining.toFixed(4)}).`,
+      );
+    }
+  }
+}

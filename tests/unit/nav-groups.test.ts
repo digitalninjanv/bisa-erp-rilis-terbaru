@@ -1,11 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { MODULES, groupNavItems, type NavItem } from "@/lib/modules";
 
-// A-22 Tahap K5 (UX-07): sidebar akuntansi datar tanpa kelompok diganti
-// kepala kelompok tanpa mengubah rute. A-24 T2: grup "SDM & Payroll"
-// keluar dari akuntansi menjadi nav modul HR sendiri, jadi kelompok
-// akuntansi kini Dashboard / Kas & Bank / Buku Besar / Laporan / Setting (16 item;
-// 15 sejak A-27 B7 menambah Migrasi bagan akun di Buku & Laporan).
+// Kontrak navigasi mengikuti group dan href di MODULES, supaya test tidak
+// memaksa label atau kelompok lama setelah workflow sidebar dirombak.
 // groupNavItems adalah pengelompok murni bersama SidebarNav &
 // MobileNav; POS, HR, dan Gudang kini dikelompokkan per pekerjaan,
 // sementara modul tanpa grup tetap dirender sebagai satu kelompok
@@ -44,51 +41,47 @@ describe("groupNavItems", () => {
 describe("navigasi akuntansi berkelompok (Accurate-like)", () => {
   const groups = groupNavItems(MODULES.akuntansi.nav);
 
-  it("kelompok tampil berurutan: Dashboard, Kas & Bank, Buku Besar, Laporan, Pengaturan", () => {
+  it("kelompok tampil sesuai pekerjaan akuntansi", () => {
     expect(groups.map((g) => g.group)).toEqual([
-      "Dashboard",
-      "Kas & Bank",
-      "Buku Besar",
-      "Laporan",
-      "Pengaturan",
+      "Keuangan harian",
+      "Pembukuan",
+      "Bagan akun & pengaturan",
+      "Laporan & pengendalian",
     ]);
   });
 
   it("anggota tiap kelompok persis rute yang ada", () => {
     const byGroup = new Map(groups.map((g) => [g.group, g.items.map((i) => i.href)]));
-    expect(byGroup.get("Dashboard")).toEqual([
+    expect(byGroup.get("Keuangan harian")).toEqual([
       "/app/akuntansi",
-      "/app/akuntansi/riwayat",
-    ]);
-    expect(byGroup.get("Kas & Bank")).toEqual([
       "/app/akuntansi/bank",
       "/app/akuntansi/piutang-utang",
-      "/app/akuntansi/bank#transfer-bank",
       "/app/akuntansi/bank/transfer",
-      "/app/akuntansi/rekonsiliasi",
     ]);
-    expect(byGroup.get("Buku Besar")).toEqual([
+    expect(byGroup.get("Pembukuan")).toEqual([
       "/app/akuntansi/jurnal",
       "/app/akuntansi/jurnal/riwayat",
       "/app/akuntansi/buku-besar",
-      "/app/akuntansi/akun",
       "/app/akuntansi/aset",
     ]);
-    expect(byGroup.get("Laporan")).toEqual([
+    expect(byGroup.get("Bagan akun & pengaturan")).toEqual([
+      "/app/akuntansi/akun",
+      "/app/akuntansi/migrasi-coa",
+    ]);
+    expect(byGroup.get("Laporan & pengendalian")).toEqual([
       "/app/akuntansi/laporan",
       "/app/akuntansi/pajak",
       "/app/akuntansi/periode",
+      "/app/akuntansi/rekonsiliasi",
       "/app/akuntansi/rekonsiliasi-kontrol",
-    ]);
-    expect(byGroup.get("Pengaturan")).toEqual([
-      "/app/akuntansi/migrasi-coa",
+      "/app/akuntansi/riwayat",
     ]);
   });
 
-  it("tidak ada href ganda dan total item 17", () => {
+  it("tidak ada href ganda dan total item sesuai konfigurasi", () => {
     const hrefs = MODULES.akuntansi.nav.map((i) => i.href);
     expect(new Set(hrefs).size).toBe(hrefs.length);
-    expect(hrefs).toHaveLength(17);
+    expect(hrefs).toHaveLength(16);
   });
 
   it("form Beban tidak dipromosikan; Piutang & Utang menjadi halaman kerja Kas & Bank", () => {
@@ -100,66 +93,77 @@ describe("navigasi akuntansi berkelompok (Accurate-like)", () => {
   it("POS dan HR berkelompok per pekerjaan", () => {
     const posGroups = groupNavItems(MODULES.pos.nav);
     expect(posGroups.map((group) => group.group)).toEqual([
-      "Harian",
-      "Kas & Perangkat",
-      "Lainnya",
+      "Penjualan",
+      "Pengaturan penjualan",
+      "Sesi & Perangkat",
     ]);
     expect(posGroups.flatMap((group) => group.items)).toHaveLength(MODULES.pos.nav.length);
 
     const hrGroups = groupNavItems(MODULES.hr.nav);
     expect(hrGroups.map((group) => group.group)).toEqual([
-      "Dashboard",
-      "Karyawan",
-      "Kesejahteraan",
-      "Pengaturan",
+      "Karyawan & gaji",
+      "Operasi harian",
     ]);
     expect(hrGroups.flatMap((group) => group.items)).toHaveLength(MODULES.hr.nav.length);
   });
 });
 
-// A-24 T3 (SIS-09): sidebar gudang yang dulu datar 16 item kini
-// berkelompok se pola akuntansi; nol href lama berubah, satu label
-// diindonesiakan, dan Mode Operasi (G1) adalah satu-satunya rute baru.
+// Kontrak sidebar Gudang mengikuti pengelompokan workflow dan semua
+// tujuan yang benar-benar disediakan konfigurasi modul.
 describe("navigasi gudang berkelompok (SIS-09)", () => {
   const groups = groupNavItems(MODULES.gudang.nav);
 
-  it("kelompok tampil berurutan: Harian, Master & Stok, Pembelian, lalu tanpa grup", () => {
-    expect(groups.map((g) => g.group)).toEqual(["Harian", "Master & Stok", "Pembelian", null]);
+  it("menampilkan ringkasan lalu mengurutkan grup menurut frekuensi dan alur kerja", () => {
+    expect(groups.map((g) => g.group)).toEqual([
+      null,
+      "Pengadaan",
+      "Persediaan",
+      "Operasi Stok",
+      "Data Master",
+    ]);
   });
 
-  it("anggota tiap kelompok persis mandat SIS-09", () => {
+  it("anggota tiap kelompok mengikuti jenis pekerjaan gudang", () => {
     const byGroup = new Map(groups.map((g) => [g.group, g.items.map((i) => i.href)]));
-    expect(byGroup.get("Harian")).toEqual([
-      "/app/gudang",
-      "/app/gudang/operasi",
+    expect(byGroup.get("Pengadaan")).toEqual([
+      "/app/gudang/rekomendasi",
+      "/app/gudang/purchase-request",
+      "/app/gudang/pembelian",
       "/app/gudang/penerimaan",
-      "/app/gudang/penyesuaian",
-      "/app/gudang/transfer",
-      "/app/gudang/opname",
+      "/app/gudang/penerimaan/riwayat",
+      "/app/gudang/retur-pembelian",
+      "/app/gudang/uang-muka",
     ]);
-    expect(byGroup.get("Master & Stok")).toEqual([
-      "/app/gudang/produk",
+    expect(byGroup.get("Persediaan")).toEqual([
       "/app/gudang/pergerakan",
       "/app/gudang/reservasi",
       "/app/gudang/nilai",
     ]);
-    expect(byGroup.get("Pembelian")).toEqual([
-      "/app/gudang/purchase-request",
-      "/app/gudang/pembelian",
-      "/app/gudang/uang-muka",
-      "/app/gudang/retur-pembelian",
-      "/app/gudang/rekomendasi",
-      "/app/gudang/pemasok",
+    expect(byGroup.get("Operasi Stok")).toEqual([
+      "/app/gudang/operasi",
+      "/app/gudang/penyesuaian",
+      "/app/gudang/transfer",
+      "/app/gudang/opname",
     ]);
-    expect(byGroup.get(null)).toEqual(["/app/gudang/impor"]);
+    expect(byGroup.get(null)).toEqual(["/app/gudang"]);
+    expect(byGroup.get("Data Master")).toEqual([
+      "/app/gudang/master-data",
+      "/app/gudang/produk",
+      "/app/gudang/pemasok",
+      "/app/gudang/kategori-satuan",
+      "/app/gudang/impor",
+    ]);
   });
 
-  it("semua href lama tetap ada persis; label Inggris hilang", () => {
+  it("tidak ada href ganda dan label konsisten berbahasa Indonesia", () => {
     const hrefs = MODULES.gudang.nav.map((i) => i.href);
     expect(new Set(hrefs).size).toBe(hrefs.length);
-    expect(hrefs).toHaveLength(17);
+    expect(hrefs).toHaveLength(20);
     const labels = MODULES.gudang.nav.map((i) => i.label);
-    expect(labels).toContain("Permintaan Pembelian");
+    expect(labels).toContain("Permintaan pembelian");
+    expect(labels).toContain("Riwayat penerimaan");
     expect(labels).not.toContain("Purchase Request");
+    const masterDataIcons = groups.find((group) => group.group === "Data Master")!.items.map((i) => i.icon);
+    expect(new Set(masterDataIcons).size).toBe(masterDataIcons.length);
   });
 });

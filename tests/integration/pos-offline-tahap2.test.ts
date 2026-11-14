@@ -750,6 +750,24 @@ describe("Peninjauan: konflik harga & kebersihan daftar (POS3-04/05)", () => {
     expect(await pendingRowsFor("t2-supersede")).toHaveLength(0);
     const queue = await withCompany(ORG, (tx) => listOfflineReviewQueue(tx, ORG));
     expect(queue.map((r) => r.payload.clientKey)).not.toContain("t2-supersede");
+
+    const reusedKey = await withCompany(ORG, (tx) =>
+      processOfflineSaleItem(tx, {
+        companyId: ORG,
+        userId: MANAGER,
+        allowCrossCashier: true,
+        originEntitlements: { [CASHIER]: { canSell: true, canDiscount: false } },
+        item: {
+          ...item,
+          lines: [{ ...item.lines[0], qty: 1 }],
+          payments: [{ ...item.payments[0], amount: 5000, tendered: 5000 }],
+          expectedTotal: 5000,
+        },
+      }),
+    );
+    expect(reusedKey.status).toBe("conflict");
+    expect(await saleByKey("t2-supersede")).not.toBeNull();
+    expect(await pendingRowsFor("t2-supersede")).toHaveLength(1);
   });
 });
 

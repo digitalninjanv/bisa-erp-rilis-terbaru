@@ -109,7 +109,7 @@ export interface OfflineQueueStorage {
   remove(clientKey: string): Promise<void>;
 }
 
-/** Adapter memori — untuk unit test dan fallback bila IndexedDB tidak tersedia. */
+/** Adapter memori — untuk unit test dan pemanggilan server-side saja. */
 export class MemoryOfflineStorage implements OfflineQueueStorage {
   private items = new Map<string, QueuedSale>();
 
@@ -155,10 +155,29 @@ export class IndexedDbOfflineStorage implements OfflineQueueStorage {
     const db = await this.open();
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(STORE_NAME, mode);
-      const request = fn(transaction.objectStore(STORE_NAME));
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-      transaction.onerror = () => reject(transaction.error);
+      let request: IDBRequest<T>;
+      try {
+        request = fn(transaction.objectStore(STORE_NAME));
+      } catch (error) {
+        reject(error);
+        return;
+      }
+
+      let result: T;
+      // Request success alone is not a commit guarantee: a later storage
+      // or transaction error can still abort the operation. Resolve only
+      // after the IndexedDB transaction itself commits.
+      request.onsuccess = () => {
+        result = request.result;
+      };
+      request.onerror = () => reject(request.error ?? new Error("Permintaan IndexedDB gagal."));
+      transaction.oncomplete = () => resolve(result);
+      transaction.onabort = () =>
+        reject(
+          transaction.error ?? request.error ?? new Error("Transaksi IndexedDB dibatalkan."),
+        );
+      transaction.onerror = () =>
+        reject(transaction.error ?? request.error ?? new Error("Transaksi IndexedDB gagal."));
     });
   }
 
@@ -182,8 +201,11 @@ export class IndexedDbOfflineStorage implements OfflineQueueStorage {
 
 let browserStorage: OfflineQueueStorage | null = null;
 
-/** Penyimpanan antrean di browser; fallback memori bila IndexedDB tidak ada. */
+/** Penyimpanan antrean browser harus persisten agar checkout offline tidak hilang saat halaman ditutup. */
 export function getBrowserOfflineStorage(): OfflineQueueStorage {
+  if (typeof window !== "undefined" && typeof indexedDB === "undefined") {
+    throw new Error("Penyimpanan antrean offline tidak tersedia: browser ini tidak menyediakan IndexedDB.");
+  }
   if (!browserStorage) {
     browserStorage =
       typeof indexedDB !== "undefined" ? new IndexedDbOfflineStorage() : new MemoryOfflineStorage();
@@ -247,6 +269,14 @@ export async function applySyncResults(
 
 export async function countQueued(storage: OfflineQueueStorage): Promise<number> {
   return (await storage.list()).length;
+}
+
+/** Ringkasan backlog lokal untuk indikator kasir tanpa membaca antrean dua kali. */
+export async function getOfflineQueueSummary(
+  storage: OfflineQueueStorage,
+): Promise<{ count: number; oldestQueuedAt: string | null }> {
+  const items = await storage.list();
+  return { count: items.length, oldestQueuedAt: items[0]?.queuedAt ?? null };
 }
 
 /**

@@ -519,6 +519,55 @@
       "when": 1794536117935,
       "tag": "0073_cheerful_ghost_rider",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1794615013410,
+      "tag": "0074_health_migration_readiness",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1794616959904,
+      "tag": "0075_import_product_catalog_lookup",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1794645858891,
+      "tag": "0076_tenant_catalog_references",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1794649901215,
+      "tag": "0077_tenant_purchase_receipt_references",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1794650354556,
+      "tag": "0078_tenant_purchase_receipt_lines",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1794650782568,
+      "tag": "0079_tenant_inventory_ledger_references",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1794653359651,
+      "tag": "0080_tenant_pos_references",
+      "breakpoints": true
     }
   ]
 }

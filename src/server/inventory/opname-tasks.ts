@@ -3,7 +3,7 @@
 // createOpname tidak berubah perilakunya; tabel opname_tasks hanya
 // mencatat penugasan & penyelesaiannya.
 
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, max } from "drizzle-orm";
 import type { Tx } from "@/db";
 import {
   categories,
@@ -343,27 +343,30 @@ export async function getOpnameReminders(
   const reminders: OpnameReminder[] = [];
 
   if (warehouseIds.length > 0) {
-    const warehouseRows = await tx
-      .select({ id: warehouses.id, name: warehouses.name })
-      .from(warehouses)
-      .where(eq(warehouses.companyId, companyId));
-    const nameById = new Map(warehouseRows.map((row) => [row.id, row.name]));
-    for (const warehouseId of warehouseIds) {
-      const [last] = await tx
-        .select({ date: stockDocuments.date })
+    const [warehouseRows, lastCounts] = await Promise.all([
+      tx
+        .select({ id: warehouses.id, name: warehouses.name })
+        .from(warehouses)
+        .where(and(eq(warehouses.companyId, companyId), inArray(warehouses.id, warehouseIds))),
+      tx
+        .select({ warehouseId: stockDocuments.warehouseId, date: max(stockDocuments.date) })
         .from(stockDocuments)
         .where(
           and(
             eq(stockDocuments.companyId, companyId),
             eq(stockDocuments.type, "opname"),
             eq(stockDocuments.status, "posted"),
-            eq(stockDocuments.warehouseId, warehouseId),
+            inArray(stockDocuments.warehouseId, warehouseIds),
           ),
         )
-        .orderBy(desc(stockDocuments.date), desc(stockDocuments.createdAt))
-        .limit(1);
+        .groupBy(stockDocuments.warehouseId),
+    ]);
+    const nameById = new Map(warehouseRows.map((row) => [row.id, row.name]));
+    const lastCountByWarehouse = new Map(lastCounts.map((row) => [row.warehouseId, row.date]));
+    for (const warehouseId of warehouseIds) {
+      const lastCountDate = lastCountByWarehouse.get(warehouseId) ?? null;
       const status = opnameDueStatus({
-        lastCountDate: last?.date ?? null,
+        lastCountDate,
         frequencyDays: config.warehouseDays[warehouseId],
         today,
       });
@@ -374,33 +377,36 @@ export async function getOpnameReminders(
         scopeName: nameById.get(warehouseId) ?? "Gudang",
         warehouseName: null,
         frequencyDays: config.warehouseDays[warehouseId],
-        lastCountDate: last?.date ?? null,
+        lastCountDate,
         status,
       });
     }
   }
 
   if (categoryIds.length > 0) {
-    const categoryRows = await tx
-      .select({ id: categories.id, name: categories.name })
-      .from(categories)
-      .where(eq(categories.companyId, companyId));
-    const nameById = new Map(categoryRows.map((row) => [row.id, row.name]));
-    for (const categoryId of categoryIds) {
-      const [lastTask] = await tx
-        .select({ completedAt: opnameTasks.completedAt })
+    const [categoryRows, lastTasks] = await Promise.all([
+      tx
+        .select({ id: categories.id, name: categories.name })
+        .from(categories)
+        .where(and(eq(categories.companyId, companyId), inArray(categories.id, categoryIds))),
+      tx
+        .select({ categoryId: opnameTasks.categoryId, completedAt: max(opnameTasks.completedAt) })
         .from(opnameTasks)
         .where(
           and(
             eq(opnameTasks.companyId, companyId),
-            eq(opnameTasks.categoryId, categoryId),
             eq(opnameTasks.status, "done"),
+            inArray(opnameTasks.categoryId, categoryIds),
           ),
         )
-        .orderBy(desc(opnameTasks.completedAt))
-        .limit(1);
-      const lastCountDate = lastTask?.completedAt
-        ? lastTask.completedAt.toISOString().slice(0, 10)
+        .groupBy(opnameTasks.categoryId),
+    ]);
+    const nameById = new Map(categoryRows.map((row) => [row.id, row.name]));
+    const lastTaskByCategory = new Map(lastTasks.map((row) => [row.categoryId, row.completedAt]));
+    for (const categoryId of categoryIds) {
+      const lastCompletedAt = lastTaskByCategory.get(categoryId);
+      const lastCountDate = lastCompletedAt
+        ? lastCompletedAt.toISOString().slice(0, 10)
         : null;
       const status = opnameDueStatus({
         lastCountDate,

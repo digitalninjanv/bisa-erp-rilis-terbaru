@@ -4,7 +4,7 @@
  * Badan kueri dipindah apa adanya; mekanik paginasi kini lewat
  * lib/pagination (P-06).
  */
-import { and, asc, count, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, ilike, inArray, or, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
 import { categories, products, suppliers, units } from "@/db/schema";
 import { descendantIds } from "@/lib/categories";
@@ -329,6 +329,76 @@ export async function listProductsForExport(
       isDefaultSale: pack.isDefaultSale,
     })),
   }));
+}
+
+export type ProductExportCursor = { name: string; id: string };
+
+/** Satu halaman kecil ekspor produk; caller menjaga cursor antar request. */
+export async function listProductExportPage(
+  tx: Tx,
+  input: ProductFilter & { cursor?: ProductExportCursor | null; limit?: number },
+): Promise<{ rows: ProductExportRow[]; nextCursor: ProductExportCursor | null }> {
+  const pageSize = Math.min(Math.max(Math.trunc(input.limit ?? 500), 1), 1_000);
+  const where = await buildProductWhere(tx, input);
+  const conditions = [where];
+  if (input.cursor) {
+    conditions.push(
+      or(
+        gt(products.name, input.cursor.name),
+        and(eq(products.name, input.cursor.name), gt(products.id, input.cursor.id)),
+      )!,
+    );
+  }
+  const rows = await tx
+    .select({
+      id: products.id,
+      sku: products.sku,
+      name: products.name,
+      barcode: products.barcode,
+      categoryName: categories.name,
+      unitName: units.name,
+      supplierName: suppliers.name,
+      costPrice: products.costPrice,
+      salePrice: products.salePrice,
+      minStock: products.minStock,
+      trackStock: products.trackStock,
+      trackBatch: products.trackBatch,
+      isActive: products.isActive,
+      notes: products.notes,
+    })
+    .from(products)
+    .leftJoin(categories, eq(products.categoryId, categories.id))
+    .leftJoin(units, eq(products.unitId, units.id))
+    .leftJoin(suppliers, eq(products.supplierId, suppliers.id))
+    .where(and(...conditions))
+    .orderBy(asc(products.name), asc(products.id))
+    .limit(pageSize + 1);
+
+  const hasMore = rows.length > pageSize;
+  const pageRows = hasMore ? rows.slice(0, pageSize) : rows;
+  const packagings = await listPackagingsForProducts(
+    tx,
+    input.companyId,
+    pageRows.map((row) => row.id),
+  );
+  const result = pageRows.map(({ id, ...row }) => ({
+    ...row,
+    packagings: (packagings.get(id) ?? []).map((pack) => ({
+      name: pack.name,
+      isi: pack.isi,
+      buyPrice: pack.buyPrice,
+      salePrice: pack.salePrice,
+      barcode: pack.barcode,
+      isActive: pack.isActive,
+      isDefaultPurchase: pack.isDefaultPurchase,
+      isDefaultSale: pack.isDefaultSale,
+    })),
+  }));
+  const last = pageRows.at(-1);
+  return {
+    rows: result,
+    nextCursor: hasMore && last ? { name: last.name, id: last.id } : null,
+  };
 }
 
 export function toProductExportRow(

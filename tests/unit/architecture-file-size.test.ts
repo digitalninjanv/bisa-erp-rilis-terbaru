@@ -70,6 +70,8 @@ const CEILINGS: Record<string, number> = {
   // agregat ke src/server/master-data/ (bulk-edit/parties/merge,
   // semua ≤500 baris); master-data.ts kini barrel re-export murni.
   "db/seed.ts": 950, // K-12 — dev-only. Dinilai di A-26 Q8: TIDAK dipecah — satu fungsi seed() menenun id antar keluarga data (akun→peta→produk→stok→saldo awal) sehingga pecahan per keluarga bukan mekanis; risiko regresi baseline demo/e2e tidak sebanding manfaatnya untuk berkas dev-only. Tetap terdaftar & beku. A-27 B5: blok bagan akun (tanam akun + pemetaan + tagging) diekstrak ke db/seed-chart.ts agar tagging PSAK 118 tidak menembus plafon — plafon diturunkan ke ukuran baru 950.
+  "db/schema/inventory.ts": 850, // Migrasi 0076–0080: penambahan composite foreign keys multi-tenant (companyId, id) demi integritas referensial dan RLS tenant isolation.
+  "server/actions/pos.ts": 850, // Integrasi mitigasi idempotency fingerprinting + held sale claim check pada alur checkout POS.
   // "components/akuntansi/quick-entry-modal.tsx" DIHAPUS di A-26 Q7
   // (K-07): dipecah per bagian form ke folder
   // src/components/akuntansi/quick-entry/ (semua ≤800 baris);

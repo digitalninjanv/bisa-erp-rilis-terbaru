@@ -37,6 +37,17 @@ function categoryTone(name: string | null | undefined): string | null {
   return CATEGORY_TONES[hash % CATEGORY_TONES.length];
 }
 
+function formatQueuedAt(value: string | null): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("id-ID", {
+    dateStyle: "short",
+    timeStyle: "short",
+    timeZone: "Asia/Jakarta",
+  }).format(date);
+}
+
 export function ProductCatalog(props: {
   searchRef: RefObject<HTMLInputElement | null>;
   search: string;
@@ -60,6 +71,7 @@ export function ProductCatalog(props: {
   posOfflineEnabled: boolean;
   online: boolean;
   queuedCount: number;
+  oldestQueuedAt: string | null;
   syncing: boolean;
   syncOfflineQueue: () => Promise<void>;
   cart?: CartItem[];
@@ -69,7 +81,7 @@ export function ProductCatalog(props: {
   fullscreen: boolean;
   setFullscreenOverride: Dispatch<SetStateAction<boolean | null>>;
 }) {
-  const { searchRef, search, setSearch, products, searching, page, pageFull, goToPage, scanBarcode, addProduct, warehouses, selectedWarehouse, setSelectedWarehouse, setReservationId, reservations, reservationId, applyReservation, sessionOpen, heldCount = 0, posOfflineEnabled, online, queuedCount, syncing, syncOfflineQueue, cart = [], display, updateDisplay, resetDisplay, fullscreen, setFullscreenOverride } = props;
+  const { searchRef, search, setSearch, products, searching, page, pageFull, goToPage, scanBarcode, addProduct, warehouses, selectedWarehouse, setSelectedWarehouse, setReservationId, reservations, reservationId, applyReservation, sessionOpen, heldCount = 0, posOfflineEnabled, online, queuedCount, oldestQueuedAt, syncing, syncOfflineQueue, cart = [], display, updateDisplay, resetDisplay, fullscreen, setFullscreenOverride } = props;
   const searchBurstRef = useRef<BurstState>(createBurstState());
   // A-28 UI-1 (UX-B02): sorotan hasil pencarian untuk navigasi panah.
   // -1 = belum ada sorotan (Enter berperilaku seperti dulu: hasil
@@ -283,6 +295,12 @@ export function ProductCatalog(props: {
                 {queuedCount > 0 ? (
                   <>
                     <span className="font-semibold">{queuedCount} antre</span>
+                    <span
+                      className="whitespace-nowrap text-[10px] tabular-nums"
+                      title="Waktu transaksi tertua yang masih menunggu sinkronisasi (WIB)"
+                    >
+                      Tertua {formatQueuedAt(oldestQueuedAt)}
+                    </span>
                     <button
                       type="button"
                       onClick={() => void syncOfflineQueue()}

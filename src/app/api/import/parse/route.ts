@@ -4,6 +4,9 @@ import { withCompany } from "@/db/tenant";
 import { importJobs, importRows } from "@/db/schema";
 import { requirePermission } from "@/lib/session";
 import { ENTITY_FIELDS, isImportEntity, suggestMappingFor } from "@/lib/import-parse";
+import { customFieldDefinitionsFor } from "@/lib/custom-fields";
+import { customFieldImportField } from "@/lib/import/import-custom-fields";
+import { getCompanySettingsRow } from "@/server/settings";
 import {
   duplicateImportMessage,
   findAppliedImportDuplicate,
@@ -109,9 +112,18 @@ export async function POST(request: Request) {
       );
     }
 
-    const mapping = suggestMappingFor(ENTITY_FIELDS[entity], headers);
-
     const result = await withCompany(ctx.company.id, async (tx) => {
+      const settings = await getCompanySettingsRow(tx, ctx.company.id);
+      const customEntity =
+        entity === "suppliers" ? "supplier" : entity === "customers" ? "customer" : null;
+      const customFields = customEntity
+        ? customFieldDefinitionsFor(settings?.customFields, customEntity)
+        : [];
+      const mapping = suggestMappingFor(
+        [...ENTITY_FIELDS[entity], ...customFields.map(customFieldImportField)],
+        headers,
+      );
+
       // GDG3-15: berkas identik yang datanya SUDAH diterapkan oleh job
       // lain ditolak di sini dengan menyebut job asalnya. Job
       // pratinjau yang belum di-commit tidak menghalangi unggahan
@@ -155,7 +167,7 @@ export async function POST(request: Request) {
         await tx.insert(importRows).values(values.slice(start, start + 500));
       }
 
-      return { jobId: job.id, rows: values.length };
+      return { jobId: job.id, rows: values.length, mapping };
     });
 
     return NextResponse.json({
@@ -166,7 +178,7 @@ export async function POST(request: Request) {
       ignoredSheets,
       headers,
       totalRows: dataRows.length,
-      mapping,
+      mapping: result.mapping,
     });
   } catch (error) {
     if (isRedirectError(error)) throw error;

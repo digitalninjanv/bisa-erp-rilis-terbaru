@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
-import { Settings } from "lucide-react";
 import { CompanySwitcher } from "@/components/shell/company-switcher";
 import { MobileNav } from "@/components/shell/mobile-nav";
 import { SidebarFrame } from "@/components/shell/sidebar-frame";
@@ -12,16 +11,18 @@ import {
 import { AppSwitcher } from "@/components/shell/app-switcher";
 import { UserMenu } from "@/components/shell/user-menu";
 import { CommandPalette } from "@/components/shell/command-palette";
+import { Database } from "lucide-react";
 import { buildPalettePages } from "@/lib/palette";
+import { hasMasterDataDirectoryAccess } from "@/lib/master-data-directory";
 import { MODULES, MODULE_LIST, type ModuleKey } from "@/lib/modules";
 import { initials, todayISO } from "@/lib/format";
 import { withCompanyReadOnly } from "@/db/tenant";
-import { listPurchaseRequests } from "@/server/purchase-requests";
+import { countPurchaseRequestsByStatus } from "@/server/purchase-requests";
 import { countHeldSales } from "@/server/pos";
 import { listOfflineReviewQueue } from "@/server/pos-offline";
 import { getOpnameReminders } from "@/server/inventory";
 import { countPendingReimbursementClaims } from "@/server/reimbursements";
-import { listLeaveRequests, listOvertimeRequests } from "@/server/hr";
+import { countPendingLeaveRequests, countPendingOvertimeRequests } from "@/server/hr";
 import type { CompanyContext } from "@/lib/session";
 
 /**
@@ -54,8 +55,8 @@ async function computeNavBadges(
     return await withCompanyReadOnly(ctx.company.id, async (tx) => {
       const badges: NavBadges = {};
       if (moduleKey === "gudang" && ctx.permissions.includes("inventory.view")) {
-        const requests = await listPurchaseRequests(tx, ctx.company.id);
-        const pending = requests.filter((row) => row.status === "submitted").length;
+        const requestsByStatus = await countPurchaseRequestsByStatus(tx, ctx.company.id);
+        const pending = requestsByStatus.submitted ?? 0;
         if (pending > 0) {
           badges["/app/gudang/purchase-request"] = { count: pending, tone: "red" };
         }
@@ -77,15 +78,12 @@ async function computeNavBadges(
         }
       }
       if (moduleKey === "hr" && ctx.permissions.includes("payroll.view")) {
-        const [claims, leaves, overtimes] = await Promise.all([
+        const [claims, pendingLeaves, pendingOvertimes] = await Promise.all([
           countPendingReimbursementClaims(tx, ctx.company.id),
-          listLeaveRequests(tx, ctx.company.id),
-          listOvertimeRequests(tx, ctx.company.id, { start: "2000-01-01", end: "2100-12-31" }),
+          countPendingLeaveRequests(tx, ctx.company.id),
+          countPendingOvertimeRequests(tx, ctx.company.id),
         ]);
-        const pendingTotal =
-          claims.count +
-          leaves.filter((row) => row.status === "pending").length +
-          overtimes.filter((row) => row.status === "pending").length;
+        const pendingTotal = claims.count + pendingLeaves + pendingOvertimes;
         if (pendingTotal > 0) {
           badges["/app/akuntansi/hr/persetujuan"] = { count: pendingTotal, tone: "red" };
         }
@@ -127,9 +125,7 @@ export function ThemedSidebarHead({
           b
         </Link>
         <div className="sb-head-text min-w-0 leading-tight">
-          <Link href="/app" className="block truncate text-[13px] font-semibold text-shell-title">
-            {ctx.company.name}
-          </Link>
+          <p className="block truncate text-[13px] font-semibold text-shell-title">{ctx.company.name}</p>
           <p className="truncate text-[11px] text-shell-muted">Bisa ERP</p>
         </div>
       </div>
@@ -137,7 +133,7 @@ export function ThemedSidebarHead({
         <AppSwitcher
           activeKey={activeKey}
           allowedKeys={allowedKeys}
-          showSettings={ctx.permissions.includes("settings.manage")}
+          showMasterData={hasMasterDataDirectoryAccess(ctx)}
           settingsActive={settingsActive}
         />
       </div>
@@ -146,13 +142,10 @@ export function ThemedSidebarHead({
 }
 
 /**
- * A-25 U1 — kaki sidebar bertema (ARAH-DESAIN-A25 §2.5): kartu
- * pengguna (avatar inisial, nama, peran) + pintasan Pengaturan.
- * Menggantikan tautan "Beranda modul" di modul bertema — beranda
- * modul dicapai dari pengalih aplikasi & logo.
+ * Kartu identitas pengguna di kaki sidebar. Pengaturan berada di
+ * menu pengguna pada topbar agar tidak ada beberapa pintasan ke tujuan sama.
  */
 export function SidebarUserCard({ ctx }: { ctx: CompanyContext }) {
-  const showSettings = ctx.permissions.includes("settings.manage");
   return (
     <div className="sb-user-card border-t border-sidebar-border p-3">
       <div className="sb-user-row flex items-center gap-2.5">
@@ -163,15 +156,6 @@ export function SidebarUserCard({ ctx }: { ctx: CompanyContext }) {
           <p className="truncate text-[12px] font-medium text-shell-title">{ctx.user.name}</p>
           <p className="truncate text-[11px] text-shell-muted">{ctx.roleName}</p>
         </div>
-        {showSettings ? (
-          <Link
-            href="/app/pengaturan"
-            aria-label="Pengaturan"
-            className="grid size-8 shrink-0 place-items-center rounded-md text-shell-muted transition-colors hover:bg-shell-hover hover:text-shell-hover-foreground"
-          >
-            <Settings className="size-4" />
-          </Link>
-        ) : null}
       </div>
     </div>
   );
@@ -187,6 +171,9 @@ export async function ModuleShell({
   children: React.ReactNode;
 }) {
   const activeModule = MODULES[moduleKey];
+  const allowedKeys = MODULE_LIST.filter(
+    (item) => ctx.modules.includes(item.key) && ctx.enabledModules.includes(item.key),
+  ).map((item) => item.key);
 
   // A-25 U0/U1 meletakkan tema baru berlingkup kelas di semua modul
   // KECUALI pos (keputusan Pemimpin RENCANA A-25 butir 1). A-25 U8:
@@ -222,7 +209,7 @@ export async function ModuleShell({
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="module-topbar no-print sticky top-0 z-30 flex h-[52px] items-center justify-between gap-3 border-b border-border bg-card/95 px-3 backdrop-blur sm:px-5">
           <div className="flex min-w-0 items-center gap-2.5">
-            <MobileNav moduleKey={moduleKey} permissions={ctx.permissions} badges={badges} />
+            <MobileNav moduleKey={moduleKey} permissions={ctx.permissions} badges={badges} allowedKeys={allowedKeys} />
             <div className="hidden h-4 w-px bg-border lg:block" />
             {/* A-25 U1 (POLA-16): breadcrumb dua tingkat yang statis
                 diganti judul konteks ringkas — nama modul saja;
@@ -257,6 +244,7 @@ export async function ModuleShell({
 }
 
 export function HomeTopbar({ ctx }: { ctx: CompanyContext }) {
+  const showMasterData = hasMasterDataDirectoryAccess(ctx);
   return (
     <header className="module-topbar no-print sticky top-0 z-30 border-b border-border bg-card/95 backdrop-blur">
       <div className="mx-auto flex h-[56px] max-w-[1440px] items-center justify-between gap-3 px-4 sm:px-6">
@@ -276,6 +264,17 @@ export function HomeTopbar({ ctx }: { ctx: CompanyContext }) {
         </div>
 
         <div className="flex items-center gap-2">
+          {showMasterData ? (
+            <Link
+              href="/app/data-master"
+              aria-label="Data Master"
+              title="Data Master"
+              className="grid size-8 place-items-center rounded-md border border-border bg-card text-[12px] font-medium transition-colors hover:bg-muted sm:flex sm:h-8 sm:w-auto sm:items-center sm:gap-1.5 sm:px-2.5"
+            >
+              <Database aria-hidden="true" className="size-3.5" />
+              <span className="hidden sm:inline">Data Master</span>
+            </Link>
+          ) : null}
           <CommandPalette
             pages={buildPalettePages({
               permissions: ctx.permissions,

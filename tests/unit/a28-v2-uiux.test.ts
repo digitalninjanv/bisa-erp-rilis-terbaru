@@ -116,41 +116,38 @@ describe("V-01 — sidebar mode ciut", () => {
 });
 
 describe("V-02 — navigasi pengaturan satu pintu", () => {
-  it("SETTINGS_NAV lengkap: 12 item, label & tujuan persis seperti sebelum daftar ganda dibuang", () => {
+  it("SETTINGS_NAV berisi 11 pintu pengaturan aktif tanpa payroll Indonesia", () => {
     expect(SETTINGS_NAV.map((item) => item.label)).toEqual([
       "Umum",
       "Pengguna & peran",
-      "Payroll Indonesia",
+      "Gudang & cabang",
+      "Modul",
       "Cetak",
       "Penomoran",
       "Metode pembayaran",
       "Kelompok harga",
-      "Gudang & cabang",
       "Pemetaan akun",
-      "Modul",
       "Kolom kustom",
       "Status sistem",
     ]);
     expect(SETTINGS_NAV.map((item) => item.href)).toEqual([
       "/app/pengaturan?tab=umum",
       "/app/pengaturan/pengguna",
-      "/app/pengaturan/payroll-indonesia",
+      "/app/pengaturan?tab=lokasi",
+      "/app/pengaturan?tab=modul",
       "/app/pengaturan?tab=cetak",
       "/app/pengaturan?tab=nomor",
       "/app/pengaturan?tab=pembayaran",
       "/app/pengaturan?tab=grup",
-      "/app/pengaturan?tab=lokasi",
       "/app/pengaturan?tab=akun",
-      "/app/pengaturan?tab=modul",
       "/app/pengaturan?tab=kolom",
       "/app/pengaturan/status",
     ]);
+    expect(SETTINGS_NAV.some((item) => item.href.includes("payroll-indonesia"))).toBe(false);
     // Penanda aktif sidebar untuk rute & tab lama tetap sampai.
     expect(settingsActiveHref("/app/pengaturan/status", null)).toBe("/app/pengaturan/status");
     expect(settingsActiveHref("/app/pengaturan/pengguna", null)).toBe("/app/pengaturan/pengguna");
-    expect(settingsActiveHref("/app/pengaturan/payroll-indonesia", null)).toBe(
-      "/app/pengaturan/payroll-indonesia",
-    );
+    expect(settingsActiveHref("/app/pengaturan/payroll-indonesia", null)).toBeNull();
     expect(settingsActiveHref("/app/pengaturan", "cetak")).toBe("/app/pengaturan?tab=cetak");
     expect(settingsActiveHref("/app/pengaturan", "nota")).toBe("/app/pengaturan?tab=cetak");
     expect(settingsActiveHref("/app/pengaturan", null)).toBe("/app/pengaturan?tab=umum");

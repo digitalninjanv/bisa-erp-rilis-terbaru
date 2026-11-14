@@ -181,9 +181,10 @@ describe("ProductCatalog — placeholder jujur & bantuan pintasan (UX-B01/B03)",
       reservationId: null,
       applyReservation: async () => undefined,
       sessionOpen: true,
-      posOfflineEnabled: false,
+      posOfflineEnabled: true,
       online: true,
-      queuedCount: 0,
+      queuedCount: 2,
+      oldestQueuedAt: "2026-05-02T02:00:00.000Z",
       syncing: false,
       syncOfflineQueue: async () => undefined,
       display: POS_DISPLAY_DEFAULTS,
@@ -200,6 +201,11 @@ describe("ProductCatalog — placeholder jujur & bantuan pintasan (UX-B01/B03)",
 
   it("tombol bantuan pintasan tersedia di terminal", () => {
     expect(html).toContain("Bantuan pintasan keyboard");
+  });
+
+  it("menampilkan umur transaksi tertua pada antrean offline", () => {
+    expect(html).toContain("Tertua");
+    expect(html).toContain("Waktu transaksi tertua yang masih menunggu sinkronisasi (WIB)");
   });
 
   it("render awal tanpa sorotan panah (Enter = hasil pertama seperti dulu)", () => {

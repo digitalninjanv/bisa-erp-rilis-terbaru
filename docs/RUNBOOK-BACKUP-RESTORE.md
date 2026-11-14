@@ -12,47 +12,77 @@ berhasil dan terverifikasi.**
    `aborting because of server version mismatch` (terbukti di lingkungan
    dev). Pastikan `pg_dump --version` dan `pg_restore --version`
    menunjukkan major yang sama dengan server (18).
-2. `.env.local` berisi `DIRECT_URL` (pemilik skema `erp`). Skrip membaca
-   target **hanya** dari berkas itu — restore selalu menimpa database
-   yang ditunjuk `DIRECT_URL`.
-3. Untuk backup terenkripsi: `openssl` tersedia di PATH.
+2. `.env.local` berisi `DIRECT_URL` (pemilik skema `erp`) sebagai
+   identitas database sumber. Restore memerlukan `RESTORE_TARGET_URL`
+   dan `RESTORE_CONFIRM_TARGET` secara eksplisit; tujuan tidak lagi
+   otomatis memakai `DIRECT_URL`.
+3. Node.js tersedia dan file credential passphrase dapat dibaca. Produksi systemd memakai `/etc/credstore/bisa-erp-backup-passphrase` melalui `LoadCredential`; backup baru plaintext ditolak. Simpan salinan kunci terpisah dari server.
 
 ## Backup
 
 ```bash
-pnpm db:backup
-# → backups/bisa-YYYYMMDD-HHMMSS.dump  (format custom pg_dump)
-```
-
-Backup terenkripsi (AES-256-CBC + PBKDF2 via openssl):
-
-```bash
-BACKUP_PASSPHRASE='<frasa sandi>' pnpm db:backup
+BACKUP_PASSPHRASE_FILE='/path/aman/backup-passphrase' pnpm db:backup
 # → backups/bisa-YYYYMMDD-HHMMSS.dump.enc
 ```
 
 Verifikasi berkas backup (wajib sebelum backup dinyatakan selesai):
 
 ```bash
-ls -la backups/                      # ukuran harus > 0 (DB dev ±2,7 MB)
-sha256sum backups/bisa-*.dump        # catat hash bersama berkasnya
-pg_restore --list backups/bisa-*.dump | head   # daftar isi terbaca (±552 baris)
+ls -la backups/                         # berkas .dump.enc harus > 0
+sha256sum backups/bisa-*.dump.enc       # cocokkan dengan manifest/sidecar
 ```
 
-Skrip menulis ke berkas sementara dan hanya mengganti nama saat dump
-sukses — backup yang gagal **tidak** meninggalkan berkas kosong yang
-menyerupai backup jadi.
+Backup baru menggunakan AES-256-GCM dengan kunci PBKDF2-SHA256 600.000
+iterasi. Tag GCM memeriksa autentisitas saat dekripsi; sidecar SHA-256
+mendeteksi kerusakan tak sengaja sebelum dekripsi. Format CBC historis
+tidak mempunyai autentikasi kriptografis dan restore-nya ditolak secara
+default. Setelah verifikasi asal dan hash arsip lama, operator dapat
+memakai `RESTORE_ALLOW_LEGACY_CBC=1` untuk satu restore/drill yang
+disengaja; segera buat backup AES-GCM baru setelah pemulihan.
 
-## Restore ke database yang sama (pemulihan standar)
+Skrip menulis berkas dump dengan permission privat (umask 077), memeriksa
+arsip memakai `pg_restore --list`, mengenkripsi sebelum publikasi,
+mencatat sidecar berisi ukuran/SHA-256, lalu mengganti nama secara atomik. Restore dan restore drill memeriksa
+sidecar atau manifest sebelum memakai dump. Backup yang gagal atau arsip
+yang tidak dapat dibaca tidak memperbarui manifest.
+
+## Restore aman ke database kosong yang berbeda
 
 ```bash
-pnpm db:restore backups/bisa-YYYYMMDD-HHMMSS.dump --yes
-# backup terenkripsi:
-BACKUP_PASSPHRASE='<frasa sandi>' pnpm db:restore backups/bisa-*.dump.enc --yes
+BACKUP_PASSPHRASE_FILE='/path/aman/backup-passphrase' \
+RESTORE_TARGET_URL='postgres://erp@127.0.0.1:5433/bisa_restore_target' \
+RESTORE_CONFIRM_TARGET='127.0.0.1:5433/bisa_restore_target' \
+pnpm db:restore backups/bisa-YYYYMMDD-HHMMSS.dump.enc
 ```
 
-Tanpa `--yes` skrip menolak jalan. Frasa sandi salah → dekripsi gagal
-(`bad decrypt`) dan restore tidak berjalan.
+Tujuan berbeda harus sudah dibuat kosong dan dapat diakses oleh role
+`erp`. Skrip memvalidasi host, port, dan nama database dari URL terhadap
+nilai konfirmasi, memeriksa arsip, lalu menjalankan restore sebagai satu
+transaksi fail-fast. URL tidak dicetak ke log.
+
+Untuk arsip lama tanpa sidecar dan tanpa manifest yang menunjuk file itu,
+restore ditolak. Hanya setelah hash diverifikasi terpisah operator dapat
+melewati pemeriksaan dengan `RESTORE_ALLOW_UNVERIFIED_BACKUP=1`.
+
+Dump `.dump` tanpa `.enc` hanya untuk pemulihan arsip historis yang dibuat sebelum enkripsi diwajibkan. Untuk command manual, gunakan `BACKUP_PASSPHRASE_FILE` agar nilai rahasia tidak tertulis pada command line atau environment.
+
+## Pemulihan in-place
+
+Restore ke database yang sama dengan `DIRECT_URL` akan menghapus objek
+lama. Skrip menolak ini kecuali operator memberi dua konfirmasi eksplisit
+setelah memastikan backup dan target:
+
+```bash
+BACKUP_PASSPHRASE_FILE='/path/aman/backup-passphrase' \
+RESTORE_TARGET_URL="$DIRECT_URL" \
+RESTORE_CONFIRM_TARGET='127.0.0.1:5433/<nama-database>' \
+RESTORE_ALLOW_IN_PLACE=1 \
+pnpm db:restore backups/bisa-YYYYMMDD-HHMMSS.dump.enc
+```
+
+Untuk jalur ini skrip menambahkan `--clean --if-exists`; restore tetap
+fail-fast dalam satu transaksi. Setelah selesai, verifikasi aplikasi,
+jurnal, stok, dan data lintas modul sebelum mengalihkan layanan.
 
 ## Restore ke database/server BARU (disaster recovery penuh)
 
@@ -65,9 +95,11 @@ diterapkan ulang. Langkah lengkapnya:
 # 1. Buat database kosong (pemilik: erp)
 psql "$DIRECT_URL" -c "CREATE DATABASE bisa_erp_baru OWNER erp"
 
-# 2. Restore dump ke database baru (flag sama dengan scripts/restore.sh)
-pg_restore --clean --if-exists --no-owner --no-privileges \
-  --dbname="postgres://erp@<host>:5433/bisa_erp_baru" backups/bisa-*.dump
+# 2. Restore dump ke database baru yang kosong melalui guard target
+BACKUP_PASSPHRASE_FILE='/path/aman/backup-passphrase' \
+RESTORE_TARGET_URL='postgres://erp@<host>:5433/bisa_erp_baru' \
+RESTORE_CONFIRM_TARGET='<host>:5433/bisa_erp_baru' \
+pnpm db:restore backups/bisa-YYYYMMDD-HHMMSS.dump.enc
 
 # 3. WAJIB: terapkan ulang grant app_user (blok yang sama dengan
 #    migrasi 0001 / docker/init.sql)
@@ -156,15 +188,16 @@ Yang dilakukan skrip (idempoten, aman diulang):
    menerapkan ulang grant `app_user` (langkah 3 pemulihan bencana
    di atas ikut terbukti).
 3. Memverifikasi isi terhadap sumber: **jumlah akun, jumlah produk,
-   nilai persediaan, dan selisih neraca saldo** harus identik
-   (selisih sumber sendiri harus 0).
+   nilai persediaan, dan selisih neraca saldo per perusahaan** harus
+   identik; setiap perusahaan pada sumber juga harus seimbang.
 4. Menulis **`restore-drill-manifest.json`** di direktori backup —
    halaman Status sistem menampilkannya (latihan terakhir, hasil
    verifikasi, tabel angka sumber vs restore). Latihan yang gagal
    verifikasi keluar dengan kode 1 dan tercatat `ok: false`.
 5. Menghapus DB uji dalam semua keadaan (trap).
 
-Penjadwalan (produksi, mengikuti pola timer yang ada):
+Installer systemd mengaktifkan timer mingguan restore drill pada instalasi
+baru. Pada host systemd lama, pasang/aktifkan unit berikut satu kali:
 
 ```bash
 sudo cp deploy/systemd/bisa-erp-restore-drill.service \

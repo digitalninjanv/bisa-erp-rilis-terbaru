@@ -1,7 +1,8 @@
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { cashSessions, fiscalPeriods, outbox, sales } from "@/db/schema";
+import { cashSessions, fiscalPeriods, idempotencyKeys, outbox, sales } from "@/db/schema";
 import { AppError } from "@/lib/errors";
+import { paymentRequestFingerprint } from "@/server/idempotency";
 import { d, formatIDR } from "@/lib/money";
 import { todayISO } from "@/lib/format";
 import type {
@@ -117,6 +118,23 @@ function mapPayments(item: OfflineSalePayload) {
   }));
 }
 
+function offlineSaleRequestFingerprint(item: OfflineSalePayload): string {
+  return paymentRequestFingerprint({
+    channel: "offline",
+    warehouseId: item.warehouseId,
+    groupId: item.groupId ?? null,
+    customerId: item.customerId ?? null,
+    dueDate: item.dueDate ?? null,
+    date: item.date,
+    lines: item.lines,
+    payments: item.payments,
+    cashierId: item.cashierId ?? null,
+    originSessionId: item.originSessionId ?? null,
+    deviceId: item.deviceId ?? null,
+    expectedTotal: item.expectedTotal ?? null,
+  });
+}
+
 /** Cermin baca assertPeriodOpen (FIX-P1): tanpa baris = tertutup,
  *  kecuali tahun berjalan/berikutnya yang termaterialisasi lazy. */
 async function isPeriodClosed(tx: Tx, companyId: string, date: string): Promise<boolean> {
@@ -188,6 +206,7 @@ export async function processOfflineSaleItem(
   const { item } = input;
   const originCashierId = item.cashierId ?? input.userId;
   const snapshotTotal = snapshotTotalOf(item);
+  const idempotencyFingerprint = offlineSaleRequestFingerprint(item);
   const meta: RecordMeta = {};
 
   const record = async (result: OfflineSyncItemResult) => {
@@ -273,6 +292,27 @@ export async function processOfflineSaleItem(
     .where(and(eq(sales.companyId, input.companyId), eq(sales.idempotencyKey, item.clientKey)))
     .limit(1);
   if (existing) {
+    const [claim] = await tx
+      .select({ resultRef: idempotencyKeys.resultRef })
+      .from(idempotencyKeys)
+      .where(and(
+        eq(idempotencyKeys.companyId, input.companyId),
+        eq(idempotencyKeys.scope, "pos.sale"),
+        eq(idempotencyKeys.key, item.clientKey),
+      ))
+      .limit(1);
+    if (claim?.resultRef !== idempotencyFingerprint) {
+      return record({
+        clientKey: item.clientKey,
+        status: "conflict",
+        kind: "other",
+        saleId: existing.id,
+        saleNumber: existing.number,
+        message: claim?.resultRef
+          ? "Kunci offline sudah digunakan untuk payload transaksi yang berbeda. Periksa riwayat dan tinjau item ini sebelum menyelesaikannya."
+          : "Transaksi lama ditemukan tanpa fingerprint retry. Periksa riwayat sebelum menandai item offline sebagai duplikat.",
+      });
+    }
     return record({
       clientKey: item.clientKey,
       status: "duplicate",
@@ -392,6 +432,7 @@ export async function processOfflineSaleItem(
         lines: mapLines(item),
         payments: mapPayments(item),
         idempotencyKey: item.clientKey,
+        idempotencyFingerprint,
         canDiscount: originCanDiscount,
         sessionId: targetSessionId,
         allowInactiveProducts: true,
@@ -545,6 +586,7 @@ export async function postOfflineReviewItem(
 ): Promise<OfflineReviewPostResult> {
   const row = await loadPendingReviewRow(tx, input.companyId, input.outboxId);
   const item = storedPayloadOf(row);
+  const idempotencyFingerprint = offlineSaleRequestFingerprint(item);
 
   if (input.mode === "retry") {
     const result = await processOfflineSaleItem(tx, {
@@ -644,6 +686,7 @@ export async function postOfflineReviewItem(
       lines: mapLines(item),
       payments: mapPayments(item),
       idempotencyKey: item.clientKey,
+      idempotencyFingerprint,
       canDiscount: originCanDiscount,
       sessionId: targetSession.id,
       offlineSettlement: closedSettlement ? { overageLimit } : undefined,

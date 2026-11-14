@@ -3,7 +3,7 @@
 // aksi analisis, daftar baris, dan edit baris agar ketiganya selalu
 // sepakat soal bendera dan isu baris.
 
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
 import {
   categories,
@@ -25,11 +25,13 @@ import {
 import {
   classifyProductImportRows,
   countProductImportRows,
+  productCatalogLookupKeys,
   type ClassifiableProductRow,
   type ProductCatalogIndex,
   type ProductRowFlags,
 } from "@/lib/import-classify";
 import { loadRequiredCustomFields, requiredCustomFieldsNote } from "@/server/import-masters";
+import { persistPendingImportRowIssues } from "@/server/import-row-issues";
 
 export type ClassifiedProductRow = {
   id: string;
@@ -69,25 +71,48 @@ export async function analyzeProductJob(
     .where(and(eq(importRows.companyId, companyId), eq(importRows.jobId, jobId)))
     .orderBy(asc(importRows.rowNumber));
 
-  const existing = await tx
-    .select({ id: products.id, sku: products.sku, barcode: products.barcode, name: products.name })
-    .from(products)
-    .where(eq(products.companyId, companyId));
+  const preparedRows = rows.map((row) => {
+    const source = (row.data ?? {}) as Record<string, unknown>;
+    return {
+      row,
+      source,
+      mapped: mapProductRow(source, mapping, importFallbackSku(row.rowNumber)),
+    };
+  });
+  const lookupKeys = {
+    skuKeys: [...new Set(preparedRows.flatMap(({ mapped }) => mapped.value ? [mapped.value.sku.toLowerCase()] : []))],
+    barcodes: [...new Set(preparedRows.flatMap(({ mapped }) => {
+      if (!mapped.value) return [];
+      return [mapped.value.barcode, ...mapped.value.packagings.map((pack) => pack.barcode)]
+        .filter((barcode): barcode is string => barcode !== null);
+    }))],
+  };
+  const existing = await loadProductCatalogMatches(tx, companyId, lookupKeys);
   const skuMap = new Map(existing.map((row) => [row.sku.toLowerCase(), row]));
   const barcodeMap = new Map(existing.filter((r) => r.barcode).map((row) => [row.barcode!, row]));
   // S6: barcode kemasan berbagi SATU ruang nama dengan barcode satuan
   // dasar (aturan domain kemasan) — analisis memeriksa keduanya agar
   // pratinjau jujur sebelum commit.
-  const existingPackagingBarcodes = await tx
-    .select({
-      barcode: productPackagings.barcode,
-      packagingName: productPackagings.name,
-      sku: products.sku,
-      productName: products.name,
-    })
-    .from(productPackagings)
-    .innerJoin(products, eq(productPackagings.productId, products.id))
-    .where(and(eq(productPackagings.companyId, companyId), sql`${productPackagings.barcode} is not null`));
+  const existingPackagingBarcodes: {
+    barcode: string | null;
+    packagingName: string;
+    sku: string;
+    productName: string;
+  }[] = [];
+  for (let offset = 0; offset < lookupKeys.barcodes.length; offset += 20_000) {
+    const batch = lookupKeys.barcodes.slice(offset, offset + 20_000);
+    const matched = await tx
+      .select({
+        barcode: productPackagings.barcode,
+        packagingName: productPackagings.name,
+        sku: products.sku,
+        productName: products.name,
+      })
+      .from(productPackagings)
+      .innerJoin(products, eq(productPackagings.productId, products.id))
+      .where(and(eq(productPackagings.companyId, companyId), inArray(productPackagings.barcode, batch)));
+    existingPackagingBarcodes.push(...matched);
+  }
   const packagingBarcodeMap = new Map(
     existingPackagingBarcodes.map((row) => [row.barcode!, row]),
   );
@@ -140,9 +165,7 @@ export async function analyzeProductJob(
       ? requiredCustomFieldsNote(requiredProductDefs.map((field) => field.label))
       : null;
 
-  for (const row of rows) {
-    const source = (row.data ?? {}) as Record<string, unknown>;
-    const mapped = mapProductRow(source, mapping, importFallbackSku(row.rowNumber));
+  for (const { row, source, mapped } of preparedRows) {
     if (!mapped.value) {
       // GD-P3-2: mapProductRow kini menolak data buruk itu sendiri
       // (harga tak terbaca, stok/minimum negatif), jadi analisis cukup
@@ -315,13 +338,7 @@ export async function analyzeProductJob(
   // hanya dari pratinjau 30 baris. Hanya baris "pending" yang ditulis:
   // baris yang sudah diproses commit menyimpan pesan hasilnya sendiri,
   // dan analisis ulang membersihkan isu lama baris yang sudah valid.
-  for (const item of rowIssues) {
-    if (item.status !== "pending") continue;
-    await tx
-      .update(importRows)
-      .set({ error: item.issue })
-      .where(eq(importRows.id, item.id));
-  }
+  await persistPendingImportRowIssues(tx, companyId, jobId, rowIssues);
 
   await tx
     .update(importJobs)
@@ -353,17 +370,6 @@ export async function loadClassifiedProductRows(
     .from(importRows)
     .where(and(eq(importRows.companyId, companyId), eq(importRows.jobId, jobId)))
     .orderBy(asc(importRows.rowNumber));
-
-  const existing = await tx
-    .select({ sku: products.sku, barcode: products.barcode })
-    .from(products)
-    .where(eq(products.companyId, companyId));
-  const catalog: ProductCatalogIndex = {
-    skuKeys: new Set(existing.map((row) => row.sku.toLowerCase())),
-    barcodeToSkuKey: new Map(
-      existing.filter((row) => row.barcode).map((row) => [row.barcode!, row.sku.toLowerCase()]),
-    ),
-  };
 
   const inputs: ClassifiableProductRow[] = [];
   const base = rows.map((row) => {
@@ -409,12 +415,60 @@ export async function loadClassifiedProductRows(
     };
   });
 
+  const lookupKeys = productCatalogLookupKeys(inputs);
+  const existing = await loadProductCatalogMatches(tx, companyId, lookupKeys);
+  const catalog: ProductCatalogIndex = {
+    skuKeys: new Set(existing.map((row) => row.sku.toLowerCase())),
+    barcodeToSkuKey: new Map(
+      existing
+        .filter((row) => row.barcode)
+        .map((row) => [row.barcode!, row.sku.toLowerCase()]),
+    ),
+  };
   const classified = classifyProductImportRows(inputs, catalog);
   const counts = countProductImportRows(inputs, classified);
   return {
     rows: base.map((row) => ({ ...row, flags: classified.get(row.rowNumber)! })),
     counts,
   };
+}
+
+/**
+ * Load only catalog records that can affect this file's duplicate flags.
+ * Batches keep the PostgreSQL bind count bounded for large imports. The
+ * products company/barcode index and the normalized-SKU expression index
+ * serve these predicates.
+ */
+async function loadProductCatalogMatches(
+  tx: Tx,
+  companyId: string,
+  keys: { skuKeys: string[]; barcodes: string[] },
+): Promise<{ id: string; sku: string; barcode: string | null; name: string }[]> {
+  const batchSize = 20_000;
+  const batches = Math.max(
+    Math.ceil(keys.skuKeys.length / batchSize),
+    Math.ceil(keys.barcodes.length / batchSize),
+  );
+  const existing: { id: string; sku: string; barcode: string | null; name: string }[] = [];
+
+  for (let batch = 0; batch < batches; batch += 1) {
+    const conditions = [];
+    const skuKeys = keys.skuKeys.slice(batch * batchSize, (batch + 1) * batchSize);
+    const barcodes = keys.barcodes.slice(batch * batchSize, (batch + 1) * batchSize);
+    if (skuKeys.length > 0) {
+      conditions.push(inArray(sql`lower(${products.sku})`, skuKeys));
+    }
+    if (barcodes.length > 0) {
+      conditions.push(inArray(products.barcode, barcodes));
+    }
+    const matched = await tx
+      .select({ id: products.id, sku: products.sku, barcode: products.barcode, name: products.name })
+      .from(products)
+      .where(and(eq(products.companyId, companyId), or(...conditions)));
+    existing.push(...matched);
+  }
+
+  return existing;
 }
 
 export async function defaultWarehouse(tx: Tx, companyId: string) {

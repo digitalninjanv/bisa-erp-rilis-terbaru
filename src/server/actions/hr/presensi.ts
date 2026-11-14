@@ -5,7 +5,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { withCompany } from "@/db/tenant";
-import { guard } from "@/lib/errors";
+import { AppError, guard } from "@/lib/errors";
 import { parseInput } from "@/lib/action-validation";
 import { requirePermissionInModule } from "@/lib/session";
 
@@ -28,6 +28,19 @@ const attendanceSchema = z.object({
   note: z.string().trim().max(300).nullish(),
 });
 
+const attendanceBatchSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Tanggal harus YYYY-MM-DD."),
+  entries: z.array(
+    z.object({
+      employeeId: z.string().uuid(),
+      status: z.enum(["present", "permit", "sick", "leave", "absent"]),
+      checkIn: z.string().regex(/^\d{1,2}:\d{2}$/).nullish(),
+      checkOut: z.string().regex(/^\d{1,2}:\d{2}$/).nullish(),
+      note: z.string().trim().max(300).nullish(),
+    }),
+  ).min(1).max(500),
+});
+
 export async function recordAttendanceAction(input: z.input<typeof attendanceSchema>) {
   return guard(async () => {
     const ctx = await requirePermissionInModule("payroll.manage", "hr");
@@ -47,6 +60,44 @@ export async function recordAttendanceAction(input: z.input<typeof attendanceSch
     revalidateHrPaths();
     // G4 (CRUD-02): halaman absensi tidak tercakup helper bersama
     // (helper hanya hub HR/payroll/akuntansi) — revalidate jalurnya sendiri.
+    revalidatePath("/app/akuntansi/hr/absensi");
+    return result;
+  });
+}
+
+/** Catat beberapa karyawan dalam satu transaksi supaya daftar hadir tidak tersimpan setengah. */
+export async function recordAttendanceBatchAction(input: z.input<typeof attendanceBatchSchema>) {
+  return guard(async () => {
+    const ctx = await requirePermissionInModule("payroll.manage", "hr");
+    const data = parseInput(attendanceBatchSchema, input);
+    const employeeIds = data.entries.map((entry) => entry.employeeId);
+    if (new Set(employeeIds).size !== employeeIds.length) {
+      throw new AppError("VALIDATION", "Karyawan yang sama tidak boleh dicatat dua kali untuk tanggal yang sama.");
+    }
+    const result = await withCompany(ctx.company.id, async (tx) => {
+      for (const entry of data.entries) {
+        await recordAttendance(tx, {
+          companyId: ctx.company.id,
+          userId: ctx.user.id,
+          employeeId: entry.employeeId,
+          date: data.date,
+          status: entry.status,
+          checkIn: entry.checkIn ?? null,
+          checkOut: entry.checkOut ?? null,
+          note: entry.note ?? null,
+        });
+      }
+      await writeAudit(tx, {
+        companyId: ctx.company.id,
+        userId: ctx.user.id,
+        action: "attendance.batch_record",
+        entityType: "attendance",
+        entityId: ctx.company.id,
+        after: { date: data.date, employeeCount: data.entries.length },
+      });
+      return { saved: data.entries.length };
+    });
+    revalidateHrPaths();
     revalidatePath("/app/akuntansi/hr/absensi");
     return result;
   });

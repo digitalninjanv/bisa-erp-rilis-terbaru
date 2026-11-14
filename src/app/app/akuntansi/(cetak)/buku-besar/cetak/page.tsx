@@ -3,7 +3,7 @@ import { withCompanyReadOnly } from "@/db/tenant";
 import { getLedger, listAccounts, resolveDefaultLedgerAccountId } from "@/server/reports";
 import { getSettings } from "@/server/catalog";
 import { requirePermissionPage } from "@/lib/session";
-import { accountTypeLabel, formatDate, monthStartISO, normalBalanceLabel, todayISO } from "@/lib/format";
+import { formatDate, monthStartISO, todayISO } from "@/lib/format";
 import { toPrintSettings } from "@/components/print/types";
 import { documentQrDataUrl } from "@/components/print/qr";
 import {
@@ -89,115 +89,80 @@ export default async function LedgerPrintPage({
         printedByName={ctx.user.name}
         qrDataUrl={qrDataUrl}
       >
-        <p className="text-[11px]">
-          {accountTypeLabel(data.account.type)} · Saldo normal {normalBalanceLabel(data.account.normalBalance)}
-        </p>
-
-        <div className="mt-3 grid grid-cols-2 gap-3 border-y border-black/40 py-2 text-[11px] break-inside-avoid sm:grid-cols-4">
-          <div>
-            <p className="text-[9px] uppercase tracking-wide opacity-60">Saldo awal</p>
-            <p className="num mt-0.5 font-semibold">
-              <PrintAmount value={ledger.opening} />
-            </p>
-            <p className="text-[9px] opacity-60">sebelum {formatDate(from)}</p>
-          </div>
-          <div>
-            <p className="text-[9px] uppercase tracking-wide opacity-60">Mutasi debit</p>
-            <p className="num mt-0.5">
-              <PrintAmount value={ledger.totalDebit} symbol={false} />
-            </p>
-          </div>
-          <div>
-            <p className="text-[9px] uppercase tracking-wide opacity-60">Mutasi kredit</p>
-            <p className="num mt-0.5">
-              <PrintAmount value={ledger.totalCredit} symbol={false} />
-            </p>
-          </div>
-          <div>
-            <p className="text-[9px] uppercase tracking-wide opacity-60">Saldo akhir</p>
-            <p className="num mt-0.5 font-semibold">
-              <PrintAmount value={ledger.closing} />
-            </p>
-            <p className="text-[9px] opacity-60">per {formatDate(to)}</p>
-          </div>
-        </div>
-
         {/* A-22 K6: pratinjau LAYAR tidak boleh overflow di 390
             (tabel ±489px). Pembungkus hanya berlaku di layar
             (print:overflow-visible) — tipografi & lebar kertas
             tidak berubah sama sekali. */}
         <div className="overflow-x-auto print:overflow-visible">
-        <table className="mt-2 w-full text-[12px]">
-          <thead className="text-[10px] uppercase tracking-wide opacity-60">
-            <tr>
-              <th className="py-1.5 text-left font-medium">Tanggal</th>
-              <th className="py-1.5 text-left font-medium">Nomor</th>
-              <th className="py-1.5 text-left font-medium">Keterangan</th>
-              <th className="py-1.5 text-right font-medium">Debit</th>
-              <th className="py-1.5 text-right font-medium">Kredit</th>
-              <th className="py-1.5 text-right font-medium">Saldo</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr className="report-keep">
-              <td className="py-1.5" colSpan={3}>
-                Saldo awal periode <span className="text-[10px] opacity-60">(sebelum {formatDate(from)})</span>
-              </td>
-              <td className={cell} />
-              <td className={cell} />
-              <td className={cell}>
-                <PrintAmount value={ledger.opening} symbol={false} />
-              </td>
-            </tr>
-            {ledger.items.length === 0 ? (
+          <table className="mt-3 w-full border-collapse text-[11px]">
+            <thead className="border-b border-black/60 text-[10px]">
               <tr>
-                <td className="py-2 text-[11px] opacity-60" colSpan={6}>
-                  Tidak ada mutasi pada periode ini.
+                <th className="py-2 text-left font-semibold">Tanggal</th>
+                <th className="py-2 text-left font-semibold">Nomor</th>
+                <th className="py-2 text-left font-semibold">Keterangan</th>
+                <th className="py-2 text-right font-semibold">Debit</th>
+                <th className="py-2 text-right font-semibold">Kredit</th>
+                <th className="py-2 text-right font-semibold">Saldo</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="report-keep border-b border-black/20 font-medium">
+                <td className="py-2" colSpan={3}>
+                  Posisi sebelum periode <span className="text-[10px] font-normal opacity-60">({formatDate(from)})</span>
+                </td>
+                <td className={cell} />
+                <td className={cell} />
+                <td className={cell}>
+                  <PrintAmount value={ledger.opening} symbol={false} />
                 </td>
               </tr>
-            ) : null}
-            {ledger.items.map((row) => (
-              <tr key={row.id} className="report-keep">
-                <td className="py-1.5">{formatDate(row.date)}</td>
-                <td className="num py-1.5">{row.number}</td>
-                <td className="py-1.5">{row.description || "—"}</td>
+              {ledger.items.length === 0 ? (
+                <tr>
+                  <td className="py-3 text-[11px] opacity-60" colSpan={6}>
+                    Tidak ada transaksi pada periode ini.
+                  </td>
+                </tr>
+              ) : null}
+              {ledger.items.map((row) => (
+                <tr key={row.id} className="report-keep border-b border-black/10">
+                  <td className="py-1.5">{formatDate(row.date)}</td>
+                  <td className="num py-1.5">{row.number}</td>
+                  <td className="py-1.5">{row.description || "—"}</td>
+                  <td className={cell}>
+                    <PrintAmount value={row.debit} symbol={false} />
+                  </td>
+                  <td className={cell}>
+                    <PrintAmount value={row.credit} symbol={false} />
+                  </td>
+                  <td className={cell}>
+                    <PrintAmount value={row.balance} symbol={false} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="rule-total font-medium">
+                <td className="py-2" colSpan={3}>Total periode</td>
                 <td className={cell}>
-                  <PrintAmount value={row.debit} symbol={false} />
+                  <PrintAmount value={ledger.totalDebit} />
                 </td>
                 <td className={cell}>
-                  <PrintAmount value={row.credit} symbol={false} />
+                  <PrintAmount value={ledger.totalCredit} symbol={false} />
                 </td>
+                <td className={cell} />
+              </tr>
+              <tr className="rule-final font-semibold">
+                <td className="py-2" colSpan={3}>
+                  Posisi per {formatDate(to)}
+                </td>
+                <td className={cell} />
+                <td className={cell} />
                 <td className={cell}>
-                  <PrintAmount value={row.balance} symbol={false} />
+                  <PrintAmount value={ledger.closing} />
                 </td>
               </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr className="rule-total font-medium">
-              <td className="py-1.5" colSpan={3}>
-                Total mutasi periode
-              </td>
-              <td className={cell}>
-                <PrintAmount value={ledger.totalDebit} />
-              </td>
-              <td className={cell}>
-                <PrintAmount value={ledger.totalCredit} symbol={false} />
-              </td>
-              <td className={cell} />
-            </tr>
-            <tr className="rule-final font-semibold">
-              <td className="py-1.5" colSpan={3}>
-                Saldo akhir periode <span className="text-[10px] font-normal opacity-60">(per {formatDate(to)})</span>
-              </td>
-              <td className={cell} />
-              <td className={cell} />
-              <td className={cell}>
-                <PrintAmount value={ledger.closing} />
-              </td>
-            </tr>
-          </tfoot>
-        </table>
+            </tfoot>
+          </table>
         </div>
       </ReportDocument>
     </ReportPrintPageShell>

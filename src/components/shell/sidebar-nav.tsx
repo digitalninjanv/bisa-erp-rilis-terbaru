@@ -5,20 +5,10 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  BarChart3,
-  BookOpen,
-  Boxes,
-  CalendarCheck,
   ChevronDown,
-  FileBarChart,
-  Landmark,
-  LayoutDashboard,
-  Settings,
-  ShoppingCart,
   X,
-  type LucideIcon,
 } from "lucide-react";
-import { MODULES, groupNavItems, type ModuleKey, type NavItem } from "@/lib/modules";
+import { MODULES, groupNavItems, navGroupId, resolveActiveNavItem, type ModuleKey, type NavItem } from "@/lib/modules";
 import { useSidebarCollapsed } from "@/components/shell/sidebar-frame";
 import {
   Tooltip,
@@ -27,6 +17,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { useCurrentHash } from "@/components/shell/use-current-hash";
 
 /**
  * A-25 U1: lencana antrean di item menu — jumlah pekerjaan menunggu
@@ -37,20 +28,7 @@ import { cn } from "@/lib/utils";
 export type NavBadge = { count: number; tone?: "amber" | "red" };
 export type NavBadges = Record<string, NavBadge>;
 
-/** Ikon rail per kelompok — pola icon rail Accurate. */
-const GROUP_ICONS: Record<string, LucideIcon> = {
-  Dashboard: LayoutDashboard,
-  "Kas & Bank": Landmark,
-  "Buku Besar": BookOpen,
-  Laporan: FileBarChart,
-  Setting: Settings,
-  Analisa: BarChart3,
-  Harian: CalendarCheck,
-  "Master & Stok": Boxes,
-  Pembelian: ShoppingCart,
-};
-
-type RailFlyout = { group: string; top: number };
+type RailFlyout = { groupId: string; top: number };
 
 /**
  * Nav sidebar bersama. Pemakaian modul (bawaan): `moduleKey` +
@@ -82,57 +60,65 @@ export function SidebarNav({
   rail?: boolean;
 }) {
   const pathname = usePathname();
+  const [hash, setHash] = useCurrentHash(pathname);
   const collapsed = useSidebarCollapsed();
   const activeModule = moduleKey ? MODULES[moduleKey] : null;
   const source = itemsProp ?? activeModule?.nav ?? [];
   const items = permissions
     ? source.filter((item) => !item.permission || permissions.includes(item.permission))
     : source;
-  // A-22 Tahap K5 (UX-07): modul berkelompok (akuntansi) dirender per
-  // kepala kelompok; modul tanpa grup mempertahankan tampilan lama
-  // persis — satu judul "Menu" + daftar datar.
+  // Menu ditampilkan dalam kelompok kerja pada sidebar modul dan Pengaturan.
   const groups = groupNavItems(items);
   const grouped = groups.some((entry) => entry.group !== null);
-  // Kelompok yang dilipat pengguna — semua terbuka saat pertama dibuka.
-  const [closedGroups, setClosedGroups] = useState<Set<string>>(new Set());
-  const toggleGroup = (name: string) =>
-    setClosedGroups((current) => {
-      const next = new Set(current);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
+
+  const activeItem = resolveActiveNavItem(items, pathname, hash, activeHref);
+  const isItemActive = (item: NavItem) => item.href === activeItem?.href;
+  const activeGroup = activeItem?.group ?? null;
+  const activeGroupEntry = groups.find((entry) => entry.group === activeGroup);
+  const activeGroupKey = activeGroupEntry ? navGroupId(activeGroupEntry) : null;
+  const routeKey = `${pathname}${activeHref ?? ""}`;
+  const [manualOpenGroups, setManualOpenGroups] = useState<{ route: string; ids: string[] }>({ route: "", ids: [] });
+  const isGroupExpanded = (id: string) =>
+    id === activeGroupKey || (manualOpenGroups.route === routeKey && manualOpenGroups.ids.includes(id));
+  const toggleGroup = (id: string) => {
+    if (id === activeGroupKey) return;
+    setManualOpenGroups((current) => {
+      const ids = current.route === routeKey ? current.ids : [];
+      return {
+        route: routeKey,
+        ids: ids.includes(id) ? ids.filter((entry) => entry !== id) : [...ids, id],
+      };
     });
+  };
 
   // Rail: panel flyout untuk kelompok yang diklik. Posisi dihitung
   // dari tombol agar panel tidak menutupi rail; ditutup oleh klik
   // luar (overlay), Escape, atau perpindahan halaman.
   const [flyout, setFlyout] = useState<RailFlyout | null>(null);
   const flyoutRef = useRef<HTMLDivElement>(null);
+  const flyoutTriggerRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!flyout) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setFlyout(null);
+      if (event.key === "Escape") {
+        setFlyout(null);
+        flyoutTriggerRef.current?.focus();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [flyout]);
 
-  function openRailGroup(group: string, event: React.MouseEvent<HTMLButtonElement>) {
-    if (flyout?.group === group) {
+  function openRailGroup(groupId: string, event: React.MouseEvent<HTMLButtonElement>) {
+    flyoutTriggerRef.current = event.currentTarget;
+    if (flyout?.groupId === groupId) {
       setFlyout(null);
       return;
     }
     const rect = event.currentTarget.getBoundingClientRect();
     const top = Math.max(8, Math.min(rect.top, window.innerHeight - 420));
-    setFlyout({ group, top });
+    setFlyout({ groupId, top });
   }
-
-  const isItemActive = (item: NavItem) =>
-    activeHref !== undefined
-      ? item.href === activeHref
-      : activeModule && item.href === activeModule.href
-        ? pathname === item.href
-        : pathname === item.href || pathname.startsWith(`${item.href}/`);
 
   const renderItem = (item: NavItem) => {
     const Icon = item.icon;
@@ -151,6 +137,7 @@ export function SidebarNav({
             render={
               <Link
                 href={item.href}
+                onClick={() => setHash(item.href.split("#")[1] ? `#${item.href.split("#")[1]}` : "")}
                 aria-label={item.label}
                 aria-current={active ? "page" : undefined}
                 className={cn(
@@ -189,6 +176,8 @@ export function SidebarNav({
       <Link
         key={item.href}
         href={item.href}
+        onClick={() => setHash(item.href.split("#")[1] ? `#${item.href.split("#")[1]}` : "")}
+        aria-current={active ? "page" : undefined}
         className={cn(
           "flex items-center gap-2.5 rounded-md px-2.5 py-[7px] text-[13px] text-shell-item transition-colors hover:bg-shell-hover hover:text-shell-hover-foreground",
           active &&
@@ -214,7 +203,7 @@ export function SidebarNav({
   };
 
   const flyoutGroup = flyout
-    ? groups.find((entry) => entry.group === flyout.group)
+    ? groups.find((entry) => navGroupId(entry) === flyout.groupId)
     : undefined;
 
   const railBody = (
@@ -230,23 +219,23 @@ export function SidebarNav({
           );
         }
         const group = entry.group;
-        const Icon = GROUP_ICONS[group] ?? entry.items[0]?.icon;
+        const groupId = navGroupId(entry);
+        const Icon = entry.items[0]?.icon;
         if (!Icon) return null;
         const active = entry.items.some(isItemActive);
-        const open = flyout?.group === group;
+        const open = flyout?.groupId === groupId;
         const badgeTotal = entry.items.reduce(
           (acc, item) => acc + (badges?.[item.href]?.count ?? 0),
           0,
         );
         return (
-          <Tooltip key={group}>
+          <Tooltip key={groupId}>
             <TooltipTrigger
               render={
                 <button
                   type="button"
-                  onClick={(event) => openRailGroup(group, event)}
+                  onClick={(event) => openRailGroup(groupId, event)}
                   aria-label={group}
-                  aria-haspopup="menu"
                   aria-expanded={open}
                   className={cn(
                     "relative grid size-10 place-items-center rounded-md text-shell-muted transition-colors hover:bg-shell-hover hover:text-shell-hover-foreground",
@@ -292,15 +281,17 @@ export function SidebarNav({
             </div>
           );
         }
-        const closed = closedGroups.has(entry.group);
+        const groupId = navGroupId(entry);
+        const closed = !isGroupExpanded(groupId);
         const hasActive = entry.items.some(isItemActive);
         return (
-          <section key={entry.group}>
+          <section key={groupId}>
             <button
               type="button"
-              onClick={() => toggleGroup(entry.group!)}
+              disabled={groupId === activeGroupKey}
+              onClick={() => toggleGroup(groupId)}
               aria-expanded={!closed}
-              className="flex w-full items-center gap-1 rounded-md px-2 py-1 text-left transition-colors hover:text-shell-hover-foreground"
+              className="flex w-full items-center gap-1 rounded-md px-2 py-1 text-left transition-colors enabled:hover:text-shell-hover-foreground disabled:cursor-default"
             >
               <span
                 className={cn(
@@ -321,7 +312,7 @@ export function SidebarNav({
               />
             </button>
             {closed ? null : (
-              <div className="mt-0.5 space-y-0.5">
+              <div id={`${groupId}-links`} className="mt-0.5 space-y-0.5">
                 {entry.items.map(renderItem)}
               </div>
             )}
@@ -365,16 +356,16 @@ export function SidebarNav({
               />
               <div
                 ref={flyoutRef}
-                role="menu"
+                id={`rail-flyout-${flyout.groupId}`}
                 aria-label={flyoutGroup.group ?? "Menu"}
+                role="region"
                 style={{ top: flyout.top, left: 80 }}
                 className="fixed z-[70] max-h-[calc(100vh-16px)] w-[320px] overflow-y-auto rounded-lg border border-border bg-card p-1.5 shadow-[var(--shadow-pop)]"
               >
                 <div className="mb-1 flex items-center gap-2 px-2 py-1.5">
                   <span className="grid size-7 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground">
                     {(() => {
-                      const Icon =
-                        GROUP_ICONS[flyoutGroup.group ?? ""] ?? flyoutGroup.items[0]?.icon;
+                      const Icon = flyoutGroup.items[0]?.icon;
                       return Icon ? <Icon className="size-4" strokeWidth={1.7} /> : null;
                     })()}
                   </span>
@@ -390,7 +381,7 @@ export function SidebarNav({
                     <X className="size-4" />
                   </button>
                 </div>
-                <div className="space-y-0.5">
+                <nav aria-label={flyoutGroup.group ?? "Menu"} className="space-y-0.5">
                   {flyoutGroup.items.map((item) => {
                     const Icon = item.icon;
                     const active = isItemActive(item);
@@ -399,8 +390,10 @@ export function SidebarNav({
                       <Link
                         key={item.href}
                         href={item.href}
-                        role="menuitem"
-                        onClick={() => setFlyout(null)}
+                        onClick={() => {
+                          setHash(item.href.split("#")[1] ? `#${item.href.split("#")[1]}` : "");
+                          setFlyout(null);
+                        }}
                         aria-current={active ? "page" : undefined}
                         className={cn(
                           "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[12px] transition-colors",
@@ -431,7 +424,7 @@ export function SidebarNav({
                       </Link>
                     );
                   })}
-                </div>
+                </nav>
               </div>
             </>,
             document.body,

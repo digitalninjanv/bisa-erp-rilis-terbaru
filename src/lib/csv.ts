@@ -17,22 +17,41 @@ function neutralizeFormula(text: string): string {
   return text;
 }
 
-export function toCsv(headers: string[], rows: (string | number | null | undefined)[][]): string {
+/** Serialisasi satu baris CSV dengan aturan escaping yang sama dengan toCsv. */
+export function csvRow(row: (string | number | null | undefined)[]): string {
   const escape = (value: string | number | null | undefined) => {
     if (value === null || value === undefined) return "";
     const text = neutralizeFormula(String(value));
     return /[",\n\r;]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
   };
-  return [headers, ...rows].map((row) => row.map(escape).join(",")).join("\r\n");
+  return row.map(escape).join(",");
 }
+
+export function toCsv(headers: string[], rows: (string | number | null | undefined)[][]): string {
+  return [headers, ...rows].map(csvRow).join("\r\n");
+}
+
+const CSV_RESPONSE_HEADERS = {
+  "Content-Type": "text/csv; charset=utf-8",
+  "Cache-Control": "no-store",
+};
 
 export function csvResponse(filename: string, content: string): Response {
   return new Response(`\uFEFF${content}`, {
     status: 200,
     headers: {
-      "Content-Type": "text/csv; charset=utf-8",
+      ...CSV_RESPONSE_HEADERS,
       "Content-Disposition": `attachment; filename="${filename}"`,
-      "Cache-Control": "no-store",
+    },
+  });
+}
+
+export function csvStreamResponse(filename: string, body: ReadableStream<Uint8Array>): Response {
+  return new Response(body, {
+    status: 200,
+    headers: {
+      ...CSV_RESPONSE_HEADERS,
+      "Content-Disposition": `attachment; filename="${filename}"`,
     },
   });
 }

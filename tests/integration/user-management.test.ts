@@ -12,6 +12,7 @@ import {
   resetUserPasswordAction,
   saveCompanyRoleAction,
   updateUserRoleAction,
+  updateUserRolesBatchAction,
 } from "@/server/actions/users";
 
 // A-13: halaman Pengaturan → Pengguna dilaporkan "eror" saat menambah
@@ -316,6 +317,39 @@ describe("gerbang peran & penjaga owner", () => {
       expect(self.message).toContain("akun sendiri");
     }
     expect(await memberRole(OWNER_ID)).toBe("owner");
+  });
+
+  it("MD-03: updateUserRolesBatchAction mengubah banyak peran secara atomik dalam satu transaksi", async () => {
+    const batchResult = await updateUserRolesBatchAction({
+      updates: [
+        { userId: cashierUserId, role: "warehouse" },
+        { userId: secondOwnerId, role: "admin" },
+      ],
+    });
+    expect(batchResult.ok).toBe(true);
+    expect(await memberRole(cashierUserId)).toBe("warehouse");
+    expect(await memberRole(secondOwnerId)).toBe("admin");
+
+    // Kembalikan secondOwnerId menjadi owner
+    await updateUserRoleAction({ userId: secondOwnerId, role: "owner" });
+    expect(await memberRole(secondOwnerId)).toBe("owner");
+  });
+
+  it("MD-03: updateUserRolesBatchAction menolak bila salah satu akun adalah diri sendiri atau menghapus owner terakhir", async () => {
+    const selfBatch = await updateUserRolesBatchAction({
+      updates: [
+        { userId: cashierUserId, role: "cashier" },
+        { userId: OWNER_ID, role: "admin" },
+      ],
+    });
+    expect(selfBatch.ok).toBe(false);
+    if (!selfBatch.ok) {
+      expect(selfBatch.code).toBe("VALIDATION");
+      expect(selfBatch.message).toContain("akun sendiri");
+    }
+
+    // Role cashierUserId tidak berubah karena transaksi dibatalkan (atomik)
+    expect(await memberRole(cashierUserId)).toBe("warehouse");
   });
 
   it("reset sandi mengganti kredensial: sandi baru terverifikasi, sandi lama tidak", async () => {

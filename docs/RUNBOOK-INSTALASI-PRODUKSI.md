@@ -18,6 +18,9 @@ Ada **dua cara memasang** dari paket yang sama. Pilih satu:
   komputer toko. Dipakai di panduan utama di bawah.
 - **Cara B — Docker Compose.** Bila toko sudah memakai Docker.
 
+Jalur systemd memerlukan systemd **247 atau lebih baru** untuk
+`LoadCredential` pada backup dan restore drill.
+
 Paketnya adalah satu berkas: `bisa-erp-<versi>.tar.gz` (dibuat oleh
 `deploy/build-release.sh` dari kode sumber). Simpan berkas ini baik-
 baik — inilah "CD instalasi" Anda.
@@ -145,15 +148,37 @@ lama mengikuti aturan di `/etc/bisa-erp/backup.conf` (bawaan:
 
 ```bash
 sudo systemctl start bisa-erp-backup.service
-ls -la /var/backups/bisa-erp/        # berkas terbaru: bisa-<tanggal>.dump
+ls -la /var/backups/bisa-erp/        # berkas terbaru: bisa-<tanggal>.dump.enc
 ```
 
-**Sangat dianjurkan:** sesekali salin berkas `.dump` terbaru ke tempat
+Backup baru wajib terenkripsi. `deploy/install.sh` tidak menimpa
+`backup.conf` yang ada. Bila passphrase belum diisi, installer menjaga
+timer backup dan restore drill tetap nonaktif; job backup sendiri juga
+gagal tertutup tanpa membuat dump plaintext. Simpan passphrase di password
+manager/offline terpisah dari server. Pada instalasi baru, buat credential
+file tanpa menaruh nilainya di konfigurasi shell atau command line:
+
+```bash
+sudo install -d -o root -g root -m 755 /etc/credstore
+sudo install -o root -g root -m 600 /dev/null /etc/credstore/bisa-erp-backup-passphrase
+sudoedit /etc/credstore/bisa-erp-backup-passphrase
+```
+
+Installer versi baru memindahkan passphrase lama dari `backup.conf` ke file
+tersebut satu kali. Unit systemd memuatnya dengan `LoadCredential`; saat
+mengganti kunci, simpan salinan luar host lebih dulu, lalu edit file credential.
+Setelah mengaturnya, aktifkan jadwal:
+
+```bash
+sudo systemctl enable --now bisa-erp-backup.timer bisa-erp-restore-drill.timer
+```
+
+**Dianjurkan:** sesekali salin berkas `.dump.enc` terbaru ke tempat
 di luar server (flashdisk/NAS/penyimpanan pemilik). Cadangan di mesin
 yang sama tidak menolong bila mesinnya hilang/rusak. Pengaturan
 salinan otomatis ke luar mesin ada di `backup.conf`
-(`OFFSITE_CMD`, mati secara bawaan — isi juga `BACKUP_PASSPHRASE`
-agar salinan yang keluar terenkripsi).
+(`OFFSITE_CMD`, mati secara bawaan; backup yang dikirim ke luar host
+sudah terenkripsi karena semua backup baru wajib terenkripsi).
 
 **Memeriksa timer hidup:** `systemctl list-timers bisa-erp-backup`.
 

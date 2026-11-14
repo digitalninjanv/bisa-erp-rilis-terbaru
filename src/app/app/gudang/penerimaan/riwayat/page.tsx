@@ -16,7 +16,7 @@ import { Pagination } from "@/components/blocks/pagination";
 import { ReceiptRowActions } from "@/components/gudang/void-buttons";
 import { DateRangeField } from "@/components/date-field";
 
-export const metadata = { title: "Faktur pembelian" };
+export const metadata = { title: "Riwayat penerimaan" };
 export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 40;
@@ -36,6 +36,7 @@ export default async function ReceiptHistoryPage({
   }>;
 }) {
   const params = await searchParams;
+  const sourceFilter = params.source ?? "purchase";
   const ctx = await requirePermissionPage("inventory.view");
 
   const data = await withCompanyReadOnly(ctx.company.id, async (tx) => {
@@ -50,7 +51,7 @@ export default async function ReceiptHistoryPage({
         supplierId: params.supplier,
         warehouseId: params.warehouse,
         status: params.status,
-        source: params.source,
+        source: sourceFilter,
       }),
       listSuppliers(tx, ctx.company.id),
       listWarehouses(tx, ctx.company.id),
@@ -58,7 +59,8 @@ export default async function ReceiptHistoryPage({
     return { history, suppliers, warehouses };
   });
   const hasFilters = Boolean(
-    params.q || params.from || params.to || params.supplier || params.warehouse || params.status || params.source,
+    params.q || params.from || params.to || params.supplier || params.warehouse || params.status ||
+    (params.source && params.source !== "purchase"),
   );
   const historyParams = {
     q: params.q,
@@ -67,7 +69,7 @@ export default async function ReceiptHistoryPage({
     supplier: params.supplier,
     warehouse: params.warehouse,
     status: params.status,
-    source: params.source,
+    source: sourceFilter,
   };
 
   return (
@@ -80,8 +82,8 @@ export default async function ReceiptHistoryPage({
       </Link>
       <PageHeader
         eyebrow="Gudang"
-        title="Faktur pembelian"
-        description="Riwayat penerimaan barang dari pembelian, stok awal, bonus, dan retur pelanggan. Klik nomor dokumen untuk detail, cetak GRN, atau batalkan."
+        title="Riwayat penerimaan"
+        description="Penerimaan barang pembelian dan nomor faktur pemasok, termasuk status utangnya. Gunakan filter sumber untuk melihat penerimaan stok lain."
         actions={
           <Link
             href="/app/gudang/penerimaan"
@@ -139,7 +141,7 @@ export default async function ReceiptHistoryPage({
             </select>
             <select
               name="source"
-              defaultValue={params.source ?? ""}
+              defaultValue={sourceFilter}
               className={dataListFilterClass}
               aria-label="Saring sumber"
             >
@@ -174,6 +176,7 @@ export default async function ReceiptHistoryPage({
             <thead>
               <tr>
                 <th>Nomor</th>
+                <th>No. faktur pemasok</th>
                 <th>Tanggal</th>
                 <th>Sumber</th>
                 <th>Pemasok</th>
@@ -194,6 +197,11 @@ export default async function ReceiptHistoryPage({
                       <Link href={`/app/gudang/penerimaan/${row.id}`} className="text-primary hover:underline">
                         {row.number}
                       </Link>
+                    </td>
+                    <td className="num text-[12px]">
+                      {row.source === "purchase" ? (
+                        row.supplierInvoiceNumber || <span className="text-muted-foreground">Belum dicatat</span>
+                      ) : "—"}
                     </td>
                     <td className="num text-[12px] text-muted-foreground">{formatDate(row.date)}</td>
                     <td className="text-[12px]">
@@ -256,6 +264,11 @@ export default async function ReceiptHistoryPage({
                     {row.source === "purchase" && row.paymentAccountId ? " · tunai" : ""}
                   </span>
                 </p>
+                {row.source === "purchase" ? (
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    Faktur pemasok: {row.supplierInvoiceNumber || "belum dicatat"}
+                  </p>
+                ) : null}
                 <p className="num mt-0.5 text-[11px] text-muted-foreground">
                   {formatDate(row.date)} · {row.warehouseName ?? "—"} · {formatNumber(row.itemCount)} item
                 </p>

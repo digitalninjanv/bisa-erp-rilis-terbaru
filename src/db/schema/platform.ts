@@ -55,7 +55,10 @@ export const warehouses = pgTable(
     isActive: boolean("is_active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("warehouses_company_code_uq").on(t.companyId, t.code)],
+  (t) => [
+    uniqueIndex("warehouses_company_code_uq").on(t.companyId, t.code),
+    uniqueIndex("warehouses_company_id_id_uq").on(t.companyId, t.id),
+  ],
 );
 export const companySettings = pgTable("company_settings", {
   companyId: text("company_id").primaryKey(),

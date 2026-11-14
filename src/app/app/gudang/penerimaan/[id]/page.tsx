@@ -15,6 +15,7 @@ import {
 } from "@/lib/document-flow";
 import { DocumentJournals } from "@/components/blocks/document-journals";
 import { ReceiptVoidButton } from "@/components/gudang/void-buttons";
+import { ReceiptInvoiceNumberForm } from "@/components/gudang/receipt-invoice-number-form";
 
 export const metadata = { title: "Detail Penerimaan Barang" };
 export const dynamic = "force-dynamic";
@@ -54,8 +55,11 @@ export default async function ReceiptDetailPage({
     { label: "Gudang tujuan", value: receipt.warehouseName ?? "—" },
     { label: "Pemasok", value: receipt.supplierName ?? "—" },
   ];
-  if (receipt.supplierInvoiceNumber) {
-    metaRows.push({ label: "No. invoice pemasok", value: receipt.supplierInvoiceNumber });
+  if (receipt.source === "purchase") {
+    metaRows.push({
+      label: "No. faktur pemasok",
+      value: receipt.supplierInvoiceNumber ?? "Belum dicatat",
+    });
   }
   if (receipt.purchaseOrderId) {
     metaRows.push({
@@ -137,6 +141,12 @@ export default async function ReceiptDetailPage({
       meta={<DocumentMetaRows rows={metaRows} />}
       journals={<DocumentJournals journals={journals} />}
     >
+      {receipt.source === "purchase" && receipt.status === "posted" && receipt.supplierId && can(ctx, "inventory.manage") ? (
+        <ReceiptInvoiceNumberForm
+          receiptId={receipt.id}
+          initialValue={receipt.supplierInvoiceNumber}
+        />
+      ) : null}
       <section className="overflow-hidden rounded-lg border border-border bg-card">
         <div className="border-b border-border px-4 py-3">
           <h2 className="text-[13px] font-semibold">Baris penerimaan</h2>

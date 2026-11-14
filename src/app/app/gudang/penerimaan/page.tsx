@@ -60,13 +60,13 @@ export default async function ReceiptsPage({
       <PageHeader
         eyebrow="Gudang"
         title="Penerimaan barang"
-        description="Catat barang masuk dari pembelian, stok awal, bonus, atau retur pelanggan. Stok dan jurnal diperbarui otomatis."
+        description="Catat barang masuk. Untuk pembelian, satu kali posting menambah stok dan membukukan utang atau pembayaran; nomor faktur pemasok dapat dicatat di formulir."
         actions={
           <Link
             href="/app/gudang/penerimaan/riwayat"
             className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] font-medium transition-colors hover:bg-muted"
           >
-            <History className="size-3.5" /> Riwayat / Faktur pembelian
+            <History className="size-3.5" /> Riwayat penerimaan
           </Link>
         }
       />

@@ -31,15 +31,15 @@ import { AutoFilterForm } from "@/components/blocks/auto-filter-form";
 export const metadata = { title: "Laporan keuangan" };
 export const dynamic = "force-dynamic";
 
-const TABS = [
+const FINANCIAL_TABS = [
   { key: "laba-rugi", label: "Laba rugi" },
   { key: "neraca", label: "Posisi keuangan" },
   { key: "arus-kas", label: "Arus kas" },
   { key: "ekuitas", label: "Perubahan ekuitas" },
   { key: "neraca-saldo", label: "Neraca saldo" },
-  { key: "penjualan", label: "Penjualan" },
   { key: "catatan", label: "Catatan" },
 ];
+const OPERATIONAL_TABS = [{ key: "penjualan", label: "Penjualan" }];
 
 // CT-12 + FIX-R2 (RD2-08): judul dokumen resmi yang baku — semua
 // berawalan "Laporan …" dan neraca memakai istilah SAK "Laporan
@@ -67,10 +67,19 @@ const REFERENCES: Record<string, string> = {
 export default async function ReportsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; from?: string; to?: string; nol?: string; compare?: string }>;
+  searchParams: Promise<{ scope?: string; tab?: string; from?: string; to?: string; nol?: string; compare?: string }>;
 }) {
   const params = await searchParams;
-  const tab = TABS.some((row) => row.key === params.tab) ? params.tab! : "laba-rugi";
+  // Laporan penjualan adalah laporan operasional. URL lama `?tab=penjualan`
+  // tetap dibaca agar tautan dan bookmark yang sudah ada tetap berfungsi.
+  const scope = params.tab === "penjualan" || params.scope === "operasional" ? "operasional" : "keuangan";
+  const visibleTabs = scope === "operasional" ? OPERATIONAL_TABS : FINANCIAL_TABS;
+  const tab = visibleTabs.some((row) => row.key === params.tab)
+    ? params.tab!
+    : scope === "operasional"
+      ? "penjualan"
+      : "laba-rugi";
+  const scopeQuery = `scope=${scope}`;
   /* A-28 UI-3 (AKT-09): akun nol (kedua periode) tersembunyi bawaan di layar/cetak/ekspor; `nol=1` menampilkan. */
   const showZero = params.nol === "1";
   const hideZero = !showZero;
@@ -152,8 +161,10 @@ export default async function ReportsPage({
     <div className="financial-report-workspace">
       <PageHeader
         eyebrow="Akuntansi"
-        title="Laporan keuangan"
-        description="Laporan laba rugi, posisi keuangan, arus kas, perubahan ekuitas, neraca saldo, dan penjualan — siap dibaca di layar, diunduh, atau dicetak resmi."
+        title={scope === "operasional" ? "Laporan penjualan" : "Laporan keuangan"}
+        description={scope === "operasional"
+          ? "Ringkasan penjualan menurut periode, kasir, kategori, produk, dan metode pembayaran."
+          : "Laporan laba rugi, posisi keuangan, arus kas, perubahan ekuitas, neraca saldo, dan catatan. Siap dibaca, diunduh, atau dicetak."}
         actions={
           <>
             {/* AK-P3-05(d): tab "catatan" berisi teks bebas (reportNotes),
@@ -193,22 +204,45 @@ export default async function ReportsPage({
       />
 
       <div className="no-print mx-auto mb-3 max-w-5xl overflow-hidden rounded-lg border border-border bg-card">
-        <nav aria-label="Jenis laporan keuangan" className="flex flex-nowrap overflow-x-auto border-b border-border px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {TABS.map((row) => (
-            <Link
-              key={row.key}
-              aria-current={tab === row.key ? "page" : undefined}
-              href={`/app/akuntansi/laporan?tab=${row.key}&from=${from}&to=${to}${zeroSuffix}${compareSuffix}`}
-              className={
-                tab === row.key
-                  ? "whitespace-nowrap border-b-2 border-foreground px-3 py-2.5 text-[12px] font-semibold text-foreground"
-                  : "whitespace-nowrap border-b-2 border-transparent px-3 py-2.5 text-[12px] text-muted-foreground transition-colors hover:text-foreground"
-              }
-            >
-              {row.label}
-            </Link>
-          ))}
+        <nav aria-label="Kelompok laporan" className="flex gap-1 overflow-x-auto border-b border-border px-3 py-2">
+          <Link
+            href={`/app/akuntansi/laporan?scope=keuangan&tab=laba-rugi&from=${from}&to=${to}`}
+            aria-current={scope === "keuangan" ? "page" : undefined}
+            className={scope === "keuangan"
+              ? "inline-flex min-h-9 shrink-0 items-center whitespace-nowrap rounded-md bg-muted px-3 text-[13px] font-semibold text-foreground"
+              : "inline-flex min-h-9 shrink-0 items-center whitespace-nowrap rounded-md px-3 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"}
+          >
+            Laporan keuangan
+          </Link>
+          <Link
+            href={`/app/akuntansi/laporan?scope=operasional&tab=penjualan&from=${from}&to=${to}`}
+            aria-current={scope === "operasional" ? "page" : undefined}
+            className={scope === "operasional"
+              ? "inline-flex min-h-9 shrink-0 items-center whitespace-nowrap rounded-md bg-muted px-3 text-[13px] font-semibold text-foreground"
+              : "inline-flex min-h-9 shrink-0 items-center whitespace-nowrap rounded-md px-3 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"}
+          >
+            Laporan penjualan
+          </Link>
         </nav>
+
+        {visibleTabs.length > 1 ? (
+          <nav aria-label="Jenis laporan keuangan" className="flex flex-nowrap overflow-x-auto border-b border-border px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {visibleTabs.map((row) => (
+              <Link
+                key={row.key}
+                aria-current={tab === row.key ? "page" : undefined}
+                href={`/app/akuntansi/laporan?${scopeQuery}&tab=${row.key}&from=${from}&to=${to}${zeroSuffix}${compareSuffix}`}
+                className={
+                  tab === row.key
+                    ? "whitespace-nowrap border-b-2 border-foreground px-3 py-2.5 text-[12px] font-semibold text-foreground"
+                    : "whitespace-nowrap border-b-2 border-transparent px-3 py-2.5 text-[12px] text-muted-foreground transition-colors hover:text-foreground"
+                }
+              >
+                {row.label}
+              </Link>
+            ))}
+          </nav>
+        ) : null}
 
         <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5">
           <div className="flex flex-wrap items-center gap-1">
@@ -216,7 +250,7 @@ export default async function ReportsPage({
             {presets().map((preset) => (
               <Link
                 key={preset.label}
-                href={`/app/akuntansi/laporan?tab=${tab}&from=${preset.from}&to=${preset.to}${zeroSuffix}${compareSuffix}`}
+                href={`/app/akuntansi/laporan?${scopeQuery}&tab=${tab}&from=${preset.from}&to=${preset.to}${zeroSuffix}${compareSuffix}`}
                 className={
                   from === preset.from && to === preset.to
                     ? "inline-flex h-7 items-center rounded-md bg-muted px-2 text-[11px] font-medium text-foreground"
@@ -232,6 +266,7 @@ export default async function ReportsPage({
             {/* A-28 UI-3 (POLA-03): filter tanggal = DateField bersama
                 (dd/mm/yyyy), bukan input native berformat AS. */}
             <AutoFilterForm action="/app/akuntansi/laporan" className="flex flex-wrap items-center gap-1.5">
+              <input type="hidden" name="scope" value={scope} />
               <input type="hidden" name="tab" value={tab} />
               {showZero ? <input type="hidden" name="nol" value="1" /> : null}
               {canCompare ? (
@@ -258,7 +293,7 @@ export default async function ReportsPage({
               </button>
             </AutoFilterForm>
             <Link
-              href={`/app/akuntansi/laporan?tab=${tab}&from=${from}&to=${to}${showZero ? "" : "&nol=1"}${compareSuffix}`}
+              href={`/app/akuntansi/laporan?${scopeQuery}&tab=${tab}&from=${from}&to=${to}${showZero ? "" : "&nol=1"}${compareSuffix}`}
               aria-label={showZero ? "Sembunyikan akun nol" : "Tampilkan akun nol"}
               className="inline-flex h-8 items-center gap-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
             >
@@ -303,7 +338,7 @@ export default async function ReportsPage({
           </div>
         </div>
         <div className="border-t border-border px-4 py-2.5 text-[10px] text-muted-foreground sm:px-6">
-          Sumber: jurnal yang telah diposting · Mata uang: Rupiah (IDR) · Ref. {reference}
+          Sumber: {scope === "operasional" ? "transaksi penjualan tercatat" : "jurnal yang telah diposting"} · Mata uang: Rupiah (IDR) · Ref. {reference}
         </div>
       </div>
     </div>

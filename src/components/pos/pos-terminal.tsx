@@ -252,8 +252,15 @@ export function PosTerminal({
     clearQuote: () => setQuoteResult(null),
   });
 
-  const { online, queuedCount, setQueuedCount, syncing, syncOfflineQueue } =
-    useOfflineQueue({ posOfflineEnabled });
+  const {
+    online,
+    queuedCount,
+    setQueuedCount,
+    oldestQueuedAt,
+    setOldestQueuedAt,
+    syncing,
+    syncOfflineQueue,
+  } = useOfflineQueue({ posOfflineEnabled });
 
   // POS2-05: konfirmasi hanya berlaku untuk metode & total yang
   // persis dikonfirmasi kasir.
@@ -457,6 +464,7 @@ export function PosTerminal({
     receivableDefaultTermDays, appliedCredit, setCart, setEntries, setCustomer,
     setCustomerQuery, setCustomerResults, setDueDate, resetCredit, setQuoteResult,
     heldSaleId, setHeldSaleId, setHeldTotal, setLastSale, setReservationId, setQueuedCount,
+    setOldestQueuedAt,
     idempotencyKeyRef: idempotencyKey, checkoutAttemptedRef: checkoutAttempted,
     // A-28 UI-1 (UX-B01): penjualan terantre offline tidak berpindah
     // halaman — fokus kembali ke kotak cari sesudah keranjang bersih.
@@ -655,6 +663,7 @@ export function PosTerminal({
         posOfflineEnabled={posOfflineEnabled}
         online={online}
         queuedCount={queuedCount}
+        oldestQueuedAt={oldestQueuedAt}
         syncing={syncing}
         syncOfflineQueue={syncOfflineQueue}
         cart={cart}

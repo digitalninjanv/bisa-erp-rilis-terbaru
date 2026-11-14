@@ -42,12 +42,6 @@ import {
   getOpenLoanTotal,
 } from "@/server/employee-loans";
 import {
-  computeEmployeeStatutory,
-  ensurePayrollIndonesiaAccounts,
-  getEmployeeEnrollments,
-  getYearToDateFigures,
-  loadStatutoryConfig,
-  type EmployeeStatutoryResult,
   type StatutoryLineDraft,
 } from "@/server/payroll-indonesia";
 import { nextDocumentNumber } from "@/server/sequences";
@@ -261,41 +255,9 @@ export async function processFinalPay(tx: Tx, input: FinalPayInput): Promise<Fin
   }
   const allDeductions = regularDeductions.plus(unpaidLeaveAmount);
 
-  /* Statutory S2 — mode masa terakhir SELALU untuk pembayaran akhir. */
-  const statutoryConfig = await loadStatutoryConfig(tx, companyId, periodStart);
-  let statutory: EmployeeStatutoryResult | null = null;
-  if (statutoryConfig) {
-    await ensurePayrollIndonesiaAccounts(tx, companyId);
-    const enrollmentsByEmployee = await getEmployeeEnrollments(tx, companyId, [employeeId]);
-    const ytd = await getYearToDateFigures(tx, companyId, employeeId, Number(period.slice(0, 4)));
-    statutory = computeEmployeeStatutory({
-      config: statutoryConfig,
-      employee: {
-        baseSalary: proratedBase,
-        allowances: proratedAllowances,
-        ptkpStatus: employee.ptkpStatus,
-        npwp: employee.npwp,
-        nik: employee.nik,
-        jkkRiskClass: employee.jkkRiskClass,
-      },
-      enrollments: enrollmentsByEmployee.get(employeeId),
-      isFinalPeriod: true,
-      ytd,
-      // Lembur & THR menambah bruto pajak; dasar iuran tetap upah
-      // pokok+tunjangan (terprorata untuk bulan akhir).
-      taxableExtra: extraEarnings,
-    });
-  }
-  const statutoryDeductions = statutory
-    ? statutory.employeeTotal.plus(statutory.pphAmount)
-    : d(0);
-  const totalPph21 = statutory?.pphAmount ?? d(0);
-  const totalStatutoryEmployee = statutory?.employeeTotal ?? d(0);
-  const totalEmployerContributions = statutory?.employerCostTotal ?? d(0);
   const netBeforeAdvance = proratedGross
     .plus(extraEarnings)
-    .minus(allDeductions)
-    .minus(statutoryDeductions);
+    .minus(allDeductions);
   if (netBeforeAdvance.lt(0)) {
     throw new AppError(
       "VALIDATION",
@@ -340,7 +302,6 @@ export async function processFinalPay(tx: Tx, input: FinalPayInput): Promise<Fin
       },
     });
   }
-  if (statutory) lines.push(...statutory.lines);
   if (loanCharge.gt(0)) {
     lines.push({
       code: "loan_installment",
@@ -366,9 +327,9 @@ export async function processFinalPay(tx: Tx, input: FinalPayInput): Promise<Fin
       totalDeductions: toDb(allDeductions),
       totalAdvanceDeductions: toDb(advanceCharge),
       totalLoanDeductions: toDb(loanCharge),
-      totalPph21: toDb(totalPph21),
-      totalStatutoryEmployee: toDb(totalStatutoryEmployee),
-      totalEmployerContributions: toDb(totalEmployerContributions),
+      totalPph21: "0",
+      totalStatutoryEmployee: "0",
+      totalEmployerContributions: "0",
       totalNet: toDb(net),
       createdBy: userId,
       postedAt: new Date(),
@@ -446,38 +407,6 @@ export async function processFinalPay(tx: Tx, input: FinalPayInput): Promise<Fin
       ? [{ accountId: loanAccountId, credit: loanCharge, description: "Pelunasan pinjaman dari pembayaran akhir" }]
       : []),
   ];
-  if (totalStatutoryEmployee.gt(0) || totalEmployerContributions.gt(0)) {
-    const bpjsPayableId = await getAccountId(tx, companyId, "bpjs_payable");
-    if (totalEmployerContributions.gt(0)) {
-      const employerExpenseId = await getAccountId(tx, companyId, "payroll_employer_expense");
-      journalLines.push({
-        accountId: employerExpenseId,
-        debit: totalEmployerContributions,
-        description: "Beban iuran BPJS perusahaan (pembayaran akhir)",
-      });
-    }
-    journalLines.push({
-      accountId: bpjsPayableId,
-      credit: totalStatutoryEmployee.plus(totalEmployerContributions),
-      description: "Utang iuran BPJS (pembayaran akhir)",
-    });
-  }
-  if (!totalPph21.isZero()) {
-    const pphPayableId = await getAccountId(tx, companyId, "pph21_payable");
-    if (totalPph21.gt(0)) {
-      journalLines.push({
-        accountId: pphPayableId,
-        credit: totalPph21,
-        description: "Utang PPh 21 (masa terakhir)",
-      });
-    } else {
-      journalLines.push({
-        accountId: pphPayableId,
-        debit: totalPph21.abs(),
-        description: "Kelebihan potongan PPh 21 dikembalikan (masa terakhir)",
-      });
-    }
-  }
   const payrollEntry = await postJournal(tx, {
     companyId,
     date: periodEnd,

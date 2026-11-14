@@ -7,4 +7,5 @@ After=network.target postgresql.service
 
 [Service]
 Type=oneshot
+LoadCredential=backup-passphrase:/etc/credstore/bisa-erp-backup-passphrase
 ExecStart=/opt/bisa-erp/current/deploy/backup-run.sh

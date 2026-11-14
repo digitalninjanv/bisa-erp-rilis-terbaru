@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Check, ChevronDown, House, Settings } from "lucide-react";
+import { Check, ChevronDown, Database, Settings } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,18 +22,19 @@ import { cn } from "@/lib/utils";
  * ikon tidak bisa melintasi batas RSC sebagai prop). Tujuan tautan
  * adalah `MODULES[key].href` yang sama — perilaku berpindah modul
  * dan pendaratan sadar peran (`src/lib/landing.ts`) tidak berubah.
- * Pengaturan ikut terdaftar (di luar ModuleKey) bila peran memegang
- * `settings.manage`, sejajar pintasan Pengaturan yang sudah ada.
+ * Beranda tetap dicapai lewat logo/home, sedangkan Pengaturan berada
+ * di menu pengguna. Direktori Data Master ditampilkan terpisah dari
+ * daftar modul dan hanya bila pengguna memiliki akses ke isinya.
  */
 export function AppSwitcher({
   activeKey,
   allowedKeys,
-  showSettings,
+  showMasterData = false,
   settingsActive = false,
 }: {
   activeKey: ModuleKey | null;
   allowedKeys: ModuleKey[];
-  showSettings: boolean;
+  showMasterData?: boolean;
   settingsActive?: boolean;
 }) {
   const router = useRouter();
@@ -53,8 +54,8 @@ export function AppSwitcher({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        aria-label={collapsed ? `Ganti modul — saat ini ${active.name}` : "Ganti modul"}
-        title={collapsed ? `Modul: ${active.name} — klik untuk berganti` : undefined}
+        aria-label={collapsed ? `Navigasi aplikasi — saat ini ${active.name}` : "Navigasi aplikasi"}
+        title={collapsed ? `Area: ${active.name} — klik untuk berpindah` : undefined}
         className={cn(
           "flex cursor-pointer items-center gap-2.5 rounded-lg border border-sidebar-border bg-card text-left shadow-[var(--shadow-card)] outline-none transition-colors hover:bg-shell-hover",
           // Validasi 2 (V-01): mode ringkas — pemicu menyusut menjadi
@@ -78,16 +79,6 @@ export function AppSwitcher({
         )}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" sideOffset={6}>
-        {/* Validasi 2 (V-04): jalan pulang eksplisit — "Beranda"
-            selalu item pertama, di atas daftar modul. */}
-        <DropdownMenuItem
-          onClick={() => router.push("/app")}
-          className="cursor-pointer gap-2.5 px-2 py-2"
-        >
-          <House className="size-5 text-muted-foreground" />
-          <span className="flex-1 text-[13px]">Beranda</span>
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
         {modules.map((item) => {
           const Icon = item.icon;
           const isActive = !settingsActive && item.key === activeKey;
@@ -104,18 +95,15 @@ export function AppSwitcher({
             </DropdownMenuItem>
           );
         })}
-        {showSettings ? (
+        {showMasterData ? (
           <>
-            <DropdownMenuSeparator />
+            {modules.length > 0 ? <DropdownMenuSeparator /> : null}
             <DropdownMenuItem
-              onClick={() => router.push("/app/pengaturan")}
+              onClick={() => router.push("/app/data-master")}
               className="cursor-pointer gap-2.5 px-2 py-2"
             >
-              <Settings
-                className={cn("size-5", settingsActive ? "text-primary" : "text-muted-foreground")}
-              />
-              <span className="flex-1 text-[13px]">Pengaturan</span>
-              {settingsActive ? <Check className="size-4 text-primary" /> : null}
+              <Database className="size-5 text-muted-foreground" />
+              <span className="flex-1 text-[13px]">Data Master</span>
             </DropdownMenuItem>
           </>
         ) : null}

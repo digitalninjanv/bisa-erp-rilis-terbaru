@@ -8,7 +8,7 @@ import { SETTINGS_NAV, settingsActiveHref } from "@/lib/settings-nav";
  * aktif eksak (tab bawaan = umum).
  */
 describe("SETTINGS_NAV (SIS-11)", () => {
-  it("memuat seksi yang benar-benar ada: tab halaman + pengguna + payroll", () => {
+  it("memuat seksi pengaturan dan rute pengguna yang masuk navigasi", () => {
     const hrefs = SETTINGS_NAV.map((item) => item.href);
     expect(hrefs).toContain("/app/pengaturan?tab=umum");
     expect(hrefs).toContain("/app/pengaturan?tab=pembayaran");
@@ -16,7 +16,8 @@ describe("SETTINGS_NAV (SIS-11)", () => {
     expect(hrefs).toContain("/app/pengaturan?tab=cetak");
     expect(hrefs).toContain("/app/pengaturan?tab=modul");
     expect(hrefs).toContain("/app/pengaturan/pengguna");
-    expect(hrefs).toContain("/app/pengaturan/payroll-indonesia");
+    expect(hrefs).not.toContain("/app/pengaturan/payroll-indonesia");
+    expect(new Set(hrefs).size).toBe(hrefs.length);
   });
 
   it("item tab berpagar settings.manage; pengguna berpagar users.manage", () => {
@@ -55,9 +56,7 @@ describe("settingsActiveHref (SIS-11)", () => {
     expect(settingsActiveHref("/app/pengaturan/pengguna", null)).toBe(
       "/app/pengaturan/pengguna",
     );
-    expect(settingsActiveHref("/app/pengaturan/payroll-indonesia", null)).toBe(
-      "/app/pengaturan/payroll-indonesia",
-    );
+    expect(settingsActiveHref("/app/pengaturan/payroll-indonesia", null)).toBeNull();
   });
 
   it("di luar pengaturan → tidak ada yang aktif", () => {

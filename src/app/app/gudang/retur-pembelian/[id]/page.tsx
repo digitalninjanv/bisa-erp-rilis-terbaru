@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ChevronDown } from "lucide-react";
 import { withCompanyReadOnly } from "@/db/tenant";
 import {
   SUPPLIER_RETURN_REASON_LABELS,
@@ -304,19 +305,33 @@ export default async function SupplierReturnDetailPage({
       ) : null}
 
       {data.resolvable ? (
-        <div className="mt-3">
-          <SupplierReturnResolutionForms
-            returnId={detail.id}
-            number={detail.number}
-            remainingClaim={data.remaining.toString()}
-            today={todayISO()}
-            openPayables={data.openPayables}
-            paymentAccounts={data.paymentAccounts}
-            replaceableLines={replaceableLines}
-            canSettleMoney={canSettle}
-            canReceiveReplacement={canManage}
-          />
-        </div>
+        <details className="group mt-3 overflow-hidden rounded-lg border border-border bg-card">
+          <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 px-4 py-3 outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <span>
+              <span className="block text-[13px] font-semibold">Catat penyelesaian klaim</span>
+              <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                Pilih cara penyelesaian; klaim bisa dicatat bertahap sesuai kesepakatan pemasok.
+              </span>
+            </span>
+            <span className="flex items-center gap-2">
+              <span className="num text-[12px] font-semibold">Sisa {formatIDR(data.remaining)}</span>
+              <ChevronDown aria-hidden="true" className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
+            </span>
+          </summary>
+          <div className="border-t border-border p-3 sm:p-4">
+            <SupplierReturnResolutionForms
+              returnId={detail.id}
+              number={detail.number}
+              remainingClaim={data.remaining.toString()}
+              today={todayISO()}
+              openPayables={data.openPayables}
+              paymentAccounts={data.paymentAccounts}
+              replaceableLines={replaceableLines}
+              canSettleMoney={canSettle}
+              canReceiveReplacement={canManage}
+            />
+          </div>
+        </details>
       ) : null}
 
       {detail.resolutions.length > 0 ? (

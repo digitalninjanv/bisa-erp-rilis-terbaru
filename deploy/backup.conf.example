@@ -5,6 +5,9 @@
 # Folder berkas cadangan (di luar folder rilis agar aman saat update).
 BACKUP_DIR=/var/backups/bisa-erp
 
+# Grup baca manifest saja (bukan file dump) untuk halaman status aplikasi.
+BACKUP_STATUS_GROUP=bisa
+
 # Retensi: simpan N cadangan harian terbaru, ditambah cadangan terbaru
 # dari masing-masing M minggu terakhir. Sisanya dihapus otomatis.
 RETENTION_DAILY=14
@@ -14,10 +17,11 @@ RETENTION_WEEKLY=4
 # (mis. instalasi PG manual). Kosongkan bila dari paket sistem.
 PG_BIN=
 
-# Frasa sandi enkripsi untuk cadangan yang MENINGGALKAN mesin ini.
-# Sangat disarankan terisi bila OFFSITE_CMD dipakai. Kosong = tidak
-# terenkripsi (hanya aman selama berkas tetap di mesin ini).
-BACKUP_PASSPHRASE=
+# Kunci backup disimpan terpisah, bukan di konfigurasi operasional ini.
+# Installer memigrasikan BACKUP_PASSPHRASE lama ke file credential:
+# /etc/credstore/bisa-erp-backup-passphrase (mode 0600, root:root).
+# Rotasi: ubah file credential tersebut dan simpan salinannya di password
+# manager/tempat aman DI LUAR server ini sebelum menjalankan backup baru.
 
 # Salinan ke luar mesin (MATI secara bawaan). Perintah dijalankan
 # sesudah backup lokal sukses, dengan variabel $NEWFILE = berkas terbaru.

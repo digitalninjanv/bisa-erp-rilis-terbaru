@@ -1,6 +1,7 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, count, desc, eq, ilike, inArray, isNotNull, or } from "drizzle-orm";
 import type { Tx } from "@/db";
 import { purchaseOrders, stockReceiptLines, stockReceipts, suppliers } from "@/db/schema";
+import { normalizePageParams, pageOffset, pageResult } from "@/lib/pagination";
 
 export function getPurchaseOrderSupplierTerms(tx: Tx, companyId: string, orderId: string) {
   return tx.select({ paymentTermDays: suppliers.paymentTermDays }).from(purchaseOrders)
@@ -25,10 +26,46 @@ export async function listReceiptSourceDocuments(tx: Tx, companyId: string, rece
     return true;
   });
 }
-export function listSupplierReturnReceiptOptions(tx: Tx, companyId: string) {
-  return tx.select({ id: stockReceipts.id, number: stockReceipts.number, date: stockReceipts.date, supplierName: suppliers.name, poNumber: purchaseOrders.number })
-    .from(stockReceipts).leftJoin(suppliers, eq(stockReceipts.supplierId, suppliers.id))
+export async function listSupplierReturnReceiptOptions(
+  tx: Tx,
+  companyId: string,
+  input: { page?: number; pageSize?: number; q?: string } = {},
+) {
+  const { page, pageSize } = normalizePageParams(input, 20);
+  const q = input.q?.trim();
+  const where = and(
+    eq(stockReceipts.companyId, companyId),
+    eq(stockReceipts.status, "posted"),
+    eq(stockReceipts.source, "purchase"),
+    isNotNull(stockReceipts.supplierId),
+    q
+      ? or(
+          ilike(stockReceipts.number, `%${q}%`),
+          ilike(stockReceipts.supplierInvoiceNumber, `%${q}%`),
+          ilike(suppliers.name, `%${q}%`),
+        )
+      : undefined,
+  );
+  const [totalRow] = await tx
+    .select({ value: count() })
+    .from(stockReceipts)
+    .innerJoin(suppliers, eq(stockReceipts.supplierId, suppliers.id))
+    .where(where);
+  const rows = await tx
+    .select({
+      id: stockReceipts.id,
+      number: stockReceipts.number,
+      supplierInvoiceNumber: stockReceipts.supplierInvoiceNumber,
+      date: stockReceipts.date,
+      supplierName: suppliers.name,
+      poNumber: purchaseOrders.number,
+    })
+    .from(stockReceipts)
+    .innerJoin(suppliers, eq(stockReceipts.supplierId, suppliers.id))
     .leftJoin(purchaseOrders, eq(stockReceipts.purchaseOrderId, purchaseOrders.id))
-    .where(and(eq(stockReceipts.companyId, companyId), eq(stockReceipts.status, "posted")))
-    .orderBy(desc(stockReceipts.date), desc(stockReceipts.createdAt)).limit(100);
+    .where(where)
+    .orderBy(desc(stockReceipts.date), desc(stockReceipts.createdAt))
+    .limit(pageSize)
+    .offset(pageOffset(page, pageSize));
+  return pageResult(rows, totalRow?.value ?? 0, page, pageSize);
 }

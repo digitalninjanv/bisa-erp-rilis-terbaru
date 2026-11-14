@@ -4,6 +4,7 @@ import {
   applySyncResults,
   countQueued,
   enqueueOfflineSale,
+  getOfflineQueueSummary,
   type OfflineSalePayload,
 } from "@/lib/pos-offline";
 
@@ -70,5 +71,33 @@ describe("Antrean offline POS (unit)", () => {
     await enqueueOfflineSale(storage, earlier);
     const items = await storage.list();
     expect(items.map((item) => item.clientKey)).toEqual(["key-a", "key-b"]);
+  });
+
+  it("ringkasan backlog menunjukkan jumlah dan waktu antre tertua", async () => {
+    const storage = new MemoryOfflineStorage();
+    const later = { ...payload("key-b"), queuedAt: "2026-05-02T04:00:00.000Z" };
+    const earlier = { ...payload("key-a"), queuedAt: "2026-05-02T02:00:00.000Z" };
+
+    await enqueueOfflineSale(storage, later);
+    await enqueueOfflineSale(storage, earlier);
+
+    await expect(getOfflineQueueSummary(storage)).resolves.toEqual({
+      count: 2,
+      oldestQueuedAt: "2026-05-02T02:00:00.000Z",
+    });
+    await applySyncResults(storage, [
+      { clientKey: "key-a", status: "synced", saleId: "s1", saleNumber: "POS-1" },
+    ]);
+    await expect(getOfflineQueueSummary(storage)).resolves.toEqual({
+      count: 1,
+      oldestQueuedAt: "2026-05-02T04:00:00.000Z",
+    });
+  });
+
+  it("ringkasan antre kosong tanpa waktu tertua", async () => {
+    await expect(getOfflineQueueSummary(new MemoryOfflineStorage())).resolves.toEqual({
+      count: 0,
+      oldestQueuedAt: null,
+    });
   });
 });

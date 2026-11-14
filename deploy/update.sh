@@ -81,30 +81,39 @@ ln -sfn "$ENV_FILE" "$NEW_DIR/.env.local"
 # --- 3. migrasi maju ---------------------------------------------------
 say "langkah 3/5: migrasi database…"
 set -a; source "$ENV_FILE"; set +a
-migrate_out="$(node "$NEW_DIR/migrate.mjs" "$NEW_DIR/migrations")" || die "migrasi GAGAL — rilis lama masih aktif, tidak ada yang dialihkan. Keluaran: $migrate_out"
-say "$migrate_out"
+if migrate_out="$(node "$NEW_DIR/migrate.mjs" "$NEW_DIR/migrations" 2>&1)"; then
+  say "$migrate_out"
+else
+  migrate_status=$?
+  die "migrasi GAGAL (exit $migrate_status) — rilis lama masih aktif, tidak ada yang dialihkan. Keluaran: ${migrate_out:-tidak ada keluaran}"
+fi
 applied="$(echo "$migrate_out" | sed -n 's/.*diterapkan=\([0-9]*\).*/\1/p' | tail -1)"
 applied="${applied:-0}"
 
 # --- 4. alihkan current + restart --------------------------------------
 say "langkah 4/5: mengalihkan current → $NEW_VERSION & restart layanan…"
 ln -sfn "$NEW_DIR" "$BISA_ROOT/current"
-systemctl restart "$SERVICE"
+verify_ok=1
+if ! systemctl restart "$SERVICE"; then
+  verify_ok=0
+  say "restart layanan GAGAL. Memakai alur pemulihan yang sama dengan health check gagal."
+fi
 
 # --- 5. verifikasi ------------------------------------------------------
 APP_PORT="$(sed -n 's|^PORT=||p' "$ENV_FILE" | head -1)"; APP_PORT="${APP_PORT:-3000}"
 say "langkah 5/5: verifikasi /api/health + halaman login…"
-verify_ok=1
-for i in $(seq 1 30); do
-  if node -e "fetch('http://127.0.0.1:${APP_PORT}/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" 2>/dev/null; then
-    break
-  fi
-  [[ "$i" == "30" ]] && verify_ok=0
-  sleep 2
-done
 if [[ "$verify_ok" == "1" ]]; then
-  code="$(node -e "fetch('http://127.0.0.1:${APP_PORT}/login').then(r=>console.log(r.status)).catch(()=>console.log(0))")"
-  [[ "$code" == "200" ]] || { verify_ok=0; say "halaman /login menjawab $code, bukan 200."; }
+  for i in $(seq 1 30); do
+    if node -e "fetch('http://127.0.0.1:${APP_PORT}/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" 2>/dev/null; then
+      break
+    fi
+    [[ "$i" == "30" ]] && verify_ok=0
+    sleep 2
+  done
+  if [[ "$verify_ok" == "1" ]]; then
+    code="$(node -e "fetch('http://127.0.0.1:${APP_PORT}/login').then(r=>console.log(r.status)).catch(()=>console.log(0))")"
+    [[ "$code" == "200" ]] || { verify_ok=0; say "halaman /login menjawab $code, bukan 200."; }
+  fi
 fi
 if [[ "$verify_ok" == "1" && -n "${BISA_VERIFY_EMAIL:-}" && -n "${BISA_VERIFY_PASSWORD:-}" ]]; then
   say "verifikasi login sungguhan + satu halaman per modul…"

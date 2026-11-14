@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import {
   bankTransfers,
@@ -186,6 +187,7 @@ describe("tanggal pembayaran piutang/utang (AK-P2-03)", () => {
 
     const result = await payPayableAction({
       receiptId,
+      idempotencyKey: randomUUID(),
       amount: 400000,
       accountId: map.cash,
       date: payDate,
@@ -262,9 +264,9 @@ describe("tanggal pembayaran piutang/utang (AK-P2-03)", () => {
     expect(data.sale.paymentStatus).toBe("partial");
   });
 
-  it("defaults to today when no date is given (backward compatible)", async () => {
+  it("uses today when no payment date is given", async () => {
     const map = await withCompanyReadOnly(ORG_ID, (tx) => getAccountMap(tx, ORG_ID));
-    const result = await payPayableAction({ receiptId, amount: 100000, accountId: map.cash });
+    const result = await payPayableAction({ receiptId, idempotencyKey: randomUUID(), amount: 100000, accountId: map.cash });
     expect(result.ok).toBe(true);
 
     const dates = await withCompanyReadOnly(ORG_ID, async (tx) => {
