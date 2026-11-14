@@ -57,6 +57,7 @@ next-env.d.ts
 pos-desktop/.next/
 pos-desktop/out/
 src-tauri/target/
+src-tauri/gen/
 
 # Graphify (artefak tergenerasi; bangun ulang: graphify update .)
 graphify-out/
@@ -66,6 +67,7 @@ graphify-out/
 
 # A-24 T5: artefak rilis & env produksi lokal
 dist-release/
+public/downloads/
 .env.prod
 
 # POS Native Langkah 7 (D4): material kunci penandatanganan updater

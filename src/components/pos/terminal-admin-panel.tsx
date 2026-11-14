@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import QRCode from "qrcode";
-import { KeyRound, Save, Ban } from "lucide-react";
+import { KeyRound, Save, Ban, Download } from "lucide-react";
 import { toast } from "sonner";
 import { fieldClass, labelClass } from "@/components/blocks/field-classes";
 import { ConfirmDialog } from "@/components/blocks/confirm-dialog";
@@ -345,6 +345,98 @@ export function TerminalRowActions({
           ) : null}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+export function DesktopDownloadSection() {
+  return (
+    <div className="rounded-lg border bg-card p-4">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h3 className="flex items-center gap-1.5 text-[13px] font-semibold">
+            <Download className="size-4 text-primary" /> Unduh Aplikasi Bisa POS Desktop (Native)
+          </h3>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
+            Aplikasi kasir mandiri berkecepatan tinggi dengan database SQLite lokal. Tetap dapat bertransaksi &amp; cetak struk tanpa koneksi internet.
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <div className="flex flex-col justify-between rounded-md border bg-muted/20 p-3">
+          <div>
+            <div className="flex items-center gap-1 text-xs font-semibold">
+              <span>Fedora / RHEL / CentOS</span>
+              <span className="rounded bg-blue-100 px-1.5 py-0.5 font-mono text-[10px] text-blue-800 dark:bg-blue-950 dark:text-blue-300">
+                .rpm
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Paket native untuk sistem Linux berbasis RPM (Fedora, Red Hat, Rocky Linux).
+            </p>
+          </div>
+          <a
+            href="/api/pos/download/rpm"
+            download
+            className="mt-3 inline-flex items-center justify-center gap-1.5 rounded bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            <Download className="size-3.5" /> Unduh Paket RPM (6.8 MB)
+          </a>
+        </div>
+
+        <div className="flex flex-col justify-between rounded-md border bg-muted/20 p-3">
+          <div>
+            <div className="flex items-center gap-1 text-xs font-semibold">
+              <span>Linux Universal</span>
+              <span className="rounded bg-green-100 px-1.5 py-0.5 font-mono text-[10px] text-green-800 dark:bg-green-950 dark:text-green-300">
+                .AppImage
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Portabel untuk semua distro Linux tanpa instalasi (langsung klik &amp; jalan).
+            </p>
+          </div>
+          <a
+            href="/api/pos/download/appimage"
+            download
+            className="mt-3 inline-flex items-center justify-center gap-1.5 rounded border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted"
+          >
+            <Download className="size-3.5" /> Unduh AppImage (114 MB)
+          </a>
+        </div>
+
+        <div className="flex flex-col justify-between rounded-md border bg-muted/20 p-3">
+          <div>
+            <div className="flex items-center gap-1 text-xs font-semibold">
+              <span>Ubuntu / Debian / Mint</span>
+              <span className="rounded bg-amber-100 px-1.5 py-0.5 font-mono text-[10px] text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                .deb
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Paket installer Debian untuk Ubuntu, Linux Mint, dan Debian.
+            </p>
+          </div>
+          <a
+            href="/api/pos/download/deb"
+            download
+            className="mt-3 inline-flex items-center justify-center gap-1.5 rounded border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted"
+          >
+            <Download className="size-3.5" /> Unduh Paket DEB
+          </a>
+        </div>
+      </div>
+
+      <div className="mt-3 space-y-1 rounded bg-muted/40 p-2.5 text-[11px] text-muted-foreground">
+        <p className="font-medium text-foreground">💡 Cara Menghubungkan Terminal Baru:</p>
+        <ol className="list-inside list-decimal space-y-0.5">
+          <li>Pasang dan jalankan aplikasi Bisa POS di komputer kasir.</li>
+          <li>Ketik URL Server ERP ini (contoh: <code className="font-mono font-semibold text-foreground">http://192.168.1.100:3000</code>).</li>
+          <li>Klik tombol <strong>Kode pasangan</strong> pada salah satu terminal aktif di tabel bawah, lalu masukkan 6 karakter kodenya.</li>
+          <li>Aplikasi kasir langsung aktif dan otomatis menyinkronkan seluruh katalog produk ke database SQLite lokal.</li>
+        </ol>
+      </div>
     </div>
   );
 }

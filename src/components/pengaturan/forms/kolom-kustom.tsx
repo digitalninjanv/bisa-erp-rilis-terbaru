@@ -11,6 +11,7 @@ import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { saveCustomFieldsAction } from "@/server/actions/settings/kolom-kustom";
 import { fieldClass } from "@/components/blocks/field-classes";
+import { ConfirmDialog } from "@/components/blocks/confirm-dialog";
 import { useSettingsSection } from "@/components/blocks/settings-layout";
 import {
   CUSTOM_FIELD_ENTITIES,
@@ -58,6 +59,11 @@ export function CustomFieldsForm({ initial }: { initial: CustomFieldDefinitions 
     supplier: (initial?.supplier ?? []).map(toRowState),
     customer: (initial?.customer ?? []).map(toRowState),
   }));
+  const [deleteTarget, setDeleteTarget] = useState<{
+    entityKey: CustomFieldEntity;
+    index: number;
+    label: string;
+  } | null>(null);
   // A-25 U6 (POLA-05): saver seksi SettingsLayout — penurunan
   // definisi & aksi (saveCustomFieldsAction) persis seperti
   // submit lama.
@@ -230,13 +236,12 @@ export function CustomFieldsForm({ initial }: { initial: CustomFieldDefinitions 
                             type="button"
                             onClick={() => {
                               if (row.key && baselineRef.current[entity.key]?.some((b) => b.key === row.key)) {
-                                if (
-                                  !window.confirm(
-                                    `Menghapus definisi kolom "${row.label || row.key}" tidak akan menghapus nilai yang sudah tersimpan pada database entitas, tetapi nilai tersebut tidak akan ditampilkan lagi. Tetap hapus?`,
-                                  )
-                                ) {
-                                  return;
-                                }
+                                setDeleteTarget({
+                                  entityKey: entity.key,
+                                  index,
+                                  label: row.label || row.key,
+                                });
+                                return;
                               }
                               setEntityRows(
                                 entity.key,
@@ -258,6 +263,23 @@ export function CustomFieldsForm({ initial }: { initial: CustomFieldDefinitions 
         </section>
       ))}
 
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title={`Hapus kolom kustom "${deleteTarget?.label}"?`}
+        description="Menghapus definisi kolom tidak akan menghapus nilai historis yang tersimpan pada database entitas, tetapi nilai tersebut tidak akan ditampilkan lagi. Tetap hapus?"
+        confirmLabel="Hapus kolom"
+        danger
+        onConfirm={() => {
+          if (deleteTarget) {
+            setEntityRows(
+              deleteTarget.entityKey,
+              rows[deleteTarget.entityKey].filter((_, i) => i !== deleteTarget.index),
+            );
+            setDeleteTarget(null);
+          }
+        }}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

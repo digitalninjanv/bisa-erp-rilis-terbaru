@@ -29,7 +29,8 @@
     ],
     "targets": [
       "deb",
-      "appimage"
+      "appimage",
+      "rpm"
     ],
     "createUpdaterArtifacts": true
   },

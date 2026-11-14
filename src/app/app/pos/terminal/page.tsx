@@ -15,6 +15,7 @@ import { PageHeader } from "@/components/blocks/page-header";
 import { EmptyState } from "@/components/blocks/empty-state";
 import { StatusBadge } from "@/components/blocks/status-badge";
 import {
+  DesktopDownloadSection,
   DesktopReleaseForm,
   TerminalCreateForm,
   TerminalRowActions,
@@ -53,6 +54,8 @@ export default async function PosTerminalPage() {
         title="Terminal Desktop POS"
         description="Komputer kasir yang menjalankan aplikasi Bisa POS desktop (Tauri). Pasangkan terminal dengan kode sekali pakai dari supervisor; token perangkat tersimpan di keychain OS terminal dan dapat dicabut kapan pun dari sini."
       />
+
+      <DesktopDownloadSection />
 
       {canManage ? (
         <TerminalCreateForm

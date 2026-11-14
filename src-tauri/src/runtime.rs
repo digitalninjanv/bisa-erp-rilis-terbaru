@@ -358,9 +358,9 @@ pub fn printer_status(app: &AppHandle) -> PrinterRuntimeStatus {
     }
     PrinterRuntimeStatus {
         configured: view.configured,
-        host: view.host,
-        port: view.port,
-        paper_width_mm: view.paper_width_mm,
+        host: view.host.unwrap_or_default(),
+        port: view.port.unwrap_or(9100),
+        paper_width_mm: view.paper_width_mm.unwrap_or(80),
         pending_count,
         failed_count,
         printing: app.state::<PrintState>().running.load(Ordering::SeqCst),
@@ -458,7 +458,7 @@ pub fn open_drawer(app: &AppHandle, reason: &str) -> Result<(), String> {
         let _ = posdb::record_local_event(
             &conn,
             "drawer_open",
-            &payload.to_string(),
+            &payload,
             &posdb::now_iso(),
         );
     }
@@ -656,7 +656,8 @@ fn update_check_inner(app: &AppHandle, force: bool) -> UpdateStatusView {
         mandatory: update.raw_json["mandatory"].as_bool().unwrap_or(false),
     };
     if updater::decide_offer(&app.package_info().version.to_string(), &offer)
-        != updater::OfferDecision::Offer {
+        == updater::OfferDecision::NotNewer
+    {
         with_tracker(app, |tracker| tracker.on_up_to_date(now, &now_iso));
         emit_update(app);
         return update_status(app);
