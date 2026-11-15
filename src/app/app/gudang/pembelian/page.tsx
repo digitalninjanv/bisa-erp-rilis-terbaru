@@ -8,28 +8,46 @@ import { PURCHASE_ORDER_STATUS_LABELS } from "@/server/purchasing";
 import { requirePermissionPage } from "@/lib/session";
 import { parsePageParam } from "@/lib/pagination";
 import { can } from "@/lib/permissions";
+import { canSeeInventoryCost } from "@/lib/inventory-cost";
 import { formatIDR, formatQty } from "@/lib/money";
 import { formatDate, todayISO } from "@/lib/format";
 import { PageHeader } from "@/components/blocks/page-header";
-import { DataList, DataListToolbar } from "@/components/blocks/data-list";
+import { DataList, DataListToolbar, dataListFilterClass } from "@/components/blocks/data-list";
 import { StatusBadge } from "@/components/blocks/status-badge";
 import { EmptyState } from "@/components/blocks/empty-state";
 import { Pagination } from "@/components/blocks/pagination";
 import { GateNotice, viewModeText } from "@/components/blocks/gate-notice";
 import { PurchaseOrderForm } from "@/components/gudang/purchase-order-form";
+import { DateRangeField } from "@/components/date-field";
 
 export const metadata = { title: "Pesanan pembelian" };
 export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 40;
 
+function validDateParam(value?: string) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
+    ? value
+    : undefined;
+}
+
 export default async function PurchaseOrdersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; q?: string }>;
+  searchParams: Promise<{
+    page?: string;
+    q?: string;
+    status?: string;
+    supplierId?: string;
+    from?: string;
+    to?: string;
+  }>;
 }) {
   const params = await searchParams;
   const ctx = await requirePermissionPage("inventory.view");
+  const canSeeCost = canSeeInventoryCost(ctx);
 
   const data = await withCompanyReadOnly(ctx.company.id, async (tx) => {
     const [supplierRows, history] = await Promise.all([
@@ -39,6 +57,10 @@ export default async function PurchaseOrdersPage({
         page: parsePageParam(params.page),
         pageSize: PAGE_SIZE,
         q: params.q,
+        status: Object.hasOwn(PURCHASE_ORDER_STATUS_LABELS, params.status ?? "") ? params.status : undefined,
+        supplierId: params.supplierId,
+        from: validDateParam(params.from),
+        to: validDateParam(params.to),
       }),
     ]);
     return { supplierRows, orders: history.rows, history };
@@ -63,11 +85,8 @@ export default async function PurchaseOrdersPage({
         <GateNotice>{viewModeText("pesanan pembelian")}</GateNotice>
       )}
 
-      {/* A-25 U3 (DAFTAR-1): daftar PO memakai DataList bersama —
-          judul kartu ganda "Daftar pesanan pembelian" ditutup, satu
-          bar pencarian DataListToolbar, tanpa slot KPI. Filter yang
-          didukung fungsi baca yang ada hanya q (ARS1-01: filter
-          status/gudang/tanggal tidak ditambah tanpa parameter baca). */}
+      {/* Daftar PO memakai filter server-side agar status dan rentang tanggal
+          tetap berlaku untuk seluruh hasil, bukan hanya halaman yang terbuka. */}
       <DataList
         className="mt-4"
         toolbar={
@@ -75,8 +94,25 @@ export default async function PurchaseOrdersPage({
             action="/app/gudang/pembelian"
             q={params.q}
             placeholder="Cari nomor PO atau nama pemasok…"
-            resetHref={params.q ? "/app/gudang/pembelian" : undefined}
-          />
+            resetHref={params.q || params.status || params.supplierId || params.from || params.to ? "/app/gudang/pembelian" : undefined}
+          >
+            <select name="status" defaultValue={params.status ?? ""} aria-label="Filter status PO" className={dataListFilterClass}>
+              <option value="">Semua status</option>
+              {Object.entries(PURCHASE_ORDER_STATUS_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+            <select name="supplierId" defaultValue={params.supplierId ?? ""} aria-label="Filter pemasok" className={dataListFilterClass}>
+              <option value="">Semua pemasok</option>
+              {data.supplierRows.map((supplier) => (
+                <option key={supplier.id} value={supplier.id}>{supplier.name}</option>
+              ))}
+            </select>
+            <DateRangeField
+              from={{ name: "from", defaultValue: validDateParam(params.from) }}
+              to={{ name: "to", defaultValue: validDateParam(params.to) }}
+            />
+          </DataListToolbar>
         }
         isEmpty={data.orders.length === 0}
         empty={
@@ -88,7 +124,13 @@ export default async function PurchaseOrdersPage({
             pageSize={data.history.pageSize}
             total={data.history.total}
             basePath="/app/gudang/pembelian"
-            params={{ q: params.q }}
+            params={{
+              q: params.q,
+              status: params.status,
+              supplierId: params.supplierId,
+              from: validDateParam(params.from),
+              to: validDateParam(params.to),
+            }}
           />
         }
       >
@@ -102,7 +144,7 @@ export default async function PurchaseOrdersPage({
                 <th className="text-right">Jumlah dipesan</th>
                 <th className="text-right">Jumlah diterima</th>
                 <th>Progres</th>
-                <th className="text-right">Nilai</th>
+                {canSeeCost ? <th className="text-right">Nilai</th> : null}
                 <th>Status</th>
               </tr>
             </thead>
@@ -133,7 +175,7 @@ export default async function PurchaseOrdersPage({
                       </div>
                       <span className="num text-[10px] text-muted-foreground">{progress}%</span>
                     </td>
-                    <td className="num text-right font-medium">{formatIDR(row.total)}</td>
+                    {canSeeCost ? <td className="num text-right font-medium">{formatIDR(row.total)}</td> : null}
                     <td>
                       <StatusBadge
                         status={row.status}

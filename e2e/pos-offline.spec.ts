@@ -25,6 +25,8 @@ const BUKTI_DIR = path.join(__dirname, "..", "..", "..", "bukti-a24", "t6");
 // lewat SQL dan DIMATIKAN lagi di afterAll; aplikasi tidak diubah.
 
 function directUrl(): string {
+  // E2E harus memakai DB uji yang diberikan harness, bukan DB pengguna.
+  if (process.env.DIRECT_URL) return process.env.DIRECT_URL;
   const env = fs.readFileSync(".env.local", "utf8");
   const line = env.split("\n").find((row) => row.startsWith("DIRECT_URL="));
   if (!line) throw new Error("DIRECT_URL tidak ditemukan di .env.local");
@@ -113,7 +115,13 @@ async function addProduct(page: Page, name: string, times = 1) {
   // Tombol produk nonaktif bila stok katalog habis — gagal cepat &
   // jelas di sini daripada klik yang menggantung sampai timeout test.
   await expect(button).toBeEnabled();
-  for (let i = 0; i < times; i++) await button.click();
+  await button.click();
+  // Klik kartu berulang cepat bisa kalah balapan render React. Untuk
+  // qty > 1, tambah lewat tombol keranjang yang memang mengubah qty.
+  if (times > 1) {
+    const plus = page.getByRole("button", { name: `Tambah jumlah ${name}` });
+    for (let i = 1; i < times; i++) await plus.click();
+  }
 }
 
 /** Ubah harga jual produk lewat UI Gudang (perangkat lain). */
@@ -128,8 +136,7 @@ async function setProductPrice(page: Page, productName: string, price: string) {
 /** Terima stok lewat penerimaan pembelian tunai (pola spec simulasi). */
 async function receiveStock(page: Page, productName: string, qty: number, cost: string) {
   await page.goto("/app/gudang/penerimaan");
-  await page.getByRole("button", { name: "Penerimaan baru" }).click();
-  await page.getByLabel("Sumber penerimaan").selectOption({ label: "Pembelian tunai (langsung bayar)" });
+  await page.getByLabel("Sumber penerimaan").selectOption({ label: "Pembelian tunai" });
   const picker = page.getByPlaceholder("Tambah produk ke dokumen…");
   await picker.fill(productName);
   const pickButton = page.getByRole("button", { name: new RegExp(productName) });
@@ -283,7 +290,7 @@ test("skenario A: offline di tengah sesi — 3 penjualan antre, sinkron, angka c
   expect(Number(dupCount.n)).toBe(1);
 
   await page.goto("/app/pos/riwayat");
-  await expect(page.getByText(saleA1!.number)).toBeVisible();
+  await expect(page.getByRole("link", { name: saleA1!.number }).first()).toBeVisible();
   await page.screenshot({ path: path.join(BUKTI_DIR, "skenario-a-riwayat.png") });
 });
 
@@ -293,17 +300,13 @@ test("skenario C: konflik harga & stok — item masuk peninjauan, tidak hilang d
   const otherContext: BrowserContext = await browser.newContext({ storageState });
   const other = await otherContext.newPage();
 
-  // Perangkat lain menyiapkan titik awal yang deterministik LEWAT UI:
-  // harga Fanta Rp7.000 dan stok Ember > 0 (penerimaan menambal stok
-  // yang terkonsumsi larian sebelumnya — test terisolasi tanpa
-  // menyentuh ledger lewat SQL).
-  const fantaRow = await one<{ sale_price: string }>(
-    `select sale_price from products where id = $1`,
+  // Titik awal harga Fanta Rp7.000 ditulis langsung ke master produk
+  // (bukan ledger) agar deterministik; perubahan harga berikutnya tetap
+  // lewat UI perangkat lain untuk menguji konflik harga.
+  await sql.unsafe(
+    `update products set sale_price = 7000 where id = $1`,
     [productId["Fanta Strawberry 390ml"]],
   );
-  if (Number(fantaRow.sale_price) !== 7000) {
-    await setProductPrice(other, "Fanta Strawberry 390ml", "7000");
-  }
   let emberStock = await stockOf("Ember Plastik 10L");
   if (emberStock < 1) {
     await receiveStock(other, "Ember Plastik 10L", 6, "22000");

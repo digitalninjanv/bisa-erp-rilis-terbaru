@@ -7,8 +7,8 @@ test.use({ storageState: { cookies: [], origins: [] } });
 test.describe("Autentikasi", () => {
   test("login kredensial demo menampilkan Beranda", async ({ page }) => {
     await login(page);
-    await expect(page.getByRole("heading", { name: "Modul" })).toBeVisible();
-    await expect(page.getByText("Pilih modul untuk mulai.")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Ruang kerja" })).toBeVisible();
+    await expect(page.getByText(/Akses cepat ke modul/)).toBeVisible();
   });
 
   test("kata sandi salah menampilkan kesalahan dan tetap di halaman login", async ({ page }) => {

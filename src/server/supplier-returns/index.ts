@@ -41,7 +41,7 @@
 // A-24 Tahap T4B: indeks modul hasil pemecahan src/server/supplier-returns.ts.
 // Mengekspor ulang persis API publik berkas asal.
 
-export { SUPPLIER_RETURN_REASON_LABELS, SUPPLIER_RETURN_RESOLUTION_LABELS } from "./shared";
+export { SUPPLIER_RETURN_REASON_LABELS, SUPPLIER_RETURN_RESOLUTION_LABELS, POSTED_RETURN_STATUSES } from "./shared";
 export { sumReturnAllocations, getSupplierOpenPayable, refreshReceiptPaymentStatus, refreshOpeningPayableStatus } from "./payables";
 export { createSupplierReturn, deleteSupplierReturn } from "./returns";
 export { postSupplierReturn, voidPostedSupplierReturn } from "./posting";

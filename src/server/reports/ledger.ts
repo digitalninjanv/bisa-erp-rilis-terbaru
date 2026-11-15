@@ -20,11 +20,84 @@ import {
 } from "@/db/schema";
 import { accountTotalsInRange, cumulativeAccountTotals, previousDay, totalsOf } from "./shared";
 
-export async function getLedger(tx: Tx, input: {
+export type LedgerInput = {
   companyId: string;
   accountId: string;
   from: string;
   to: string;
+};
+
+export type LedgerSummary = {
+  sign: number;
+  opening: ReturnType<typeof d>;
+  totalDebit: ReturnType<typeof d>;
+  totalCredit: ReturnType<typeof d>;
+  closing: ReturnType<typeof d>;
+};
+
+async function calculateLedgerSummary(tx: Tx, input: LedgerInput): Promise<LedgerSummary> {
+  const [account] = await tx
+    .select({ normalBalance: accounts.normalBalance })
+    .from(accounts)
+    .where(and(eq(accounts.companyId, input.companyId), eq(accounts.id, input.accountId)))
+    .limit(1);
+  const sign = account?.normalBalance === "credit" ? -1 : 1;
+
+  // Saldo awal & total rentang akun ini diturunkan dari total kumulatif
+  // hibrida (ringkasan bulanan + bulan parsial), bukan agregasi seluruh riwayat.
+  const beforeTotals = await cumulativeAccountTotals(tx, input.companyId, previousDay(input.from));
+  const throughTotals = await cumulativeAccountTotals(tx, input.companyId, input.to);
+  const beforeAccount = totalsOf(beforeTotals, input.accountId);
+  const throughAccount = totalsOf(throughTotals, input.accountId);
+  const opening = beforeAccount.debit.minus(beforeAccount.credit).mul(sign);
+  const totalDebit = throughAccount.debit.minus(beforeAccount.debit);
+  const totalCredit = throughAccount.credit.minus(beforeAccount.credit);
+  const closing = opening.plus(totalDebit.minus(totalCredit).mul(sign));
+
+  return { sign, opening, totalDebit, totalCredit, closing };
+}
+
+export async function getLedgerSummary(tx: Tx, input: LedgerInput): Promise<LedgerSummary> {
+  return calculateLedgerSummary(tx, input);
+}
+
+export function ledgerRangeWhere(input: LedgerInput) {
+  return and(
+    eq(journalLines.companyId, input.companyId),
+    eq(journalLines.accountId, input.accountId),
+    eq(journalEntries.status, "posted"),
+    gte(journalEntries.date, input.from),
+    lte(journalEntries.date, input.to),
+  );
+}
+
+export function ledgerLineQuery(tx: Tx) {
+  return tx
+    .select({
+      id: journalLines.id,
+      // FIX-P1 Tahap 5 (AK5-01b): baris buku besar menaut ke detail
+      // jurnal — entryId dibawa eksplisit agar halaman tidak menebak.
+      entryId: journalEntries.id,
+      date: journalEntries.date,
+      number: journalEntries.number,
+      description: journalLines.description,
+      debit: journalLines.debit,
+      credit: journalLines.credit,
+    })
+    .from(journalLines)
+    .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id));
+}
+
+export function ledgerLineOrder() {
+  return [
+    asc(journalEntries.date),
+    asc(journalEntries.number),
+    asc(journalLines.lineNo),
+    asc(journalLines.id),
+  ];
+}
+
+export async function getLedger(tx: Tx, input: LedgerInput & {
   page?: number;
   pageSize?: number;
 }) {
@@ -35,60 +108,17 @@ export async function getLedger(tx: Tx, input: {
   // Only posted journals count (AK-P2-02). The page renders opening /
   // balance / closing verbatim, so the sign is corrected here, server-side.
   //
-  // AK-P3-04: paginated like every other list (the CSV export omits
-  // page/pageSize and receives the full range). Balances accumulate in
+  // AK-P3-04: paginated like every other list (XLSX export omits page/pageSize
+  // and receives the full range; CSV now uses a bounded database cursor).
+  // Balances accumulate in
   // Decimal; a page's starting balance is the opening balance plus an
   // ordered-subquery sum of the lines before the page window, so no page
   // ever needs the full history loaded. `closing`, `totalDebit`, and
   // `totalCredit` always describe the whole range, not the page.
-  const [account] = await tx
-    .select({ normalBalance: accounts.normalBalance })
-    .from(accounts)
-    .where(and(eq(accounts.companyId, input.companyId), eq(accounts.id, input.accountId)))
-    .limit(1);
-  const sign = account?.normalBalance === "credit" ? -1 : 1;
-
-  const rangeWhere = and(
-    eq(journalLines.companyId, input.companyId),
-    eq(journalLines.accountId, input.accountId),
-    eq(journalEntries.status, "posted"),
-    gte(journalEntries.date, input.from),
-    lte(journalEntries.date, input.to),
-  );
-  const order = [
-    asc(journalEntries.date),
-    asc(journalEntries.number),
-    asc(journalLines.lineNo),
-    asc(journalLines.id),
-  ];
-  const linesQuery = () =>
-    tx
-      .select({
-        id: journalLines.id,
-        // FIX-P1 Tahap 5 (AK5-01b): baris buku besar menaut ke detail
-        // jurnal — entryId dibawa eksplisit agar halaman tidak menebak.
-        entryId: journalEntries.id,
-        date: journalEntries.date,
-        number: journalEntries.number,
-        description: journalLines.description,
-        debit: journalLines.debit,
-        credit: journalLines.credit,
-      })
-      .from(journalLines)
-      .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id));
-  // FIX-ARS Tahap 2: saldo awal & total rentang akun ini diturunkan
-  // dari total kumulatif hibrida (ringkasan bulanan + bulan parsial),
-  // bukan dua agregasi atas seluruh riwayat akun. Kueri baris buku
-  // besar & paginasinya di bawah tidak berubah.
-  const beforeTotals = await cumulativeAccountTotals(tx, input.companyId, previousDay(input.from));
-  const throughTotals = await cumulativeAccountTotals(tx, input.companyId, input.to);
-  const beforeAccount = totalsOf(beforeTotals, input.accountId);
-  const throughAccount = totalsOf(throughTotals, input.accountId);
-  const opening = beforeAccount.debit.minus(beforeAccount.credit).mul(sign);
-
-  const totalDebit = throughAccount.debit.minus(beforeAccount.debit);
-  const totalCredit = throughAccount.credit.minus(beforeAccount.credit);
-  const closing = opening.plus(totalDebit.minus(totalCredit).mul(sign));
+  const summary = await calculateLedgerSummary(tx, input);
+  const rangeWhere = ledgerRangeWhere(input);
+  const order = ledgerLineOrder();
+  const linesQuery = () => ledgerLineQuery(tx);
 
   const [totalRow] = await tx
     .select({ value: count() })
@@ -104,7 +134,7 @@ export async function getLedger(tx: Tx, input: {
     : Math.max(1, total);
   const offset = (page - 1) * pageSize;
 
-  let balance = opening;
+  let balance = summary.opening;
   if (offset > 0) {
     const prior = linesQuery().where(rangeWhere).orderBy(...order).limit(offset).as("ledger_prior");
     const [priorRow] = await tx
@@ -113,8 +143,8 @@ export async function getLedger(tx: Tx, input: {
         credit: sql<string>`coalesce(sum(${prior.credit}), 0)`,
       })
       .from(prior);
-    balance = opening.plus(
-      d(priorRow?.debit ?? 0).minus(priorRow?.credit ?? 0).mul(sign),
+    balance = summary.opening.plus(
+      d(priorRow?.debit ?? 0).minus(priorRow?.credit ?? 0).mul(summary.sign),
     );
   }
   const pageOpening = balance;
@@ -124,7 +154,7 @@ export async function getLedger(tx: Tx, input: {
     : linesQuery().where(rangeWhere).orderBy(...order));
 
   const items = rows.map((row) => {
-    balance = balance.plus(d(row.debit).minus(row.credit).mul(sign));
+    balance = balance.plus(d(row.debit).minus(row.credit).mul(summary.sign));
     return {
       ...row,
       debit: d(row.debit).toNumber(),
@@ -134,12 +164,12 @@ export async function getLedger(tx: Tx, input: {
   });
 
   return {
-    opening: opening.toNumber(),
+    opening: summary.opening.toNumber(),
     pageOpening: pageOpening.toNumber(),
     items,
-    closing: closing.toNumber(),
-    totalDebit: totalDebit.toNumber(),
-    totalCredit: totalCredit.toNumber(),
+    closing: summary.closing.toNumber(),
+    totalDebit: summary.totalDebit.toNumber(),
+    totalCredit: summary.totalCredit.toNumber(),
     total,
     page,
     pageSize,

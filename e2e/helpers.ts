@@ -5,12 +5,26 @@ export const DEMO_PASSWORD = "Bisa12345!";
 
 /** Logs in through the real login form and waits for the Beranda. */
 export async function login(page: Page, password: string = DEMO_PASSWORD) {
+  return loginWith(page, DEMO_EMAIL, password);
+}
+
+/** Login sebagai pengguna tertentu (matriks role/modul). */
+export async function loginWith(
+  page: Page,
+  email: string,
+  password: string = DEMO_PASSWORD,
+  options: { url?: RegExp; heading?: RegExp | null } = {},
+) {
   await page.goto("/login");
-  await page.getByLabel("Email").fill(DEMO_EMAIL);
+  await page.getByLabel("Email").fill(email);
   await page.getByLabel("Kata sandi").fill(password);
   await page.getByRole("button", { name: "Masuk" }).click();
-  await expect(page).toHaveURL(/\/app$/);
-  await expect(page.getByRole("heading", { name: /Selamat bekerja/ })).toBeVisible();
+  await expect(page).toHaveURL(options.url ?? /\/app$/);
+  if (options.heading !== null) {
+    await expect(
+      page.getByRole("heading", { name: options.heading ?? /Selamat bekerja/ }),
+    ).toBeVisible();
+  }
 }
 
 /**

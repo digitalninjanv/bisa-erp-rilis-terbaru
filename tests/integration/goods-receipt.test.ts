@@ -16,7 +16,7 @@ import {
 } from "@/db/schema";
 import { getAccountMap } from "@/server/accounting";
 import { getReceiptDetail } from "@/server/catalog";
-import { createReceipt, voidReceipt } from "@/server/inventory";
+import { createReceipt, recordReceiptInvoiceNumber, voidReceipt } from "@/server/inventory";
 import { getIncomeStatement, listPayables } from "@/server/reports";
 import { createSale, quoteCart } from "@/server/pos";
 import { d } from "@/lib/money";
@@ -149,6 +149,8 @@ describe("Terima barang 3 skenario (G6 / D-5)", () => {
         supplierId: supplier.id,
         source: "purchase",
         supplierInvoiceNumber: "INV-UJI-001",
+        supplierInvoiceDate: "2026-11-01",
+        dueDate: "2026-12-01",
         date: todayISO(),
         lines: [{ productId: product.id, qty: 10, unitCost: 4000 }],
       });
@@ -161,8 +163,28 @@ describe("Terima barang 3 skenario (G6 / D-5)", () => {
         .where(eq(stockReceipts.id, receipt.id));
       expect(stored.source).toBe("purchase");
       expect(stored.supplierInvoiceNumber).toBe("INV-UJI-001");
+      expect(stored.supplierInvoiceDate).toBe("2026-11-01");
+      expect(stored.dueDate).toBe("2026-12-01");
       expect(stored.paymentAccountId).toBeNull();
       expect(stored.paymentStatus).toBe("unpaid");
+
+      const updated = await recordReceiptInvoiceNumber(tx, {
+        companyId: ORG_ID,
+        userId: USER_ID,
+        receiptId: receipt.id,
+        supplierInvoiceNumber: "INV-UJI-002",
+        supplierInvoiceDate: "2026-11-02",
+        dueDate: "2026-12-02",
+      });
+      expect(updated.supplierInvoiceDate).toBe("2026-11-02");
+      expect(updated.dueDate).toBe("2026-12-02");
+      const [storedAfterCorrection] = await tx
+        .select()
+        .from(stockReceipts)
+        .where(eq(stockReceipts.id, receipt.id));
+      expect(storedAfterCorrection.supplierInvoiceNumber).toBe("INV-UJI-002");
+      expect(storedAfterCorrection.supplierInvoiceDate).toBe("2026-11-02");
+      expect(storedAfterCorrection.dueDate).toBe("2026-12-02");
 
       const journal = await receiptJournal(tx, receipt.id);
       expect(journal).not.toBeNull();

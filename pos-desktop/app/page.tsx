@@ -5,18 +5,19 @@ import {
   checkUpdateNow,
   closeCashSession,
   closeCustomerDisplay,
+  countCashSessions,
   customerDisplayOpen,
   currentCashSession,
   getDeviceStatus,
   getPrinterStatus,
   getSnapshotInfo,
   getUpdateStatus,
+  findLocalProductByCode,
   installUpdateNow,
   isTauri,
-  listCashSessions,
   listLocalPaymentMethods,
-  listLocalProducts,
-  listOutbox,
+  listLocalProductsPage,
+  listOutboxPage,
   listPrintJobs,
   onEngineEvent,
   onPrintEvent,
@@ -39,8 +40,9 @@ import {
   type LocalPackaging,
   type LocalPaymentMethod,
   type LocalProduct,
+  type LocalProductPage,
   type OfflineSalePayload,
-  type OutboxItem,
+  type OutboxPage,
   type PrintJob,
   type PrinterStatus,
   type SnapshotInfo,
@@ -98,6 +100,7 @@ import {
 const DENOMINATIONS = [
   "100000", "75000", "50000", "20000", "10000", "5000", "2000", "1000", "500", "200", "100",
 ];
+const OUTBOX_PAGE_SIZE = 50;
 
 function formatIDR(value: number): string {
   return `Rp ${Math.round(value).toLocaleString("id-ID")}`;
@@ -150,11 +153,30 @@ export default function DesktopTerminalPage() {
   const [pairCode, setPairCode] = useState("");
   const [device, setDevice] = useState<DeviceRuntimeStatus | null>(null);
   const [info, setInfo] = useState<SnapshotInfo | null>(null);
-  const [products, setProducts] = useState<LocalProduct[]>([]);
+  const [catalog, setCatalog] = useState<LocalProductPage>({
+    products: [],
+    total: 0,
+    page: 1,
+    pageSize: 50,
+    pageCount: 0,
+  });
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [catalogSearch, setCatalogSearch] = useState("");
+  const [catalogPage, setCatalogPage] = useState(1);
   const [methods, setMethods] = useState<LocalPaymentMethod[]>([]);
-  const [outbox, setOutbox] = useState<OutboxItem[]>([]);
+  const [outbox, setOutbox] = useState<OutboxPage>({
+    items: [],
+    total: 0,
+    page: 1,
+    pageSize: OUTBOX_PAGE_SIZE,
+    pageCount: 0,
+  });
+  const [outboxLoading, setOutboxLoading] = useState(false);
+  const outboxPageRef = useRef(1);
+  const outboxRequestRef = useRef(0);
   const [session, setSession] = useState<CashSession | null>(null);
-  const [sessions, setSessions] = useState<CashSession[]>([]);
+  const [sessionCount, setSessionCount] = useState(0);
   const [lastClosed, setLastClosed] = useState<CashSession | null>(null);
   const [openingCash, setOpeningCash] = useState("100000");
   const [counts, setCounts] = useState<Record<string, string>>({});
@@ -172,61 +194,116 @@ export default function DesktopTerminalPage() {
    *  keranjang kosong TIDAK menimpa ucapan terima kasih di layar
    *  pelanggan. */
   const displayHoldUntilRef = useRef(0);
+  const catalogQueryRef = useRef({ search: catalogSearch, page: catalogPage });
+  const catalogRequestRef = useRef(0);
+  useEffect(() => {
+    catalogQueryRef.current = { search: catalogSearch, page: catalogPage };
+  }, [catalogSearch, catalogPage]);
   const [methodId, setMethodId] = useState<string>("");
   const [status, setStatus] = useState<{ kind: "ok" | "error" | "info"; text: string }>({
     kind: "info",
     text: "Siap. Konfigurasikan perangkat, lalu segarkan snapshot.",
   });
   const [busy, setBusy] = useState(false);
+  const loadCatalogPage = useCallback(async (search: string, page: number) => {
+    if (!isTauri()) return;
+    const requestId = ++catalogRequestRef.current;
+    setCatalogLoading(true);
+    setCatalogError(null);
+    try {
+      const nextCatalog = await listLocalProductsPage(search, page, 50);
+      if (requestId !== catalogRequestRef.current) return;
+      setCatalog(nextCatalog);
+      setCatalogPage(nextCatalog.page);
+    } catch (error) {
+      if (requestId === catalogRequestRef.current) {
+        setCatalogError(String(error));
+      }
+    } finally {
+      if (requestId === catalogRequestRef.current) setCatalogLoading(false);
+    }
+  }, []);
+
+  const loadOutboxPage = useCallback(async (requestedPage = outboxPageRef.current) => {
+    if (!isTauri()) return;
+    const requestId = ++outboxRequestRef.current;
+    setOutboxLoading(true);
+    try {
+      const nextOutbox = await listOutboxPage(requestedPage, OUTBOX_PAGE_SIZE);
+      if (requestId !== outboxRequestRef.current) return;
+      outboxPageRef.current = nextOutbox.page;
+      setOutbox(nextOutbox);
+    } catch (error) {
+      if (requestId === outboxRequestRef.current) {
+        setStatus({ kind: "error", text: `Gagal membaca antrean lokal: ${String(error)}` });
+      }
+    } finally {
+      if (requestId === outboxRequestRef.current) setOutboxLoading(false);
+    }
+  }, []);
+
+  useEffect(() => () => {
+    outboxRequestRef.current += 1;
+  }, []);
+
+  useEffect(() => {
+    if (!inTauri) return;
+    const timer = window.setTimeout(
+      () => void loadCatalogPage(catalogSearch, catalogPage),
+      catalogSearch.trim() ? 180 : 0,
+    );
+    return () => {
+      window.clearTimeout(timer);
+      catalogRequestRef.current += 1;
+    };
+  }, [inTauri, catalogSearch, catalogPage, loadCatalogPage]);
 
   const refreshLocal = useCallback(async () => {
     if (!isTauri()) return;
+    const nextInfo = await getSnapshotInfo();
+    const catalogQuery = catalogQueryRef.current;
     const [
-      nextInfo,
-      nextProducts,
-      nextMethods,
-      nextOutbox,
-      nextDevice,
-      nextSessions,
-      nextPrinter,
-      nextPrintJobs,
-      nextUpdate,
-    ] = await Promise.all([
-      getSnapshotInfo(),
-      listLocalProducts(),
-      listLocalPaymentMethods(),
-      listOutbox(),
-      getDeviceStatus(),
-      listCashSessions(),
-      getPrinterStatus(),
-      listPrintJobs(),
-      getUpdateStatus(),
-    ]);
-    setInfo(nextInfo);
-    setProducts(nextProducts);
-    setMethods(nextMethods);
-    setOutbox(nextOutbox);
-    setDevice(nextDevice);
-    setSessions(nextSessions);
-    setPrinter(nextPrinter);
-    setPrintJobs(nextPrintJobs);
-    setUpdate(nextUpdate);
-    setDisplayOpen(await customerDisplayOpen());
-    setServerUrl((current) => current || nextDevice.serverUrl || "");
-    setMethodId((current) => current || nextMethods[0]?.methodId || "");
-    setPrinterHost((current) => current || nextPrinter.host || "");
-    if (nextPrinter.configured) {
-      setPrinterPort((current) =>
-        current === "9100" || current === "" ? String(nextPrinter.port) : current,
-      );
-      setPrinterPaper((current) =>
-        current === "80" && nextPrinter.paperWidthMm === 58 ? "58" : current,
-      );
-    }
-    if (nextInfo.warehouseId) {
-      setSession(await currentCashSession(nextInfo.warehouseId));
-    }
-  }, []);
+        ,
+        nextMethods,
+        ,
+        nextDevice,
+        nextSessionCount,
+        nextPrinter,
+        nextPrintJobs,
+        nextUpdate,
+      ] = await Promise.all([
+        loadCatalogPage(catalogQuery.search, catalogQuery.page),
+        listLocalPaymentMethods(),
+        loadOutboxPage(outboxPageRef.current),
+        getDeviceStatus(),
+        countCashSessions(),
+        getPrinterStatus(),
+        listPrintJobs(),
+        getUpdateStatus(),
+      ]);
+      setInfo(nextInfo);
+      setMethods(nextMethods);
+      setDevice(nextDevice);
+      setSessionCount(nextSessionCount);
+      setPrinter(nextPrinter);
+      setPrintJobs(nextPrintJobs);
+      setUpdate(nextUpdate);
+      setDisplayOpen(await customerDisplayOpen());
+      setServerUrl((current) => current || nextDevice.serverUrl || "");
+      setMethodId((current) => current || nextMethods[0]?.methodId || "");
+      setPrinterHost((current) => current || nextPrinter.host || "");
+      if (nextPrinter.configured) {
+        setPrinterPort((current) =>
+          current === "9100" || current === "" ? String(nextPrinter.port) : current,
+        );
+        setPrinterPaper((current) =>
+          current === "80" && nextPrinter.paperWidthMm === 58 ? "58" : current,
+        );
+      }
+      if (nextInfo.warehouseId) {
+        setSession(await currentCashSession(nextInfo.warehouseId));
+      }
+  }, [loadCatalogPage, loadOutboxPage]);
 
   useEffect(() => {
     if (!inTauri) return;
@@ -622,33 +699,34 @@ export default function DesktopTerminalPage() {
    *  satuan dasar — resolusi lokal dari snapshot, cermin
    *  findProductByAnyBarcode server (kemasan nonaktif tak
    *  menyelesaikan). */
-  function handleScan() {
+  async function handleScan() {
     const code = scanCode.trim();
     if (!code) return;
-    for (const product of products) {
-      const packaging = product.packagings.find(
-        (entry) => entry.isActive && entry.barcode === code,
-      );
-      if (packaging) {
-        addToCart(product, packaging);
-        setScanCode("");
-        setStatus({
-          kind: "ok",
-          text: `Pindai: ${product.name} — 1 ${packaging.name} (${formatIDR(lineUnitPrice({ product, packaging, qty: 1 }))}).`,
-        });
+    try {
+      const match = await findLocalProductByCode(code);
+      if (!match) {
+        setStatus({ kind: "error", text: `Barcode "${code}" tidak dikenal katalog lokal.` });
         return;
       }
-    }
-    const product = products.find(
-      (entry) => entry.barcode === code || entry.sku === code,
-    );
-    if (product) {
-      addToCart(product);
+      const { product } = match;
+      const packaging = match.packagingId
+        ? product.packagings.find((entry) => entry.packagingId === match.packagingId) ?? null
+        : null;
+      if (match.packagingId && !packaging) {
+        setStatus({ kind: "error", text: "Kemasan barcode tidak ditemukan di snapshot lokal." });
+        return;
+      }
+      addToCart(product, packaging);
       setScanCode("");
-      setStatus({ kind: "ok", text: `Pindai: ${product.name} — satuan dasar.` });
-      return;
+      setStatus({
+        kind: "ok",
+        text: packaging
+          ? `Pindai: ${product.name} — 1 ${packaging.name} (${formatIDR(lineUnitPrice({ product, packaging, qty: 1 }))}).`
+          : `Pindai: ${product.name} — satuan dasar.`,
+      });
+    } catch (error) {
+      setStatus({ kind: "error", text: `Pencarian barcode gagal: ${String(error)}` });
     }
-    setStatus({ kind: "error", text: `Barcode "${code}" tidak dikenal katalog lokal.` });
   }
 
   async function handleRecordSale() {
@@ -774,7 +852,7 @@ export default function DesktopTerminalPage() {
           {inTauri ? "Tauri: mesin Rust aktif" : "Mode peramban (pratinjau)"}
         </span>
         {info?.version ? <span className="badge">Snapshot {info.version.slice(0, 19)}…</span> : null}
-        <span className="badge">Outbox hidup: {outbox.length}</span>
+        <span className="badge">Outbox hidup: {outbox.total}</span>
         {printer && printer.pendingCount > 0 ? (
           <span className="badge">Cetak mengantre: {printer.pendingCount}</span>
         ) : null}
@@ -986,13 +1064,36 @@ export default function DesktopTerminalPage() {
                 lokal + intent antrean.
               </p>
             ) : null}
-            {sessions.length > 0 ? (
-              <p className="muted">{sessions.length} sesi tercatat di DB lokal.</p>
+            {sessionCount > 0 ? (
+              <p className="muted">{sessionCount} sesi tercatat di DB lokal.</p>
             ) : null}
           </section>
 
           <section className="panel">
-            <h2>Katalog lokal ({products.length} produk)</h2>
+            <h2>Katalog lokal ({info?.productCount ?? 0} produk)</h2>
+            <div className="row">
+              <label className="field">
+                Cari produk lokal
+                <input
+                  value={catalogSearch}
+                  onChange={(event) => {
+                    setCatalogSearch(event.currentTarget.value);
+                    setCatalogPage(1);
+                  }}
+                  placeholder="Nama, SKU, atau barcode"
+                  autoComplete="off"
+                />
+              </label>
+              <span className="muted">
+                Menampilkan {catalog.products.length} dari {catalog.total} hasil
+                {catalogLoading ? " · Memuat…" : ""}; katalog lengkap tetap tersedia saat offline.
+              </span>
+            </div>
+            {catalogError ? (
+              <p className="status error" role="alert">
+                Gagal membaca katalog lokal: {catalogError}
+              </p>
+            ) : null}
             <div className="row">
               <label className="field">
                 Pindai barcode (produk atau kemasan dus)
@@ -1000,13 +1101,13 @@ export default function DesktopTerminalPage() {
                   value={scanCode}
                   onChange={(event) => setScanCode(event.target.value)}
                   onKeyDown={(event) => {
-                    if (event.key === "Enter") handleScan();
+                    if (event.key === "Enter") void handleScan();
                   }}
                   placeholder="Pindai / ketik barcode lalu Enter"
                   autoComplete="off"
                 />
               </label>
-              <button onClick={handleScan} disabled={!inTauri || !scanCode.trim()}>
+              <button onClick={() => void handleScan()} disabled={!inTauri || !scanCode.trim()}>
                 Tambah dari pindai
               </button>
               <span className="muted">
@@ -1014,11 +1115,15 @@ export default function DesktopTerminalPage() {
                 menambah satuan dasar.
               </span>
             </div>
-            {products.length === 0 ? (
+            {info?.productCount === 0 ? (
               <p className="muted">Belum ada produk di DB lokal. Segarkan snapshot terlebih dahulu.</p>
+            ) : catalogLoading && catalog.products.length === 0 ? (
+              <p className="muted">Memuat katalog lokal…</p>
+            ) : catalogError ? null : catalog.total === 0 ? (
+              <p className="muted">Tidak ada produk yang cocok. Ubah kata kunci pencarian.</p>
             ) : (
               <div className="grid">
-                {products.map((product) => (
+                {catalog.products.map((product) => (
                   <div key={product.productId} className="product-card">
                     <button
                       className="product"
@@ -1055,11 +1160,32 @@ export default function DesktopTerminalPage() {
                 ))}
               </div>
             )}
+            {catalog.pageCount > 1 ? (
+              <div className="row" style={{ marginTop: 10, justifyContent: "space-between" }}>
+                <button
+                  onClick={() => setCatalogPage((page) => Math.max(1, page - 1))}
+                  disabled={catalogLoading || catalog.page <= 1}
+                >
+                  Sebelumnya
+                </button>
+                <span className="muted">
+                  Halaman {catalog.page} dari {catalog.pageCount}
+                </span>
+                <button
+                  onClick={() =>
+                    setCatalogPage((page) => Math.min(catalog.pageCount, page + 1))
+                  }
+                  disabled={catalogLoading || catalog.page >= catalog.pageCount}
+                >
+                  Berikutnya
+                </button>
+              </div>
+            ) : null}
           </section>
 
           <section className="panel">
             <h2>Antrean outbox lokal</h2>
-            {outbox.length === 0 ? (
+            {outbox.total === 0 ? (
               <p className="muted">Antrean kosong.</p>
             ) : (
               <table>
@@ -1072,16 +1198,16 @@ export default function DesktopTerminalPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {outbox.map((item) => (
+                  {outbox.items.map((item) => (
                     <tr key={item.clientKey}>
                       <td className="mono">{item.clientKey.slice(0, 8)}…</td>
                       <td>
                         <span className={`tag ${item.status}`}>{item.status}</span>
                       </td>
                       <td className="num">
-                        {formatIDR(
-                          item.payload.payments.reduce((sum, p) => sum + p.amount, 0),
-                        )}
+                        {item.expectedTotal === null
+                          ? "—"
+                          : formatIDR(Number(item.expectedTotal))}
                       </td>
                       <td className="muted">{item.lastMessage ?? "—"}</td>
                     </tr>
@@ -1089,6 +1215,31 @@ export default function DesktopTerminalPage() {
                 </tbody>
               </table>
             )}
+            <div className="row">
+              <span className="muted">
+                Menampilkan {outbox.items.length} dari {outbox.total} transaksi
+                {outboxLoading ? " · Memuat…" : ""}
+              </span>
+              {outbox.pageCount > 1 ? (
+                <>
+                  <button
+                    onClick={() => void loadOutboxPage(outbox.page - 1)}
+                    disabled={outboxLoading || outbox.page <= 1}
+                  >
+                    Sebelumnya
+                  </button>
+                  <span className="muted">
+                    Halaman {outbox.page} dari {outbox.pageCount}
+                  </span>
+                  <button
+                    onClick={() => void loadOutboxPage(outbox.page + 1)}
+                    disabled={outboxLoading || outbox.page >= outbox.pageCount}
+                  >
+                    Berikutnya
+                  </button>
+                </>
+              ) : null}
+            </div>
             <div className="row">
               <button onClick={handleSyncNow} disabled={busy || !inTauri}>
                 Sinkronkan sekarang (Rust)

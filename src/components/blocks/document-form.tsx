@@ -29,6 +29,7 @@ export function DocumentForm({
   guideTitle = "Panduan singkat",
   actions,
   className,
+  onSubmit,
 }: {
   header?: React.ReactNode;
   children?: React.ReactNode;
@@ -37,10 +38,11 @@ export function DocumentForm({
   guideTitle?: string;
   actions?: React.ReactNode;
   className?: string;
+  onSubmit?: React.FormEventHandler<HTMLFormElement>;
 }) {
   const hasRail = Boolean(summary || guide);
-  return (
-    <div className={className}>
+  const body = (
+    <>
       <div className={cn("items-start gap-3", hasRail && "grid xl:grid-cols-[minmax(0,1fr)_320px]")}>
         <div className="min-w-0 space-y-3">
           {header ? (
@@ -70,7 +72,14 @@ export function DocumentForm({
           {actions}
         </div>
       ) : null}
-    </div>
+    </>
+  );
+  return onSubmit ? (
+    <form className={className} onSubmit={onSubmit}>
+      {body}
+    </form>
+  ) : (
+    <div className={className}>{body}</div>
   );
 }
 

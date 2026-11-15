@@ -226,7 +226,7 @@ export default async function JournalPage({
         {/* G4 (UX4-04): contain-paint — tanpa ini scrollable-overflow tabel
             lebar merambat melewati wadah gulir ke dokumen (halaman ikut
             bergeser di 390px walau tabel sudah di dalam overflow-x-auto). */}
-        <div className="overflow-x-auto contain-paint">
+        <div className="hidden overflow-x-auto contain-paint lg:block">
           <table className="data-table">
             <thead>
               <tr>
@@ -295,6 +295,30 @@ export default async function JournalPage({
               ))}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile: kartu ringkas — nomor, tanggal, keterangan, nilai, status. */}
+        <div className="divide-y divide-border/70 lg:hidden">
+          {data.rows.map((row) => (
+            <div key={row.id} className="px-4 py-3">
+              <div className="flex items-baseline justify-between gap-2">
+                <Link
+                  href={`/app/akuntansi/jurnal/${row.id}`}
+                  className="num text-[12px] font-medium text-primary hover:underline"
+                >
+                  {row.number}
+                </Link>
+                <span className="num text-[12px] font-semibold">{formatIDR(row.amount)}</span>
+              </div>
+              <p className="mt-0.5 line-clamp-2 text-[12px]">{row.description}</p>
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                <StatusBadge status={row.status} />
+                <span className="text-[11px] text-muted-foreground">
+                  {formatDate(row.date)} · {journalSourceLabel(row.sourceType)}
+                </span>
+              </div>
+            </div>
+          ))}
         </div>
       </DataList>
     </div>

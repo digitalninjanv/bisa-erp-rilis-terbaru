@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
 import { accounts, fiscalPeriods, journalEntries, journalLines } from "@/db/schema";
 import { AppError } from "@/lib/errors";
@@ -48,8 +48,8 @@ async function pnlBalances(
       code: accounts.code,
       name: accounts.name,
       type: accounts.type,
-      debit: journalLines.debit,
-      credit: journalLines.credit,
+      debit: sql<string>`coalesce(sum(${journalLines.debit}), 0)`,
+      credit: sql<string>`coalesce(sum(${journalLines.credit}), 0)`,
     })
     .from(accounts)
     .innerJoin(journalLines, eq(journalLines.accountId, accounts.id))
@@ -65,29 +65,15 @@ async function pnlBalances(
         lte(journalEntries.date, `${year}-12-31`),
       ),
     )
+    .groupBy(accounts.id, accounts.code, accounts.name, accounts.type)
     .orderBy(asc(accounts.code));
 
-  const byAccount = new Map<string, ClosingAccountBalance & { debit: Decimal; credit: Decimal }>();
-  for (const row of rows) {
-    const current = byAccount.get(row.accountId) ?? {
-      accountId: row.accountId,
-      code: row.code,
-      name: row.name,
-      type: row.type,
-      signed: d(0),
-      debit: d(0),
-      credit: d(0),
-    };
-    current.debit = current.debit.plus(row.debit);
-    current.credit = current.credit.plus(row.credit);
-    byAccount.set(row.accountId, current);
-  }
-  return [...byAccount.values()].map((row) => ({
+  return rows.map((row) => ({
     accountId: row.accountId,
     code: row.code,
     name: row.name,
     type: row.type,
-    signed: signedBalance(row.type, row.debit, row.credit),
+    signed: signedBalance(row.type, d(row.debit), d(row.credit)),
   }));
 }
 

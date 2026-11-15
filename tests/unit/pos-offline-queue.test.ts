@@ -25,6 +25,21 @@ function payload(clientKey: string): OfflineSalePayload {
   };
 }
 
+class CountingOfflineStorage extends MemoryOfflineStorage {
+  getCalls = 0;
+  listCalls = 0;
+
+  override async get(clientKey: string) {
+    this.getCalls += 1;
+    return super.get(clientKey);
+  }
+
+  override async list() {
+    this.listCalls += 1;
+    return super.list();
+  }
+}
+
 describe("Antrean offline POS (unit)", () => {
   it("enqueue menyimpan dan menolak duplikat clientKey", async () => {
     const storage = new MemoryOfflineStorage();
@@ -61,6 +76,26 @@ describe("Antrean offline POS (unit)", () => {
     expect(items[0].lastStatus).toBe("conflict");
     expect(items[0].lastMessage).toBe("Stok tidak cukup");
     expect(items[1].lastStatus).toBe("failed");
+  });
+
+  it("memproses backlog konflik lewat lookup kunci tanpa membaca seluruh daftar berulang", async () => {
+    const storage = new CountingOfflineStorage();
+    const results = Array.from({ length: 1000 }, (_, index) => {
+      const clientKey = `bulk-${index}`;
+      return { clientKey, status: "conflict" as const, message: "Perlu ditinjau" };
+    });
+    for (const result of results) {
+      await storage.put(payload(result.clientKey));
+    }
+
+    const outcome = await applySyncResults(storage, results);
+
+    expect(outcome.kept).toHaveLength(1000);
+    expect(storage.getCalls).toBe(1000);
+    expect(storage.listCalls).toBe(0);
+    const updated = await storage.list();
+    expect(updated).toHaveLength(1000);
+    expect(updated.every((item) => item.lastStatus === "conflict")).toBe(true);
   });
 
   it("urutan antrean mengikuti waktu antre (FIFO)", async () => {

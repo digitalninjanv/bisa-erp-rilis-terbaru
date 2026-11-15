@@ -5,6 +5,7 @@ import { getReceiptDetail } from "@/server/catalog";
 import { RECEIPT_SOURCE_LABELS } from "@/server/inventory";
 import { requirePermissionPage } from "@/lib/session";
 import { can } from "@/lib/permissions";
+import { canSeeInventoryCost } from "@/lib/inventory-cost";
 import { d, formatIDR, formatQty } from "@/lib/money";
 import { formatDate, formatDateLong } from "@/lib/format";
 import { DocumentMetaRows, DocumentPage } from "@/components/blocks/document-page";
@@ -38,6 +39,7 @@ export default async function ReceiptDetailPage({
 }) {
   const { id } = await params;
   const ctx = await requirePermissionPage("inventory.view");
+  const canSeeCost = canSeeInventoryCost(ctx);
 
   const data = await withCompanyReadOnly(ctx.company.id, async (tx) =>
     getReceiptDetail(tx, ctx.company.id, id),
@@ -60,6 +62,9 @@ export default async function ReceiptDetailPage({
       label: "No. faktur pemasok",
       value: receipt.supplierInvoiceNumber ?? "Belum dicatat",
     });
+  }
+  if (receipt.priceVarianceReason) {
+    metaRows.push({ label: "Alasan selisih harga PO", value: receipt.priceVarianceReason });
   }
   if (receipt.purchaseOrderId) {
     metaRows.push({
@@ -85,21 +90,23 @@ export default async function ReceiptDetailPage({
       label: "Status pembayaran",
       value: <StatusBadge status={receipt.paymentStatus} />,
     });
-    metaRows.push({
-      label: "Pembayaran utang",
-      value: `Terbayar ${formatIDR(receipt.paidAmount)} dari ${formatIDR(receipt.total)}`,
-    });
+    if (canSeeCost) {
+      metaRows.push({
+        label: "Pembayaran utang",
+        value: `Terbayar ${formatIDR(receipt.paidAmount)} dari ${formatIDR(receipt.total)}`,
+      });
+    }
   }
-  if (d(receipt.taxAmount).gt(0)) {
+  if (canSeeCost && d(receipt.taxAmount).gt(0)) {
     metaRows.push({
       label: "PPN Masukan",
       value: `${formatIDR(receipt.taxAmount)} (${formatQty(receipt.taxRate)}%)`,
     });
   }
-  if (d(receipt.advanceApplied).gt(0)) {
+  if (canSeeCost && d(receipt.advanceApplied).gt(0)) {
     metaRows.push({ label: "Uang muka dipakai", value: formatIDR(receipt.advanceApplied) });
   }
-  metaRows.push({ label: "Total dokumen", value: formatIDR(receipt.total) });
+  if (canSeeCost) metaRows.push({ label: "Total dokumen", value: formatIDR(receipt.total) });
   if (receipt.notes) {
     metaRows.push({ label: "Catatan", value: receipt.notes });
   }
@@ -145,6 +152,8 @@ export default async function ReceiptDetailPage({
         <ReceiptInvoiceNumberForm
           receiptId={receipt.id}
           initialValue={receipt.supplierInvoiceNumber}
+          initialInvoiceDate={receipt.supplierInvoiceDate}
+          initialDueDate={receipt.dueDate}
         />
       ) : null}
       <section className="overflow-hidden rounded-lg border border-border bg-card">
@@ -159,9 +168,9 @@ export default async function ReceiptDetailPage({
                 <th>Batch / Kedaluwarsa</th>
                 <th>Nomor seri</th>
                 <th className="text-right">Qty</th>
-                <th className="text-right">Harga perolehan</th>
-                {hasDiscount ? <th className="text-right">Diskon</th> : null}
-                <th className="text-right">Subtotal</th>
+                {canSeeCost ? <th className="text-right">Harga perolehan</th> : null}
+                {canSeeCost && hasDiscount ? <th className="text-right">Diskon</th> : null}
+                {canSeeCost ? <th className="text-right">Subtotal</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -201,8 +210,8 @@ export default async function ReceiptDetailPage({
                       {formatQty(line.qty)}
                       {line.unitName ? ` ${line.unitName}` : ""}
                     </td>
-                    <td className="num text-right">{formatIDR(line.unitCost)}</td>
-                    {hasDiscount ? (
+                    {canSeeCost ? <td className="num text-right">{formatIDR(line.unitCost)}</td> : null}
+                    {canSeeCost && hasDiscount ? (
                       <td className="num text-right text-muted-foreground">
                         {d(line.discountAmount).gt(0) ? (
                           <>
@@ -216,17 +225,17 @@ export default async function ReceiptDetailPage({
                         )}
                       </td>
                     ) : null}
-                    <td className="num text-right font-medium">{formatIDR(line.lineTotal)}</td>
+                    {canSeeCost ? <td className="num text-right font-medium">{formatIDR(line.lineTotal)}</td> : null}
                   </tr>
                 );
               })}
             </tbody>
             <tfoot>
               <tr className="border-t border-border bg-muted/40">
-                <td colSpan={hasDiscount ? 6 : 5} className="px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <td colSpan={canSeeCost ? (hasDiscount ? 6 : 5) : 3} className="px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Total dokumen
                 </td>
-                <td className="num px-3 py-2 text-right font-semibold">{formatIDR(receipt.total)}</td>
+                {canSeeCost ? <td className="num px-3 py-2 text-right font-semibold">{formatIDR(receipt.total)}</td> : null}
               </tr>
             </tfoot>
           </table>

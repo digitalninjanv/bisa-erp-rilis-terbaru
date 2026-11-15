@@ -5,6 +5,7 @@ import { withCompanyReadOnly } from "@/db/tenant";
 import { getReceiptPrintData, getSettings } from "@/server/catalog";
 import { RECEIPT_SOURCE_LABELS, type ReceiptSource } from "@/server/inventory";
 import { requirePermissionPage } from "@/lib/session";
+import { canSeeInventoryCost } from "@/lib/inventory-cost";
 import { d, formatIDR, formatQty } from "@/lib/money";
 import { formatDate } from "@/lib/format";
 import { ReceiptPrint } from "@/components/pos/receipt-print";
@@ -26,6 +27,7 @@ export default async function GoodsReceiptPrintPage({
   const { id } = await params;
   const query = await searchParams;
   const ctx = await requirePermissionPage("inventory.view");
+  const canSeeCost = canSeeInventoryCost(ctx);
 
   const data = await withCompanyReadOnly(ctx.company.id, async (tx) => {
     const printData = await getReceiptPrintData(tx, ctx.company.id, id);
@@ -129,6 +131,24 @@ export default async function GoodsReceiptPrintPage({
               <span className="num font-medium">{receipt.supplierInvoiceNumber}</span>
             </div>
           ) : null}
+          {receipt.supplierInvoiceDate ? (
+            <div>
+              <span className="block text-black/60">Tanggal invoice pemasok</span>
+              <span className="font-medium">{formatDate(receipt.supplierInvoiceDate)}</span>
+            </div>
+          ) : null}
+          {receipt.dueDate ? (
+            <div>
+              <span className="block text-black/60">Jatuh tempo invoice</span>
+              <span className="font-medium">{formatDate(receipt.dueDate)}</span>
+            </div>
+          ) : null}
+          {receipt.priceVarianceReason ? (
+            <div className="sm:col-span-2">
+              <span className="block text-black/60">Alasan selisih harga PO</span>
+              <span className="font-medium">{receipt.priceVarianceReason}</span>
+            </div>
+          ) : null}
           {receipt.paymentAccountId ? (
             <div>
               <span className="block text-black/60">Dibayar dari</span>
@@ -137,7 +157,7 @@ export default async function GoodsReceiptPrintPage({
               </span>
             </div>
           ) : null}
-          {isCreditPurchase ? (
+          {canSeeCost && isCreditPurchase ? (
             <div>
               <span className="block text-black/60">Status pembayaran</span>
               <span className="font-medium">
@@ -145,7 +165,7 @@ export default async function GoodsReceiptPrintPage({
               </span>
             </div>
           ) : null}
-          {d(receipt.advanceApplied).gt(0) ? (
+          {canSeeCost && d(receipt.advanceApplied).gt(0) ? (
             <div>
               <span className="block text-black/60">Uang muka dipakai</span>
               <span className="font-medium">{formatIDR(receipt.advanceApplied)}</span>
@@ -158,11 +178,11 @@ export default async function GoodsReceiptPrintPage({
             <tr className="border-y border-black/60 text-left">
               <th className="py-1.5 pr-2 font-semibold">Produk</th>
               <th className="py-1.5 pr-2 text-right font-semibold">Qty</th>
-              <th className="py-1.5 pr-2 text-right font-semibold">Harga perolehan</th>
-              {hasDiscount ? (
+              {canSeeCost ? <th className="py-1.5 pr-2 text-right font-semibold">Harga perolehan</th> : null}
+              {canSeeCost && hasDiscount ? (
                 <th className="py-1.5 pr-2 text-right font-semibold">Diskon</th>
               ) : null}
-              <th className="py-1.5 text-right font-semibold">Subtotal</th>
+              {canSeeCost ? <th className="py-1.5 text-right font-semibold">Subtotal</th> : null}
             </tr>
           </thead>
           <tbody>
@@ -186,13 +206,13 @@ export default async function GoodsReceiptPrintPage({
                 <td className="num py-1.5 pr-2 text-right whitespace-nowrap">
                   {formatQty(line.qty)}{line.unitName ? ` ${line.unitName}` : ""}
                 </td>
-                <td className="num py-1.5 pr-2 text-right whitespace-nowrap">{formatIDR(line.unitCost)}</td>
-                {hasDiscount ? (
+                {canSeeCost ? <td className="num py-1.5 pr-2 text-right whitespace-nowrap">{formatIDR(line.unitCost)}</td> : null}
+                {canSeeCost && hasDiscount ? (
                   <td className="num py-1.5 pr-2 text-right whitespace-nowrap">
                     {d(line.discountAmount).gt(0) ? formatIDR(line.discountAmount) : "—"}
                   </td>
                 ) : null}
-                <td className="num py-1.5 text-right whitespace-nowrap">{formatIDR(line.lineTotal)}</td>
+                {canSeeCost ? <td className="num py-1.5 text-right whitespace-nowrap">{formatIDR(line.lineTotal)}</td> : null}
               </tr>
             ))}
           </tbody>
@@ -202,10 +222,10 @@ export default async function GoodsReceiptPrintPage({
             would be repeated by Chromium on every page fragment, so a
             multi-page document showed a premature TOTAL on page 1. As a
             summary block it prints once, after the last row, unsplit. */}
-        <div className="print-total-bar mt-2 flex items-baseline justify-end gap-6 break-inside-avoid text-[12px]">
+        {canSeeCost ? <div className="print-total-bar mt-2 flex items-baseline justify-end gap-6 break-inside-avoid text-[12px]">
           <span className="font-bold tracking-wide">TOTAL</span>
           <span className="num font-bold">{formatIDR(receipt.total)}</span>
-        </div>
+        </div> : null}
 
         {receipt.notes ? (
           <p className="mt-3 text-[11px]">

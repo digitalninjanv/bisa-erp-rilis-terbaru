@@ -5,6 +5,7 @@ import {
   accountMappings,
   accounts,
   companySettings,
+  supplierReturns,
   fiscalPeriods,
   journalEntries,
   journalLines,
@@ -22,7 +23,7 @@ import {
 import { createReceipt, createTransfer } from "@/server/inventory";
 import { postJournal } from "@/server/accounting";
 import { nextDocumentNumber } from "@/server/sequences";
-import { listPayables } from "@/server/reports";
+import { countOpenPayables, listPayables } from "@/server/reports";
 import {
   applySupplierCredit,
   convertSupplierCreditToAdvance,
@@ -31,7 +32,12 @@ import {
   getSupplierOpenPayable,
   getSupplierReturnDetail,
   listSupplierOpenPayableDocs,
+  listSupplierOpenPayableDocsForSuppliers,
   listSupplierReturnsPage,
+  listSupplierReturns,
+  listSupplierReturnWorkQueue,
+  getSupplierReturnPageData,
+  getSupplierReturnPrintData,
   postSupplierReturn,
   receiveReplacement,
   refundSupplierReturn,
@@ -887,6 +893,7 @@ describe("A-9/D-20 retur pembelian ke pemasok", () => {
       });
       await payReceiptPart(tx, receiptB.id, "10000");
       const before = await listPayables(tx, ORG);
+      expect(await countOpenPayables(tx, ORG)).toBe(before.length);
       expect(before.find((r) => r.id === receiptB.id)?.outstanding).toBe(20000);
 
       const receiptA = await buyCredit(tx, {
@@ -904,6 +911,7 @@ describe("A-9/D-20 retur pembelian ke pemasok", () => {
       void receiptA;
 
       const after = await listPayables(tx, ORG);
+      expect(await countOpenPayables(tx, ORG)).toBe(after.length);
       const rowB = after.find((r) => r.id === receiptB.id);
       expect(rowB?.outstanding).toBe(20000);
       expect(d(rowB?.paidAmount)).toEqual(d(10000));
@@ -1153,6 +1161,120 @@ describe("A-9/RET-2 query baca untuk UI retur pembelian", () => {
 
       // Pemasok tanpa utang terbuka: daftar kosong.
       expect(await listSupplierOpenPayableDocs(tx, ORG, f.supplierB)).toEqual([]);
+    });
+  });
+});
+
+describe("Bacaan retur pemasok — filter, queue, halaman, dan cetak", () => {
+  it("filter daftar, queue, nomor dokumen, serta data halaman/cetak", async () => {
+    await rollbackTransaction(async (tx) => {
+      await ensureCompany(tx);
+      const suffix = crypto.randomUUID().slice(0, 8);
+      const [supplier] = await tx
+        .insert(suppliers)
+        .values({ companyId: ORG, code: `SUP-RD-${suffix}`, name: `Pemasok Baca ${suffix}` })
+        .returning({ id: suppliers.id });
+      const [warehouse] = await tx
+        .insert(warehouses)
+        .values({ companyId: ORG, code: `WH-RD-${suffix}`, name: `Gudang Baca ${suffix}`, type: "warehouse" })
+        .returning({ id: warehouses.id });
+
+      const base = {
+        companyId: ORG,
+        supplierId: supplier.id,
+        warehouseId: warehouse.id,
+        date: "2026-11-10",
+        reasonCategory: "damaged",
+        reasonDetail: "Uji bacaan",
+        resolutionType: "refund",
+      };
+      const [draft] = await tx
+        .insert(supplierReturns)
+        .values({
+          ...base,
+          number: `SR-DRAFT-${suffix}`,
+          status: "draft",
+          creditAmount: "100",
+        })
+        .returning({ id: supplierReturns.id });
+      const [posted] = await tx
+        .insert(supplierReturns)
+        .values({
+          ...base,
+          number: `SR-POST-${suffix}`,
+          status: "posted",
+          creditAmount: "100",
+        })
+        .returning({ id: supplierReturns.id });
+      const [partial] = await tx
+        .insert(supplierReturns)
+        .values({
+          ...base,
+          number: `SR-PART-${suffix}`,
+          status: "partially_resolved",
+          creditAmount: "100",
+          resolvedAmount: "25",
+        })
+        .returning({ id: supplierReturns.id });
+      await tx
+        .insert(supplierReturns)
+        .values({
+          ...base,
+          number: `SR-DONE-${suffix}`,
+          status: "resolved",
+          creditAmount: "100",
+          resolvedAmount: "100",
+        });
+
+      expect(await listSupplierReturns(tx, ORG)).toHaveLength(4);
+      expect(await listSupplierReturns(tx, ORG, { supplierId: supplier.id })).toHaveLength(4);
+      expect(await listSupplierReturns(tx, ORG, { status: "draft" })).toHaveLength(1);
+      expect(
+        await listSupplierReturns(tx, ORG, { supplierId: crypto.randomUUID(), status: "resolved" }),
+      ).toEqual([]);
+
+      const all = await listSupplierReturnsPage(tx, ORG, {});
+      expect(all.page).toBe(1);
+      expect(all.total).toBe(4);
+      const filtered = await listSupplierReturnsPage(tx, ORG, {
+        q: suffix,
+        status: "posted",
+        supplierId: supplier.id,
+        page: 0,
+        pageSize: 5000,
+      });
+      expect(filtered.page).toBe(1);
+      expect(filtered.pageSize).toBe(200);
+      expect(filtered.rows).toHaveLength(1);
+      const noMatch = await listSupplierReturnsPage(tx, ORG, { q: "tidak-ada" });
+      expect(noMatch.rows).toEqual([]);
+
+      const queue = await listSupplierReturnWorkQueue(tx, ORG, 10);
+      expect(queue.total).toBeGreaterThanOrEqual(3);
+      const emptyQueue = await listSupplierReturnWorkQueue(tx, ORG);
+      expect(emptyQueue.rows.length).toBeGreaterThan(0);
+
+      expect(await getSupplierReturnDetail(tx, ORG, crypto.randomUUID())).toBeNull();
+      expect(await getSupplierReturnPageData(tx, ORG, crypto.randomUUID())).toBeNull();
+      expect(await getSupplierReturnPrintData(tx, ORG, crypto.randomUUID())).toBeNull();
+
+      const draftData = await getSupplierReturnPageData(tx, ORG, draft.id);
+      expect(draftData?.resolvable).toBe(false);
+      expect(draftData?.postingJournal).toBeNull();
+      const postedData = await getSupplierReturnPageData(tx, ORG, posted.id);
+      expect(postedData?.resolvable).toBe(true);
+      expect(postedData?.supplierName).toContain("Pemasok Baca");
+      const partialData = await getSupplierReturnPageData(tx, ORG, partial.id);
+      expect(partialData?.remaining.toNumber()).toBe(75);
+      const printData = await getSupplierReturnPrintData(tx, ORG, posted.id);
+      expect(printData?.supplierName).toContain("Pemasok Baca");
+      expect(printData?.productInfo.size).toBe(0);
+
+      expect(await listSupplierOpenPayableDocs(tx, ORG, supplier.id)).toEqual([]);
+      const batch = await listSupplierOpenPayableDocsForSuppliers(tx, ORG, [supplier.id]);
+      expect(batch.get(supplier.id)).toEqual([]);
+      const none = await listSupplierOpenPayableDocsForSuppliers(tx, ORG, []);
+      expect(none.size).toBe(0);
     });
   });
 });

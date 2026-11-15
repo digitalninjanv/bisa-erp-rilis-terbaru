@@ -59,6 +59,19 @@ export type LocalProduct = {
   packagings: LocalPackaging[];
 };
 
+export type LocalProductPage = {
+  products: LocalProduct[];
+  total: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
+};
+
+export type LocalProductMatch = {
+  product: LocalProduct;
+  packagingId: string | null;
+};
+
 export type LocalPaymentMethod = {
   methodId: string;
   code: string;
@@ -92,6 +105,24 @@ export type OutboxItem = {
   lastMessage: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type OutboxSummary = {
+  clientKey: string;
+  status: "pending" | "inflight" | "held";
+  expectedTotal: string | null;
+  attempts: number;
+  lastMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type OutboxPage = {
+  items: OutboxSummary[];
+  total: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
 };
 
 /** Status perangkat dari Rust — token TIDAK pernah termasuk.
@@ -205,8 +236,12 @@ export async function getSnapshotInfo() {
   return invoke<SnapshotInfo>("snapshot_info");
 }
 
-export async function listLocalProducts() {
-  return invoke<LocalProduct[]>("list_snapshot_products");
+export async function listLocalProductsPage(search: string, page: number, pageSize = 50) {
+  return invoke<LocalProductPage>("list_snapshot_products_page", { search, page, pageSize });
+}
+
+export async function findLocalProductByCode(code: string) {
+  return invoke<LocalProductMatch | null>("find_snapshot_product_by_code", { code });
 }
 
 export async function listLocalPaymentMethods() {
@@ -219,6 +254,10 @@ export async function recordLocalSale(sale: OfflineSalePayload) {
 
 export async function listOutbox(status?: string) {
   return invoke<OutboxItem[]>("list_outbox", { status: status ?? null });
+}
+
+export async function listOutboxPage(page: number, pageSize = 50) {
+  return invoke<OutboxPage>("list_outbox_page", { page, pageSize });
 }
 
 export async function getDeviceStatus() {
@@ -277,6 +316,10 @@ export async function currentCashSession(warehouseId: string) {
 
 export async function listCashSessions() {
   return invoke<CashSession[]>("list_cash_sessions");
+}
+
+export async function countCashSessions() {
+  return invoke<number>("count_cash_sessions");
 }
 
 export async function listLocalIntents() {

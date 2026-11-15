@@ -29,8 +29,9 @@ Dibuat karena beberapa keputusan bisnis/teknis tidak dinyatakan eksplisit oleh p
 17. **Gudang/cabang, metode pembayaran, kelompok harga, karyawan, aset tetap** belum punya impor massal pada putaran ini; form tunggal tetap tersedia.
 18. **HTTPS wajib di produksi**; HTTP hanya untuk harness lokal dengan flag eksplisit `BISA_ALLOW_INSECURE_AUTH_URL=1`.
 19. **Cetak otomatis POS** memakai `window.print()` setelah font siap dan kembali ke `/app/pos` setelah `afterprint`. Browser biasa selalu menampilkan dialog; cetak tanpa dialog hanya dengan Chrome/Edge `--kiosk-printing` dan printer thermal sebagai printer default OS.
+20. **Optimasi memori dev Turbopack**: `experimental.turbopackGc: true`, `turbopackMemoryEviction: "full"`, `turbopackServerFastRefresh: false`, dan `turbopack.root = process.cwd()` di `next.config.ts`. Cache dev dibersihkan (`.next/dev` ~3.7GB). Fallback: `pnpm dev:webpack` atau `pnpm dev:clean`.
 
 ## Prioritas berikutnya
 
-20. Temuan `SEC-003` (kebocoran HPP) dan sisa `AKN-004` (tanggal void payroll/sale) adalah prioritas berikutnya karena menyentuh kerahasiaan biaya dan konsistensi periode. `SEC-005` sudah ditutup.
-21. Suite penuh harus dijalankan pada database uji yang baru di-seed; kegagalan yang tersisa didokumentasikan di `docs/BLOKIR.md`, bukan disembunyikan.
+21. Temuan `SEC-003` (kebocoran HPP) dan sisa `AKN-004` (tanggal void payroll/sale) adalah prioritas berikutnya karena menyentuh kerahasiaan biaya dan konsistensi periode. `SEC-005` sudah ditutup.
+22. Suite penuh harus dijalankan pada database uji yang baru di-seed; kegagalan yang tersisa didokumentasikan di `docs/BLOKIR.md`, bukan disembunyikan.

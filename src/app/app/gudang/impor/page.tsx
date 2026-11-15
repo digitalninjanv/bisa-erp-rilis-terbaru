@@ -21,6 +21,12 @@ const ENTITY_TABS: { key: ImportEntity; hint: string }[] = [
   { key: "categories", hint: "Kolom: Nama Kategori, Induk Kategori, Status. Induk harus sudah ada (atau impor induk lebih dulu); kategori dengan nama sama dilewati. Contoh: Minuman → Kopi & Teh." },
   { key: "units", hint: "Kolom: Kode Satuan, Nama Satuan, Status. Kode ditulis huruf besar (PCS, BOX, KG); kode/nama yang sudah ada dilewati. Satuan dipakai di produk dan transaksi." },
   { key: "account_mappings", hint: "Kolom: Kunci pemetaan, Kode akun. Kunci harus dari daftar resmi (sheet Referensi di template); kode akun harus sudah ada. Baris dengan kunci yang sudah dipetakan akan memperbarui akunnya." },
+  { key: "branches", hint: "Kolom: Kode, Nama, Alamat, Telepon, Status. Kode kosong dibuat otomatis (CBG-###); cabang dengan kode/nama sama dilewati. Cabang adalah induk gudang." },
+  { key: "warehouses", hint: "Kolom: Kode, Nama, Tipe, Kode Cabang, Status. Tipe: Gudang/Toko/Karantina. Kode kosong dibuat otomatis (GD-###); kode/nama yang sudah ada dilewati. Kode cabang harus sudah ada." },
+  { key: "payment_methods", hint: "Kolom: Kode, Nama, Tipe, Kode Akun, Instruksi, Status. Tipe: Tunai/Bank/QRIS/Kredit/Piutang. Kode kosong dibuat otomatis (PM-###); kode yang sudah ada dilewati. Kode akun harus ada di bagan akun." },
+  { key: "customer_groups", hint: "Kolom: Nama Kelompok, Tipe Diskon, Nilai Diskon, Pembulatan, Arah Pembulatan, Bulatkan Total Tunai, Status. Tipe diskon: Percent/Amount. Nama yang sudah ada dilewati." },
+  { key: "employees", hint: "Kolom: Kode, Nama, Jabatan, Gaji Pokok, Tunjangan, Potongan, Tanggal Masuk, NIK, Status PTKP, Status. Kode kosong dibuat otomatis (EMP-###); kode/NIK yang sudah ada dilewati." },
+  { key: "fixed_assets", hint: "Kolom: Nama Aset, Kategori, Tanggal Perolehan, Harga Perolehan, Nilai Residu, Umur Manfaat (bulan), Kode Akun Sumber, Catatan. Jurnal perolehan dibuat otomatis; aset dengan nama+tanggal+harga sama dilewati." },
   { key: "opening_stock", hint: "Kolom: SKU/Kode Barang, Nama Produk, Gudang Saldo Awal, Kuantitas Saldo Awal, Nilai Satuan, Per Tanggal. Produk harus sudah ada; satu penerimaan dibuat per kombinasi gudang+tanggal. Masukkan semua gudang untuk produk yang sama dalam satu file — job impor lain untuk produk yang sama akan dilewati sebagai duplikat." },
   { key: "opening_payables", hint: "Kolom: Nama Pemasok, Tanggal, Jatuh Tempo, Jumlah, Referensi. Pemasok harus sudah ada (dicocokkan dari nama atau kode); setiap baris menjadi satu dokumen saldo awal utang dengan jurnal pembukanya." },
   { key: "opening_receivables", hint: "Kolom: Nama Pelanggan, Tanggal, Jatuh Tempo, Jumlah, Referensi. Pelanggan harus sudah ada (dicocokkan dari nama atau kode); setiap baris menjadi satu dokumen saldo awal piutang dengan jurnal pembukanya." },
@@ -33,6 +39,12 @@ const MASTER_TITLES: Record<Exclude<ImportEntity, "products">, string> = {
   categories: "Unggah file kategori produk",
   units: "Unggah file satuan",
   account_mappings: "Unggah file pemetaan akun",
+  branches: "Unggah file cabang",
+  warehouses: "Unggah file gudang",
+  payment_methods: "Unggah file metode pembayaran",
+  customer_groups: "Unggah file kelompok harga",
+  employees: "Unggah file karyawan",
+  fixed_assets: "Unggah file aset tetap",
   opening_stock: "Unggah file stok awal",
   opening_payables: "Unggah file saldo awal utang",
   opening_receivables: "Unggah file saldo awal piutang",
@@ -52,6 +64,12 @@ export default async function ImportPage({
     params.jenis === "categories" ||
     params.jenis === "units" ||
     params.jenis === "account_mappings" ||
+    params.jenis === "branches" ||
+    params.jenis === "warehouses" ||
+    params.jenis === "payment_methods" ||
+    params.jenis === "customer_groups" ||
+    params.jenis === "employees" ||
+    params.jenis === "fixed_assets" ||
     params.jenis === "opening_stock" ||
     params.jenis === "opening_payables" ||
     params.jenis === "opening_receivables"

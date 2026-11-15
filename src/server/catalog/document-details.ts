@@ -149,6 +149,9 @@ export async function getReceiptDetail(tx: Tx, companyId: string, id: string) {
       paidAmount: stockReceipts.paidAmount,
       paymentStatus: stockReceipts.paymentStatus,
       supplierInvoiceNumber: stockReceipts.supplierInvoiceNumber,
+      supplierInvoiceDate: stockReceipts.supplierInvoiceDate,
+      dueDate: stockReceipts.dueDate,
+      priceVarianceReason: stockReceipts.priceVarianceReason,
       notes: stockReceipts.notes,
       createdBy: stockReceipts.createdBy,
       postedAt: stockReceipts.postedAt,
@@ -192,11 +195,24 @@ export async function getReceiptDetail(tx: Tx, companyId: string, id: string) {
       isiSnapshot: stockReceiptLines.isiSnapshot,
       batchNumber: stockReceiptLines.batchNumber,
       expiryDate: stockReceiptLines.expiryDate,
+      trackBatch: products.trackBatch,
+      sourceBatchId: stockBatches.id,
+      sourceBatchQty: stockBatches.qty,
     })
     .from(stockReceiptLines)
     .innerJoin(products, eq(stockReceiptLines.productId, products.id))
     .leftJoin(units, eq(products.unitId, units.id))
     .leftJoin(productPackagings, eq(stockReceiptLines.packagingId, productPackagings.id))
+    .leftJoin(
+      stockBatches,
+      and(
+        eq(stockBatches.companyId, stockReceiptLines.companyId),
+        eq(stockBatches.productId, stockReceiptLines.productId),
+        eq(stockBatches.warehouseId, receipt.warehouseId),
+        sql`${stockBatches.batchNumber} IS NOT DISTINCT FROM ${stockReceiptLines.batchNumber}`,
+        sql`${stockBatches.expiryDate} IS NOT DISTINCT FROM ${stockReceiptLines.expiryDate}`,
+      ),
+    )
     .where(and(eq(stockReceiptLines.companyId, companyId), eq(stockReceiptLines.receiptId, id)))
     .orderBy(asc(sql`coalesce(${stockReceiptLines.productName}, ${products.name})`));
 
@@ -361,6 +377,9 @@ export async function getReceiptPrintData(tx: Tx, companyId: string, id: string)
       paymentStatus: stockReceipts.paymentStatus,
       paymentAccountId: stockReceipts.paymentAccountId,
       supplierInvoiceNumber: stockReceipts.supplierInvoiceNumber,
+      supplierInvoiceDate: stockReceipts.supplierInvoiceDate,
+      dueDate: stockReceipts.dueDate,
+      priceVarianceReason: stockReceipts.priceVarianceReason,
       notes: stockReceipts.notes,
       supplierName: suppliers.name,
       warehouseName: warehouses.name,

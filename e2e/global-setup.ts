@@ -1,6 +1,7 @@
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import postgres from "postgres";
 
 /**
  * AUD-003 — kerapuhan urutan suite→e2e: e2e mengasumsikan baseline
@@ -36,4 +37,23 @@ export default async function globalSetup(): Promise<void> {
 
   console.log("[e2e] BISA_E2E_RESEED=1 — reseed demo ke baseline kanonis…");
   execSync("pnpm db:seed -- --force", { cwd: root, env, stdio: "inherit" });
+
+  // SEC-012: penghitung rate limit login tersimpan di database. Run E2E
+  // berulang dari IP yang sama bisa menghabiskan kuota 10/menit dan
+  // menggagalkan auth.setup — bersihkan hanya pada run gerbang yang
+  // memang me-reseed baseline.
+  const directUrl = env.DIRECT_URL;
+  if (directUrl) {
+    const sql = postgres(directUrl, { max: 1 });
+    try {
+      await sql`delete from rate_limit`;
+      console.log("[e2e] rate_limit dibersihkan.");
+    } catch (error) {
+      // DB lama sebelum migrasi 0083 tidak punya tabel — bukan alasan
+      // menggagalkan suite.
+      console.warn("[e2e] rate_limit tidak dibersihkan:", (error as Error).message);
+    } finally {
+      await sql.end();
+    }
+  }
 }

@@ -443,3 +443,116 @@ describe("purchase order (G7/D-6)", () => {
     });
   });
 });
+
+describe("Cabang validasi purchase order & rekomendasi", () => {
+  it("menolak baris kosong, pemasok/produk hilang, duplikat, qty nol, dan harga negatif", async () => {
+    await rollbackTransaction(async (tx) => {
+      const [supplier] = await twoSuppliers(tx);
+      const product = await makeProduct(tx, { supplierId: supplier.id });
+      const base = {
+        companyId: ORG_ID,
+        userId: USER_ID,
+        supplierId: supplier.id,
+        date: todayISO(),
+      };
+      await expect(
+        createPurchaseOrder(tx, { ...base, lines: [] }),
+      ).rejects.toMatchObject({ code: "VALIDATION" });
+      await expect(
+        createPurchaseOrder(tx, {
+          ...base,
+          supplierId: crypto.randomUUID(),
+          lines: [{ productId: product.id, qty: "1", unitCost: "1" }],
+        }),
+      ).rejects.toMatchObject({ code: "VALIDATION" });
+      await expect(
+        createPurchaseOrder(tx, {
+          ...base,
+          lines: [{ productId: crypto.randomUUID(), qty: "1", unitCost: "1" }],
+        }),
+      ).rejects.toMatchObject({ code: "VALIDATION" });
+      await expect(
+        createPurchaseOrder(tx, {
+          ...base,
+          lines: [
+            { productId: product.id, qty: "1", unitCost: "1" },
+            { productId: product.id, qty: "2", unitCost: "1" },
+          ],
+        }),
+      ).rejects.toMatchObject({ code: "VALIDATION" });
+      await expect(
+        createPurchaseOrder(tx, {
+          ...base,
+          lines: [{ productId: product.id, qty: "0", unitCost: "1" }],
+        }),
+      ).rejects.toMatchObject({ code: "VALIDATION" });
+      await expect(
+        createPurchaseOrder(tx, {
+          ...base,
+          lines: [{ productId: product.id, qty: "1", unitCost: "-1" }],
+        }),
+      ).rejects.toMatchObject({ code: "VALIDATION" });
+
+      const order = await createPurchaseOrder(tx, {
+        ...base,
+        lines: [{ productId: product.id, qty: "1", unitCost: "1" }],
+      });
+      await sendPurchaseOrder(tx, { companyId: ORG_ID, userId: USER_ID, orderId: order.id });
+      await expect(
+        sendPurchaseOrder(tx, { companyId: ORG_ID, userId: USER_ID, orderId: order.id }),
+      ).rejects.toMatchObject({ code: "INVALID_STATE" });
+      await expect(
+        sendPurchaseOrder(tx, {
+          companyId: ORG_ID,
+          userId: USER_ID,
+          orderId: crypto.randomUUID(),
+        }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+
+      await cancelPurchaseOrder(tx, { companyId: ORG_ID, userId: USER_ID, orderId: order.id });
+      await expect(
+        cancelPurchaseOrder(tx, { companyId: ORG_ID, userId: USER_ID, orderId: order.id }),
+      ).rejects.toMatchObject({ code: "INVALID_STATE" });
+      await expect(
+        cancelPurchaseOrder(tx, {
+          companyId: ORG_ID,
+          userId: USER_ID,
+          orderId: crypto.randomUUID(),
+        }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    });
+  });
+
+  it("rekomendasi: tanpa pilihan, produk tak menipis, dan produk berstok", async () => {
+    await rollbackTransaction(async (tx) => {
+      await expect(
+        createPurchaseOrdersFromRecommendations(tx, {
+          companyId: ORG_ID,
+          userId: USER_ID,
+          date: todayISO(),
+          productIds: [],
+        }),
+      ).rejects.toMatchObject({ code: "VALIDATION" });
+      await expect(
+        createPurchaseOrdersFromRecommendations(tx, {
+          companyId: ORG_ID,
+          userId: USER_ID,
+          date: todayISO(),
+          productIds: [crypto.randomUUID()],
+        }),
+      ).rejects.toMatchObject({ code: "VALIDATION" });
+      const recommendations = await listPurchaseRecommendations(tx, ORG_ID);
+      expect(Array.isArray(recommendations)).toBe(true);
+      const stocked = recommendations.find((row) => !row.supplierId) ?? recommendations[0];
+      if (stocked) {
+        const result = await createPurchaseOrdersFromRecommendations(tx, {
+          companyId: ORG_ID,
+          userId: USER_ID,
+          date: todayISO(),
+          productIds: [stocked.productId],
+        });
+        expect(result.orders.length + result.noLongerLow.length + result.skipped.length).toBeGreaterThan(0);
+      }
+    });
+  });
+});

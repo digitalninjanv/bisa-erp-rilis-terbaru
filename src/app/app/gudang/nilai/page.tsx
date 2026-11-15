@@ -42,6 +42,10 @@ export default async function InventoryValuePage({
       page: Number(params.page ?? 1),
       // G3 (TBL-01): ukuran halaman baku repo (sebelumnya 50).
       pageSize: LIST_PAGE_SIZE,
+      // Pencarian server-side atas SELURUH katalog, bukan hanya halaman tampil.
+      q: params.q,
+      // KPI only needs the count; don't materialize every low-stock product.
+      skipLowStockRows: true,
     });
     // S3: kemasan aktif per produk halaman ini — label pecahan
     // "≈ X Dus Y Pcs" di kolom Stok (display-only, angka dasar utuh).
@@ -53,22 +57,9 @@ export default async function InventoryValuePage({
     return { warehouses, valuation, packagings };
   });
 
-  // A-25 U3 (GDG-05): halaman ini kini punya kotak pencarian. Fungsi
-  // baca getInventoryValuation belum menerima parameter q, jadi kata
-  // kunci menyaring baris yang SUDAH diambil halaman ini di sisi
-  // render (penyajian, bukan kueri baru — ARS1-01; fungsi server
-  // tidak diubah). Catatan jujur: valuasi berpaginasi server (50
-  // baris/halaman), sehingga penyaringan berlaku atas baris halaman
-  // tampil dan total paginasi tetap total server — dukungan q penuh
-  // memerlukan parameter baru di fungsi baca (di luar berkas ini).
-  const q = params.q?.trim().toLowerCase() ?? "";
-  const visibleItems = q
-    ? data.valuation.items.filter((row) =>
-        [row.name, row.sku, row.category].some((value) =>
-          (value ?? "").toLowerCase().includes(q),
-        ),
-      )
-    : data.valuation.items;
+  // Pencarian & paginasi keduanya server-side: total, KPI, dan halaman
+  // berasal dari himpunan tersaring yang sama.
+  const visibleItems = data.valuation.items;
 
   return (
     <div>
@@ -83,7 +74,6 @@ export default async function InventoryValuePage({
                 pathname: "/app/gudang/nilai",
                 query: {
                   ...(params.warehouse ? { warehouse: params.warehouse } : {}),
-                  ...(params.q ? { q: params.q } : {}),
                   rincian: showBreakdown ? "0" : "1",
                 },
               }}
@@ -94,6 +84,7 @@ export default async function InventoryValuePage({
             <Link
               href={`/api/export/inventory?${new URLSearchParams({
                 ...(params.warehouse ? { warehouse: params.warehouse } : {}),
+                ...(params.q ? { q: params.q } : {}),
                 ...(showBreakdown ? { rincian: "1" } : {}),
                 format: "xlsx",
               }).toString()}`}
@@ -120,7 +111,7 @@ export default async function InventoryValuePage({
             ) : null}
             <StatCard size="compact" label="Potensi jual" value={formatIDR(data.valuation.totalPotential)} hint="Pada harga jual" />
             <StatCard size="compact" label="Total unit" value={formatQty(data.valuation.totalQty)} hint={`${formatNumber(data.valuation.total)} SKU`} />
-            <StatCard size="compact" label="Stok menipis" value={formatNumber(data.valuation.lowStock.length)} hint="Di bawah minimum" tone={data.valuation.lowStock.length ? "red" : "green"} />
+            <StatCard size="compact" label="Stok menipis" value={formatNumber(data.valuation.lowStockCount)} hint="Di bawah minimum" tone={data.valuation.lowStockCount ? "red" : "green"} />
           </div>
         }
         toolbar={
@@ -163,14 +154,6 @@ export default async function InventoryValuePage({
             basePath="/app/gudang/nilai"
             params={{ warehouse: params.warehouse, q: params.q }}
           />
-        }
-        footerNote={
-          q ? (
-            <>
-              Penyaringan “{params.q}” diterapkan pada baris yang tampil di halaman ini; total
-              paginasi tetap total seluruh gudang terpilih.
-            </>
-          ) : undefined
         }
       >
         <div className="overflow-x-auto">

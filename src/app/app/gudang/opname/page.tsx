@@ -25,6 +25,7 @@ import { DataList, DataListToolbar } from "@/components/blocks/data-list";
 import { OpnameForm } from "@/components/gudang/opname-form";
 import { OpnameTasksPanel } from "@/components/gudang/opname-tasks-panel";
 import { StockDocumentRowActions } from "@/components/gudang/void-buttons";
+import { FilterChips } from "@/components/blocks/search-form";
 
 export const metadata = { title: "Stok opname" };
 export const dynamic = "force-dynamic";
@@ -51,7 +52,13 @@ const TABS: { key: OpnameTab; label: string }[] = [
 export default async function OpnamePage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; q?: string; warehouse?: string; tab?: string }>;
+  searchParams: Promise<{
+    page?: string;
+    q?: string;
+    warehouse?: string;
+    tab?: string;
+    status?: string;
+  }>;
 }) {
   const params = await searchParams;
   const ctx = await requirePermissionPage("inventory.view");
@@ -68,6 +75,7 @@ export default async function OpnamePage({
         page: parsePageParam(params.page),
         pageSize: PAGE_SIZE,
         q: params.q,
+        status: params.status,
       }),
       // A-24 T3 (G3): tugas opname — lapisan penugasan di atas domain.
       listOpnameTasks(tx, ctx.company.id),
@@ -174,6 +182,23 @@ export default async function OpnamePage({
       ) : null}
 
       {tab === "riwayat" ? (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <FilterChips
+            options={[
+              { label: "Semua", value: "" },
+              { label: "Menunggu", value: "pending" },
+              { label: "Terposting", value: "posted" },
+              { label: "Dibatalkan", value: "void" },
+            ]}
+            value={params.status ?? ""}
+            basePath="/app/gudang/opname"
+            param="status"
+            q={params.q}
+            params={{ tab: "riwayat" }}
+          />
+        </div>
+      ) : null}
+      {tab === "riwayat" ? (
         <DataList
           toolbar={
             <DataListToolbar
@@ -181,7 +206,9 @@ export default async function OpnamePage({
               q={params.q}
               placeholder="Cari nomor dokumen atau catatan…"
               hidden={{ tab: "riwayat" }}
-              resetHref={params.q ? "/app/gudang/opname?tab=riwayat" : undefined}
+              resetHref={
+                params.q || params.status ? "/app/gudang/opname?tab=riwayat" : undefined
+              }
             />
           }
           isEmpty={data.docs.length === 0}
@@ -194,7 +221,7 @@ export default async function OpnamePage({
               pageSize={data.history.pageSize}
               total={data.history.total}
               basePath="/app/gudang/opname"
-              params={{ q: params.q, tab: "riwayat" }}
+              params={{ q: params.q, tab: "riwayat", status: params.status }}
             />
           }
         >

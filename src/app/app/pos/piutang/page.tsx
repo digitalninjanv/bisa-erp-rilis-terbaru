@@ -195,7 +195,7 @@ export default async function PosReceivablesPage({
             />
           }
         >
-          <div className="overflow-x-auto">
+          <div className="hidden overflow-x-auto lg:block">
             <table className="data-table min-w-[720px]">
               <thead>
                 <tr>
@@ -289,6 +289,85 @@ export default async function PosReceivablesPage({
                 })}
               </tbody>
             </table>
+          </div>
+
+          <div className="divide-y divide-border/70 lg:hidden">
+            {pagedRows.map((row) => {
+              const partyKey = `customer:${row.customerId ?? ""}`;
+              const credits = creditByParty.get(partyKey) ?? [];
+              const paymentKind =
+                row.source === "opening" ? "opening-receivable" : "receivable";
+              const detailHref =
+                row.source === "document" ? `/app/pos/nota/${row.id}` : null;
+              return (
+                <div key={`${row.source}-${row.id}`} className="px-4 py-3">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {detailHref ? (
+                        <Link
+                          href={detailHref}
+                          className="num text-[12px] font-medium text-primary hover:underline"
+                        >
+                          {row.number}
+                        </Link>
+                      ) : (
+                        <span className="num text-[12px] font-medium">{row.number}</span>
+                      )}
+                      {row.source !== "document" ? (
+                        <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          saldo awal
+                        </span>
+                      ) : null}
+                      <StatusBadge status={row.paymentStatus} />
+                    </div>
+                    <DuePill dueDate={row.dueDate} today={today} />
+                  </div>
+                  <p className="mt-1 text-[12px]">
+                    {row.partyName ?? "—"}
+                    <span className="text-[11px] text-muted-foreground"> · {formatDate(row.date)}</span>
+                  </p>
+                  <div className="mt-1.5 flex items-end justify-between gap-2">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Sisa</p>
+                      <p className="num text-[13px] font-semibold">{formatIDR(row.outstanding)}</p>
+                    </div>
+                    <p className="num text-[11px] text-muted-foreground">
+                      Total {formatIDR(row.total)}
+                    </p>
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
+                    {row.customerId ? (
+                      <Link
+                        href={`/app/pos/piutang/cetak?customerId=${row.customerId}`}
+                        className="text-[11px] font-medium text-primary hover:underline"
+                      >
+                        Statement
+                      </Link>
+                    ) : null}
+                    {data.accounts.length > 0 ? (
+                      <PaymentForm
+                        kind={paymentKind}
+                        id={row.id}
+                        number={row.number}
+                        outstanding={row.outstanding}
+                        accounts={data.accounts}
+                        credits={credits}
+                        withholdingEnabled={Boolean(data.settings?.withholdingEnabled)}
+                        canWriteOff={canWriteOff}
+                        writeOffMaxAmount={data.settings?.writeoffMaxAmount ?? "0"}
+                      />
+                    ) : (
+                      <Link
+                        href="/app/akuntansi/bank"
+                        className="text-[11px] font-medium text-tone-amber hover:underline"
+                      >
+                        Atur akun kas
+                      </Link>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </DataList>
       </div>

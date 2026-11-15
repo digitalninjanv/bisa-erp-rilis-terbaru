@@ -13,6 +13,7 @@ import {
 } from "@/db/schema";
 import { AppError } from "@/lib/errors";
 import { Decimal, d, lineTax, receiptLineDiscount, toDb } from "@/lib/money";
+import { findPurchaseOrderPriceVariances } from "@/lib/purchase-order-price-variance";
 import { costPerBaseUnit, toBaseQty } from "@/lib/packaging";
 import { resolveLinePackagings } from "@/server/catalog";
 import { assertPeriodOpen, listCashBankIds } from "@/server/accounting";
@@ -50,6 +51,11 @@ type CreateReceiptInput = {
   purchaseOrderId?: string | null;
   paymentAccountId?: string | null;
   supplierInvoiceNumber?: string | null;
+  /** Tanggal faktur pemasok (bisa berbeda dari tanggal penerimaan). */
+  supplierInvoiceDate?: string | null;
+  /** Jatuh tempo eksplisit; kosong = tanggal penerimaan + termin pemasok. */
+  dueDate?: string | null;
+  priceVarianceReason?: string | null;
   /** GDG3-06: kunci idempotensi dari klien (pola POS). */
   idempotencyKey?: string | null;
   /**
@@ -154,6 +160,29 @@ export async function createReceipt(tx: Tx, input: CreateReceiptInput) {
     });
   }
 
+  const priceVariances = purchaseOrderContext
+    ? findPurchaseOrderPriceVariances(
+        purchaseOrderContext.orderLines.map((line) => ({
+          productId: line.productId,
+          productName: line.productName,
+          unitCost: line.unitCost,
+        })),
+        effectiveLines.map((line) => ({
+          productId: line.productId,
+          name: line.productName,
+          qty: line.qty,
+          stockUnitCost: line.stockUnitCost,
+        })),
+      )
+    : [];
+  const priceVarianceReason = input.priceVarianceReason?.trim() || null;
+  if (priceVariances.length > 0 && (priceVarianceReason?.length ?? 0) < 5) {
+    throw new AppError(
+      "VALIDATION",
+      `Harga barang berbeda dari PO ${purchaseOrderContext!.order.number}. Konfirmasi selisih dan tulis alasan minimal 5 karakter sebelum posting.`,
+    );
+  }
+
   const linesDpp = effectiveLines.reduce((acc, line) => acc.plus(line.lineNet), d(0));
   const percentTax = context.taxPercent.gt(0)
     ? linesDpp.mul(context.taxPercent).div(100).toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
@@ -178,6 +207,7 @@ export async function createReceipt(tx: Tx, input: CreateReceiptInput) {
     taxRate: context.taxPercent.gt(0) ? context.taxPercent : context.taxRate,
     explicitTax: explicitTaxForDocument,
     advanceApplied: advancePlan.applied,
+    priceVarianceReason: priceVariances.length > 0 ? priceVarianceReason : null,
   });
 
   await insertPurchaseAdvanceAllocations(
@@ -234,6 +264,18 @@ export async function createReceipt(tx: Tx, input: CreateReceiptInput) {
       ...(totalTax.gt(0) ? { taxAmount: toDb(totalTax) } : {}),
       ...(purchaseOrderContext
         ? { purchaseOrderNumber: purchaseOrderContext.order.number }
+        : {}),
+      ...(priceVariances.length > 0
+        ? {
+            priceVarianceReason,
+            priceVariances: priceVariances.map((row) => ({
+              productId: row.productId,
+              qty: row.qty,
+              expectedUnitCost: row.expectedUnitCost,
+              receivedUnitCost: row.receivedUnitCost,
+              differenceAmount: row.differenceAmount,
+            })),
+          }
         : {}),
     },
   });
@@ -655,6 +697,7 @@ async function insertReceiptDocument(
     taxRate: Decimal;
     explicitTax: Decimal;
     advanceApplied: Decimal;
+    priceVarianceReason: string | null;
   },
 ) {
   const {
@@ -667,6 +710,7 @@ async function insertReceiptDocument(
     taxRate,
     explicitTax,
     advanceApplied,
+    priceVarianceReason,
   } = args;
   const number = await nextDocumentNumber(tx, input.companyId, "RECEIPT", input.date);
   const linesTotal = effectiveLines.reduce((acc, l) => acc.plus(l.lineNet), d(0));
@@ -699,6 +743,9 @@ async function insertReceiptDocument(
       source,
       paymentAccountId,
       supplierInvoiceNumber: input.supplierInvoiceNumber ?? null,
+      supplierInvoiceDate: input.supplierInvoiceDate ?? null,
+      dueDate: input.dueDate ?? null,
+      priceVarianceReason,
       idempotencyKey: idemKey,
       number,
       date: input.date,

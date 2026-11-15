@@ -134,6 +134,14 @@ export default async function BankPage({
                   <span className={`num shrink-0 text-[12px] font-semibold ${row.balance < 0 ? "text-destructive" : ""}`}>
                     {formatIDR(row.balance)}
                   </span>
+                  {row.cashBankKind === "bank" || row.cashBankKind === "clearing" ? (
+                    <Link
+                      href={`/app/akuntansi/rekonsiliasi?accountId=${row.id}`}
+                      className="inline-flex h-8 items-center px-1 text-[11px] text-primary transition-colors hover:underline"
+                    >
+                      Rekonsiliasi
+                    </Link>
+                  ) : null}
                   <Link
                     href={`/app/akuntansi/buku-besar?account=${row.id}&from=${from}&to=${to}`}
                     className="inline-flex h-8 items-center px-1 text-[11px] text-primary transition-colors hover:underline"

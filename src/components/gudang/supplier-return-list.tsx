@@ -46,9 +46,11 @@ function ClaimAmount({ row }: { row: SupplierReturnListRow }) {
 export function SupplierReturnList({
   rows,
   compact = false,
+  canSeeCost = false,
 }: {
   rows: SupplierReturnListRow[];
   compact?: boolean;
+  canSeeCost?: boolean;
 }) {
   return (
     <>
@@ -61,7 +63,7 @@ export function SupplierReturnList({
               <th scope="col">Pemasok</th>
               {compact ? null : <th scope="col">Gudang</th>}
               <th scope="col">Alasan</th>
-              {compact ? null : <th scope="col" className="text-right">Nilai retur</th>}
+              {compact || !canSeeCost ? null : <th scope="col" className="text-right">Nilai retur</th>}
               <th scope="col" className="text-right">Sisa klaim</th>
               <th scope="col">Status</th>
               <th scope="col" className="text-right">Aksi</th>
@@ -75,7 +77,7 @@ export function SupplierReturnList({
                 <td className="text-[12px]">{row.supplierName ?? "—"}</td>
                 {compact ? null : <td className="text-[11px]">{row.warehouseName ?? "—"}</td>}
                 <td className="text-[12px]">{SUPPLIER_RETURN_REASON_LABELS[row.reasonCategory] ?? row.reasonCategory}</td>
-                {compact ? null : (
+                {compact || !canSeeCost ? null : (
                   <td className="num text-right font-medium">
                     {row.status === "draft" ? (
                       <span className="text-muted-foreground" title="Nilai ditentukan saat posting">Belum dinilai</span>
@@ -116,7 +118,7 @@ export function SupplierReturnList({
                 <dt className="text-muted-foreground">Alasan</dt>
                 <dd className="truncate font-medium">{SUPPLIER_RETURN_REASON_LABELS[row.reasonCategory] ?? row.reasonCategory}</dd>
               </div>
-              {!compact ? (
+              {!compact && canSeeCost ? (
                 <div className="min-w-0">
                   <dt className="text-muted-foreground">Nilai retur</dt>
                   <dd className="num font-medium">{row.status === "draft" ? "Belum dinilai" : formatIDR(row.totalValue)}</dd>

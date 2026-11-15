@@ -21,6 +21,7 @@ import { DataList, DataListToolbar } from "@/components/blocks/data-list";
 import { TransferForm } from "@/components/gudang/transfer-form";
 import { StockDocumentRowActions } from "@/components/gudang/void-buttons";
 import { ReceiveTransferButton } from "@/components/gudang/reservation-panel";
+import { FilterChips } from "@/components/blocks/search-form";
 
 export const metadata = { title: "Transfer stok" };
 export const dynamic = "force-dynamic";
@@ -30,7 +31,7 @@ const PAGE_SIZE = 40;
 export default async function TransferPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; q?: string }>;
+  searchParams: Promise<{ page?: string; q?: string; status?: string }>;
 }) {
   const params = await searchParams;
   const ctx = await requirePermissionPage("inventory.view");
@@ -45,6 +46,7 @@ export default async function TransferPage({
         page: parsePageParam(params.page),
         pageSize: PAGE_SIZE,
         q: params.q,
+        status: params.status,
       }),
     ]);
     return {
@@ -79,9 +81,29 @@ export default async function TransferPage({
         <GateNotice>{viewModeText("transfer stok")}</GateNotice>
       )}
 
-      {/* A-25 U3: riwayat transfer memakai DataList bersama — satu
-          bar pencarian, tanpa kepala kartu berjudul ganda. */}
-      <div className="mt-4">
+      {/* SAP Fiori list-report: filter status sebagai chip kerja, bukan
+          dropdown tersembunyi — "Dalam perjalanan" adalah antrean aksi
+          utama penerima gudang. */}
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+        <FilterChips
+          options={[
+            { label: "Semua", value: "" },
+            { label: "Dalam perjalanan", value: "in_transit" },
+            { label: "Selesai", value: "posted" },
+            { label: "Dibatalkan", value: "void" },
+          ]}
+          value={params.status ?? ""}
+          basePath="/app/gudang/transfer"
+          param="status"
+          q={params.q}
+        />
+        {params.status === "in_transit" ? (
+          <p className="text-[11px] text-muted-foreground">
+            Antrean penerimaan gudang tujuan — buka <em>Terima</em> pada baris dokumen.
+          </p>
+        ) : null}
+      </div>
+      <div className="mt-3">
       <DataList
         toolbar={
           <DataListToolbar
@@ -101,7 +123,7 @@ export default async function TransferPage({
             pageSize={data.history.pageSize}
             total={data.history.total}
             basePath="/app/gudang/transfer"
-            params={{ q: params.q }}
+            params={{ q: params.q, status: params.status }}
           />
         }
       >

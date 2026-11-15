@@ -283,13 +283,26 @@ export async function listReceiptHistory(
  */
 export async function listPurchaseOrderHistory(
   tx: Tx,
-  input: { companyId: string; page?: number; pageSize?: number; q?: string },
+  input: {
+    companyId: string;
+    page?: number;
+    pageSize?: number;
+    q?: string;
+    status?: string;
+    supplierId?: string;
+    from?: string;
+    to?: string;
+  },
 ) {
   const { page, pageSize } = normalizePageParams(input, 40);
   // FIX-GDG Tahap 4 (GDG2-06): pencarian nomor PO / nama pemasok.
   const q = input.q?.trim();
   const where = and(
     eq(purchaseOrders.companyId, input.companyId),
+    input.status ? eq(purchaseOrders.status, input.status) : undefined,
+    input.supplierId ? eq(purchaseOrders.supplierId, input.supplierId) : undefined,
+    input.from ? gte(purchaseOrders.date, input.from) : undefined,
+    input.to ? lte(purchaseOrders.date, input.to) : undefined,
     q
       ? or(ilike(purchaseOrders.number, `%${q}%`), ilike(suppliers.name, `%${q}%`))
       : undefined,
@@ -330,7 +343,18 @@ export async function listPurchaseOrderHistory(
  */
 export async function listDocumentHistory(
   tx: Tx,
-  input: { companyId: string; types: string[]; page?: number; pageSize?: number; q?: string },
+  input: {
+    companyId: string;
+    types: string[];
+    page?: number;
+    pageSize?: number;
+    q?: string;
+    /** Filter status dokumen — alasan kerja (Fiori list report). */
+    status?: string;
+    warehouseId?: string;
+    from?: string;
+    to?: string;
+  },
 ) {
   const { page, pageSize } = normalizePageParams(input, 40);
   // FIX-GDG Tahap 4 (GDG2-06): pencarian nomor dokumen / catatan.
@@ -338,6 +362,10 @@ export async function listDocumentHistory(
   const where = and(
     eq(stockDocuments.companyId, input.companyId),
     inArray(stockDocuments.type, input.types),
+    input.status ? eq(stockDocuments.status, input.status) : undefined,
+    input.warehouseId ? eq(stockDocuments.warehouseId, input.warehouseId) : undefined,
+    input.from ? gte(stockDocuments.date, input.from) : undefined,
+    input.to ? lte(stockDocuments.date, input.to) : undefined,
     q
       ? or(ilike(stockDocuments.number, `%${q}%`), ilike(stockDocuments.notes, `%${q}%`))
       : undefined,

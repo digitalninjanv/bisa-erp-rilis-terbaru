@@ -4,11 +4,19 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import {
   accountMappings,
   accounts,
+  branches,
   categories,
+  customerGroups,
+  employees,
+  fixedAssets,
   importJobs,
+  journalEntries,
+  paymentMethods,
   importRows,
   units,
+  warehouses,
 } from "@/db/schema";
+import { adminSql } from "@/db/admin";
 import { withCompany, withCompanyReadOnly } from "@/db/tenant";
 import { analyzeImportAction } from "@/server/actions/import/analyze";
 import { commitImportBatchAction } from "@/server/actions/import/commit";
@@ -49,6 +57,12 @@ const suffix = crypto.randomUUID().slice(0, 8);
 const createdJobIds: string[] = [];
 const createdCategoryNames: string[] = [];
 const createdUnitCodes: string[] = [];
+const createdBranchCodes: string[] = [];
+const createdWarehouseCodes: string[] = [];
+const createdPaymentCodes: string[] = [];
+const createdGroupNames: string[] = [];
+const createdEmployeeCodes: string[] = [];
+const createdAssetNames: string[] = [];
 
 function sampleRows(entity: ImportEntity): {
   headers: string[];
@@ -116,6 +130,71 @@ async function workbookFrom(response: Response) {
 }
 
 afterAll(async () => {
+  if (createdAssetNames.length) {
+    // Jurnal terposting dilindungi trigger; pembersihan fixture DB uji
+    // memakai koneksi admin + replication role agar tidak meninggalkan
+    // aset/jurnal yatim.
+    await adminSql.begin(async (tx) => {
+      await tx.unsafe("set local session_replication_role = replica");
+      const assets = await tx<{ id: string }[]>`
+        select id from fixed_assets
+        where company_id = ${ORG_ID} and name = any(${createdAssetNames}::text[])
+      `;
+      const ids = assets.map((row) => row.id);
+      if (ids.length) {
+        const affected = await tx<{ account_id: string; ym: string }[]>`
+          select distinct jl.account_id, to_char(je.date, 'YYYY-MM') as ym
+          from journal_lines jl
+          join journal_entries je on je.id = jl.entry_id
+          where je.company_id = ${ORG_ID}
+            and je.source_type = 'fixed_asset_acquisition'
+            and je.source_id = any(${ids}::uuid[])
+        `;
+        await tx`
+          delete from journal_lines where entry_id in (
+            select id from journal_entries
+            where company_id = ${ORG_ID}
+              and source_type = 'fixed_asset_acquisition'
+              and source_id = any(${ids}::uuid[])
+          )
+        `;
+        await tx`
+          delete from journal_entries
+          where company_id = ${ORG_ID}
+            and source_type = 'fixed_asset_acquisition'
+            and source_id = any(${ids}::uuid[])
+        `;
+        await tx`delete from fixed_assets where id = any(${ids}::uuid[])`;
+        // Ringkasan saldo bulanan dipelihara trigger; karena trigger
+        // dilewati saat pembersihan, hitung ulang pasangan akun+bulan
+        // yang tersentuh agar rekonsiliasi tetap konsisten.
+        for (const pair of affected) {
+          const [sum] = await tx<{ debit: string; credit: string; n: string }[]>`
+            select coalesce(sum(jl.debit), 0) as debit,
+                   coalesce(sum(jl.credit), 0) as credit,
+                   count(*) as n
+            from journal_lines jl
+            join journal_entries je on je.id = jl.entry_id
+            where je.company_id = ${ORG_ID}
+              and jl.account_id = ${pair.account_id}
+              and to_char(je.date, 'YYYY-MM') = ${pair.ym}
+          `;
+          if (Number(sum?.n ?? 0) === 0) {
+            await tx`
+              delete from account_monthly_balances
+              where company_id = ${ORG_ID} and account_id = ${pair.account_id} and year_month = ${pair.ym}
+            `;
+          } else {
+            await tx`
+              update account_monthly_balances
+              set total_debit = ${sum.debit}, total_credit = ${sum.credit}, updated_at = now()
+              where company_id = ${ORG_ID} and account_id = ${pair.account_id} and year_month = ${pair.ym}
+            `;
+          }
+        }
+      }
+    });
+  }
   await withCompany(ORG_ID, async (tx) => {
     if (createdJobIds.length) {
       await tx.delete(importRows).where(inArray(importRows.jobId, createdJobIds));
@@ -130,6 +209,31 @@ afterAll(async () => {
       await tx
         .delete(units)
         .where(and(eq(units.companyId, ORG_ID), inArray(units.code, createdUnitCodes)));
+    }
+    if (createdEmployeeCodes.length) {
+      await tx
+        .delete(employees)
+        .where(and(eq(employees.companyId, ORG_ID), inArray(employees.code, createdEmployeeCodes)));
+    }
+    if (createdPaymentCodes.length) {
+      await tx
+        .delete(paymentMethods)
+        .where(and(eq(paymentMethods.companyId, ORG_ID), inArray(paymentMethods.code, createdPaymentCodes)));
+    }
+    if (createdGroupNames.length) {
+      await tx
+        .delete(customerGroups)
+        .where(and(eq(customerGroups.companyId, ORG_ID), inArray(customerGroups.name, createdGroupNames)));
+    }
+    if (createdWarehouseCodes.length) {
+      await tx
+        .delete(warehouses)
+        .where(and(eq(warehouses.companyId, ORG_ID), inArray(warehouses.code, createdWarehouseCodes)));
+    }
+    if (createdBranchCodes.length) {
+      await tx
+        .delete(branches)
+        .where(and(eq(branches.companyId, ORG_ID), inArray(branches.code, createdBranchCodes)));
     }
   });
 });
@@ -314,5 +418,316 @@ describe("Excel master data — impor kategori & satuan", () => {
         .limit(1),
     );
     expect(after?.code).toBe(code);
+  });
+});
+
+describe("Excel master data — impor cabang & gudang", () => {
+  it("cabang lalu gudang terhubung, duplikat dilewati, cabang tak dikenal ditolak", async () => {
+    const branchCode = `CB-${suffix.slice(0, 6)}`.toUpperCase();
+    const branchName = `Cabang Uji ${suffix}`;
+    const warehouseCode = `GD-${suffix.slice(0, 6)}`.toUpperCase();
+    createdBranchCodes.push(branchCode);
+    createdWarehouseCodes.push(warehouseCode);
+
+    const branchMapping = suggestMappingFor(ENTITY_FIELDS.branches, ["Kode", "Nama", "Status"]);
+    const branchJob = await makeJob(
+      "branches",
+      [
+        { Kode: branchCode, Nama: branchName, Status: "Aktif" },
+        { Kode: branchCode, Nama: `${branchName} Duplikat`, Status: "Aktif" },
+      ],
+      branchMapping,
+    );
+    const branchAnalysis = await analyzeImportAction({ jobId: branchJob, mapping: branchMapping });
+    expect(branchAnalysis.ok).toBe(true);
+    if (!branchAnalysis.ok) return;
+    expect(branchAnalysis.data.summary.duplicateInFile).toBe(1);
+    const branchCommit = await commitAll(branchJob, branchMapping);
+    expect(branchCommit.imported).toBe(1);
+    expect(branchCommit.failed).toBe(1);
+
+    const warehouseMapping = suggestMappingFor(ENTITY_FIELDS.warehouses, ["Kode", "Nama", "Tipe", "Kode Cabang", "Status"]);
+    const warehouseJob = await makeJob(
+      "warehouses",
+      [
+        { Kode: warehouseCode, Nama: `Gudang Uji ${suffix}`, Tipe: "Gudang", "Kode Cabang": branchCode, Status: "Aktif" },
+        { Kode: `${warehouseCode}-X`, Nama: `Gudang Tanpa Cabang ${suffix}`, Tipe: "Toko", "Kode Cabang": "TIDAK-ADA", Status: "Aktif" },
+      ],
+      warehouseMapping,
+    );
+    const warehouseAnalysis = await analyzeImportAction({ jobId: warehouseJob, mapping: warehouseMapping });
+    expect(warehouseAnalysis.ok).toBe(true);
+    if (!warehouseAnalysis.ok) return;
+    expect(warehouseAnalysis.data.summary.invalidRows).toBe(1);
+    const warehouseCommit = await commitAll(warehouseJob, warehouseMapping);
+    expect(warehouseCommit.imported).toBe(1);
+    expect(warehouseCommit.failed).toBe(1);
+
+    const rows = await withCompanyReadOnly(ORG_ID, (tx) =>
+      tx
+        .select({
+          code: warehouses.code,
+          name: warehouses.name,
+          type: warehouses.type,
+          branchCode: branches.code,
+        })
+        .from(warehouses)
+        .innerJoin(branches, eq(warehouses.branchId, branches.id))
+        .where(and(eq(warehouses.companyId, ORG_ID), eq(warehouses.code, warehouseCode)))
+        .limit(1),
+    );
+    expect(rows[0]).toMatchObject({
+      code: warehouseCode,
+      name: `Gudang Uji ${suffix}`,
+      type: "warehouse",
+      branchCode,
+    });
+  });
+});
+
+describe("Excel master data — impor metode pembayaran & kelompok harga", () => {
+  it("metode pembayaran terhubung ke akun, duplikat dilewati, akun tak dikenal ditolak", async () => {
+    const cashCode = `PM-${suffix.slice(0, 6)}`.toUpperCase();
+    const bankCode = `${cashCode}-B`;
+    createdPaymentCodes.push(cashCode, bankCode);
+
+    const mapping = suggestMappingFor(ENTITY_FIELDS.payment_methods, [
+      "Kode",
+      "Nama",
+      "Tipe",
+      "Kode Akun",
+      "Status",
+    ]);
+    const jobId = await makeJob(
+      "payment_methods",
+      [
+        { Kode: cashCode, Nama: `Tunai Uji ${suffix}`, Tipe: "Tunai", "Kode Akun": "110101", Status: "Aktif" },
+        { Kode: cashCode, Nama: `Tunai Duplikat ${suffix}`, Tipe: "Tunai", Status: "Aktif" },
+        { Kode: bankCode, Nama: `Bank Uji ${suffix}`, Tipe: "Bank", "Kode Akun": "TIDAK-ADA", Status: "Aktif" },
+      ],
+      mapping,
+    );
+    const analysis = await analyzeImportAction({ jobId, mapping });
+    expect(analysis.ok).toBe(true);
+    if (!analysis.ok) return;
+    expect(analysis.data.summary.duplicateInFile).toBe(1);
+    expect(analysis.data.summary.invalidRows).toBe(1);
+
+    const commit = await commitAll(jobId, mapping);
+    expect(commit.imported).toBe(1);
+    expect(commit.failed).toBe(2);
+
+    const [row] = await withCompanyReadOnly(ORG_ID, (tx) =>
+      tx
+        .select({ code: paymentMethods.code, type: paymentMethods.type, accountCode: accounts.code })
+        .from(paymentMethods)
+        .innerJoin(accounts, eq(paymentMethods.accountId, accounts.id))
+        .where(and(eq(paymentMethods.companyId, ORG_ID), eq(paymentMethods.code, cashCode)))
+        .limit(1),
+    );
+    expect(row).toMatchObject({ code: cashCode, type: "cash", accountCode: "110101" });
+  });
+
+  it("kelompok harga tersimpan dengan diskon, pembulatan, dan status", async () => {
+    const groupName = `Grosir Uji ${suffix}`;
+    createdGroupNames.push(groupName);
+    const mapping = suggestMappingFor(ENTITY_FIELDS.customer_groups, [
+      "Nama Kelompok",
+      "Tipe Diskon",
+      "Nilai Diskon",
+      "Pembulatan",
+      "Arah Pembulatan",
+      "Bulatkan Total Tunai",
+      "Status",
+    ]);
+    const jobId = await makeJob(
+      "customer_groups",
+      [
+        {
+          "Nama Kelompok": groupName,
+          "Tipe Diskon": "Percent",
+          "Nilai Diskon": "5",
+          Pembulatan: "100",
+          "Arah Pembulatan": "down",
+          "Bulatkan Total Tunai": "Tidak",
+          Status: "Aktif",
+        },
+        {
+          "Nama Kelompok": groupName,
+          "Tipe Diskon": "Percent",
+          "Nilai Diskon": "10",
+          Status: "Aktif",
+        },
+      ],
+      mapping,
+    );
+    const analysis = await analyzeImportAction({ jobId, mapping });
+    expect(analysis.ok).toBe(true);
+    if (!analysis.ok) return;
+    expect(analysis.data.summary.duplicateInFile).toBe(1);
+
+    const commit = await commitAll(jobId, mapping);
+    expect(commit.imported).toBe(1);
+    expect(commit.failed).toBe(1);
+
+    const [row] = await withCompanyReadOnly(ORG_ID, (tx) =>
+      tx
+        .select({
+          name: customerGroups.name,
+          discountType: customerGroups.discountType,
+          discountValue: customerGroups.discountValue,
+          roundingStep: customerGroups.roundingStep,
+          roundingDirection: customerGroups.roundingDirection,
+          roundCashTotal: customerGroups.roundCashTotal,
+        })
+        .from(customerGroups)
+        .where(and(eq(customerGroups.companyId, ORG_ID), eq(customerGroups.name, groupName)))
+        .limit(1),
+    );
+    expect(row).toMatchObject({
+      name: groupName,
+      discountType: "percent",
+      discountValue: "5.0000",
+      roundingStep: 100,
+      roundingDirection: "down",
+      roundCashTotal: false,
+    });
+  });
+});
+
+describe("Excel master data — impor karyawan & aset tetap", () => {
+  it("karyawan tersimpan dengan gaji/statutory dan duplikat kode ditolak", async () => {
+    const code = `EMP-${suffix.slice(0, 6)}`.toUpperCase();
+    createdEmployeeCodes.push(code);
+    const mapping = suggestMappingFor(ENTITY_FIELDS.employees, [
+      "Kode",
+      "Nama",
+      "Jabatan",
+      "Gaji Pokok",
+      "Tunjangan",
+      "Tanggal Masuk",
+      "NIK",
+      "Status PTKP",
+      "Status",
+    ]);
+    const jobId = await makeJob(
+      "employees",
+      [
+        {
+          Kode: code,
+          Nama: `Budi Uji ${suffix}`,
+          Jabatan: "Kasir",
+          "Gaji Pokok": "4500000",
+          Tunjangan: "500000",
+          "Tanggal Masuk": "2026-01-05",
+          NIK: `3171${suffix.slice(0, 12).padEnd(12, "0")}`,
+          "Status PTKP": "TK/0",
+          Status: "Aktif",
+        },
+        {
+          Kode: code,
+          Nama: `Duplikat ${suffix}`,
+          "Gaji Pokok": "4000000",
+          Status: "Aktif",
+        },
+      ],
+      mapping,
+    );
+    const analysis = await analyzeImportAction({ jobId, mapping });
+    expect(analysis.ok).toBe(true);
+    if (!analysis.ok) return;
+    expect(analysis.data.summary.duplicateInFile).toBe(1);
+
+    const commit = await commitAll(jobId, mapping);
+    expect(commit.imported).toBe(1);
+    expect(commit.failed).toBe(1);
+
+    const [row] = await withCompanyReadOnly(ORG_ID, (tx) =>
+      tx
+        .select({
+          code: employees.code,
+          name: employees.name,
+          position: employees.position,
+          baseSalary: employees.baseSalary,
+          allowances: employees.allowances,
+          ptkpStatus: employees.ptkpStatus,
+        })
+        .from(employees)
+        .where(and(eq(employees.companyId, ORG_ID), eq(employees.code, code)))
+        .limit(1),
+    );
+    expect(row).toMatchObject({
+      code,
+      name: `Budi Uji ${suffix}`,
+      position: "Kasir",
+      baseSalary: "4500000.0000",
+      allowances: "500000.0000",
+      ptkpStatus: "TK/0",
+    });
+  });
+
+  it("aset tetap membuat jurnal perolehan dan baris duplikat dilewati", async () => {
+    const assetName = `Chiller Uji ${suffix}`;
+    createdAssetNames.push(assetName);
+    const mapping = suggestMappingFor(ENTITY_FIELDS.fixed_assets, [
+      "Nama Aset",
+      "Tanggal Perolehan",
+      "Harga Perolehan",
+      "Umur Manfaat (bulan)",
+      "Kode Akun Sumber",
+    ]);
+    const jobId = await makeJob(
+      "fixed_assets",
+      [
+        {
+          "Nama Aset": assetName,
+          "Tanggal Perolehan": "2026-11-10",
+          "Harga Perolehan": "12000000",
+          "Umur Manfaat (bulan)": "60",
+          "Kode Akun Sumber": "110101",
+        },
+        {
+          "Nama Aset": assetName,
+          "Tanggal Perolehan": "2026-11-10",
+          "Harga Perolehan": "12000000",
+          "Umur Manfaat (bulan)": "60",
+          "Kode Akun Sumber": "110101",
+        },
+      ],
+      mapping,
+    );
+    const analysis = await analyzeImportAction({ jobId, mapping });
+    expect(analysis.ok).toBe(true);
+    if (!analysis.ok) return;
+    expect(analysis.data.summary.duplicateInFile).toBe(1);
+
+    const commit = await commitAll(jobId, mapping);
+    expect(commit.imported).toBe(1);
+    expect(commit.failed).toBe(1);
+
+    const [asset] = await withCompanyReadOnly(ORG_ID, (tx) =>
+      tx
+        .select({
+          id: fixedAssets.id,
+          number: fixedAssets.number,
+          name: fixedAssets.name,
+          cost: fixedAssets.cost,
+          journalId: fixedAssets.journalId,
+        })
+        .from(fixedAssets)
+        .where(and(eq(fixedAssets.companyId, ORG_ID), eq(fixedAssets.name, assetName)))
+        .limit(1),
+    );
+    expect(asset).toMatchObject({ name: assetName, cost: "12000000.0000" });
+    expect(asset?.journalId).toBeTruthy();
+
+    const [journal] = await withCompanyReadOnly(ORG_ID, (tx) =>
+      tx
+        .select({ sourceType: journalEntries.sourceType, sourceId: journalEntries.sourceId })
+        .from(journalEntries)
+        .where(eq(journalEntries.id, asset!.journalId!))
+        .limit(1),
+    );
+    expect(journal).toMatchObject({ sourceType: "fixed_asset_acquisition", sourceId: asset!.id });
   });
 });

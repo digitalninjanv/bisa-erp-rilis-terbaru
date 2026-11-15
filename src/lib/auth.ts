@@ -75,12 +75,12 @@ export const auth = betterAuth({
     // satu sumber di lib/session-freshness.ts.
     freshAge: SESSION_FRESH_AGE_SECONDS,
   },
-  // SIM-2 S6 (SEC-04, sebagian): rate limit kini EKSPLISIT, bukan
-  // sekadar bawaan pustaka yang hanya aktif di production. Penyimpanan
-  // tetap in-memory per instance (batasan yang disadari — untuk
-  // multi-instance perlu storage database/sekunder; lihat laporan S6).
+  // SEC-012: rate limit eksplisit dan TERPUSAT di database (bukan
+  // in-memory per instance), sehingga batas login berlaku sama untuk
+  // semua instance/proses. Tabel `rate_limit` dikelola Better Auth.
   rateLimit: {
     enabled: true,
+    storage: "database",
     window: 10,
     max: 100,
     customRules: {
@@ -89,6 +89,13 @@ export const auth = betterAuth({
   },
   advanced: {
     database: { generateId: () => crypto.randomUUID() },
+    // SEC-012: hanya percayai forwarded header dari proksi yang
+    // dikonfigurasi operator; tanpa daftar ini Better Auth memakai
+    // aturan satu-nilai (multi-hop tidak dipercaya).
+    ipAddress:
+      env.trustedProxies.length > 0
+        ? { trustedProxies: env.trustedProxies }
+        : undefined,
   },
   plugins: [twoFactor(), nextCookies()],
 });

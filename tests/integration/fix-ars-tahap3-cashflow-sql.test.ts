@@ -567,4 +567,56 @@ describe("ARS3-02 — getCashFlow teragregasi SQL == referensi per baris", () =>
       expect(flow.closing).toBe(flow.opening);
     });
   });
+
+  it("membaca arus kas lebih dari satu batch cursor dengan hasil yang tetap identik", async () => {
+    await rollbackTransaction(async (tx) => {
+      const cashAccountId = await accountIdByCode(tx, "1000");
+      const salesAccountId = await accountIdByCode(tx, "4000");
+      const entryCount = 10_001;
+      const insertBatchSize = 1_000;
+
+      for (let start = 0; start < entryCount; start += insertBatchSize) {
+        const batchCount = Math.min(insertBatchSize, entryCount - start);
+        const entries = await tx
+          .insert(journalEntries)
+          .values(
+            Array.from({ length: batchCount }, (_, offset) => ({
+              companyId: ORG_ID,
+              number: `ARSCURSOR-${String(start + offset + 1).padStart(5, "0")}`,
+              date: "2027-08-01",
+              description: "Uji cursor arus kas",
+              sourceType: "sale",
+              status: "posted",
+            })),
+          )
+          .returning({ id: journalEntries.id });
+
+        await tx.insert(journalLines).values(
+          entries.flatMap(({ id }) => [
+            {
+              companyId: ORG_ID,
+              entryId: id,
+              accountId: cashAccountId,
+              debit: "1.2500",
+              credit: "0",
+              lineNo: 1,
+            },
+            {
+              companyId: ORG_ID,
+              entryId: id,
+              accountId: salesAccountId,
+              debit: "0",
+              credit: "1.2500",
+              lineNo: 2,
+            },
+          ]),
+        );
+      }
+
+      const flow = await expectCashFlowEqual(tx, { from: "2027-08-01", to: "2027-08-31" });
+      expect(flow.opening).toBe(0);
+      expect(flow.net).toBe(entryCount * 1.25);
+      expect(flow.closing).toBe(flow.opening + flow.net);
+    });
+  });
 });

@@ -81,7 +81,7 @@ export async function serialTrackFlags(
   return result;
 }
 
-async function recordSerialMovement(
+export async function recordSerialMovement(
   tx: Tx,
   input: {
     companyId: string;
@@ -693,6 +693,7 @@ export async function relocateSerialsByOutReference(
     });
   }
 }
+
 
 /** Pulihkan seri saat transfer dibatalkan (satu tahap maupun in-transit). */
 export async function restoreSerialsForTransferVoid(

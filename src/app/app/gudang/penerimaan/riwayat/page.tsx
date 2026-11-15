@@ -6,6 +6,7 @@ import { RECEIPT_SOURCE_LABELS } from "@/server/inventory";
 import { requirePermissionPage } from "@/lib/session";
 import { parsePageParam } from "@/lib/pagination";
 import { can } from "@/lib/permissions";
+import { canSeeInventoryCost } from "@/lib/inventory-cost";
 import { formatDate } from "@/lib/format";
 import { formatIDR, formatNumber } from "@/lib/money";
 import { PageHeader } from "@/components/blocks/page-header";
@@ -38,6 +39,7 @@ export default async function ReceiptHistoryPage({
   const params = await searchParams;
   const sourceFilter = params.source ?? "purchase";
   const ctx = await requirePermissionPage("inventory.view");
+  const canSeeCost = canSeeInventoryCost(ctx);
 
   const data = await withCompanyReadOnly(ctx.company.id, async (tx) => {
     const [history, suppliers, warehouses] = await Promise.all([
@@ -182,8 +184,8 @@ export default async function ReceiptHistoryPage({
                 <th>Pemasok</th>
                 <th>Gudang</th>
                 <th className="text-right">Jumlah item</th>
-                <th className="text-right">Total</th>
-                <th className="text-right">Dibayar</th>
+                {canSeeCost ? <th className="text-right">Total</th> : null}
+                {canSeeCost ? <th className="text-right">Dibayar</th> : null}
                 <th>Status</th>
                 <th className="text-right">Aksi</th>
               </tr>
@@ -213,8 +215,8 @@ export default async function ReceiptHistoryPage({
                     <td className="text-[12px]">{row.supplierName ?? "—"}</td>
                     <td className="text-[11px]">{row.warehouseName ?? "—"}</td>
                     <td className="num text-right text-[11px]">{formatNumber(row.itemCount)}</td>
-                    <td className="num text-right font-medium">{formatIDR(row.total)}</td>
-                    <td className="num text-right text-[11px] text-muted-foreground">{formatIDR(row.paidAmount)}</td>
+                    {canSeeCost ? <td className="num text-right font-medium">{formatIDR(row.total)}</td> : null}
+                    {canSeeCost ? <td className="num text-right text-[11px] text-muted-foreground">{formatIDR(row.paidAmount)}</td> : null}
                     <td>
                       <div className="flex items-center gap-1">
                         {isCreditPurchase ? (
@@ -254,7 +256,7 @@ export default async function ReceiptHistoryPage({
                   <Link href={`/app/gudang/penerimaan/${row.id}`} className="num text-[12px] font-medium text-primary hover:underline">
                     {row.number}
                   </Link>
-                  <span className="num text-[12px] font-semibold">{formatIDR(row.total)}</span>
+                  {canSeeCost ? <span className="num text-[12px] font-semibold">{formatIDR(row.total)}</span> : null}
                 </div>
                 <p className="mt-0.5 text-[12px]">
                   {row.supplierName ?? "—"}

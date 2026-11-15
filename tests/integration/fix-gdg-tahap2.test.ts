@@ -21,11 +21,13 @@ import {
 import { d } from "@/lib/money";
 import { todayISO } from "@/lib/format";
 import {
+  createAdjustment,
   createOpname,
   createReceipt,
   createTransfer,
   getStock,
   receiveTransfer,
+  voidStockDocument,
 } from "@/server/inventory";
 import {
   createSupplierReturn,
@@ -579,6 +581,97 @@ describe("GDG1-03 — void retur pemasok memulihkan nomor seri", () => {
       expect(await stockOf(tx, WH1, product.id)).toBe(3);
       expect(await serialCount(tx, product.id, "in_stock")).toBe(3);
       expect(await serialCount(tx, product.id, "out")).toBe(0);
+    });
+  });
+});
+
+describe("GDG1-03b — void penyesuaian/karantina memulihkan nomor seri", () => {
+  it("barang rusak 1 seri lalu void → seri kembali in_stock", async () => {
+    await rollbackTransaction(async (tx) => {
+      const product = await makeProduct(tx, { trackSerial: true });
+      await cashReceipt(tx, {
+        productId: product.id,
+        qty: "3",
+        unitCost: "9000",
+        serialNumbers: ["SN-RUSAK-A", "SN-RUSAK-B", "SN-RUSAK-C"],
+      });
+      const adjustment = await createAdjustment(tx, {
+        companyId: ORG,
+        userId: USER,
+        warehouseId: WH1,
+        date: TODAY,
+        type: "damaged",
+        reason: "Rusak saat penataan rak",
+        lines: [{ productId: product.id, qty: "1" }],
+      });
+      expect(await stockOf(tx, WH1, product.id)).toBe(2);
+      expect(await serialCount(tx, product.id, "in_stock")).toBe(2);
+      expect(await serialCount(tx, product.id, "out")).toBe(1);
+
+      await voidStockDocument(tx, {
+        companyId: ORG,
+        userId: USER,
+        documentId: adjustment.id,
+        reason: "Salah mencatat barang rusak",
+        date: TODAY,
+      });
+
+      expect(await stockOf(tx, WH1, product.id)).toBe(3);
+      expect(await serialCount(tx, product.id, "in_stock")).toBe(3);
+      expect(await serialCount(tx, product.id, "out")).toBe(0);
+    });
+  });
+
+  it("karantina 1 seri lalu void → seri kembali ke gudang asal", async () => {
+    await rollbackTransaction(async (tx) => {
+      const product = await makeProduct(tx, { trackSerial: true });
+      await cashReceipt(tx, {
+        productId: product.id,
+        qty: "2",
+        unitCost: "9000",
+        serialNumbers: ["SN-KAR-A", "SN-KAR-B"],
+      });
+      const [quarantine] = await tx
+        .insert(warehouses)
+        .values({
+          companyId: ORG,
+          code: `KAR-${crypto.randomUUID().slice(0, 8)}`,
+          name: "Karantina Uji G2",
+          type: "quarantine",
+        })
+        .returning();
+      const adjustment = await createAdjustment(tx, {
+        companyId: ORG,
+        userId: USER,
+        warehouseId: WH1,
+        date: TODAY,
+        type: "quarantine",
+        reason: "Menunggu pemeriksaan kualitas",
+        lines: [{ productId: product.id, qty: "1" }],
+      });
+      const [moved] = await tx
+        .select()
+        .from(stockSerials)
+        .where(and(eq(stockSerials.companyId, ORG), eq(stockSerials.serialNumber, "SN-KAR-A")));
+      expect(moved.status).toBe("in_stock");
+      expect(moved.warehouseId).toBe(quarantine.id);
+
+      await voidStockDocument(tx, {
+        companyId: ORG,
+        userId: USER,
+        documentId: adjustment.id,
+        reason: "Barang lolos pemeriksaan kualitas",
+        date: TODAY,
+      });
+
+      const [restored] = await tx
+        .select()
+        .from(stockSerials)
+        .where(and(eq(stockSerials.companyId, ORG), eq(stockSerials.serialNumber, "SN-KAR-A")));
+      expect(restored.status).toBe("in_stock");
+      expect(restored.warehouseId).toBe(WH1);
+      expect(await stockOf(tx, WH1, product.id)).toBe(2);
+      expect(await serialCount(tx, product.id, "in_stock")).toBe(2);
     });
   });
 });

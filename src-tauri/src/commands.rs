@@ -39,11 +39,23 @@ pub fn snapshot_info(state: State<'_, DbState>) -> Result<posdb::SnapshotInfo, S
 }
 
 #[tauri::command]
-pub fn list_snapshot_products(
+pub fn list_snapshot_products_page(
     state: State<'_, DbState>,
-) -> Result<Vec<posdb::SnapshotProduct>, String> {
+    search: String,
+    page: u32,
+    page_size: u32,
+) -> Result<posdb::SnapshotProductPage, String> {
     let conn = lock(&state)?;
-    posdb::list_products(&conn)
+    posdb::list_products_page(&conn, &search, page, page_size)
+}
+
+#[tauri::command]
+pub fn find_snapshot_product_by_code(
+    state: State<'_, DbState>,
+    code: String,
+) -> Result<Option<posdb::SnapshotProductMatch>, String> {
+    let conn = lock(&state)?;
+    posdb::find_product_by_code(&conn, &code)
 }
 
 #[tauri::command]
@@ -79,6 +91,16 @@ pub fn list_outbox(
 ) -> Result<Vec<posdb::OutboxItem>, String> {
     let conn = lock(&state)?;
     posdb::list_outbox(&conn, status.as_deref())
+}
+
+#[tauri::command]
+pub fn list_outbox_page(
+    state: State<'_, DbState>,
+    page: u32,
+    page_size: u32,
+) -> Result<posdb::OutboxPage, String> {
+    let conn = lock(&state)?;
+    posdb::list_outbox_page(&conn, page, page_size)
 }
 
 // ---------------------------------------------------------------------------
@@ -206,6 +228,12 @@ pub fn list_cash_sessions(
 ) -> Result<Vec<posdb::CashSession>, String> {
     let conn = lock(&state)?;
     posdb::list_cash_sessions(&conn)
+}
+
+#[tauri::command]
+pub fn count_cash_sessions(state: State<'_, DbState>) -> Result<i64, String> {
+    let conn = lock(&state)?;
+    posdb::count_cash_sessions(&conn)
 }
 
 #[tauri::command]

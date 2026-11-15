@@ -10,7 +10,7 @@ import {
   stockReceiptLines,
   warehouses,
 } from "@/db/schema";
-import { listBatches, listExpiringBatches } from "@/server/batches";
+import { getExpiringBatchDashboard, listBatches, listExpiringBatches } from "@/server/batches";
 import { createReceipt, createTransfer } from "@/server/inventory";
 import { createSale, createSaleReturn, quoteCart } from "@/server/pos";
 import { d } from "@/lib/money";
@@ -447,6 +447,33 @@ describe("Batch & kedaluwarsa + FEFO (G8 / D-7)", () => {
       const mati = mine.find((row) => row.batchNumber === "LOT-MATI")!;
       expect(mati.productName).toBe("Keju Pantau Uji");
       expect(mati.warehouseName).toBe(warehouse.name);
+    });
+  });
+
+  it("(h) ringkasan dashboard kedaluwarsa membatasi baris tanpa mengubah urutan dan jumlah", async () => {
+    await rollbackTransaction(async (tx) => {
+      const warehouse = await defaultWarehouse(tx);
+      const product = await batchProduct(tx, { name: "Produk Banyak Batch Uji" });
+      const today = todayISO();
+      await tx.insert(stockBatches).values(
+        Array.from({ length: 20 }, (_, index) => ({
+          companyId: ORG_ID,
+          productId: product.id,
+          warehouseId: warehouse.id,
+          batchNumber: `LOT-HOME-${String(index).padStart(2, "0")}`,
+          expiryDate: addDays(today, index - 2),
+          qty: "1",
+        })),
+      );
+
+      const allRows = await listExpiringBatches(tx, ORG_ID, 30);
+      const dashboard = await getExpiringBatchDashboard(tx, ORG_ID, 30, 15);
+      const expectedExpired = allRows.filter((row) => String(row.expiryDate) < today).length;
+
+      expect(dashboard.totalCount).toBe(allRows.length);
+      expect(dashboard.expiredCount).toBe(expectedExpired);
+      expect(dashboard.items).toHaveLength(15);
+      expect(dashboard.items.map((row) => row.id)).toEqual(allRows.slice(0, 15).map((row) => row.id));
     });
   });
 });

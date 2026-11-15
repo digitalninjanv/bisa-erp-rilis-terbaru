@@ -19,6 +19,7 @@ import {
 import { AppError } from "@/lib/errors";
 import { d, toDb, type Decimal, type MoneyInput } from "@/lib/money";
 import { toBaseQty } from "@/lib/packaging";
+import { matchesReceiptBatchIdentity } from "@/lib/supplier-return-batch";
 import { writeAudit } from "@/server/audit";
 import { resolveLinePackagings } from "@/server/catalog";
 import { claimIdempotencyKey } from "@/server/idempotency";
@@ -128,8 +129,11 @@ export async function createSupplierReturn(
   await assertReturnWithinReceiptLines(tx, {
     companyId: input.companyId,
     supplierId: input.supplierId,
+    warehouseId: input.warehouseId,
     lines: input.lines.map((line, index) => ({
       receiptLineId: line.receiptLineId,
+      productId: line.productId,
+      batchId: line.batchId,
       qty: linePlans[index].qtyBase,
       productName: productById.get(line.productId)?.name ?? line.productId,
     })),
@@ -258,12 +262,12 @@ async function validateReturnLines(
     lines: ReturnLineInput[];
   },
 ): Promise<{
-  productById: Map<string, { id: string; name: string; sku: string }>;
+  productById: Map<string, { id: string; name: string; sku: string; trackBatch: boolean }>;
   linePlans: ReturnLinePlan[];
 }> {
   const productIds = [...new Set(input.lines.map((line) => line.productId))];
   const found = await tx
-    .select({ id: products.id, name: products.name, sku: products.sku })
+    .select({ id: products.id, name: products.name, sku: products.sku, trackBatch: products.trackBatch })
     .from(products)
     .where(and(eq(products.companyId, input.companyId), inArray(products.id, productIds)));
   if (found.length !== productIds.length) {
@@ -297,9 +301,20 @@ async function validateReturnLines(
     }
     seenIdentities.add(identity);
 
+    let selectedBatch: {
+      id: string;
+      batchNumber: string | null;
+      expiryDate: string | null;
+      warehouseId: string;
+    } | null = null;
     if (line.batchId) {
       const [batch] = await tx
-        .select({ id: stockBatches.id })
+        .select({
+          id: stockBatches.id,
+          batchNumber: stockBatches.batchNumber,
+          expiryDate: stockBatches.expiryDate,
+          warehouseId: stockBatches.warehouseId,
+        })
         .from(stockBatches)
         .where(
           and(
@@ -316,6 +331,7 @@ async function validateReturnLines(
           `Batch yang dipilih untuk ${product.name} tidak ditemukan di gudang ini.`,
         );
       }
+      selectedBatch = batch;
     }
     let origin: { packagingId: string; isiSnapshot: string } | null = null;
     if (line.receiptLineId) {
@@ -326,6 +342,9 @@ async function validateReturnLines(
           supplierId: stockReceipts.supplierId,
           source: stockReceipts.source,
           status: stockReceipts.status,
+          warehouseId: stockReceipts.warehouseId,
+          batchNumber: stockReceiptLines.batchNumber,
+          expiryDate: stockReceiptLines.expiryDate,
           packagingId: stockReceiptLines.packagingId,
           isiSnapshot: stockReceiptLines.isiSnapshot,
         })
@@ -349,6 +368,20 @@ async function validateReturnLines(
           "VALIDATION",
           "Baris penerimaan asal berasal dari pemasok yang berbeda.",
         );
+      }
+      if (receiptLine.warehouseId !== input.warehouseId) {
+        throw new AppError("VALIDATION", "Retur dari penerimaan harus mengurangi stok di gudang asal.");
+      }
+      if (product.trackBatch) {
+        if (!selectedBatch) {
+          throw new AppError("VALIDATION", `Pilih batch fisik untuk retur ${product.name}.`);
+        }
+        if (!matchesReceiptBatchIdentity(receiptLine, selectedBatch)) {
+          throw new AppError(
+            "VALIDATION",
+            `Batch retur ${product.name} harus sama dengan batch pada penerimaan asal.`,
+          );
+        }
       }
       if (receiptLine.packagingId) {
         origin = { packagingId: receiptLine.packagingId, isiSnapshot: receiptLine.isiSnapshot };

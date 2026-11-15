@@ -1,10 +1,11 @@
+import { withApiError } from "@/lib/api-error";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { requirePermission } from "@/lib/session";
 import { todayISO } from "@/lib/format";
-import { csvResponse } from "@/lib/csv";
+import { csvStreamResponse } from "@/lib/csv";
 import {
   buildReportExportTable,
-  reportTableToCsv,
+  reportTableToCsvStream,
   xlsxResponse,
 } from "@/server/reports";
 
@@ -24,7 +25,7 @@ export const dynamic = "force-dynamic";
 // kedua format tidak pernah berangkat dari definisi berbeda. CSV di
 // bawah tetap byte-identik dengan format warisan di atas.
 
-export async function GET(request: Request) {
+async function GETHandler(request: Request) {
   const ctx = await requirePermission("accounting.view");
   const url = new URL(request.url);
   const type = url.searchParams.get("type") ?? "laba-rugi";
@@ -50,5 +51,7 @@ export async function GET(request: Request) {
   if (format === "xlsx") {
     return xlsxResponse(`laporan-${type}-${from}-${to}.xlsx`, table);
   }
-  return csvResponse(`laporan-${type}-${from}-${to}.csv`, reportTableToCsv(table));
+  return csvStreamResponse(`laporan-${type}-${from}-${to}.csv`, reportTableToCsvStream(table));
 }
+
+export const GET = withApiError(GETHandler);

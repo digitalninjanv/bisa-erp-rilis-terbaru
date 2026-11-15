@@ -21,6 +21,8 @@ BACKUP_PASSPHRASE_FILE=/path/aman/backup-passphrase pnpm db:backup
 
 - `backups/bisa-pre-reset-20261111-082109.dump` — sebelum reset data.
 - `backups/bisa-pre-migration-20261111-103520.dump` — sebelum migrasi `0070`/`0071`.
+- `backups/bisa-pre-migration-invoice-20261115-122313.dump` — sebelum migrasi
+  `0082` (tanggal/jatuh tempo faktur pemasok).
 
 Keduanya adalah backup historis plaintext yang dibuat sebelum kebijakan enkripsi wajib. Backup baru plaintext tidak diizinkan. Keduanya dibuat dengan `pg_dump` dari container `bisa-erp-db`, diverifikasi dengan `pg_restore --list`. Format `.dump.enc` CBC historis hanya dapat dipulihkan setelah operator memberi `RESTORE_ALLOW_LEGACY_CBC=1`; format itu tidak memiliki autentikasi kriptografis dan perlu diganti dengan backup AES-GCM baru.
 

@@ -23,6 +23,7 @@ test.describe("Pengaturan", () => {
   });
 
   test("tab Penomoran menampilkan tabel penomoran dokumen", async ({ page }) => {
+    await page.locator("aside.module-sidebar").getByRole("button", { name: "Transaksi & Dokumen" }).click();
     await page.locator("aside.module-sidebar").getByRole("link", { name: "Penomoran", exact: true }).click();
     await expect(page).toHaveURL(/tab=nomor/);
     await expect(page.getByRole("heading", { name: "Penomoran dokumen" })).toBeVisible();
@@ -30,6 +31,7 @@ test.describe("Pengaturan", () => {
   });
 
   test("tab Cetak menampilkan kontrol template cetak", async ({ page }) => {
+    await page.locator("aside.module-sidebar").getByRole("button", { name: "Transaksi & Dokumen" }).click();
     await page.locator("aside.module-sidebar").getByRole("link", { name: "Cetak", exact: true }).click();
     await expect(page).toHaveURL(/tab=cetak/);
     await expect(page.getByText(/Satu-satunya tempat mengatur cetak/)).toBeVisible();

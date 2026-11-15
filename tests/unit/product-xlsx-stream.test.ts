@@ -42,6 +42,21 @@ describe("productXlsxStreamResponse", () => {
     expect(loadPage).toHaveBeenCalledTimes(1);
   });
 
+  it("supports a domain-specific worksheet name", async () => {
+    const response = productXlsxStreamResponse({
+      filename: "nilai-persediaan-test.xlsx",
+      worksheetName: "Nilai Persediaan",
+      headers: ["SKU", "Stok"],
+      widths: [14, 12],
+      firstPage: { rows: [["000001", 3]], nextCursor: null },
+      loadPage: async () => ({ rows: [], nextCursor: null }),
+    });
+
+    const workbook = XLSX.read(Buffer.from(await response.arrayBuffer()), { type: "buffer" });
+    expect(workbook.SheetNames).toEqual(["Nilai Persediaan"]);
+    expect(workbook.Sheets["Nilai Persediaan"].B2).toMatchObject({ t: "n", v: 3 });
+  });
+
   it("does not load another page after the response is cancelled", async () => {
     const loadPage = vi.fn(async () => ({
       rows: [["000002", "Should not be loaded", 20_000, 3]],

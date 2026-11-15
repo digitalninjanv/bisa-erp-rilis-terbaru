@@ -8,7 +8,7 @@ import {
   postSupplierReturnAction,
   voidSupplierReturnAction,
 } from "@/server/actions/supplier-returns";
-import { formatIDR } from "@/lib/money";
+import { d, formatIDR } from "@/lib/money";
 import { ConfirmDialog } from "@/components/blocks/confirm-dialog";
 
 /**
@@ -41,7 +41,7 @@ export function SupplierReturnDocActions({
       return;
     }
     toast.success(
-      `Retur ${result.data.number} terposting — nilai ${formatIDR(result.data.totalValue)}, memotong utang ${formatIDR(result.data.payableAmount)}, klaim kredit ${formatIDR(result.data.creditAmount)}.`,
+      `Retur ${result.data.number} terposting — nilai stok (AVCO) ${formatIDR(result.data.totalValue)}${d(result.data.invoiceCreditAmount).gt(0) ? `, kredit faktur ${formatIDR(result.data.invoiceCreditAmount)}` : ""}, memotong utang ${formatIDR(result.data.payableAmount)}, klaim kredit ${formatIDR(result.data.creditAmount)}.`,
     );
     router.refresh();
   }

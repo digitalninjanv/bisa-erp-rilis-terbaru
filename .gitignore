@@ -12,6 +12,7 @@
 
 # testing
 /coverage
+/coverage-detail/
 /test-results/
 /playwright-report/
 /e2e/.auth/

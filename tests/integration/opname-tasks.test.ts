@@ -2,8 +2,14 @@ import { describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import {
+  categories,
+  companySettings,
   member,
+  opnameTasks,
   products,
+  purchaseOrderLines,
+  stockDocumentLines,
+  stockDocuments,
   stockOnHand,
   suppliers,
   user,
@@ -15,9 +21,11 @@ import {
   cancelOpnameTask,
   completeOpnameTask,
   getOperationQueue,
+  getOpnameReminders,
   listOpnameAssigneeOptions,
   listOpnameTasks,
 } from "@/server/inventory";
+import { autoCompleteOpnameTaskForPosting } from "@/server/inventory/opname-tasks";
 import { createPurchaseOrder, sendPurchaseOrder } from "@/server/purchasing";
 import { AppError } from "@/lib/errors";
 import { todayISO } from "@/lib/format";
@@ -218,6 +226,270 @@ describe("antrean Mode Operasi (G1)", () => {
       expect(poCard?.number).toBe(order.number);
       expect(poCard?.href).toBe(`/app/gudang/penerimaan?po=${order.id}`);
       expect(poCard?.productIds).toContain(product.id);
+    });
+  });
+});
+
+describe("Cabang tugas opname: kategori, dokumen, dan pengingat", () => {
+  it("kategori valid/hilang, complete dengan dokumen, auto-complete tanpa tugas", async () => {
+    await rollbackTransaction(async (tx) => {
+      await seedAssignee(tx);
+      const warehouseId = await defaultWarehouseId(tx);
+      const [category] = await tx
+        .select({ id: categories.id })
+        .from(categories)
+        .where(eq(categories.companyId, ORG_ID))
+        .limit(1);
+      if (category) {
+        const withCategory = await createOpnameTask(tx, {
+          companyId: ORG_ID,
+          userId: OWNER,
+          warehouseId,
+          categoryId: category.id,
+          assigneeId: ASSIGNEE,
+        });
+        expect(withCategory.id).toBeTruthy();
+      }
+      await expect(
+        createOpnameTask(tx, {
+          companyId: ORG_ID,
+          userId: OWNER,
+          warehouseId,
+          categoryId: crypto.randomUUID(),
+          assigneeId: ASSIGNEE,
+        }),
+      ).rejects.toBeInstanceOf(AppError);
+
+      const task = await createOpnameTask(tx, {
+        companyId: ORG_ID,
+        userId: OWNER,
+        warehouseId,
+        assigneeId: ASSIGNEE,
+      });
+      await expect(
+        completeOpnameTask(tx, {
+          companyId: ORG_ID,
+          userId: OWNER,
+          taskId: task.id,
+          documentId: crypto.randomUUID(),
+        }),
+      ).rejects.toBeInstanceOf(AppError);
+
+      const [doc] = await tx
+        .insert(stockDocuments)
+        .values({
+          companyId: ORG_ID,
+          type: "opname",
+          number: `OPN-CAB-${crypto.randomUUID().slice(0, 8)}`,
+          date: today,
+          warehouseId,
+          status: "posted",
+          createdBy: ASSIGNEE,
+        })
+        .returning({ id: stockDocuments.id });
+      const completed = await completeOpnameTask(tx, {
+        companyId: ORG_ID,
+        userId: OWNER,
+        taskId: task.id,
+        documentId: doc.id,
+      });
+      expect(completed.documentId).toBe(doc.id);
+
+      expect(
+        await autoCompleteOpnameTaskForPosting(tx, {
+          companyId: ORG_ID,
+          userId: OWNER,
+          warehouseId,
+          documentId: doc.id,
+        }),
+      ).toBeNull();
+
+      await expect(
+        completeOpnameTask(tx, {
+          companyId: ORG_ID,
+          userId: OWNER,
+          taskId: crypto.randomUUID(),
+        }),
+      ).rejects.toBeInstanceOf(AppError);
+      await expect(
+        cancelOpnameTask(tx, {
+          companyId: ORG_ID,
+          userId: OWNER,
+          taskId: crypto.randomUUID(),
+        }),
+      ).rejects.toBeInstanceOf(AppError);
+    });
+  });
+
+  it("pengingat: konfigurasi kosong, jatuh tempo, dan belum jatuh tempo", async () => {
+    await rollbackTransaction(async (tx) => {
+      const warehouseId = await defaultWarehouseId(tx);
+      const [category] = await tx
+        .select({ id: categories.id, name: categories.name })
+        .from(categories)
+        .where(eq(categories.companyId, ORG_ID))
+        .limit(1);
+      await tx
+        .update(companySettings)
+        .set({ opnameCycle: null })
+        .where(eq(companySettings.companyId, ORG_ID));
+      expect(await getOpnameReminders(tx, ORG_ID, "2026-11-15")).toEqual([]);
+
+      await tx
+        .update(companySettings)
+        .set({
+          opnameCycle: {
+            warehouseDays: { [warehouseId]: 30 },
+            categoryDays: category ? { [category.id]: 30 } : {},
+          },
+        })
+        .where(eq(companySettings.companyId, ORG_ID));
+      const due = await getOpnameReminders(tx, ORG_ID, "2099-12-31");
+      expect(due.some((row) => row.scopeType === "warehouse")).toBe(true);
+      if (category) expect(due.some((row) => row.scopeType === "category")).toBe(true);
+
+      await tx.insert(stockDocuments).values({
+        companyId: ORG_ID,
+        type: "opname",
+        number: `OPN-REM-${crypto.randomUUID().slice(0, 8)}`,
+        date: "2026-11-15",
+        warehouseId,
+        status: "posted",
+      });
+      if (category) {
+        await tx.insert(opnameTasks).values({
+          companyId: ORG_ID,
+          warehouseId,
+          categoryId: category.id,
+          assigneeId: OWNER,
+          status: "done",
+          completedAt: new Date("2026-11-15T00:00:00Z"),
+          createdBy: OWNER,
+        });
+      }
+      const notDue = await getOpnameReminders(tx, ORG_ID, "2026-11-15");
+      expect(notDue.some((row) => row.scopeType === "warehouse")).toBe(false);
+      if (category) expect(notDue.some((row) => row.scopeType === "category")).toBe(false);
+    });
+  });
+});
+
+describe("antrean operasi — cabang kartu", () => {
+  it("melewati PO tanpa sisa, transfer tanpa baris, dan memisahkan tugas saya", async () => {
+    await rollbackTransaction(async (tx) => {
+      await seedAssignee(tx);
+      const warehouseId = await defaultWarehouseId(tx);
+      const [supplier] = await tx
+        .select({ id: suppliers.id })
+        .from(suppliers)
+        .where(eq(suppliers.companyId, ORG_ID))
+        .limit(1);
+      const [product] = await tx
+        .select({ id: products.id })
+        .from(products)
+        .where(eq(products.companyId, ORG_ID))
+        .limit(1);
+
+      const full = await createPurchaseOrder(tx, {
+        companyId: ORG_ID,
+        userId: OWNER,
+        supplierId: supplier.id,
+        date: today,
+        lines: [{ productId: product.id, qty: "1", unitCost: "1000" }],
+      });
+      await sendPurchaseOrder(tx, { companyId: ORG_ID, userId: OWNER, orderId: full.id });
+      await tx
+        .update(purchaseOrderLines)
+        .set({ receivedQty: "1" })
+        .where(eq(purchaseOrderLines.orderId, full.id));
+
+      const open = await createPurchaseOrder(tx, {
+        companyId: ORG_ID,
+        userId: OWNER,
+        supplierId: supplier.id,
+        date: today,
+        lines: [{ productId: product.id, qty: "2", unitCost: "1000" }],
+      });
+      await sendPurchaseOrder(tx, { companyId: ORG_ID, userId: OWNER, orderId: open.id });
+
+      const [transferWithLines] = await tx
+        .insert(stockDocuments)
+        .values({
+          companyId: ORG_ID,
+          type: "transfer",
+          number: `TRF-Q-${crypto.randomUUID().slice(0, 8)}`,
+          date: today,
+          warehouseId,
+          toWarehouseId: warehouseId,
+          status: "in_transit",
+        })
+        .returning({ id: stockDocuments.id });
+      await tx.insert(stockDocumentLines).values({
+        companyId: ORG_ID,
+        documentId: transferWithLines.id,
+        productId: product.id,
+        qty: "3",
+        qtyInput: "3",
+        productName: "Transfer uji",
+      });
+      await tx.insert(stockDocuments).values({
+        companyId: ORG_ID,
+        type: "transfer",
+        number: `TRF-EMPTY-${crypto.randomUUID().slice(0, 8)}`,
+        date: today,
+        warehouseId,
+        toWarehouseId: warehouseId,
+        status: "in_transit",
+      });
+      const [transferNoDest] = await tx
+        .insert(stockDocuments)
+        .values({
+          companyId: ORG_ID,
+          type: "transfer",
+          number: `TRF-NODEST-${crypto.randomUUID().slice(0, 8)}`,
+          date: today,
+          warehouseId,
+          status: "in_transit",
+        })
+        .returning({ id: stockDocuments.id });
+      await tx.insert(stockDocumentLines).values({
+        companyId: ORG_ID,
+        documentId: transferNoDest.id,
+        productId: product.id,
+        qty: "1",
+        qtyInput: "1",
+      });
+
+      const [category] = await tx
+        .select({ id: categories.id })
+        .from(categories)
+        .where(eq(categories.companyId, ORG_ID))
+        .limit(1);
+      const mine = await createOpnameTask(tx, {
+        companyId: ORG_ID,
+        userId: OWNER,
+        warehouseId,
+        categoryId: category?.id,
+        assigneeId: OWNER,
+        dueDate: today,
+        notes: "Cek rak",
+      });
+      const other = await createOpnameTask(tx, {
+        companyId: ORG_ID,
+        userId: OWNER,
+        warehouseId,
+        assigneeId: ASSIGNEE,
+      });
+
+      const queue = await getOperationQueue(tx, ORG_ID, OWNER);
+      expect(queue.myTasks.some((card) => card.id === mine.id)).toBe(true);
+      expect(queue.queue.some((card) => card.id === other.id)).toBe(true);
+      expect(queue.queue.some((card) => card.id === full.id)).toBe(false);
+      expect(queue.queue.some((card) => card.id === open.id)).toBe(true);
+      expect(queue.queue.some((card) => card.id === transferWithLines.id)).toBe(true);
+      expect(queue.queue.some((card) => card.id === transferNoDest.id)).toBe(true);
+      const noDest = queue.queue.find((card) => card.id === transferNoDest.id);
+      expect(noDest?.detail).toContain("gudang tujuan");
     });
   });
 });

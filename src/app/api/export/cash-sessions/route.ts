@@ -1,3 +1,4 @@
+import { withApiError } from "@/lib/api-error";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { requirePermission } from "@/lib/session";
 import { csvResponse } from "@/lib/csv";
@@ -7,7 +8,7 @@ import { listCashSessionHistory } from "@/server/reports";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request) {
+async function GETHandler(request: Request) {
   const ctx = await requirePermission("pos.session");
   const url = new URL(request.url);
   const format = url.searchParams.get("format") === "xlsx" ? "xlsx" : "csv";
@@ -82,3 +83,5 @@ export async function GET(request: Request) {
   const csv = [headers.join(","), ...dataRows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))].join("\n");
   return csvResponse("riwayat-sesi-kasir.csv", csv);
 }
+
+export const GET = withApiError(GETHandler);

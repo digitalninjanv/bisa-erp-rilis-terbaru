@@ -2,6 +2,7 @@
 // domain yang sudah ada di dalamnya. Perilaku tidak berubah;
 // jalur impor publik tetap lewat src/server/reports.ts.
 
+import { randomUUID } from "node:crypto";
 import {
   and,
   asc,
@@ -319,15 +320,17 @@ export async function getCashFlow(tx: Tx, companyId: string, range: Range) {
     .toNumber();
 
   // Posted cash movements in range, one row per journal entry (AK-P2-02).
-  const cashLines =
+  // The server cursor keeps long date ranges from remaining fully resident
+  // in Node while counter accounts are read.
+  const cashLineQuery =
     cashAccountIds.size === 0
-      ? []
-      : await tx
+      ? null
+      : tx
           .select({
-            entryId: journalEntries.id,
-            sourceType: journalEntries.sourceType,
-            inflow: sql<string>`coalesce(sum(${journalLines.debit}), 0)`,
-            outflow: sql<string>`coalesce(sum(${journalLines.credit}), 0)`,
+            entry_id: sql<string>`${journalEntries.id}`.as("entry_id"),
+            source_type: sql<string>`${journalEntries.sourceType}`.as("source_type"),
+            inflow: sql<string>`coalesce(sum(${journalLines.debit}), 0)`.as("inflow"),
+            outflow: sql<string>`coalesce(sum(${journalLines.credit}), 0)`.as("outflow"),
           })
           .from(journalLines)
           .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
@@ -340,13 +343,12 @@ export async function getCashFlow(tx: Tx, companyId: string, range: Range) {
               lte(journalEntries.date, range.to),
             ),
           )
-          .groupBy(journalEntries.id, journalEntries.sourceType);
+          .groupBy(journalEntries.id, journalEntries.sourceType)
+          .orderBy(asc(journalEntries.id));
 
   // AK-P2-08: the group of a cash movement comes from its counter-accounts —
   // each account's configurable cash_flow_group (fallback: aturan tipe di
   // resolveCashFlowGroup) — never from the journal's sourceType string.
-  const entryIds = cashLines.map((row) => row.entryId);
-
   // FIX-ARS Tahap 3 (ARS3-02): baris lawan tidak lagi dimuat per baris
   // jurnal. SQL mengagregasi per (entri × akun lawan) — sum debit &
   // sum kredit — sehingga yang menyeberang ke JS adalah satu baris per
@@ -363,19 +365,20 @@ export async function getCashFlow(tx: Tx, companyId: string, range: Range) {
   //     peta efek, dan pemenang sisa pembulatan saat efek seri, tidak
   //     berubah.
   // Baris akun kas sendiri disisihkan di SQL (notInArray), bukan di JS.
-  // Id entri berasal dari kueri cashLines di atas (sudah terambil,
-  // tanpa kueri tambahan) dan dikirim berpotong 10.000: batas parameter
-  // bind PostgreSQL (65.535) tidak tertabrak pada rentang sangat besar,
-  // dan satu entri tidak pernah terbelah antar-potongan sehingga
-  // urutan per entrinya utuh. Bentuk subkueri IN pernah diukur dan
-  // ditolak: perencana menjalankannya sebagai semi-join nested-loop
-  // per baris (160 rb probe indeks pada dataset bench 40 rb entri);
-  // bentuk inArray atas id yang sudah terambil memakai jalur indeks
-  // entry_id dan terukur ±3× lebih cepat pada dataset yang sama.
+  // Ringkasan lawan diproses per potongan entri, lalu dibuang sebelum
+  // potongan berikutnya. Cash movements juga diambil per potongan, sehingga
+  // Node hanya mempertahankan satu batch gerakan dan lawannya sekaligus.
+  // Satu entri tidak pernah terbelah antar-potongan, dan parameter bind
+  // PostgreSQL tetap jauh di bawah batas 65.535.
+  // Bentuk subkueri IN pernah diukur dan ditolak: perencana menjalankannya
+  // sebagai semi-join nested-loop per baris (160 rb probe indeks pada
+  // dataset bench 40 rb entri); inArray atas id terambil memakai jalur
+  // indeks entry_id dan terukur ±3× lebih cepat pada dataset yang sama.
   // Bukti kesetaraan: tests/integration/fix-ars-tahap3-cashflow-sql.test.ts
   // (referensi independen cara lama atas fixture yang sama) dan
   // pengukuran scripts/bench-cashflow.ts.
   const COUNTER_CHUNK_SIZE = 10_000;
+  const cursorName = `cash_flow_${randomUUID().replaceAll("-", "")}`;
   type CounterAggregate = {
     entryId: string;
     accountId: string;
@@ -385,44 +388,7 @@ export async function getCashFlow(tx: Tx, companyId: string, range: Range) {
     debit: string;
     credit: string;
   };
-  const counterLines: CounterAggregate[] = [];
-  for (let start = 0; start < entryIds.length; start += COUNTER_CHUNK_SIZE) {
-    const rows = await tx
-      .select({
-        entryId: journalLines.entryId,
-        accountId: journalLines.accountId,
-        type: accounts.type,
-        code: accounts.code,
-        cashFlowGroup: accounts.cashFlowGroup,
-        debit: sql<string>`coalesce(sum(${journalLines.debit}), 0)`,
-        credit: sql<string>`coalesce(sum(${journalLines.credit}), 0)`,
-      })
-      .from(journalLines)
-      .innerJoin(accounts, eq(journalLines.accountId, accounts.id))
-      .where(
-        and(
-          eq(journalLines.companyId, companyId),
-          notInArray(journalLines.accountId, [...cashAccountIds]),
-          inArray(journalLines.entryId, entryIds.slice(start, start + COUNTER_CHUNK_SIZE)),
-        ),
-      )
-      .groupBy(
-        journalLines.entryId,
-        journalLines.accountId,
-        accounts.type,
-        accounts.code,
-        accounts.cashFlowGroup,
-      )
-      .orderBy(asc(journalLines.entryId), asc(sql`min(${journalLines.lineNo})`));
-    counterLines.push(...rows);
-  }
-
-  const countersByEntry = new Map<string, CounterAggregate[]>();
-  for (const line of counterLines) {
-    const list = countersByEntry.get(line.entryId) ?? [];
-    list.push(line);
-    countersByEntry.set(line.entryId, list);
-  }
+  let countersByEntry = new Map<string, CounterAggregate[]>();
 
   // FIX-R2 Tahap 3 (AK2-03): klasifikasi kini PER BARIS LAWAN, bukan satu
   // kelompok pemenang untuk satu jurnal utuh (aturan lama membuang porsi
@@ -482,16 +448,90 @@ export async function getCashFlow(tx: Tx, companyId: string, range: Range) {
     string,
     { sourceType: string; group: CashFlowBucket; inflow: Decimal; outflow: Decimal }
   >();
-  for (const line of cashLines) {
-    const cashNet = d(line.inflow).minus(d(line.outflow));
-    for (const [group, share] of attributeEntry(line.entryId, cashNet)) {
-      groups[group] = groups[group].plus(share);
-      const key = `${line.sourceType}|${group}`;
-      const bucket = buckets.get(key) ?? { sourceType: line.sourceType, group, inflow: d(0), outflow: d(0) };
-      if (share.isPositive()) bucket.inflow = bucket.inflow.plus(share);
-      else bucket.outflow = bucket.outflow.plus(share.abs());
-      buckets.set(key, bucket);
+  let cursorOpen = false;
+  try {
+    if (cashLineQuery) {
+      await tx.execute(
+        sql`DECLARE ${sql.identifier(cursorName)} NO SCROLL CURSOR FOR ${cashLineQuery}`,
+      );
+      cursorOpen = true;
     }
+
+    while (cashLineQuery) {
+      const fetched = await tx.execute(
+        sql.raw(`FETCH FORWARD ${COUNTER_CHUNK_SIZE} FROM ${cursorName}`),
+      );
+      const cashLines = Array.from(fetched) as unknown as {
+        entry_id: string;
+        source_type: string;
+        inflow: string;
+        outflow: string;
+      }[];
+      if (cashLines.length === 0) break;
+
+      const chunkEntryIds = cashLines.map((line) => line.entry_id);
+      countersByEntry = new Map();
+      const counterLines = await tx
+        .select({
+          entryId: journalLines.entryId,
+          accountId: journalLines.accountId,
+          type: accounts.type,
+          code: accounts.code,
+          cashFlowGroup: accounts.cashFlowGroup,
+          debit: sql<string>`coalesce(sum(${journalLines.debit}), 0)`,
+          credit: sql<string>`coalesce(sum(${journalLines.credit}), 0)`,
+        })
+        .from(journalLines)
+        .innerJoin(accounts, eq(journalLines.accountId, accounts.id))
+        .where(
+          and(
+            eq(journalLines.companyId, companyId),
+            notInArray(journalLines.accountId, [...cashAccountIds]),
+            inArray(journalLines.entryId, chunkEntryIds),
+          ),
+        )
+        .groupBy(
+          journalLines.entryId,
+          journalLines.accountId,
+          accounts.type,
+          accounts.code,
+          accounts.cashFlowGroup,
+        )
+        .orderBy(asc(journalLines.entryId), asc(sql`min(${journalLines.lineNo})`));
+
+      for (const counterLine of counterLines) {
+        const list = countersByEntry.get(counterLine.entryId) ?? [];
+        list.push(counterLine);
+        countersByEntry.set(counterLine.entryId, list);
+      }
+
+      for (const line of cashLines) {
+        const cashNet = d(line.inflow).minus(d(line.outflow));
+        for (const [group, share] of attributeEntry(line.entry_id, cashNet)) {
+          groups[group] = groups[group].plus(share);
+          const key = `${line.source_type}|${group}`;
+          const bucket = buckets.get(key) ?? { sourceType: line.source_type, group, inflow: d(0), outflow: d(0) };
+          if (share.isPositive()) bucket.inflow = bucket.inflow.plus(share);
+          else bucket.outflow = bucket.outflow.plus(share.abs());
+          buckets.set(key, bucket);
+        }
+      }
+    }
+
+    if (cursorOpen) {
+      await tx.execute(sql`CLOSE ${sql.identifier(cursorName)}`);
+      cursorOpen = false;
+    }
+  } catch (error) {
+    if (cursorOpen) {
+      try {
+        await tx.execute(sql`CLOSE ${sql.identifier(cursorName)}`);
+      } catch {
+        // A failed SQL statement aborts the surrounding transaction; it
+        // will roll back and close the cursor. Preserve the original error.
+      }
+    }
+    throw error;
   }
   const rows = [...buckets.values()]
     .sort((a, b) => a.sourceType.localeCompare(b.sourceType) || a.group.localeCompare(b.group))

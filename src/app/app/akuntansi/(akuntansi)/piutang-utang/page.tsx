@@ -6,7 +6,13 @@ import { can } from "@/lib/permissions";
 import { listPaymentAccounts } from "@/server/accounting";
 import { getSettings } from "@/server/catalog";
 import { listPartyCredits } from "@/server/party-credits";
-import { listPayables, listReceivables } from "@/server/reports";
+import {
+  countOpenPayables,
+  countOpenReceivables,
+  listPayablesPage,
+  listReceivablesPage,
+} from "@/server/reports";
+import type { ReceivablePayablePageRow } from "@/server/reports";
 import { formatIDR } from "@/lib/money";
 import { formatDate, todayISO } from "@/lib/format";
 import { addDaysISO } from "@/lib/due-date";
@@ -25,6 +31,7 @@ export const dynamic = "force-dynamic";
 
 type Tab = "piutang" | "utang";
 type DueFilter = "" | "terlambat" | "segera" | "jatuh-tempo";
+type PageRow = ReceivablePayablePageRow;
 
 const SOURCE_LABELS: Record<string, string> = {
   document: "Dokumen",
@@ -77,80 +84,67 @@ export default async function ReceivablePayablePage({
       : "";
   const q = params.q?.trim().toLowerCase() ?? "";
   const today = todayISO();
+  const page = Math.max(1, Number(params.page) || 1);
+  const pageSize = 40;
 
   const ctx = await requirePermissionPage("accounting.view");
   const canWriteOff = can(ctx, "accounting.manage");
   const canPay = can(ctx, "accounting.post") || can(ctx, "pos.sell");
 
   const data = await withCompanyReadOnly(ctx.company.id, async (tx) => {
-    const [receivables, payables, accounts, credits, settings] = await Promise.all([
-      listReceivables(tx, ctx.company.id),
-      listPayables(tx, ctx.company.id),
+    const [receivablesPage, payablesPage, accounts, credits, settings, inactiveTabCount] = await Promise.all([
+      tab === "piutang"
+        ? listReceivablesPage(tx, ctx.company.id, { page, pageSize, status, q, today })
+        : Promise.resolve(null),
+      tab === "utang"
+        ? listPayablesPage(tx, ctx.company.id, { page, pageSize, status, q, today })
+        : Promise.resolve(null),
       canPay ? listPaymentAccounts(tx, ctx.company.id) : Promise.resolve([]),
-      listPartyCredits(tx, ctx.company.id),
+      listPartyCredits(tx, ctx.company.id, {
+        partyType: tab === "piutang" ? "customer" : "supplier",
+        status: "open",
+      }),
       getSettings(tx, ctx.company.id),
+      tab === "piutang"
+        ? countOpenPayables(tx, ctx.company.id)
+        : countOpenReceivables(tx, ctx.company.id),
     ]);
-    return { receivables, payables, accounts, credits, settings };
+    return {
+      receivablesPage,
+      payablesPage,
+      accounts,
+      credits,
+      settings,
+      receivableCount: tab === "piutang" ? receivablesPage!.summary.openCount : inactiveTabCount,
+      payableCount: tab === "utang" ? payablesPage!.summary.openCount : inactiveTabCount,
+    };
   });
 
-  const allRows =
-    tab === "piutang"
-      ? data.receivables.map((row) => ({
-          ...row,
-          partyId: row.customerId,
-          partyName: row.customerName,
-        }))
-      : data.payables.map((row) => ({
-          ...row,
-          partyId: row.supplierId,
-          partyName: row.supplierName,
-        }));
-  const openCredits = data.credits.filter(
-    (row) => row.status === "open" && Number(row.remaining) > 0.004,
+  const activePage = tab === "piutang" ? data.receivablesPage! : data.payablesPage!;
+  const pagedRows: PageRow[] = activePage.rows;
+  const { openCount, totalOutstanding, overdueCount, overdueTotal, soonCount, soonTotal, paidCount } =
+    activePage.summary;
+  const creditsForTab = data.credits.filter((row) => Number(row.remaining) > 0.004);
+  let creditTotal = 0;
+  for (const row of creditsForTab) {
+    creditTotal += Number(row.remaining);
+  }
+
+  const total = activePage.total;
+
+  const pagePartyKeys = new Set(
+    pagedRows.map((row) => `${tab === "piutang" ? "customer" : "supplier"}:${row.partyId ?? ""}`),
   );
-  const creditsForTab = openCredits.filter((row) =>
-    tab === "piutang" ? row.partyType === "customer" : row.partyType === "supplier",
-  );
-  const creditTotal = creditsForTab.reduce((acc, row) => acc + Number(row.remaining), 0);
   const creditByParty = new Map<string, { id: string; number: string; remaining: number }[]>();
   for (const row of creditsForTab) {
     const key = `${row.partyType}:${row.partyId}`;
+    if (!pagePartyKeys.has(key)) continue;
     const list = creditByParty.get(key) ?? [];
     list.push({ id: row.id, number: row.number, remaining: Number(row.remaining) });
     creditByParty.set(key, list);
   }
 
-  const dueState = (dueDate: string | null): DueFilter => {
-    if (!dueDate) return "";
-    if (dueDate < today) return "terlambat";
-    if (dueDate <= addDaysISO(today, 7)) return "segera";
-    return "";
-  };
-  const totalOutstanding = allRows.reduce((acc, row) => acc + row.outstanding, 0);
-  const overdue = allRows.filter((row) => dueState(row.dueDate) === "terlambat");
-  const soon = allRows.filter((row) => dueState(row.dueDate) === "segera");
-  const overdueTotal = overdue.reduce((acc, row) => acc + row.outstanding, 0);
-  const soonTotal = soon.reduce((acc, row) => acc + row.outstanding, 0);
-
-  const rows = allRows.filter((row) => {
-    if (status === "jatuh-tempo") {
-      if (!row.dueDate || row.dueDate > addDaysISO(today, 7)) return false;
-    } else if (status && dueState(row.dueDate) !== status) return false;
-    if (!q) return true;
-    return (
-      row.number.toLowerCase().includes(q) ||
-      (row.partyName ?? "").toLowerCase().includes(q) ||
-      (row.reference ?? "").toLowerCase().includes(q)
-    );
-  });
-
   const baseHref = `/app/akuntansi/piutang-utang?tab=${tab}`;
-  const paidCount = allRows.filter((row) => row.paymentStatus === "partial").length;
-
-  const page = Math.max(1, Number(params.page) || 1);
-  const pageSize = 40;
-  const total = rows.length;
-  const pagedRows = rows.slice((page - 1) * pageSize, page * pageSize);
 
   return (
     <div>
@@ -170,8 +164,8 @@ export default async function ReceivablePayablePage({
       <div className="mb-3 flex items-center gap-1 border-b border-border">
         {(
           [
-            ["piutang", "Piutang", data.receivables.length],
-            ["utang", "Utang", data.payables.length],
+            ["piutang", "Piutang", data.receivableCount],
+            ["utang", "Utang", data.payableCount],
           ] as [Tab, string, number][]
         ).map(([key, label, count]) => (
           <Link
@@ -196,19 +190,19 @@ export default async function ReceivablePayablePage({
           {
             label: tab === "piutang" ? "Piutang terbuka" : "Utang terbuka",
             value: formatIDR(totalOutstanding),
-            hint: `${allRows.length} dokumen · ${paidCount} dibayar sebagian`,
+            hint: `${openCount} dokumen · ${paidCount} dibayar sebagian`,
           },
           {
             label: "Lewat jatuh tempo",
             value: formatIDR(overdueTotal),
-            hint: `${overdue.length} dokumen perlu ditindaklanjuti`,
-            tone: overdue.length > 0 ? "red" : "green",
+            hint: `${overdueCount} dokumen perlu ditindaklanjuti`,
+            tone: overdueCount > 0 ? "red" : "green",
           },
           {
             label: "Jatuh tempo ≤ 7 hari",
             value: formatIDR(soonTotal),
-            hint: `${soon.length} dokumen mendekati jatuh tempo`,
-            tone: soon.length > 0 ? "amber" : "green",
+            hint: `${soonCount} dokumen mendekati jatuh tempo`,
+            tone: soonCount > 0 ? "amber" : "green",
           },
           {
             label: "Kredit pihak tersedia",
@@ -245,7 +239,7 @@ export default async function ReceivablePayablePage({
               />
             </DataListToolbar>
           }
-          isEmpty={rows.length === 0}
+          isEmpty={total === 0}
           empty={
             <EmptyState
               size="compact"

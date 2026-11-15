@@ -30,6 +30,7 @@ import {
   listJournalEntries,
   listJournalSourceTypes,
   listPayables,
+  listPayablesPage,
 } from "@/server/reports";
 import {
   lockYearPeriods,
@@ -384,6 +385,12 @@ describe("AK3-07 — jatuh tempo utang pembelian dari termin pemasok / bawaan pe
         number: "GRN-UJI-B", date: `${CUR}-01-10`, status: "posted",
         total: "2000000", paidAmount: "0", paymentStatus: "unpaid",
       },
+      {
+        companyId: ORG, warehouseId, supplierId: supA.id, source: "purchase",
+        number: "GRN-UJI-C", date: `${CUR}-01-10`, status: "posted",
+        supplierInvoiceNumber: "INV-C", supplierInvoiceDate: `${CUR}-01-15`,
+        dueDate: `${CUR}-02-05`, total: "1500000", paidAmount: "0", paymentStatus: "unpaid",
+      },
     ]);
   });
 
@@ -393,6 +400,19 @@ describe("AK3-07 — jatuh tempo utang pembelian dari termin pemasok / bawaan pe
     const b = payables.find((r) => r.number === "GRN-UJI-B");
     expect(a?.dueDate).toBe(`${CUR}-01-24`); // 10 Jan + 14 hari
     expect(b?.dueDate).toBe(addDays(`${CUR}-01-10`, 45));
+  });
+
+  it("tanggal & jatuh tempo faktur eksplisit mengalahkan termin pemasok", async () => {
+    const payables = await withCompany(ORG, (tx) => listPayables(tx, ORG));
+    const c = payables.find((r) => r.number === "GRN-UJI-C");
+    expect(c?.supplierInvoiceDate).toBe(`${CUR}-01-15`);
+    expect(c?.dueDate).toBe(`${CUR}-02-05`);
+
+    const page = await withCompany(ORG, (tx) =>
+      listPayablesPage(tx, ORG, { page: 1, pageSize: 50, status: "", q: "", today: `${CUR}-01-20` }),
+    );
+    const pagedC = page.rows.find((r) => r.number === "GRN-UJI-C");
+    expect(pagedC?.dueDate).toBe(`${CUR}-02-05`);
   });
 
   it("mengubah bawaan perusahaan mengubah jatuh tempo dokumen tanpa termin", async () => {

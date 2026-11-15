@@ -21,6 +21,7 @@ import {
 } from "@/db/schema";
 import { AppError } from "@/lib/errors";
 import { d, toDb, type Decimal } from "@/lib/money";
+
 import {
   assertPeriodOpen,
   getAccountId,
@@ -30,6 +31,12 @@ import {
 } from "@/server/accounting";
 import { writeAudit } from "@/server/audit";
 import { applyBatchDelta, creditBatchById } from "@/server/batches";
+import {
+  calculateReceiptLinkedClaim,
+  planGrossReturnAllocations,
+  planReturnAllocations,
+  type AllocationPlanItem,
+} from "./allocation-plan";
 import { applyStockMovement, recomputeCostFromLedger } from "@/server/inventory";
 import { pickSerialsOut, restoreSerialsForSale } from "@/server/serials";
 import {
@@ -37,7 +44,6 @@ import {
   listOpenPayableDocs,
   refreshOpeningPayableStatus,
   refreshReceiptPaymentStatus,
-  type OpenPayableDoc,
 } from "./payables";
 import { assertReturnWithinProvenance, assertReturnWithinReceiptLines } from "./provenance";
 import { convertSupplierCreditToAdvance } from "./resolutions";
@@ -185,48 +191,6 @@ async function issueReturnStock(
   }
 }
 
-type AllocationPlanItem = { doc: OpenPayableDoc; grossTake: Decimal };
-
-/**
- * FIX-P1 Tahap 4 (AK4-04): rencana alokasi + reversi PPN Masukan.
- * Nilai retur (pada AVCO bersih pajak) dikonsumsi dokumen utang
- * FIFO; dokumen penerimaan ber-PPN menyumbang reversi pajak
- * proporsional: pajak yang masih melekat pada sisa terutang dokumen
- * (dibagi menurut komposisi faktur) × porsi bersih yang diambil
- * retur ini darinya. Baris alokasi mencatat pengambilan BRUTO
- * (bersih + pajak) agar retur penuh melunasi penerimaan ber-PPN
- * secara utuh — tanpa sisa utang sebesar PPN-nya.
- */
-function planReturnAllocations(
-  openDocs: OpenPayableDoc[],
-  payableAmount: Decimal,
-): { allocationPlan: AllocationPlanItem[]; taxReversal: Decimal; unallocatedNet: Decimal } {
-  const allocationPlan: AllocationPlanItem[] = [];
-  let taxReversal = d(0);
-  let unallocatedNet = payableAmount;
-  for (const doc of openDocs) {
-    if (unallocatedNet.lte(0)) break;
-    if (doc.kind === "receipt" && doc.taxAmount.gt(0) && doc.total.gt(0)) {
-      const outstandingTax = doc.taxAmount.mul(doc.outstanding).div(doc.total);
-      const outstandingNet = doc.outstanding.minus(outstandingTax);
-      const takeNet = DecimalMin(outstandingNet, unallocatedNet);
-      const takeTax = outstandingNet.gt(0) ? outstandingTax.mul(takeNet).div(outstandingNet) : d(0);
-      if (takeNet.gt(0) || takeTax.gt(0)) {
-        allocationPlan.push({ doc, grossTake: takeNet.plus(takeTax) });
-        taxReversal = taxReversal.plus(takeTax);
-        unallocatedNet = unallocatedNet.minus(takeNet);
-      }
-    } else {
-      const take = DecimalMin(doc.outstanding, unallocatedNet);
-      if (take.gt(0)) {
-        allocationPlan.push({ doc, grossTake: take });
-        unallocatedNet = unallocatedNet.minus(take);
-      }
-    }
-  }
-  return { allocationPlan, taxReversal, unallocatedNet };
-}
-
 /** Jurnal posting retur: Dr Utang (bruto) + Dr Kredit Pemasok / Cr Persediaan + Cr reversi PPN. */
 async function postReturnJournal(
   tx: Tx,
@@ -238,6 +202,8 @@ async function postReturnJournal(
     payableAmount: Decimal;
     creditAmount: Decimal;
     taxReversal: Decimal;
+    invoiceLinked: boolean;
+    priceVariance: Decimal;
   },
 ) {
   const { header } = input;
@@ -254,9 +220,12 @@ async function postReturnJournal(
   if (input.payableAmount.gt(0)) {
     journalLines.push({
       accountId: map.payable,
-      // Bruto: porsi bersih nilai retur + reversi PPN Masukan —
-      // utang faktur memang bruto, jadi debitnya harus bruto pula.
-      debit: input.payableAmount.plus(input.taxReversal),
+      // Manual returns keep the legacy net-plus-proportional-tax policy.
+      // A receipt-linked credit note is already gross and includes its own
+      // tax reversal, so it is applied to the source payable as-is.
+      debit: input.invoiceLinked
+        ? input.payableAmount
+        : input.payableAmount.plus(input.taxReversal),
       description: "Utang pemasok berkurang oleh retur",
       ...supplierParty,
     });
@@ -284,6 +253,18 @@ async function postReturnJournal(
       credit: input.taxReversal,
       description: "Reversi PPN masukan atas barang yang diretur",
       ...supplierParty,
+    });
+  }
+  if (input.invoiceLinked && !input.priceVariance.isZero()) {
+    const cogsAccountId = await getAccountId(tx, input.companyId, "cogs");
+    journalLines.push({
+      accountId: cogsAccountId,
+      ...(input.priceVariance.gt(0)
+        ? { credit: input.priceVariance }
+        : { debit: input.priceVariance.abs() }),
+      description: input.priceVariance.gt(0)
+        ? "Pemulihan HPP: kredit nota melebihi nilai persediaan AVCO"
+        : "Selisih HPP: nilai persediaan AVCO melebihi kredit nota",
     });
   }
   await postJournal(tx, {
@@ -409,8 +390,11 @@ export async function postSupplierReturn(
   await assertReturnWithinReceiptLines(tx, {
     companyId: input.companyId,
     supplierId: header.supplierId,
+    warehouseId: header.warehouseId,
     lines: lines.map((line) => ({
       receiptLineId: line.receiptLineId,
+      productId: line.productId,
+      batchId: line.batchId,
       qty: d(line.qty),
       productName: productById.get(line.productId)?.name ?? line.productId,
     })),
@@ -421,6 +405,17 @@ export async function postSupplierReturn(
     lines,
     productById,
   });
+  const invoiceValuation = sourceReceiptId
+    ? await calculateReceiptLinkedClaim(tx, {
+        companyId: input.companyId,
+        receiptId: sourceReceiptId,
+        lines,
+        inventoryValue: totalValue,
+      })
+    : null;
+  const invoiceLinked = invoiceValuation !== null;
+  const invoiceCreditValue = invoiceValuation ? d(invoiceValuation.invoiceCreditValue) : d(0);
+  const priceVariance = invoiceValuation ? d(invoiceValuation.inventoryVariance) : d(0);
   await issueReturnStock(tx, {
     companyId: input.companyId,
     userId: input.userId,
@@ -437,15 +432,28 @@ export async function postSupplierReturn(
     ? openDocs.filter((doc) => doc.kind === "receipt" && doc.id === sourceReceiptId)
     : openDocs;
   const openPayable = allocationDocs.reduce((acc, doc) => acc.plus(doc.outstanding), d(0));
-  const payableAmount = DecimalMin(totalValue, openPayable);
-  const creditAmount = totalValue.minus(payableAmount);
+  let payableAmount: Decimal;
+  let creditAmount: Decimal;
+  let taxReversal: Decimal;
+  let allocationPlan: AllocationPlanItem[];
+  let unallocatedNet: Decimal;
+  if (invoiceValuation) {
+    payableAmount = DecimalMin(invoiceCreditValue, openPayable);
+    creditAmount = invoiceCreditValue.minus(payableAmount);
+    taxReversal = d(invoiceValuation.taxValue);
+    const allocation = planGrossReturnAllocations(allocationDocs, payableAmount);
+    allocationPlan = allocation.allocationPlan;
+    unallocatedNet = allocation.unallocatedGross;
+  } else {
+    payableAmount = DecimalMin(totalValue, openPayable);
+    creditAmount = totalValue.minus(payableAmount);
+    const allocation = planReturnAllocations(allocationDocs, payableAmount);
+    allocationPlan = allocation.allocationPlan;
+    taxReversal = allocation.taxReversal;
+    unallocatedNet = allocation.unallocatedNet;
+  }
 
-  const { allocationPlan, taxReversal, unallocatedNet } = planReturnAllocations(
-    allocationDocs,
-    payableAmount,
-  );
-
-  if (totalValue.gt(0)) {
+  if (totalValue.gt(0) || invoiceCreditValue.gt(0)) {
     await postReturnJournal(tx, {
       companyId: input.companyId,
       userId: input.userId,
@@ -454,6 +462,8 @@ export async function postSupplierReturn(
       payableAmount,
       creditAmount,
       taxReversal,
+      invoiceLinked,
+      priceVariance,
     });
   }
 
@@ -473,7 +483,13 @@ export async function postSupplierReturn(
         targetOpeningId: item.doc.kind === "opening" ? item.doc.id : undefined,
       });
     }
-    if (unallocatedNet.gt(0)) {
+    if (invoiceValuation && unallocatedNet.gt(0)) {
+      throw new AppError(
+        "VALIDATION",
+        "Kredit nota melebihi saldo utang faktur asal yang dapat dialokasikan. Periksa ulang saldo faktur sebelum memposting retur.",
+      );
+    }
+    if (!invoiceValuation && unallocatedNet.gt(0)) {
       await allocateReturnToPayables(tx, {
         companyId: input.companyId,
         returnId: header.id,
@@ -491,6 +507,8 @@ export async function postSupplierReturn(
       payableAmount: toDb(payableAmount),
       creditAmount: toDb(creditAmount),
       taxAmount: toDb(taxReversal),
+      invoiceCreditAmount: toDb(invoiceCreditValue),
+      priceVarianceAmount: toDb(priceVariance),
       status,
       postedAt: new Date(),
     })
@@ -523,6 +541,8 @@ export async function postSupplierReturn(
       totalValue: toDb(totalValue),
       payableAmount: toDb(payableAmount),
       creditAmount: toDb(creditAmount),
+      invoiceCreditAmount: toDb(invoiceCreditValue),
+      priceVarianceAmount: toDb(priceVariance),
       advanceCreated: header.resolutionType === "purchase_advance" && creditAmount.gt(0),
     },
   });
@@ -533,6 +553,8 @@ export async function postSupplierReturn(
     totalValue: toDb(totalValue),
     payableAmount: toDb(payableAmount),
     creditAmount: toDb(creditAmount),
+    invoiceCreditAmount: toDb(invoiceCreditValue),
+    priceVarianceAmount: toDb(priceVariance),
     status,
   };
 }

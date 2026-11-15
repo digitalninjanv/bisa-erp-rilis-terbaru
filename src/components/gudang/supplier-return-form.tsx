@@ -11,71 +11,21 @@ import {
   supplierReturnProductInfoAction,
 } from "@/server/actions/supplier-returns";
 import { ProductPicker, type PickedPackaging } from "@/components/gudang/product-picker";
+import {
+  type InitialReturnLine,
+  type LabelOption,
+  type ReturnLine,
+  displayDecimal,
+  lineEstimatedValue,
+  returnLineBaseQty,
+  returnLineMaxQty,
+} from "@/components/gudang/supplier-return-lines";
 import { d, formatIDR, formatQty } from "@/lib/money";
 import { labelClass, fieldClass } from "@/components/blocks/field-classes";
 import { DocumentForm } from "@/components/blocks/document-form";
 import { DateField } from "@/components/date-field";
 import { QtyInput } from "@/components/qty-input";
 import { ConfirmDialog } from "@/components/blocks/confirm-dialog";
-
-type LabelOption = { value: string; label: string };
-
-type BatchOption = { id: string; batchNumber: string | null; expiryDate: string | null; qty: string };
-
-type ReturnLine = {
-  key: number;
-  productId: string;
-  name: string;
-  sku: string;
-  qty: string;
-  trackBatch: boolean;
-  batchId: string;
-  stock: number | null;
-  batches: BatchOption[];
-  /** Harga pokok master produk saat dipilih — HANYA untuk perkiraan
-   * nilai retur hidup di rel ringkasan. Nilai posting tetap dibekukan
-   * domain dari AVCO berjalan; field ini tidak dikirim ke server.
-   * null = harga pokok tidak terlihat bagi petugas (tanpa
-   * inventory.cost, R3 K-3) — perkiraan nilai disembunyikan. */
-  unitCost: string | null;
-  /** Satuan kemasan (S2): kemasan aktif produk + pilihan baris ini.
-   * qty baris dinyatakan dalam kemasan terpilih; kosong = satuan dasar. */
-  packagings: PickedPackaging[];
-  packagingId: string;
-  /** Jejak ke baris penerimaan asal saat retur dimulai dari GRN. */
-  receiptLineId?: string | null;
-};
-
-export type InitialReturnLine = {
-  receiptLineId: string;
-  productId: string;
-  name: string;
-  sku: string;
-  qty: string;
-  trackBatch: boolean;
-  unitCost?: string | null;
-};
-
-/** Qty baris retur dalam SATUAN DASAR (qty masukan × isi kemasan). */
-function returnLineBaseQty(line: ReturnLine) {
-  const pack = line.packagings.find((row) => row.id === line.packagingId);
-  const qty = displayDecimal(line.qty);
-  return pack ? qty.mul(d(pack.isi)) : qty;
-}
-
-/** Perkiraan nilai satu baris; null bila harga pokok tidak terlihat. */
-function lineEstimatedValue(line: ReturnLine) {
-  return line.unitCost === null
-    ? null
-    : returnLineBaseQty(line).mul(displayDecimal(line.unitCost));
-}
-
-/** Parse aman untuk tampilan hidup: ketikan qty yang belum terbaca
- * angka dinilai 0 di ringkasan (validasi kirim tetap jalan asal). */
-function displayDecimal(value: string) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? d(parsed) : d(0);
-}
 
 /**
  * RET-2: formulir Retur Pembelian (RTB). Nilai barang tidak diisi di
@@ -135,14 +85,19 @@ export function SupplierReturnForm({
       name: line.name,
       sku: line.sku,
       qty: line.qty,
+      returnableQty: line.returnableQty,
       trackBatch: line.trackBatch,
-      batchId: "",
+      batchId: line.sourceBatchId ?? "",
       stock: null,
       batches: [],
       unitCost: line.unitCost ?? null,
       packagings: [],
       packagingId: "",
       receiptLineId: line.receiptLineId,
+      sourceBatchId: line.sourceBatchId,
+      sourceBatchNumber: line.sourceBatchNumber,
+      sourceExpiryDate: line.sourceExpiryDate,
+      sourceBatchQty: line.sourceBatchQty,
     })),
   );
   const [busy, setBusy] = useState<"" | "draft" | "post">("");
@@ -237,6 +192,20 @@ export function SupplierReturnForm({
     setLines((current) => current.map((line, i) => (i === index ? { ...line, ...patch } : line)));
   }
 
+  function changeBatch(index: number, line: ReturnLine, batchId: string) {
+    const batch = line.batches.find((row) => row.id === batchId);
+    if (!batch) {
+      update(index, { batchId });
+      return;
+    }
+    const available = d(batch.qty);
+    const invoiceRemaining = line.returnableQty ? d(line.returnableQty) : available;
+    const max = invoiceRemaining.lt(available) ? invoiceRemaining : available;
+    const currentQty = displayDecimal(line.qty);
+    const qty = currentQty.gt(0) && !currentQty.gt(max) ? line.qty : max.toFixed(4);
+    update(index, { batchId, qty });
+  }
+
   async function submit(mode: "draft" | "post") {
     if (!supplierId) {
       toast.error("Pilih pemasok tujuan retur.");
@@ -254,9 +223,22 @@ export function SupplierReturnForm({
       toast.error("Tambahkan minimal satu barang yang diretur.");
       return;
     }
+    const missingSourceBatch = lines.find((line) => line.receiptLineId && line.trackBatch && !line.batchId);
+    if (missingSourceBatch) {
+      toast.error(`Pilih batch fisik yang dikembalikan untuk ${missingSourceBatch.name}.`);
+      return;
+    }
     const badQty = lines.find((line) => !(Number(line.qty) > 0));
     if (badQty) {
       toast.error(`Jumlah retur ${badQty.name} harus lebih dari 0.`);
+      return;
+    }
+    const exceedsAvailable = lines.find((line) => {
+      const max = returnLineMaxQty(line);
+      return max !== undefined && d(line.qty).gt(d(max));
+    });
+    if (exceedsAvailable) {
+      toast.error(`Qty retur ${exceedsAvailable.name} melebihi stok batch atau sisa faktur yang dapat diretur.`);
       return;
     }
     const seen = new Set<string>();
@@ -313,7 +295,7 @@ export function SupplierReturnForm({
       return;
     }
     toast.success(
-      `Retur ${posted.data.number} terposting. Nilai ${formatIDR(posted.data.totalValue)} — memotong utang ${formatIDR(posted.data.payableAmount)}, klaim kredit ${formatIDR(posted.data.creditAmount)}.${
+      `Retur ${posted.data.number} terposting. Nilai stok (AVCO) ${formatIDR(posted.data.totalValue)}${d(posted.data.invoiceCreditAmount).gt(0) ? `; kredit faktur ${formatIDR(posted.data.invoiceCreditAmount)}` : ""} — memotong utang ${formatIDR(posted.data.payableAmount)}, klaim kredit ${formatIDR(posted.data.creditAmount)}.${
         resolutionType === "purchase_advance"
           ? d(posted.data.creditAmount).gt(0)
             ? ` Sisa kredit ${formatIDR(posted.data.creditAmount)} menjadi uang muka pembelian berikutnya.`
@@ -347,6 +329,10 @@ export function SupplierReturnForm({
 
   return (
     <DocumentForm
+      onSubmit={(event) => {
+        event.preventDefault();
+        void submit("draft");
+      }}
       header={
         <div className="p-4">
           <p className="mb-2 text-[12px] font-semibold">1 · Pemasok & gudang asal</p>
@@ -426,7 +412,7 @@ export function SupplierReturnForm({
           <li>Posting mengeluarkan stok dan menilai barang pada AVCO hari itu; draf belum menggerakkan apa pun.</li>
           <li>Nilai retur memotong utang pemasok lebih dulu; sisanya menjadi klaim Kredit Pemasok.</li>
           <li>Pilihan “Jadikan uang muka pembelian berikutnya” memindahkan sisa kredit ke Gudang → Uang muka, lalu dipotong otomatis pada penerimaan berikutnya.</li>
-          <li>Produk terlacak batch dapat dipilih batchnya, atau biarkan Otomatis (FEFO).</li>
+          <li>Retur dari penerimaan memakai batch sumber; retur manual dapat memilih batch atau menggunakan FEFO bila lot fisiknya tidak diketahui.</li>
         </ul>
       }
       actions={
@@ -455,8 +441,7 @@ export function SupplierReturnForm({
             </button>
             <div className="flex flex-wrap items-center gap-2">
               <button
-                type="button"
-                onClick={() => submit("draft")}
+                type="submit"
                 disabled={busy !== ""}
                 className="inline-flex h-8 items-center rounded-md border border-border px-3 text-[12px] font-medium hover:bg-muted disabled:opacity-50"
               >
@@ -490,7 +475,7 @@ export function SupplierReturnForm({
             )}
             {lines.length === 0 ? (
               <p className="rounded-md border border-dashed border-border px-3 py-5 text-center text-[11px] text-muted-foreground">
-                Belum ada baris. Cari dan pilih produk di atas. Nilai retur dihitung otomatis dari harga pokok rata-rata (AVCO) saat dokumen diposting.
+                Belum ada baris. Cari dan pilih produk di atas. Nilai persediaan dihitung dari AVCO saat dokumen diposting; retur yang ditautkan ke penerimaan memakai nilai kredit dari faktur asal.
               </p>
             ) : (
               <>
@@ -518,6 +503,16 @@ export function SupplierReturnForm({
                             <td className="px-3 py-2.5">
                               <p className="truncate font-medium">{line.name}</p>
                               <p className="num text-[10px] text-muted-foreground">{line.sku}</p>
+                              {line.returnableQty ? (
+                                <p className="mt-1 text-[10px] text-muted-foreground">
+                                  Sisa pada penerimaan: <span className="num font-medium text-foreground">{formatQty(line.returnableQty)}</span>
+                                </p>
+                              ) : null}
+                              {line.receiptLineId && line.trackBatch && line.sourceBatchQty !== null && line.sourceBatchQty !== undefined ? (
+                                <p className="text-[10px] text-muted-foreground">
+                                  Stok batch sumber: <span className="num font-medium text-foreground">{formatQty(line.sourceBatchQty)}</span>
+                                </p>
+                              ) : null}
                               {line.packagings.length > 0 ? (
                                 <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                                   <select
@@ -543,20 +538,35 @@ export function SupplierReturnForm({
                             </td>
                             <td className="px-3 py-2.5">
                               {line.trackBatch ? (
-                                <select
-                                  value={line.batchId}
-                                  onChange={(event) => update(index, { batchId: event.target.value })}
-                                  aria-label={`Batch ${line.name}`}
-                                  className="h-8 w-full rounded-md border border-input bg-background px-1.5 text-[11px]"
-                                >
-                                  <option value="">Otomatis (FEFO)</option>
-                                  {line.batches.map((batch) => (
-                                    <option key={batch.id} value={batch.id}>
-                                      {batch.batchNumber ?? "(tanpa nomor)"}
-                                      {batch.expiryDate ? ` · ED ${batch.expiryDate}` : ""} · sisa {formatQty(batch.qty)}
+                                line.receiptLineId && line.sourceBatchId ? (
+                                  <div className="rounded-md bg-muted/40 px-2 py-1.5 text-[11px]">
+                                    <p className="font-medium">{line.sourceBatchNumber ?? "Batch tanpa nomor"}</p>
+                                    {line.sourceExpiryDate ? <p className="text-[10px] text-muted-foreground">ED {line.sourceExpiryDate}</p> : null}
+                                  </div>
+                                ) : (
+                                  <select
+                                    value={line.batchId}
+                                    onChange={(event) => changeBatch(index, line, event.target.value)}
+                                    aria-label={`Batch ${line.name}`}
+                                    className="h-8 w-full rounded-md border border-input bg-background px-1.5 text-[11px]"
+                                  >
+                                    <option value="">
+                                      {line.receiptLineId
+                                        ? line.stock === null
+                                          ? "Memuat batch…"
+                                          : line.batches.length > 0
+                                            ? "Pilih batch yang dikembalikan"
+                                            : "Tidak ada batch dengan stok tersedia"
+                                        : "Otomatis (FEFO)"}
                                     </option>
-                                  ))}
-                                </select>
+                                    {line.batches.map((batch) => (
+                                      <option key={batch.id} value={batch.id}>
+                                        {batch.batchNumber ?? "(tanpa nomor)"}
+                                        {batch.expiryDate ? ` · ED ${batch.expiryDate}` : ""} · sisa {formatQty(batch.qty)}
+                                      </option>
+                                    ))}
+                                  </select>
+                                )
                               ) : (
                                 <span className="text-[11px] text-muted-foreground">—</span>
                               )}
@@ -571,6 +581,8 @@ export function SupplierReturnForm({
                                 onChange={(value) => update(index, { qty: value })}
                                 placeholder="0"
                                 aria-label={`Qty retur ${line.name}`}
+                                min="0"
+                                max={returnLineMaxQty(line)}
                                 wrapperClassName="ml-auto w-24"
                                 className="h-8 w-full px-2 text-[12px]"
                               />
@@ -648,23 +660,37 @@ export function SupplierReturnForm({
                             <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                               Batch
                             </span>
-                            <select
-                              value={line.batchId}
-                              onChange={(event) => update(index, { batchId: event.target.value })}
-                              aria-label={`Batch ${line.name}`}
-                              className="h-8 w-full rounded-md border border-input bg-background px-1.5 text-[11px]"
-                            >
-                              <option value="">Otomatis (FEFO — batch terlama dulu)</option>
-                              {line.batches.map((batch) => (
-                                <option key={batch.id} value={batch.id}>
-                                  {batch.batchNumber ?? "(tanpa nomor)"}
-                                  {batch.expiryDate ? ` · ED ${batch.expiryDate}` : ""} · sisa {formatQty(batch.qty)}
+                            {line.receiptLineId && line.sourceBatchId ? (
+                              <span className="block rounded-md bg-muted/40 px-2 py-1.5 text-[11px]">
+                                {line.sourceBatchNumber ?? "Batch tanpa nomor"}
+                                {line.sourceExpiryDate ? ` · ED ${line.sourceExpiryDate}` : ""}
+                              </span>
+                            ) : (
+                              <select
+                                value={line.batchId}
+                                onChange={(event) => changeBatch(index, line, event.target.value)}
+                                aria-label={`Batch ${line.name}`}
+                                className="h-8 w-full rounded-md border border-input bg-background px-1.5 text-[11px]"
+                              >
+                                <option value="">
+                                  {line.receiptLineId
+                                    ? line.stock === null
+                                      ? "Memuat batch…"
+                                      : line.batches.length > 0
+                                        ? "Pilih batch yang dikembalikan"
+                                        : "Tidak ada batch dengan stok tersedia"
+                                    : "Otomatis (FEFO — batch terlama dulu)"}
                                 </option>
-                              ))}
-                            </select>
+                                {line.batches.map((batch) => (
+                                  <option key={batch.id} value={batch.id}>
+                                    {batch.batchNumber ?? "(tanpa nomor)"}
+                                    {batch.expiryDate ? ` · ED ${batch.expiryDate}` : ""} · sisa {formatQty(batch.qty)}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
                           </label>
                         ) : null}
-
                         <div className="mt-2 grid grid-cols-2 items-end gap-3">
                           <div className="space-y-1">
                             <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -678,17 +704,24 @@ export function SupplierReturnForm({
                             <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                               Qty retur
                             </span>
+                            {line.returnableQty ? (
+                              <span className="block text-[10px] text-muted-foreground">
+                                Sisa faktur {formatQty(line.returnableQty)}
+                                {line.trackBatch ? ` · batas retur ${formatQty(returnLineMaxQty(line) ?? "0")}` : ""}
+                              </span>
+                            ) : null}
                             <QtyInput
                               value={line.qty}
                               onChange={(value) => update(index, { qty: value })}
                               placeholder="0"
                               aria-label={`Qty retur ${line.name}`}
+                              min="0"
+                              max={returnLineMaxQty(line)}
                               wrapperClassName="w-full"
                               className="h-8 px-2 text-[12px]"
                             />
                           </label>
                         </div>
-
                         <div className="mt-2 flex items-center justify-between gap-3 border-t border-border/70 pt-2">
                           <span className="text-[11px] text-muted-foreground">Nilai perkiraan</span>
                           <span className="num text-[12px] font-semibold">
@@ -703,7 +736,6 @@ export function SupplierReturnForm({
             )}
           </div>
         </div>
-
         {/* (3) Alasan & rencana penyelesaian. */}
         <div className="space-y-3 border-t border-border p-4">
           <p className="text-[12px] font-semibold">3 · Alasan & rencana penyelesaian</p>
@@ -747,7 +779,6 @@ export function SupplierReturnForm({
             />
           </label>
         </div>
-
         {/* (4) Catatan. */}
         <div className="border-t border-border p-4">
           <p className="mb-2 text-[12px] font-semibold">4 · Catatan</p>

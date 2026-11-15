@@ -15,8 +15,8 @@ import {
   getIncomeStatement,
   getReceivablePayableQueues,
   getSalesByDay,
-  listPayables,
-  listReceivables,
+  listPayablesPage,
+  listReceivablesPage,
 } from "@/server/reports";
 import { countUnmatchedStatementLines } from "@/server/bank-reconciliation";
 import { getPartyCreditQueueSummary } from "@/server/party-credits";
@@ -177,11 +177,10 @@ export default async function AccountingDashboard({
       summary,
       prior,
       byDay,
-      receivables,
-      payables,
+      receivablesPage,
+      payablesPage,
       period,
       drafts,
-      queues,
       unmatchedBank,
       credits,
       pendingClaims,
@@ -193,22 +192,39 @@ export default async function AccountingDashboard({
         to: `${priorTo}T23:59:59`,
       }, { excludeClosing: true }),
       getSalesByDay(tx, ctx.company.id, range),
-      listReceivables(tx, ctx.company.id),
-      listPayables(tx, ctx.company.id),
+      listReceivablesPage(tx, ctx.company.id, {
+        page: 1,
+        pageSize: 5,
+        status: "",
+        q: "",
+        today,
+      }),
+      listPayablesPage(tx, ctx.company.id, {
+        page: 1,
+        pageSize: 5,
+        status: "",
+        q: "",
+        today,
+      }),
       getFiscalPeriodStatus(tx, ctx.company.id, Number(to.slice(0, 4)), Number(to.slice(5, 7))),
       listQuickEntryDrafts(tx, ctx.company.id, ctx.user.id),
-      getReceivablePayableQueues(tx, ctx.company.id, today),
       countUnmatchedStatementLines(tx, ctx.company.id),
       getPartyCreditQueueSummary(tx, ctx.company.id),
       countPendingReimbursementClaims(tx, ctx.company.id),
       getAccountingOnboardingState(tx, ctx.company.id),
     ]);
+    const queues = await getReceivablePayableQueues(tx, ctx.company.id, today, undefined, {
+      receivables: receivablesPage,
+      payables: payablesPage,
+    });
     return {
       summary,
       prior,
       byDay,
-      receivables,
-      payables,
+      // Dashboard previews and queue totals come from the same paged SQL
+      // read model; open documents are never loaded as full Node arrays.
+      receivables: receivablesPage.rows,
+      payables: payablesPage.rows,
       period,
       drafts,
       queues,
@@ -327,8 +343,8 @@ export default async function AccountingDashboard({
 
   const trend = data.byDay;
   const trendTotal = data.byDay.reduce((acc, row) => acc + row.total, 0);
-  const receivableTotal = data.receivables.reduce((acc, row) => acc + row.outstanding, 0);
-  const payableTotal = data.payables.reduce((acc, row) => acc + row.outstanding, 0);
+  const receivableTotal = data.queues.receivables.openTotal;
+  const payableTotal = data.queues.payables.openTotal;
   const cashBank = summary.cash + summary.bank;
 
   return (
@@ -649,14 +665,14 @@ export default async function AccountingDashboard({
             <div>
               <h2 className="text-[13px] font-semibold">Piutang terbuka</h2>
               <p className="mt-0.5 text-[11px] text-muted-foreground">
-                {data.receivables.length} nota · {formatIDR(receivableTotal)}
+                {data.queues.receivables.openCount} nota · {formatIDR(receivableTotal)}
               </p>
             </div>
             <Link href="/app/akuntansi/piutang-utang" className="inline-flex h-8 items-center text-[11px] font-medium text-primary transition-colors hover:underline">
               Lihat semua
             </Link>
           </div>
-          {data.receivables.length === 0 ? (
+          {data.queues.receivables.openCount === 0 ? (
             <p className="px-4 py-6 text-center text-[11px] text-muted-foreground">Tidak ada piutang.</p>
           ) : (
             <div className="overflow-x-auto">
@@ -670,10 +686,10 @@ export default async function AccountingDashboard({
                   </tr>
                 </thead>
                 <tbody>
-                  {data.receivables.slice(0, 5).map((row) => (
+                  {data.receivables.map((row) => (
                     <tr key={row.id}>
                       <td className="num text-[11px]">{row.number}</td>
-                      <td className="text-[11px]">{row.customerName ?? "Umum"}</td>
+                      <td className="text-[11px]">{row.partyName ?? "Umum"}</td>
                       <td className="num hidden text-[11px] text-muted-foreground sm:table-cell">
                         {row.dueDate ? formatDate(row.dueDate) : "—"}
                       </td>
@@ -691,14 +707,14 @@ export default async function AccountingDashboard({
             <div>
               <h2 className="text-[13px] font-semibold">Utang pemasok</h2>
               <p className="mt-0.5 text-[11px] text-muted-foreground">
-                {data.payables.length} tagihan · {formatIDR(payableTotal)}
+                {data.queues.payables.openCount} tagihan · {formatIDR(payableTotal)}
               </p>
             </div>
             <Link href="/app/akuntansi/piutang-utang?tab=utang" className="inline-flex h-8 items-center text-[11px] font-medium text-primary transition-colors hover:underline">
               Lihat semua
             </Link>
           </div>
-          {data.payables.length === 0 ? (
+          {data.queues.payables.openCount === 0 ? (
             <p className="px-4 py-6 text-center text-[11px] text-muted-foreground">Tidak ada utang.</p>
           ) : (
             <div className="overflow-x-auto">
@@ -712,10 +728,10 @@ export default async function AccountingDashboard({
                   </tr>
                 </thead>
                 <tbody>
-                  {data.payables.slice(0, 5).map((row) => (
+                  {data.payables.map((row) => (
                     <tr key={row.id}>
                       <td className="num text-[11px]">{row.number}</td>
-                      <td className="text-[11px]">{row.supplierName ?? "—"}</td>
+                      <td className="text-[11px]">{row.partyName ?? "—"}</td>
                       <td className="num hidden text-[11px] text-muted-foreground sm:table-cell">
                         {row.dueDate ? formatDate(row.dueDate) : "—"}
                       </td>

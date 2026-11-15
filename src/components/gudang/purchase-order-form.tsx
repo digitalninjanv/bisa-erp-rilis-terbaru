@@ -120,6 +120,10 @@ export function PurchaseOrderForm({
       {open ? (
         <DocumentForm
           className="mt-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submit();
+          }}
           header={
             <div className="space-y-3 p-4">
               <div className="grid gap-2 sm:grid-cols-2">
@@ -196,8 +200,7 @@ export function PurchaseOrderForm({
                 Batal
               </button>
               <button
-                type="button"
-                onClick={submit}
+                type="submit"
                 disabled={busy}
                 className="h-8 rounded-md bg-primary px-4 text-[12px] font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               >

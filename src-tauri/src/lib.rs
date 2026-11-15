@@ -77,10 +77,12 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::snapshot_info,
-            commands::list_snapshot_products,
+            commands::list_snapshot_products_page,
+            commands::find_snapshot_product_by_code,
             commands::list_snapshot_payment_methods,
             commands::record_local_sale,
             commands::list_outbox,
+            commands::list_outbox_page,
             commands::get_device_status,
             commands::pair_device,
             commands::unpair_device,
@@ -93,6 +95,7 @@ pub fn run() {
             commands::close_cash_session,
             commands::current_cash_session,
             commands::list_cash_sessions,
+            commands::count_cash_sessions,
             commands::list_local_intents,
             commands::get_printer_status,
             commands::set_printer_config,

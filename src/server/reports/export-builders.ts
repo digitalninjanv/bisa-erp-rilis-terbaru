@@ -116,7 +116,9 @@ export async function buildReportExportTable(
       "Tanggal",
       "Jurnal",
       "Sumber",
+      "Dokumen",
       "Keterangan",
+      "DPP",
       "PPN Masukan",
       "PPN Keluaran",
     ];
@@ -129,8 +131,8 @@ export async function buildReportExportTable(
       titleRow: [text("Buku PPN"), text(periodSubtitle)],
       headerRow: headers.map((header) => text(header)),
       xlsxHeaders: headers,
-      widths: [12, 18, 22, 46, 17, 17],
-      csvWidth: 6,
+      widths: [12, 18, 22, 20, 40, 17, 17, 17],
+      csvWidth: 8,
       rows: [
         ...data.lines.map(
           (row): ReportRow => ({
@@ -139,20 +141,22 @@ export async function buildReportExportTable(
               text(row.date),
               text(row.number),
               text(journalSourceLabel(row.sourceType)),
+              text(row.sourceNumber || "—"),
               text(row.description || "—"),
+              row.dpp != null ? money(row.dpp) : empty(),
               row.direction === "input" ? money(row.amount) : empty(),
               row.direction === "output" ? money(row.amount) : empty(),
             ],
           }),
         ),
-        blankRow(6),
+        blankRow(8),
         {
           kind: "total",
-          cells: [empty(), empty(), empty(), text("Total PPN Masukan"), money(data.input), empty()],
+          cells: [empty(), empty(), empty(), empty(), text("Total PPN Masukan"), empty(), money(data.input), empty()],
         },
         {
           kind: "total",
-          cells: [empty(), empty(), empty(), text("Total PPN Keluaran"), empty(), money(data.output)],
+          cells: [empty(), empty(), empty(), empty(), text("Total PPN Keluaran"), empty(), empty(), money(data.output)],
         },
         {
           kind: "grand",
@@ -160,7 +164,9 @@ export async function buildReportExportTable(
             empty(),
             empty(),
             empty(),
+            empty(),
             text(data.net > 0 ? "PPN kurang bayar" : data.net < 0 ? "PPN lebih bayar" : "PPN neto"),
+            empty(),
             money(Math.abs(data.net)),
             empty(),
           ],

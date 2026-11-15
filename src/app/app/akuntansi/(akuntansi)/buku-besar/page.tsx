@@ -195,15 +195,15 @@ export default async function LedgerPage({
 
             <div className="grid grid-cols-1 divide-y divide-border border-y border-border bg-muted/15 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
               <div className="flex items-center justify-between px-4 py-2.5 sm:block">
-                <p className="text-[10px] font-medium text-muted-foreground">Saldo awal</p>
+                <p className="text-[11px] font-medium text-muted-foreground">Saldo awal</p>
                 <p className="num mt-0.5 text-[13px] font-semibold">{nominal(data.ledger.opening)}</p>
               </div>
               <div className="flex items-center justify-between px-4 py-2.5 sm:block">
-                <p className="text-[10px] font-medium text-muted-foreground">Mutasi debit</p>
+                <p className="text-[11px] font-medium text-muted-foreground">Mutasi debit</p>
                 <p className="num mt-0.5 text-[13px] font-semibold">{nominal(data.ledger.totalDebit)}</p>
               </div>
               <div className="flex items-center justify-between px-4 py-2.5 sm:block">
-                <p className="text-[10px] font-medium text-muted-foreground">Mutasi kredit</p>
+                <p className="text-[11px] font-medium text-muted-foreground">Mutasi kredit</p>
                 <p className="num mt-0.5 text-[13px] font-semibold">{nominal(data.ledger.totalCredit)}</p>
               </div>
             </div>

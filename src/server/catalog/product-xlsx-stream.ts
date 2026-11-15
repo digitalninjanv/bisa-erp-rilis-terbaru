@@ -13,6 +13,7 @@ export type ProductXlsxPage<TCursor> = {
  */
 export function productXlsxStreamResponse<TCursor>(input: {
   filename: string;
+  worksheetName?: string;
   headers: string[];
   widths: number[];
   firstPage: ProductXlsxPage<TCursor>;
@@ -60,7 +61,7 @@ export function productXlsxStreamResponse<TCursor>(input: {
       useSharedStrings: false,
       useStyles: false,
     });
-    const worksheet = workbook.addWorksheet("Produk");
+    const worksheet = workbook.addWorksheet(input.worksheetName ?? "Produk");
     worksheet.columns = input.widths.map((width) => ({ width }));
     worksheet.addRow(input.headers).commit();
 

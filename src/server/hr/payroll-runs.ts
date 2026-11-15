@@ -11,7 +11,8 @@ import { journalEntries, payrollRuns } from "@/db/schema";
 import { AppError } from "@/lib/errors";
 import { todayISO } from "@/lib/format";
 import { d, toDb } from "@/lib/money";
-import { getAccountMap, postJournal, reverseSourceJournal } from "@/server/accounting";
+import { getAccountMap, postJournal } from "@/server/accounting";
+import { reverseSourceJournalPreferringDate } from "@/server/accounting-reversal";
 import { writeAudit } from "@/server/audit";
 import {
   restorePayrollAdvanceDeductions,
@@ -19,6 +20,7 @@ import {
 import {
   restorePayrollLoanDeductions,
 } from "@/server/employee-loans";
+import { periodEndDate } from "@/lib/format";
 import { restoreComponentDrafts } from "./drafts";
 
 export async function payPayrollRun(
@@ -149,11 +151,11 @@ export async function voidPayrollRun(
   // Pola AK-P2-05: kegagalan membuat jurnal pembalik tidak boleh ditelan —
   // menandai run void tanpa pembalik membuat daftar payroll dan buku
   // besar berbeda diam-diam.
-  const reversal = await reverseSourceJournal(tx, {
+  const reversal = await reverseSourceJournalPreferringDate(tx, {
     companyId: input.companyId,
     sourceType: "payroll",
     sourceId: run.id,
-    date: todayISO(),
+    originalDate: periodEndDate(run.period),
     description: `Pembatalan payroll ${run.number} — ${input.reason}`,
     createdBy: input.userId,
   });

@@ -1,3 +1,4 @@
+import { withApiError } from "@/lib/api-error";
 import { withCompanyReadOnly } from "@/db/tenant";
 import {
   getSettings,
@@ -22,7 +23,7 @@ export const dynamic = "force-dynamic";
  * Kolom diselaraskan dengan pemetaan impor produk agar berkas hasil
  * ekspor dapat diimpor kembali (round-trip).
  */
-export async function GET(request?: Request) {
+async function GETHandler(request?: Request) {
   const ctx = await requirePermission("inventory.view");
   // AUD-013: harga beli (produk & kemasan) adalah data level-field
   // `inventory.cost`; tanpa izin itu kolom biaya tidak disertakan.
@@ -118,3 +119,5 @@ export async function GET(request?: Request) {
   });
   return csvStreamResponse(`produk-${todayISO()}.csv`, body);
 }
+
+export const GET = withApiError(GETHandler);

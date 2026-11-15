@@ -6,7 +6,7 @@ import { withCompany } from "@/db/tenant";
 import { AppError, guard } from "@/lib/errors";
 import { amountField, isoDateField, parseInput } from "@/lib/action-validation";
 import { todayISO } from "@/lib/format";
-import { requirePermission } from "@/lib/session";
+import { requirePermissionInModule } from "@/lib/session";
 import { writeAudit } from "@/server/audit";
 import { claimIdempotencyKey } from "@/server/idempotency";
 import { receiveTransfer } from "@/server/inventory";
@@ -29,7 +29,7 @@ const createSchema = z.object({
 
 export async function createReservationAction(input: z.input<typeof createSchema>) {
   return guard(async () => {
-    const ctx = await requirePermission("inventory.manage");
+    const ctx = await requirePermissionInModule("inventory.manage", "gudang");
     const data = parseInput(createSchema, input);
     const row = await withCompany(ctx.company.id, async (tx) => {
       if (data.idempotencyKey) {
@@ -75,7 +75,7 @@ const releaseSchema = z.object({
 
 export async function releaseReservationAction(input: z.input<typeof releaseSchema>) {
   return guard(async () => {
-    const ctx = await requirePermission("inventory.manage");
+    const ctx = await requirePermissionInModule("inventory.manage", "gudang");
     const data = parseInput(releaseSchema, input);
     const row = await withCompany(ctx.company.id, async (tx) => {
       const released = await releaseReservation(tx, {
@@ -121,7 +121,7 @@ const receiveSchema = z.object({
 
 export async function receiveTransferAction(input: z.input<typeof receiveSchema>) {
   return guard(async () => {
-    const ctx = await requirePermission("inventory.manage");
+    const ctx = await requirePermissionInModule("inventory.manage", "gudang");
     const data = parseInput(receiveSchema, input);
     const row = await withCompany(ctx.company.id, async (tx) => {
       const received = await receiveTransfer(tx, {

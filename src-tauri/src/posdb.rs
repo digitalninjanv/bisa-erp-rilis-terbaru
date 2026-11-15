@@ -33,7 +33,7 @@
 //! (tanpa runtime Tauri) agar dapat diuji `cargo test` secara
 //! headless.
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 pub type DbResult<T> = Result<T, String>;
@@ -59,6 +59,12 @@ CREATE TABLE IF NOT EXISTS snapshot_products (
   track_serial INTEGER NOT NULL DEFAULT 0,
   unit_code TEXT
 );
+CREATE INDEX IF NOT EXISTS snapshot_products_name_id_idx
+  ON snapshot_products(name COLLATE NOCASE, product_id);
+CREATE INDEX IF NOT EXISTS snapshot_products_sku_idx
+  ON snapshot_products(sku);
+CREATE INDEX IF NOT EXISTS snapshot_products_barcode_idx
+  ON snapshot_products(barcode);
 CREATE TABLE IF NOT EXISTS snapshot_payment_methods (
   method_id TEXT PRIMARY KEY,
   code TEXT NOT NULL,
@@ -152,6 +158,11 @@ CREATE TABLE IF NOT EXISTS outbox (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_outbox_status_created_at
+  ON outbox(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_outbox_live_created_at
+  ON outbox(created_at, client_key)
+  WHERE status IN ('pending', 'inflight', 'held');
 -- Langkah 5 (D6): pengaturan cetak dari snapshot (satu baris,
 -- id = 1) — identitas toko + saklar elemen nota + tarif PPN,
 -- dari pengaturan cetak perusahaan yang sama dengan nota web.
@@ -238,6 +249,23 @@ pub fn init(conn: &Connection) -> DbResult<()> {
     // Migrasi skema berjalan SEBELUM foreign_keys dinyalakan:
     // pembangunan ulang tabel tidak boleh dinilai FK di tengah jalan.
     migrate_schema(conn)?;
+    let has_product_count: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM snapshot_meta WHERE key = 'product_count'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(db_err)?;
+    if has_product_count == 0 {
+        let product_count: i64 = conn
+            .query_row("SELECT count(*) FROM snapshot_products", [], |row| row.get(0))
+            .map_err(db_err)?;
+        conn.execute(
+            "INSERT INTO snapshot_meta (key, value) VALUES ('product_count', ?1)",
+            params![product_count.to_string()],
+        )
+        .map_err(db_err)?;
+    }
     conn.pragma_update(None, "foreign_keys", "ON").map_err(db_err)?;
     Ok(())
 }
@@ -609,6 +637,23 @@ pub struct SnapshotProduct {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SnapshotProductPage {
+    pub products: Vec<SnapshotProduct>,
+    pub total: usize,
+    pub page: usize,
+    pub page_size: usize,
+    pub page_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotProductMatch {
+    pub product: SnapshotProduct,
+    pub packaging_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SnapshotPaymentMethod {
     pub method_id: String,
     pub code: String,
@@ -693,6 +738,28 @@ pub struct OutboxItem {
     pub last_message: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutboxSummary {
+    pub client_key: String,
+    pub status: String,
+    pub expected_total: Option<String>,
+    pub attempts: i64,
+    pub last_message: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutboxPage {
+    pub items: Vec<OutboxSummary>,
+    pub total: usize,
+    pub page: usize,
+    pub page_size: usize,
+    pub page_count: usize,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -809,6 +876,7 @@ pub fn apply_snapshot(conn: &mut Connection, snapshot: &SnapshotInput) -> DbResu
     set_meta(&tx, "version", &snapshot.version)?;
     set_meta(&tx, "generated_at", &snapshot.generated_at)?;
     set_meta(&tx, "warehouse_id", &warehouse_id)?;
+    set_meta(&tx, "product_count", &snapshot.products.len().to_string())?;
     if let Some(cursor) = &snapshot.cursor {
         set_meta(&tx, "cursor", cursor)?;
     }
@@ -1118,6 +1186,10 @@ pub fn apply_snapshot_delta(
             stmt.execute(params![removed_id]).map_err(db_err)?;
         }
     }
+    let product_count: i64 = tx
+        .query_row("SELECT count(*) FROM snapshot_products", [], |row| row.get(0))
+        .map_err(db_err)?;
+    set_meta(&tx, "product_count", &product_count.to_string())?;
     tx.execute("DELETE FROM snapshot_payment_methods", []).map_err(db_err)?;
     {
         let mut stmt = tx
@@ -1166,9 +1238,7 @@ pub fn snapshot_info(conn: &Connection) -> DbResult<SnapshotInfo> {
             other => Err(db_err(other)),
         })
     };
-    let product_count: i64 = conn
-        .query_row("SELECT count(*) FROM snapshot_products", [], |row| row.get(0))
-        .map_err(db_err)?;
+    let product_count = snapshot_product_count(conn)?;
     let payment_method_count: i64 = conn
         .query_row("SELECT count(*) FROM snapshot_payment_methods", [], |row| {
             row.get(0)
@@ -1254,6 +1324,269 @@ pub fn list_products(conn: &Connection) -> DbResult<Vec<SnapshotProduct>> {
         }
     }
     Ok(out)
+}
+
+fn snapshot_product_count(conn: &Connection) -> DbResult<i64> {
+    let cached: Option<String> = conn
+        .query_row(
+            "SELECT value FROM snapshot_meta WHERE key = 'product_count'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(db_err)?;
+    if let Some(count) = cached.and_then(|value| value.parse::<i64>().ok()) {
+        if count >= 0 {
+            return Ok(count);
+        }
+    }
+    conn.query_row("SELECT count(*) FROM snapshot_products", [], |row| {
+        row.get(0)
+    })
+    .map_err(db_err)
+}
+
+/// Halaman katalog untuk WebView POS. Snapshot penuh tetap disimpan
+/// di SQLite agar terminal tetap offline, sementara IPC hanya membawa
+/// produk yang sedang tampil.
+pub fn list_products_page(
+    conn: &Connection,
+    search: &str,
+    requested_page: u32,
+    requested_page_size: u32,
+) -> DbResult<SnapshotProductPage> {
+    let search = search.trim();
+    let escaped = search
+        .replace('!', "!!")
+        .replace('%', "!%")
+        .replace('_', "!_");
+    let pattern = format!("%{escaped}%");
+    let total = if search.is_empty() {
+        snapshot_product_count(conn)?
+    } else {
+        conn.query_row(
+            r#"SELECT count(*)
+               FROM snapshot_products AS p
+               WHERE (?1 = ''
+                 OR p.name LIKE ?2 ESCAPE '!'
+                 OR p.sku LIKE ?2 ESCAPE '!'
+                 OR p.barcode LIKE ?2 ESCAPE '!'
+                 OR EXISTS (
+                   SELECT 1 FROM snapshot_packagings AS sp
+                   WHERE sp.product_id = p.product_id
+                     AND (sp.name LIKE ?2 ESCAPE '!'
+                       OR sp.barcode LIKE ?2 ESCAPE '!')
+                 ))"#,
+            params![search, pattern],
+            |row| row.get(0),
+        )
+        .map_err(db_err)?
+    };
+    let total = total.max(0) as usize;
+    let page_size = requested_page_size.clamp(1, 100) as usize;
+    let page_count = total.div_ceil(page_size);
+    let page = if page_count == 0 {
+        1
+    } else {
+        (requested_page.max(1) as usize).min(page_count)
+    };
+    let offset = (page - 1).saturating_mul(page_size) as i64;
+    let mut stmt = conn
+        .prepare(
+            r#"WITH page_ids AS (
+                 SELECT p.product_id, p.name
+                 FROM snapshot_products AS p
+                 WHERE (?1 = ''
+                   OR p.name LIKE ?2 ESCAPE '!'
+                   OR p.sku LIKE ?2 ESCAPE '!'
+                   OR p.barcode LIKE ?2 ESCAPE '!'
+                   OR EXISTS (
+                     SELECT 1 FROM snapshot_packagings AS sp
+                     WHERE sp.product_id = p.product_id
+                       AND (sp.name LIKE ?2 ESCAPE '!'
+                         OR sp.barcode LIKE ?2 ESCAPE '!')
+                   ))
+                 ORDER BY p.name COLLATE NOCASE, p.product_id
+                 LIMIT ?3 OFFSET ?4
+               )
+               SELECT p.product_id, p.sku, p.barcode, p.name, p.sale_price,
+                      p.stock, p.track_stock, p.track_serial, p.unit_code,
+                      sp.packaging_id, sp.name, sp.isi, sp.sale_price,
+                      sp.barcode, sp.is_active, sp.is_default_sale
+               FROM page_ids AS ids
+               JOIN snapshot_products AS p ON p.product_id = ids.product_id
+               LEFT JOIN snapshot_packagings AS sp ON sp.product_id = p.product_id
+               ORDER BY ids.name COLLATE NOCASE, ids.product_id,
+                        sp.sort_order, sp.name, sp.packaging_id"#,
+        )
+        .map_err(db_err)?;
+    let rows = stmt
+        .query_map(params![search, pattern, page_size as i64, offset], |row| {
+            let product = SnapshotProduct {
+                product_id: row.get(0)?,
+                sku: row.get(1)?,
+                barcode: row.get(2)?,
+                name: row.get(3)?,
+                sale_price: row.get(4)?,
+                stock: row.get(5)?,
+                track_stock: row.get::<_, i64>(6)? != 0,
+                track_serial: row.get::<_, i64>(7)? != 0,
+                unit_code: row.get(8)?,
+                packagings: Vec::new(),
+            };
+            let packaging_id: Option<String> = row.get(9)?;
+            let packaging = match packaging_id {
+                Some(packaging_id) => Some(SnapshotPackaging {
+                    packaging_id,
+                    name: row.get(10)?,
+                    isi: row.get(11)?,
+                    sale_price: row.get(12)?,
+                    barcode: row.get(13)?,
+                    is_active: row.get::<_, i64>(14)? != 0,
+                    is_default_sale: row.get::<_, i64>(15)? != 0,
+                }),
+                None => None,
+            };
+            Ok((product, packaging))
+        })
+        .map_err(db_err)?;
+    let mut products: Vec<SnapshotProduct> = Vec::with_capacity(page_size.min(total));
+    for row in rows {
+        let (product, packaging) = row.map_err(db_err)?;
+        if let Some(existing) = products.last_mut() {
+            if existing.product_id == product.product_id {
+                if let Some(packaging) = packaging {
+                    existing.packagings.push(packaging);
+                }
+                continue;
+            }
+        }
+        let mut product = product;
+        if let Some(packaging) = packaging {
+            product.packagings.push(packaging);
+        }
+        products.push(product);
+    }
+    Ok(SnapshotProductPage {
+        products,
+        total,
+        page,
+        page_size,
+        page_count,
+    })
+}
+
+fn list_packagings_for_product(
+    conn: &Connection,
+    product_id: &str,
+) -> DbResult<Vec<SnapshotPackaging>> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT packaging_id, name, isi, sale_price, barcode, is_active, is_default_sale
+             FROM snapshot_packagings WHERE product_id = ?1
+             ORDER BY sort_order, name, packaging_id",
+        )
+        .map_err(db_err)?;
+    let rows = stmt
+        .query_map(params![product_id], |row| {
+            Ok(SnapshotPackaging {
+                packaging_id: row.get(0)?,
+                name: row.get(1)?,
+                isi: row.get(2)?,
+                sale_price: row.get(3)?,
+                barcode: row.get(4)?,
+                is_active: row.get::<_, i64>(5)? != 0,
+                is_default_sale: row.get::<_, i64>(6)? != 0,
+            })
+        })
+        .map_err(db_err)?;
+    rows.map(|row| row.map_err(db_err)).collect()
+}
+
+fn get_product_by_id(conn: &Connection, product_id: &str) -> DbResult<Option<SnapshotProduct>> {
+    let mut product = conn
+        .query_row(
+            "SELECT product_id, sku, barcode, name, sale_price, stock,
+                    track_stock, track_serial, unit_code
+             FROM snapshot_products WHERE product_id = ?1",
+            params![product_id],
+            |row| {
+                Ok(SnapshotProduct {
+                    product_id: row.get(0)?,
+                    sku: row.get(1)?,
+                    barcode: row.get(2)?,
+                    name: row.get(3)?,
+                    sale_price: row.get(4)?,
+                    stock: row.get(5)?,
+                    track_stock: row.get::<_, i64>(6)? != 0,
+                    track_serial: row.get::<_, i64>(7)? != 0,
+                    unit_code: row.get(8)?,
+                    packagings: Vec::new(),
+                })
+            },
+        )
+        .optional()
+        .map_err(db_err)?;
+    if let Some(product) = &mut product {
+        product.packagings = list_packagings_for_product(conn, product_id)?;
+    }
+    Ok(product)
+}
+
+/// Cari barcode/SKU dengan indeks SQLite. Barcode kemasan aktif
+/// tetap diprioritaskan seperti pemindaian katalog di terminal lama.
+pub fn find_product_by_code(
+    conn: &Connection,
+    raw_code: &str,
+) -> DbResult<Option<SnapshotProductMatch>> {
+    let code = raw_code.trim();
+    if code.is_empty() {
+        return Ok(None);
+    }
+    let packaging_match: Option<(String, String)> = conn
+        .query_row(
+            "SELECT p.product_id, sp.packaging_id
+             FROM snapshot_packagings AS sp
+             JOIN snapshot_products AS p ON p.product_id = sp.product_id
+             WHERE sp.barcode = ?1 AND sp.is_active = 1
+             ORDER BY p.name COLLATE NOCASE, p.product_id,
+                      sp.sort_order, sp.name, sp.packaging_id
+             LIMIT 1",
+            params![code],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(db_err)?;
+    if let Some((product_id, packaging_id)) = packaging_match {
+        return Ok(
+            get_product_by_id(conn, &product_id)?.map(|product| SnapshotProductMatch {
+                product,
+                packaging_id: Some(packaging_id),
+            }),
+        );
+    }
+    let product_id: Option<String> = conn
+        .query_row(
+            "SELECT product_id FROM snapshot_products
+             WHERE barcode = ?1 OR sku = ?1
+             ORDER BY name COLLATE NOCASE, product_id
+             LIMIT 1",
+            params![code],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(db_err)?;
+    match product_id {
+        Some(product_id) => {
+            Ok(
+                get_product_by_id(conn, &product_id)?.map(|product| SnapshotProductMatch {
+                    product,
+                    packaging_id: None,
+                }),
+            )
+        }
+        None => Ok(None),
+    }
 }
 
 pub fn list_payment_methods(conn: &Connection) -> DbResult<Vec<SnapshotPaymentMethod>> {
@@ -1421,10 +1754,32 @@ pub fn record_sale(conn: &mut Connection, sale: &SaleInput) -> DbResult<OutboxIt
     )
     .map_err(db_err)?;
     tx.commit().map_err(db_err)?;
-    list_outbox(conn, None)?
-        .into_iter()
-        .find(|item| item.client_key == sale.client_key)
+    get_outbox_by_key(conn, &sale.client_key)?
         .ok_or_else(|| "Baris outbox tidak ditemukan sesudah pencatatan.".to_string())
+}
+
+/// Baca satu penjualan antrean lewat primary key tanpa memuat seluruh outbox.
+pub fn get_outbox_by_key(conn: &Connection, client_key: &str) -> DbResult<Option<OutboxItem>> {
+    match conn.query_row(
+        "SELECT client_key, status, payload_json, attempts, last_message, created_at, updated_at
+         FROM outbox WHERE client_key = ?1",
+        params![client_key],
+        map_outbox_row,
+    ) {
+        Ok(item) => Ok(Some(item)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(error) => Err(db_err(error)),
+    }
+}
+
+/// Hitung item outbox berdasarkan status tanpa membaca atau mendekode payload.
+pub fn count_outbox(conn: &Connection, status: &str) -> DbResult<i64> {
+    conn.query_row(
+        "SELECT count(*) FROM outbox WHERE status = ?1",
+        params![status],
+        |row| row.get(0),
+    )
+    .map_err(db_err)
 }
 
 /// Baca antrean outbox. `status` kosong = antrean hidup
@@ -1454,6 +1809,68 @@ pub fn list_outbox(conn: &Connection, status: Option<&str>) -> DbResult<Vec<Outb
         out.push(row.map_err(db_err)?);
     }
     Ok(out)
+}
+
+/// Halaman ringkasan outbox untuk UI. Payload penjualan penuh tetap
+/// tersedia bagi mesin sinkron lewat `list_outbox`, tetapi tidak
+/// dikirim ke WebView hanya untuk merender daftar antrean.
+pub fn list_outbox_page(
+    conn: &Connection,
+    requested_page: u32,
+    requested_page_size: u32,
+) -> DbResult<OutboxPage> {
+    let page_size = requested_page_size.clamp(1, 100) as usize;
+    let total: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM outbox
+             WHERE status IN ('pending', 'inflight', 'held')",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(db_err)?;
+    let total = total.max(0) as usize;
+    let page_count = total.div_ceil(page_size);
+    let page = if page_count == 0 {
+        1
+    } else {
+        (requested_page.max(1) as usize).min(page_count)
+    };
+    let offset = (page - 1).saturating_mul(page_size) as i64;
+    let mut stmt = conn
+        .prepare(
+            "SELECT o.client_key, o.status, s.expected_total, o.attempts,
+                    o.last_message, o.created_at, o.updated_at
+             FROM outbox AS o INDEXED BY idx_outbox_live_created_at
+             LEFT JOIN local_sales AS s ON s.client_key = o.client_key
+             WHERE o.status IN ('pending', 'inflight', 'held')
+             ORDER BY o.created_at, o.client_key
+             LIMIT ?1 OFFSET ?2",
+        )
+        .map_err(db_err)?;
+    let rows = stmt
+        .query_map(params![page_size as i64, offset], |row| {
+            Ok(OutboxSummary {
+                client_key: row.get(0)?,
+                status: row.get(1)?,
+                expected_total: row.get(2)?,
+                attempts: row.get(3)?,
+                last_message: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+            })
+        })
+        .map_err(db_err)?;
+    let mut items = Vec::with_capacity(page_size.min(total));
+    for row in rows {
+        items.push(row.map_err(db_err)?);
+    }
+    Ok(OutboxPage {
+        items,
+        total,
+        page,
+        page_size,
+        page_count,
+    })
 }
 
 fn map_outbox_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<OutboxItem> {
@@ -2039,6 +2456,21 @@ pub fn list_cash_sessions(conn: &Connection) -> DbResult<Vec<CashSession>> {
     Ok(out)
 }
 
+pub fn count_cash_sessions(conn: &Connection) -> DbResult<i64> {
+    conn.query_row("SELECT count(*) FROM cash_sessions", [], |row| row.get(0))
+        .map_err(db_err)
+}
+
+/// Periksa gerbang updater tanpa memuat seluruh histori sesi kas.
+pub fn has_open_cash_session(conn: &Connection) -> DbResult<bool> {
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM cash_sessions WHERE status = 'open')",
+        [],
+        |row| row.get(0),
+    )
+    .map_err(db_err)
+}
+
 /// Tutup sesi secara BUTA dalam satu transaksi: hitungan fisik
 /// kasir (denominasi) diterima apa adanya; harapan lokal dihitung
 /// dari modal awal + pembayaran TUNAI penjualan lokal sesi ini —
@@ -2218,6 +2650,33 @@ mod tests {
         conn
     }
 
+    #[test]
+    fn init_backfills_cached_product_count_without_changing_catalog() {
+        let conn = Connection::open_in_memory().expect("open legacy database");
+        conn.execute_batch(SCHEMA).expect("legacy schema");
+        conn.execute(
+            "INSERT INTO snapshot_products
+               (product_id, warehouse_id, sku, name, sale_price, stock)
+             VALUES ('legacy-1', 'wh-1', 'SKU-LEGACY', 'Produk lama', '1000', 4)",
+            [],
+        )
+        .expect("legacy product");
+
+        init(&conn).expect("initialize legacy database");
+
+        let count: String = conn
+            .query_row(
+                "SELECT value FROM snapshot_meta WHERE key = 'product_count'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("cached product count");
+        assert_eq!(count, "1");
+        let page = list_products_page(&conn, "", 1, 50).expect("catalog page");
+        assert_eq!(page.total, 1);
+        assert_eq!(page.products[0].product_id, "legacy-1");
+    }
+
     fn sample_snapshot() -> SnapshotInput {
         SnapshotInput {
             version: "v1".to_string(),
@@ -2326,6 +2785,129 @@ mod tests {
         assert_eq!(count(&conn, "local_sales"), 1);
         assert_eq!(count(&conn, "local_sale_lines"), 1);
         assert_eq!(count(&conn, "outbox"), 1);
+        assert_eq!(count_outbox(&conn, "pending").expect("count pending"), 1);
+        assert!(get_outbox_by_key(&conn, "missing").expect("missing lookup").is_none());
+    }
+
+    #[test]
+    fn outbox_status_count_uses_covering_index() {
+        let conn = memory_db();
+        let query_plan: String = conn
+            .query_row(
+                "EXPLAIN QUERY PLAN SELECT count(*) FROM outbox WHERE status = 'pending'",
+                [],
+                |row| row.get(3),
+            )
+            .expect("explain outbox status count");
+        assert!(
+            query_plan.contains("idx_outbox_status_created_at"),
+            "status count should use its covering index: {query_plan}"
+        );
+    }
+
+    #[test]
+    fn live_outbox_page_is_bounded_and_uses_order_index() {
+        let mut conn = memory_db();
+        let tx = conn.transaction().expect("transaction");
+        {
+            let mut sales = tx
+                .prepare(
+                    "INSERT INTO local_sales
+                     (client_key, warehouse_id, sale_date, expected_total, payload_json, created_at)
+                     VALUES (?1, 'wh-1', '2026-11-15', ?2, ?3, ?4)",
+                )
+                .expect("prepare sales");
+            let mut outbox = tx
+                .prepare(
+                    "INSERT INTO outbox
+                     (client_key, payload_json, status, attempts, created_at, updated_at)
+                     VALUES (?1, ?2, ?3, 0, ?4, ?4)",
+                )
+                .expect("prepare outbox");
+            let payload = format!("{{\"padding\":\"{}\"}}", "x".repeat(512));
+            for index in 0..10_000 {
+                let key = format!("sale-{index:05}");
+                let created_at = format!("{index:08}");
+                let status = match index % 4 {
+                    0 => "pending",
+                    1 => "inflight",
+                    2 => "held",
+                    _ => "synced",
+                };
+                sales
+                    .execute(params![key, index.to_string(), payload, created_at])
+                    .expect("insert sale");
+                outbox
+                    .execute(params![key, payload, status, created_at])
+                    .expect("insert outbox");
+            }
+        }
+        tx.commit().expect("commit fixtures");
+
+        let first = list_outbox_page(&conn, 1, 50).expect("first page");
+        assert_eq!(first.total, 7_500);
+        assert_eq!(first.page, 1);
+        assert_eq!(first.page_size, 50);
+        assert_eq!(first.page_count, 150);
+        assert_eq!(first.items.len(), 50);
+        assert_eq!(first.items[0].client_key, "sale-00000");
+        assert_eq!(first.items[3].client_key, "sale-00004");
+        assert_eq!(first.items[0].expected_total.as_deref(), Some("0"));
+        let page_bytes = serde_json::to_vec(&first).expect("serialize page").len();
+        let full_bytes = serde_json::to_vec(&list_outbox(&conn, None).expect("full queue"))
+            .expect("serialize full queue")
+            .len();
+        assert!(
+            page_bytes * 20 < full_bytes,
+            "paged summary should transfer far less than full payloads: page={page_bytes}, full={full_bytes}"
+        );
+
+        let last = list_outbox_page(&conn, 999, 50).expect("last page");
+        assert_eq!(last.page, 150);
+        assert_eq!(last.items.len(), 50);
+        assert_eq!(last.items[49].client_key, "sale-09998");
+
+        let capped = list_outbox_page(&conn, 1, u32::MAX).expect("capped page size");
+        assert_eq!(capped.page_size, 100);
+        assert_eq!(capped.items.len(), 100);
+
+        let mut stmt = conn
+            .prepare(
+                "EXPLAIN QUERY PLAN
+                 SELECT o.client_key, s.expected_total
+                 FROM outbox AS o INDEXED BY idx_outbox_live_created_at
+                 LEFT JOIN local_sales AS s ON s.client_key = o.client_key
+                 WHERE o.status IN ('pending', 'inflight', 'held')
+                 ORDER BY o.created_at, o.client_key
+                 LIMIT 50 OFFSET 0",
+            )
+            .expect("prepare query plan");
+        let details = stmt
+            .query_map([], |row| row.get::<_, String>(3))
+            .expect("query plan")
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .expect("query plan rows")
+            .join("; ");
+        assert!(
+            details.contains("idx_outbox_live_created_at"),
+            "page should use the partial order index: {details}"
+        );
+        assert!(
+            !details.contains("USE TEMP B-TREE"),
+            "page should not sort the live queue into a temporary tree: {details}"
+        );
+    }
+
+    #[test]
+    fn cash_session_count_does_not_materialize_session_rows() {
+        let conn = memory_db();
+        conn.execute_batch(
+            "INSERT INTO cash_sessions (id, warehouse_id, opened_at, status)
+             VALUES ('session-1', 'wh-1', '2026-11-14T00:00:00Z', 'closed'),
+                    ('session-2', 'wh-1', '2026-11-15T00:00:00Z', 'open')",
+        )
+        .expect("insert sessions");
+        assert_eq!(count_cash_sessions(&conn).expect("count sessions"), 2);
     }
 
     #[test]
@@ -2401,6 +2983,9 @@ mod tests {
         assert_eq!(live[0].last_message.as_deref(), Some("Stok tidak cukup"));
         let synced = list_outbox(&conn, Some("synced")).expect("synced");
         assert_eq!(synced.len(), 1);
+        assert_eq!(count_outbox(&conn, "pending").expect("pending count"), 0);
+        assert_eq!(count_outbox(&conn, "held").expect("held count"), 1);
+        assert_eq!(count_outbox(&conn, "synced").expect("synced count"), 1);
     }
 
     fn sample_delta() -> SnapshotDeltaInput {
@@ -2567,6 +3152,191 @@ mod tests {
     }
 
     #[test]
+    fn local_product_page_is_bounded_and_searches_product_and_packaging_fields() {
+        let mut conn = memory_db();
+        apply_snapshot(&mut conn, &sample_snapshot()).expect("snapshot");
+
+        let first = list_products_page(&conn, "", 1, 1).expect("first page");
+        assert_eq!(first.total, 2);
+        assert_eq!(first.page, 1);
+        assert_eq!(first.page_size, 1);
+        assert_eq!(first.page_count, 2);
+        assert_eq!(first.products.len(), 1);
+        assert_eq!(first.products[0].product_id, "prod-1");
+        assert_eq!(first.products[0].packagings.len(), 1);
+
+        let second = list_products_page(&conn, "", 2, 1).expect("second page");
+        assert_eq!(second.products[0].product_id, "prod-2");
+
+        let package_name = list_products_page(&conn, "Dus", 1, 50).expect("package name");
+        assert_eq!(package_name.total, 1);
+        assert_eq!(package_name.products[0].product_id, "prod-1");
+        let package_barcode =
+            list_products_page(&conn, "8992000000040", 1, 50).expect("package barcode");
+        assert_eq!(package_barcode.total, 1);
+        assert_eq!(package_barcode.products[0].product_id, "prod-1");
+        let sku = list_products_page(&conn, "SKU-2", 1, 50).expect("sku");
+        assert_eq!(sku.products[0].product_id, "prod-2");
+
+        let clamped = list_products_page(&conn, "", 99, 0).expect("clamped page");
+        assert_eq!(clamped.page, 2);
+        assert_eq!(clamped.page_size, 1);
+    }
+
+    #[test]
+    fn local_product_barcode_lookup_prefers_active_packaging_then_product() {
+        let mut conn = memory_db();
+        apply_snapshot(&mut conn, &sample_snapshot()).expect("snapshot");
+        // Collision is possible in an offline snapshot even though the
+        // server normally prevents it across product/package barcodes.
+        conn.execute(
+            "UPDATE snapshot_products SET barcode = ?1 WHERE product_id = 'prod-2'",
+            params!["8992000000040"],
+        )
+        .expect("set collision fixture");
+
+        let packaging = find_product_by_code(&conn, "8992000000040")
+            .expect("lookup")
+            .expect("packaging match");
+        assert_eq!(packaging.product.product_id, "prod-1");
+        assert_eq!(packaging.packaging_id.as_deref(), Some("pkg-dus-1"));
+
+        conn.execute(
+            "UPDATE snapshot_packagings SET is_active = 0 WHERE packaging_id = 'pkg-dus-1'",
+            [],
+        )
+        .expect("deactivate package");
+        let product = find_product_by_code(&conn, "8992000000040")
+            .expect("lookup")
+            .expect("product match");
+        assert_eq!(product.product.product_id, "prod-2");
+        assert_eq!(product.packaging_id, None);
+        assert!(product.product.packagings.is_empty());
+        conn.execute(
+            "UPDATE snapshot_products SET barcode = NULL WHERE product_id = 'prod-2'",
+            [],
+        )
+        .expect("remove product collision");
+        assert!(find_product_by_code(&conn, "8992000000040")
+            .expect("inactive package lookup")
+            .is_none());
+
+        let by_sku = find_product_by_code(&conn, "SKU-1")
+            .expect("sku lookup")
+            .expect("sku match");
+        assert_eq!(by_sku.product.product_id, "prod-1");
+        assert!(find_product_by_code(&conn, "unknown")
+            .expect("unknown lookup")
+            .is_none());
+    }
+
+    #[test]
+    fn local_product_page_handles_ten_thousand_rows_and_uses_order_index() {
+        let mut conn = memory_db();
+        {
+            let tx = conn.transaction().expect("transaction");
+            {
+                let mut insert = tx
+                    .prepare(
+                        "INSERT INTO snapshot_products
+                           (product_id, warehouse_id, sku, barcode, name, sale_price, stock,
+                            track_stock, track_serial, unit_code)
+                         VALUES (?1, 'wh-1', ?2, ?3, ?4, '1000.0000', 10, 1, 0, 'PCS')",
+                    )
+                    .expect("prepare bulk fixture");
+                for index in 0..10_000 {
+                    insert
+                        .execute(params![
+                            format!("product-{index:05}"),
+                            format!("SKU-{index:05}"),
+                            format!("BAR-{index:05}"),
+                            format!("Produk {index:05}")
+                        ])
+                        .expect("insert product fixture");
+                }
+            }
+            tx.commit().expect("commit fixture");
+        }
+        conn.execute(
+            "INSERT INTO snapshot_meta (key, value) VALUES ('product_count', '10000')
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [],
+        )
+        .expect("update synthetic cached product count");
+
+        let last_page = list_products_page(&conn, "", 200, 50).expect("last page");
+        assert_eq!(last_page.total, 10_000);
+        assert_eq!(last_page.page_count, 200);
+        assert_eq!(last_page.products.len(), 50);
+        assert_eq!(last_page.products[0].product_id, "product-09950");
+        assert_eq!(last_page.products[49].product_id, "product-09999");
+        let filtered = list_products_page(&conn, "SKU-09999", 1, 50).expect("filtered page");
+        assert_eq!(filtered.total, 1);
+        assert_eq!(filtered.products[0].product_id, "product-09999");
+        let code = find_product_by_code(&conn, "BAR-09999")
+            .expect("indexed barcode lookup")
+            .expect("barcode match");
+        assert_eq!(code.product.product_id, "product-09999");
+
+        let mut plan_stmt = conn
+            .prepare(
+                r#"EXPLAIN QUERY PLAN
+                   WITH page_ids AS (
+                     SELECT p.product_id, p.name
+                     FROM snapshot_products AS p
+                     WHERE (?1 = ''
+                       OR p.name LIKE ?2 ESCAPE '!'
+                       OR p.sku LIKE ?2 ESCAPE '!'
+                       OR p.barcode LIKE ?2 ESCAPE '!'
+                       OR EXISTS (
+                         SELECT 1 FROM snapshot_packagings AS sp
+                         WHERE sp.product_id = p.product_id
+                           AND (sp.name LIKE ?2 ESCAPE '!'
+                             OR sp.barcode LIKE ?2 ESCAPE '!')
+                       ))
+                     ORDER BY p.name COLLATE NOCASE, p.product_id
+                     LIMIT ?3 OFFSET ?4
+                   )
+                   SELECT p.product_id FROM page_ids AS ids
+                   JOIN snapshot_products AS p ON p.product_id = ids.product_id
+                   LEFT JOIN snapshot_packagings AS sp ON sp.product_id = p.product_id
+                   ORDER BY ids.name COLLATE NOCASE, ids.product_id,
+                            sp.sort_order, sp.name, sp.packaging_id"#,
+            )
+            .expect("prepare catalog page query plan");
+        let plan_rows = plan_stmt
+            .query_map(params!["", "%%", 50, 0], |row| row.get::<_, String>(3))
+            .expect("catalog page query plan")
+            .map(|row| row.expect("catalog page query plan row"))
+            .collect::<Vec<_>>();
+        let plan = plan_rows.join("\n");
+        assert!(
+            plan.contains("snapshot_products_name_id_idx"),
+            "catalog order should use its index: {plan}"
+        );
+
+        let mut code_plan_stmt = conn
+            .prepare(
+                "EXPLAIN QUERY PLAN
+                 SELECT product_id FROM snapshot_products
+                 WHERE barcode = 'BAR-09999' OR sku = 'BAR-09999'
+                 ORDER BY name COLLATE NOCASE, product_id LIMIT 1",
+            )
+            .expect("prepare barcode query plan");
+        let code_plan_rows = code_plan_stmt
+            .query_map([], |row| row.get::<_, String>(3))
+            .expect("barcode query plan")
+            .map(|row| row.expect("barcode query plan row"))
+            .collect::<Vec<_>>();
+        let code_plan = code_plan_rows.join("\n");
+        assert!(
+            code_plan.contains("snapshot_products_barcode_idx")
+                && code_plan.contains("snapshot_products_sku_idx"),
+            "barcode/SKU lookup should use exact-match indexes: {code_plan}"
+        );
+    }
+
+    #[test]
     fn record_sale_packaging_line_decrements_local_stock_in_base_units() {
         let mut conn = memory_db();
         apply_snapshot(&mut conn, &sample_snapshot()).expect("snapshot");
@@ -2669,6 +3439,7 @@ mod tests {
         assert_eq!(methods[0].method_id, "pm-2", "metode diganti utuh oleh delta");
         let info = snapshot_info(&conn).expect("info");
         assert_eq!(info.cursor.as_deref(), Some("2026-11-07T01:00:00.000Z"));
+        assert_eq!(info.product_count, 1);
     }
 
     #[test]
@@ -2723,6 +3494,7 @@ mod tests {
             },
         )
         .expect("open");
+        assert!(has_open_cash_session(&conn).expect("open session check"));
         // Sesi kedua untuk gudang sama ditolak selama yang pertama terbuka.
         assert!(open_cash_session(
             &conn,
@@ -2751,6 +3523,7 @@ mod tests {
             "2026-11-07T09:00:00.000Z",
         )
         .expect("close");
+        assert!(!has_open_cash_session(&conn).expect("closed session check"));
         assert_eq!(closed.status, "closed");
         assert_eq!(closed.counted_total.as_deref(), Some("105000"));
         assert_eq!(closed.expected_total.as_deref(), Some("108000"));

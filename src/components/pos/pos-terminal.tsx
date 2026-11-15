@@ -35,7 +35,7 @@ import { ProductCatalog } from "@/components/pos/terminal/product-catalog";
 import {
   addCartLine, changeCartLinePackaging, setCartLineDiscount, setCartLineQty, setCartLineSerial,
 } from "@/components/pos/terminal/cart-lines";
-import { MobilePayBar } from "@/components/pos/terminal/mobile-pay-bar";
+import { MobileCartHeader, MobilePayBar } from "@/components/pos/terminal/mobile-pay-bar";
 
 export type { TerminalReservation };
 
@@ -102,9 +102,9 @@ export function PosTerminal({
     total: number;
   } | null>(null);
   const [lastSale, setLastSale] = useState<{ id: string; number: string } | null>(null);
+  const [mobileCartOpen, setMobileCartOpen] = useState(false);
 
-  // POS-1 (D-19): keadaan panel utang — pelanggan terpilih, pencarian
-  // pelanggan, tambah cepat, dan tanggal jatuh tempo.
+  // POS-1 (D-19): keadaan panel utang (pelanggan, pencarian, jatuh tempo).
   const [customer, setCustomer] = useState<CustomerOption | null>(null);
   const [customerQuery, setCustomerQuery] = useState("");
   const [customerResults, setCustomerResults] = useState<CustomerOption[]>([]);
@@ -116,16 +116,10 @@ export function PosTerminal({
   const [dueDate, setDueDate] = useState<string>(() => defaultDueDate(receivableDefaultTermDays));
 
   const idempotencyKey = useRef(newUuid());
-  // POS-IDEM-01: ditandai setiap kali checkout dicoba. Selama belum ada
-  // percobaan, kunci yang sama aman dipakai ulang oleh quote; sesudah
-  // ada percobaan, perubahan keranjang/kelompok/gudang berikutnya
-  // mengganti kunci (lihat effect di bawah) agar kunci lama hanya bisa
-  // memutar ulang transaksi yang persis sama.
+  // POS-IDEM-01: kunci quote boleh dipakai ulang sampai checkout dicoba;
   const checkoutAttempted = useRef(false);
   const searchRef = useRef<HTMLInputElement>(null);
-  // POS2-03: pelacak ledakan ketik pada kotak cari — Enter sesudah
-  // ketikan secepat scanner selalu diperlakukan sebagai pindaian
-  // (format apa pun), bukan "pilih hasil pertama".
+  // POS2-03: Enter sesudah ketikan secepat scanner = pindaian barcode.
   // A-28 UI-1 (UX-B01): terminal menyambut kasir dengan fokus LANGSUNG
   // di kotak cari — tanpa klik awal. Kembali dari nota = terminal
   // termuat ulang (efek ini berjalan lagi); tambah produk mengembalikan
@@ -630,10 +624,7 @@ export function PosTerminal({
     <div
       style={{ "--pos-cart-w": `${display.cartWidth}px` } as React.CSSProperties}
       className={cn(
-        // FIX-POS Tahap 4 (POS2-04): dua panel mulai lg (1024px) —
-        // rentang layar kasir umum 1024–1279px tidak lagi menumpuk
-        // produk/keranjang/pembayaran secara vertikal. pb-20 memberi
-        // ruang bagi bar total-Bayar tetap di bawah lg.
+        // POS2-04: dua panel mulai lg; pb-20 memberi ruang bar mobile.
         "grid gap-3 pb-20 lg:grid-cols-[minmax(0,1fr)_var(--pos-cart-w)] lg:pb-0",
         fullscreen &&
           "fixed inset-0 z-[60] h-dvh overflow-y-auto bg-background p-3 lg:overflow-hidden",
@@ -676,16 +667,24 @@ export function PosTerminal({
 
       {/* Cart + payment */}
       <aside
+        id="pos-cart"
         className={cn(
           "min-w-0 space-y-3",
-          // POS2-04: panel keranjang/pembayaran melekat (sticky) saat
-          // daftar produk menggulir — total dan Bayar tidak pernah
-          // hilang dari pandangan pada layar dua panel.
+          // Mobile native: keranjang dibuka sebagai sheet dari bar bawah.
+          mobileCartOpen
+            ? "fixed inset-0 z-50 block overflow-y-auto bg-background p-3 pb-24 lg:static lg:z-auto lg:overflow-visible lg:bg-transparent lg:p-0"
+            : "hidden lg:block",
+          // POS2-04: panel keranjang sticky saat produk menggulir.
           !fullscreen &&
             "lg:sticky lg:top-16 lg:max-h-[calc(100dvh-76px)] lg:self-start lg:overflow-y-auto lg:pr-1",
           fullscreen && "lg:min-h-0 lg:overflow-y-auto lg:pr-1",
         )}
       >
+        <MobileCartHeader
+          count={cart.length}
+          total={total}
+          onClose={() => setMobileCartOpen(false)}
+        />
         <CartPanel
           cart={cart}
           cache={cache}
@@ -761,7 +760,17 @@ export function PosTerminal({
         />
       </aside>
 
-      <MobilePayBar cart={cart} total={total} payDisabled={payDisabled} payLabel={payLabel} checkout={checkout} />
+      <MobilePayBar
+        cart={cart}
+        total={total}
+        payDisabled={payDisabled}
+        payLabel={payLabel}
+        checkout={async () => {
+          setMobileCartOpen(false);
+          await checkout();
+        }}
+        onOpenCart={() => setMobileCartOpen(true)}
+      />
 
       {holdOpen ? (
         <HoldDialog
@@ -772,9 +781,7 @@ export function PosTerminal({
         />
       ) : null}
 
-      {/* FIX-POS Tahap 4 (POS2-02): dialog keputusan resume — hanya
-          muncul bila snapshot membuktikan ada keranjang aktif yang
-          akan tertimpa oleh pesanan ditahan yang dipilih. */}
+      {/* POS2-02: dialog resume hanya bila keranjang aktif akan tertimpa. */}
       {resumeOffer ? (
         <ResumeDialog
           resumeOffer={resumeOffer}

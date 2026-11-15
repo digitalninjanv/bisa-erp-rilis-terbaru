@@ -1044,11 +1044,11 @@ describe("A2-(i) payroll dan izin level-field", () => {
 
     // Tanpa payroll.salary → ekspor rekap DITOLAK di gerbang route.
     sessionState.permissions = ["payroll.view"];
-    let rejection: unknown;
-    try {
-      await payrollExportGET(new NextRequest(`http://localhost/api/export/payroll?runId=${runId}`));
-    } catch (error) { rejection = error; }
-    expect(rejection).toMatchObject({ code: "FORBIDDEN" });
+    const deniedExport = await payrollExportGET(
+      new NextRequest(`http://localhost/api/export/payroll?runId=${runId}`),
+    );
+    expect(deniedExport.status).toBe(403);
+    expect(await deniedExport.json()).toMatchObject({ code: "FORBIDDEN" });
 
     // Dengan payroll.salary → 200 dan memuat angka bersih karyawan.
     sessionState.permissions = ["payroll.salary"];

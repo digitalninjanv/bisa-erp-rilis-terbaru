@@ -31,7 +31,7 @@ import {
 } from "@/server/party-credits";
 import { payReceivable } from "@/server/pos/receivables";
 import { payPayableFifo, receiveReceivableFifo } from "@/server/quick-entry";
-import { listReceivables } from "@/server/reports";
+import { countOpenReceivables, listReceivables } from "@/server/reports";
 import { payReceivableAction, voidReceivablePaymentAction } from "@/server/actions/pos";
 import { d } from "@/lib/money";
 import { makeFlexibleRollbackTransaction } from "../helpers/rollback-transaction";
@@ -581,7 +581,7 @@ describe("R3-02 piutang per dokumen (rollback)", () => {
       });
       const open = await makeSale(tx, { customerId: customer.id, total: "45000", date: "2099-01-12" });
 
-      const listed = await listPartyCredits(tx, ORG, { partyType: "customer" });
+      const listed = await listPartyCredits(tx, ORG, { partyType: "customer", status: "open" });
       const mine = listed.filter((row) => row.partyId === customer.id);
       expect(mine).toHaveLength(1);
       expect(d(mine[0].remaining).eq(30000)).toBe(true);
@@ -590,6 +590,7 @@ describe("R3-02 piutang per dokumen (rollback)", () => {
       // Dokumen terbuka tetap tampil sebesar sisa aslinya — kredit
       // tidak dikurangkan dari tagihan (bukan tagihan negatif).
       const receivables = await listReceivables(tx, ORG);
+      expect(await countOpenReceivables(tx, ORG)).toBe(receivables.length);
       const openRow = receivables.find((row) => row.id === open.id);
       expect(openRow).toBeTruthy();
       expect(openRow!.outstanding).toBe(45000);

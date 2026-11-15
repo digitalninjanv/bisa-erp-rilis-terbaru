@@ -71,6 +71,21 @@ const FROZEN: Record<string, string[]> = {
     "server/actions/inventory/taksonomi.ts",
     "server/import/commit.ts",
   ],
+  branches: ["server/actions/settings/lokasi.ts", "server/import/commit-locations.ts"],
+  customerGroups: [
+    "server/actions/settings/kelompok-harga.ts",
+    "server/import/commit-commerce.ts",
+  ],
+  employees: [
+    "server/actions/hr/karyawan.ts",
+    "server/hr/final-pay.ts",
+    "server/import/commit-hr-assets.ts",
+  ],
+  paymentMethods: [
+    "server/actions/settings/pembayaran.ts",
+    "server/import/commit-commerce.ts",
+  ],
+  warehouses: ["server/actions/settings/lokasi.ts", "server/import/commit-locations.ts"],
   customers: [
     "server/actions/inventory/pihak.ts",
     "server/actions/pos.ts",
@@ -174,7 +189,7 @@ const FROZEN: Record<string, string[]> = {
 function domainOf(rel: string): string {
   if (rel === "server/actions/payroll-indonesia.ts") return "HR";
   if (rel.startsWith("server/pos/") || rel === "server/pos.ts" || rel === "server/pos-offline.ts" || rel.startsWith("server/actions/pos")) return "POS";
-  if (rel.startsWith("server/inventory/") || ["server/reservations.ts", "server/serials.ts", "server/batches.ts"].includes(rel) || rel.startsWith("server/actions/inventory/")) return "Gudang";
+  if (rel.startsWith("server/inventory/") || ["server/reservations.ts", "server/serials.ts", "server/serial-restore.ts", "server/batches.ts"].includes(rel) || rel.startsWith("server/actions/inventory/")) return "Gudang";
   if (rel.startsWith("server/supplier-returns/") || rel === "server/purchasing.ts" || rel === "server/purchase-requests.ts") return "Pembelian";
   if (rel.startsWith("server/hr/") || rel === "server/hr.ts" || rel === "server/payroll-indonesia.ts" || rel.startsWith("server/employee-") || rel === "server/reimbursements.ts" || rel.startsWith("server/actions/hr/")) return "HR";
   if (rel.startsWith("server/import/") || rel.startsWith("server/import-") || rel.startsWith("server/actions/import/") || rel === "app/api/import/parse/route.ts") return "Impor";

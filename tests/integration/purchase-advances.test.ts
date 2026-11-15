@@ -16,6 +16,8 @@ import { createReceipt, voidReceipt } from "@/server/inventory";
 import {
   createPurchaseAdvance,
   listOpenPurchaseAdvancesForSupplier,
+  listPurchaseAdvances,
+  listPurchaseAdvanceActors,
   voidPurchaseAdvance,
 } from "@/server/purchase-advances";
 import { listPayables } from "@/server/reports";
@@ -380,6 +382,97 @@ describe("Uang muka pembelian (DP)", () => {
       });
       const open = await listOpenPurchaseAdvancesForSupplier(tx, ORG_ID, supplier.id);
       expect(open.some((row) => d(row.remainingAmount).eq(25000))).toBe(true);
+    });
+  });
+});
+
+describe("Cabang validasi uang muka pembelian", () => {
+  it("menolak nominal nol/negatif, pemasok hilang, dan alasan void tidak sah", async () => {
+    await rollbackTransaction(async (tx) => {
+      const { supplier, map } = await fixture(tx);
+      for (const amount of ["0", "-5"]) {
+        await expect(
+          createPurchaseAdvance(tx, {
+            companyId: ORG_ID,
+            userId: USER_ID,
+            supplierId: supplier.id,
+            date: todayISO(),
+            amount,
+            paymentAccountId: map.cash,
+            taxInvoiceNumber: "FP-DP-UJI",
+          }),
+        ).rejects.toMatchObject({ code: "VALIDATION" });
+      }
+      await expect(
+        createPurchaseAdvance(tx, {
+          companyId: ORG_ID,
+          userId: USER_ID,
+          supplierId: crypto.randomUUID(),
+          date: todayISO(),
+          amount: "1000",
+          paymentAccountId: map.cash,
+          taxInvoiceNumber: "FP-DP-UJI",
+        }),
+      ).rejects.toMatchObject({ code: "VALIDATION" });
+
+      const created = await advance(tx, {
+        supplierId: supplier.id,
+        paymentAccountId: map.cash,
+        amount: "10000",
+      });
+      await expect(
+        voidPurchaseAdvance(tx, {
+          companyId: ORG_ID,
+          userId: USER_ID,
+          advanceId: created.id,
+          reason: "  x ",
+          date: todayISO(),
+        }),
+      ).rejects.toMatchObject({ code: "VALIDATION" });
+      await expect(
+        voidPurchaseAdvance(tx, {
+          companyId: ORG_ID,
+          userId: USER_ID,
+          advanceId: crypto.randomUUID(),
+          reason: "Salah input",
+          date: todayISO(),
+        }),
+      ).rejects.toMatchObject({ code: "VALIDATION" });
+
+      const range = { from: "2026-01-01", to: "2026-12-31", page: 1, pageSize: 50, offset: 0 };
+      const all = await listPurchaseAdvances(tx, ORG_ID, range);
+      expect(all.rows.some((row) => row.id === created.id)).toBe(true);
+      const bySupplier = await listPurchaseAdvances(tx, ORG_ID, {
+        ...range,
+        supplierId: supplier.id,
+        status: "open",
+      });
+      expect(bySupplier.rows.some((row) => row.id === created.id)).toBe(true);
+      const none = await listPurchaseAdvances(tx, ORG_ID, {
+        ...range,
+        supplierId: crypto.randomUUID(),
+        status: "void",
+      });
+      expect(none.rows).toEqual([]);
+      const actors = await listPurchaseAdvanceActors(tx, ORG_ID);
+      expect(Array.isArray(actors)).toBe(true);
+
+      await voidPurchaseAdvance(tx, {
+        companyId: ORG_ID,
+        userId: USER_ID,
+        advanceId: created.id,
+        reason: "Salah input uji",
+        date: todayISO(),
+      });
+      await expect(
+        voidPurchaseAdvance(tx, {
+          companyId: ORG_ID,
+          userId: USER_ID,
+          advanceId: created.id,
+          reason: "Ulangi pembatalan",
+          date: todayISO(),
+        }),
+      ).rejects.toMatchObject({ code: "INVALID_STATE" });
     });
   });
 });

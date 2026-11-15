@@ -43,6 +43,9 @@ const receiptSchema = z
     purchaseOrderId: z.string().uuid().nullish(),
     paymentAccountId: z.string().uuid().nullish(),
     supplierInvoiceNumber: z.string().trim().max(80).nullish(),
+    supplierInvoiceDate: isoDateField.optional(),
+    dueDate: isoDateField.optional(),
+    priceVarianceReason: z.string().trim().max(500).nullish(),
     // GDG3-06: kunci idempotensi buatan form (UUID per pembukaan form).
     idempotencyKey: z.string().trim().min(1).max(80).optional(),
     // FIX-P1 Tahap 4 (AK4-04): harga baris termasuk PPN — domain
@@ -159,6 +162,9 @@ export async function receiveStockAction(input: z.input<typeof receiptSchema>) {
         source: data.source,
         paymentAccountId: data.paymentAccountId ?? null,
         supplierInvoiceNumber: data.supplierInvoiceNumber ?? null,
+        supplierInvoiceDate: data.supplierInvoiceDate ?? null,
+        dueDate: data.dueDate ?? null,
+        priceVarianceReason: data.priceVarianceReason ?? null,
         idempotencyKey: data.idempotencyKey ?? null,
         taxIncluded: data.taxIncluded ?? false,
         taxAmount: data.taxAmount ?? undefined,
@@ -185,6 +191,8 @@ export async function receiveStockAction(input: z.input<typeof receiptSchema>) {
 const recordReceiptInvoiceSchema = z.object({
   receiptId: z.string().uuid(),
   supplierInvoiceNumber: z.string().trim().min(1).max(80),
+  supplierInvoiceDate: isoDateField.optional(),
+  dueDate: isoDateField.optional(),
 });
 
 /** Catat atau koreksi nomor faktur setelah barang diterima; tidak mengubah
@@ -201,6 +209,8 @@ export async function recordReceiptInvoiceNumberAction(
         userId: ctx.user.id,
         receiptId: data.receiptId,
         supplierInvoiceNumber: data.supplierInvoiceNumber,
+        supplierInvoiceDate: data.supplierInvoiceDate,
+        dueDate: data.dueDate,
       }),
     );
     revalidatePath("/app/gudang/penerimaan");

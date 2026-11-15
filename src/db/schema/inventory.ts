@@ -248,6 +248,13 @@ export const stockReceipts = pgTable(
     // makes the receipt born fully paid instead of becoming a payable.
     paymentAccountId: uuid("payment_account_id"),
     supplierInvoiceNumber: text("supplier_invoice_number"),
+    // Tanggal faktur pemasok dapat berbeda dari tanggal penerimaan.
+    // Jatuh tempo eksplisit (bila diisi) mengalahkan tanggal + termin.
+    supplierInvoiceDate: date("supplier_invoice_date"),
+    dueDate: date("due_date"),
+    // Written when the receipt price differs from the linked PO; required
+    // server-side and retained with the posted source document.
+    priceVarianceReason: text("price_variance_reason"),
     // GDG3-06: kunci idempotensi dari klien (pola POS) — submit ulang
     // berkunci sama mengembalikan penerimaan pertama, bukan dokumen baru.
     idempotencyKey: text("idempotency_key"),
@@ -455,8 +462,14 @@ export const supplierReturns = pgTable(
     // dihitung proporsional dari penerimaan ber-PPN yang dialokasikan
     // FIFO. Nol untuk retur atas penerimaan tanpa PPN.
     taxAmount: numeric("tax_amount", { precision: 19, scale: 4 }).notNull().default("0"),
-    // Portion of totalValue settled against the supplier's open payable
-    // at posting (Dr payable); the rest is the supplier-credit claim.
+    // Gross invoice credit value for receipt-linked returns. Zero for
+    // legacy/manual returns without invoice provenance.
+    invoiceCreditAmount: numeric("invoice_credit_amount", { precision: 19, scale: 4 }).notNull().default("0"),
+    // Invoice net value less AVCO inventory value; positive is a COGS
+    // recovery, negative is additional COGS at posting.
+    priceVarianceAmount: numeric("price_variance_amount", { precision: 19, scale: 4 }).notNull().default("0"),
+    // Portion settled against the source payable at posting (gross for
+    // invoice-linked returns); the remainder is the supplier-credit claim.
     payableAmount: numeric("payable_amount", { precision: 19, scale: 4 }).notNull().default("0"),
     creditAmount: numeric("credit_amount", { precision: 19, scale: 4 }).notNull().default("0"),
     // Σ resolutions consuming the claim; claim remaining = credit − this.
@@ -510,7 +523,10 @@ export const supplierReturnLines = pgTable(
     // Qty already replaced by replacement receipts (receiveReplacement).
     replacedQty: numeric("replaced_qty", { precision: 19, scale: 4 }).notNull().default("0"),
   },
-  (t) => [index("supplier_return_lines_return_idx").on(t.returnId)],
+  (t) => [
+    index("supplier_return_lines_return_idx").on(t.returnId),
+    index("supplier_return_lines_company_receipt_line_idx").on(t.companyId, t.receiptLineId),
+  ],
 );
 /**
  * One settlement event against a return's supplier-credit claim. Every
@@ -751,7 +767,6 @@ export const purchaseRequestLines = pgTable(
 /* pada pemeriksaan ketersediaan POS/penjualan. Kedaluwarsa dinilai    */
 /* saat dibaca (expires_at lewat = tidak aktif) tanpa butuh cron.      */
 /* ------------------------------------------------------------------ */
-
 export const stockReservations = pgTable(
   "stock_reservations",
   {
@@ -787,7 +802,6 @@ export const stockReservations = pgTable(
 /* Setiap perubahan status dicatat di stock_serial_movements dengan    */
 /* dokumen sumbernya — itulah kartu seri per produk.                   */
 /* ------------------------------------------------------------------ */
-
 export const stockSerials = pgTable(
   "stock_serials",
   {

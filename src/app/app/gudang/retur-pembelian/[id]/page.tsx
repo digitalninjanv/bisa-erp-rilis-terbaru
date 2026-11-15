@@ -9,6 +9,7 @@ import {
 } from "@/server/supplier-returns";
 import { requirePermissionPage } from "@/lib/session";
 import { can } from "@/lib/permissions";
+import { canSeeInventoryCost } from "@/lib/inventory-cost";
 import { d, formatIDR, formatQty } from "@/lib/money";
 import { formatDate, formatDateLong, todayISO } from "@/lib/format";
 import { DocumentMetaRows, DocumentPage } from "@/components/blocks/document-page";
@@ -41,6 +42,7 @@ export default async function SupplierReturnDetailPage({
 }) {
   const { id } = await params;
   const ctx = await requirePermissionPage("inventory.view");
+  const canSeeCost = canSeeInventoryCost(ctx);
 
   const data = await withCompanyReadOnly(ctx.company.id, (tx) =>
     getSupplierReturnPageData(tx, ctx.company.id, id),
@@ -151,10 +153,12 @@ export default async function SupplierReturnDetailPage({
               value:
                 SUPPLIER_RETURN_RESOLUTION_LABELS[detail.resolutionType] ?? detail.resolutionType,
             },
-            {
-              label: "Total nilai retur",
-              value: isDraft ? "Dibekukan saat posting" : formatIDR(detail.totalValue),
-            },
+            ...(canSeeCost
+              ? [{
+                  label: "Nilai persediaan keluar (AVCO)",
+                  value: isDraft ? "Dibekukan saat posting" : formatIDR(detail.totalValue),
+                }]
+              : []),
             ...(!isDraft && detail.status !== "void"
               ? [{ label: "Sisa klaim", value: formatIDR(data.remaining) }]
               : []),
@@ -208,8 +212,8 @@ export default async function SupplierReturnDetailPage({
                 <th>Produk</th>
                 <th>Batch keluar</th>
                 <th className="text-right">Qty retur</th>
-                <th className="text-right">Harga pokok (AVCO)</th>
-                <th className="text-right">Nilai baris</th>
+                {canSeeCost ? <th className="text-right">Harga pokok (AVCO)</th> : null}
+                {canSeeCost ? <th className="text-right">Nilai baris</th> : null}
                 <th className="text-right">Sudah diganti</th>
               </tr>
             </thead>
@@ -234,8 +238,8 @@ export default async function SupplierReturnDetailPage({
                           : "—"}
                     </td>
                     <td className="num text-right">{formatQty(line.qty)}</td>
-                    <td className="num text-right">{isDraft ? "—" : formatIDR(line.unitCost)}</td>
-                    <td className="num text-right font-medium">{isDraft ? "—" : formatIDR(line.lineTotal)}</td>
+                    {canSeeCost ? <td className="num text-right">{isDraft ? "—" : formatIDR(line.unitCost)}</td> : null}
+                    {canSeeCost ? <td className="num text-right font-medium">{isDraft ? "—" : formatIDR(line.lineTotal)}</td> : null}
                     <td className="num text-right text-muted-foreground">
                       {d(line.replacedQty).gt(0) ? formatQty(line.replacedQty) : "—"}
                     </td>
@@ -246,8 +250,8 @@ export default async function SupplierReturnDetailPage({
             {!isDraft ? (
               <tfoot>
                 <tr>
-                  <td colSpan={4} className="text-right font-semibold">Total nilai retur</td>
-                  <td className="num text-right font-semibold">{formatIDR(detail.totalValue)}</td>
+                  <td colSpan={canSeeCost ? 4 : 2} className="text-right font-semibold">Nilai persediaan keluar (AVCO)</td>
+                  {canSeeCost ? <td className="num text-right font-semibold">{formatIDR(detail.totalValue)}</td> : null}
                   <td />
                 </tr>
               </tfoot>
@@ -259,13 +263,34 @@ export default async function SupplierReturnDetailPage({
       {!isDraft && detail.status !== "void" ? (
         <section className="mt-3 overflow-hidden rounded-lg border border-border bg-card">
           <div className="border-b border-border px-4 py-3">
-            <h2 className="text-[13px] font-semibold">Penyelesaian & klaim Kredit Pemasok</h2>
+          <h2 className="text-[13px] font-semibold">Penyelesaian & klaim Kredit Pemasok</h2>
+          {d(detail.invoiceCreditAmount).gt(0) ? (
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Nilai stok keluar memakai AVCO saat posting. Klaim pemasok mengikuti faktur asal; selisih bersih dicatat ke HPP.
+            </p>
+          ) : null}
           </div>
           <dl className="grid gap-x-6 gap-y-2 px-4 py-3 text-[12px] sm:grid-cols-2">
-            <div className="flex items-baseline justify-between gap-4">
-              <dt className="text-muted-foreground">Nilai retur total</dt>
+            {canSeeCost ? <div className="flex items-baseline justify-between gap-4">
+              <dt className="text-muted-foreground">Nilai persediaan keluar (AVCO)</dt>
               <dd className="num font-medium">{formatIDR(detail.totalValue)}</dd>
-            </div>
+            </div> : null}
+            {d(detail.invoiceCreditAmount).gt(0) ? (
+              <>
+                <div className="flex items-baseline justify-between gap-4">
+                  <dt className="text-muted-foreground">Nilai kredit nota faktur (termasuk PPN)</dt>
+                  <dd className="num font-medium">{formatIDR(detail.invoiceCreditAmount)}</dd>
+                </div>
+                <div className="flex items-baseline justify-between gap-4">
+                  <dt className="text-muted-foreground">PPN Masukan dibalik</dt>
+                  <dd className="num font-medium">{formatIDR(detail.taxAmount)}</dd>
+                </div>
+                {canSeeCost ? <div className="flex items-baseline justify-between gap-4">
+                  <dt className="text-muted-foreground">Selisih faktur terhadap AVCO (dampak HPP)</dt>
+                  <dd className="num font-medium">{formatIDR(detail.priceVarianceAmount)}</dd>
+                </div> : null}
+              </>
+            ) : null}
             <div className="flex items-baseline justify-between gap-4">
               <dt className="text-muted-foreground">Langsung memotong utang saat posting</dt>
               <dd className="num font-medium">{formatIDR(detail.payableAmount)}</dd>

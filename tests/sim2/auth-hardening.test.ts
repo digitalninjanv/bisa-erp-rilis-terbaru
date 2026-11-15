@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { hashPassword } from "better-auth/crypto";
 import { adminDb, adminSql } from "@/db/admin";
-import { account, member, organization, user } from "@/db/schema";
+import { account, member, organization, rateLimit, user } from "@/db/schema";
 import { auth } from "@/lib/auth";
 
 /**
@@ -63,6 +63,23 @@ beforeAll(async () => {
 afterAll(wipeFixture);
 
 describe("SEC-02 — plugin dorman dicabut", () => {
+  it("SEC-012: penghitung rate limit tersimpan di database, bukan memori proses", async () => {
+    const signInResponse = await auth.handler(
+      authRequest("/api/auth/sign-in/email", {
+        method: "POST",
+        body: JSON.stringify({ email: EMAIL, password: PASSWORD }),
+      }),
+    );
+    expect(signInResponse.status).toBe(200);
+    const rows = await adminDb
+      .select({ key: rateLimit.key, count: rateLimit.count })
+      .from(rateLimit)
+      .limit(20);
+    const signIn = rows.find((row) => row.key.includes("/sign-in/email"));
+    expect(signIn, "baris rate_limit untuk sign-in").toBeTruthy();
+    expect(signIn!.count).toBeGreaterThan(0);
+  });
+
   it("konfigurasi auth tidak lagi memuat plugin admin/organization", () => {
     const ids = (auth.options.plugins ?? []).map((plugin) => (plugin as { id?: string }).id);
     expect(ids).not.toContain("admin");

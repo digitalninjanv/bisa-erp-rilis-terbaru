@@ -17,6 +17,7 @@ import { reverseSourceJournal } from "@/server/accounting";
 import { writeAudit } from "@/server/audit";
 import { applyBatchDelta } from "@/server/batches";
 import { restoreSerialsForTransferVoid } from "@/server/serials";
+import { restoreSerialsForStockDocumentVoid } from "@/server/serial-restore";
 import { applyStockMovement, lockStockQty, recomputeCostFromLedger } from "./movements";
 
 export type StockDocumentRow = typeof stockDocuments.$inferSelect;
@@ -267,6 +268,17 @@ export async function voidStockDocument(
       documentNumber: doc.number,
       fromWarehouseId: doc.warehouseId,
       toWarehouseId: doc.toWarehouseId ?? null,
+    });
+  } else {
+    // Adjustment/opname/quarantine/retur warisan: seri yang dikonsumsi
+    // dokumen ini (atau dipindah ke karantina) harus kembali ke gudang
+    // asal agar unit tidak hilang dari persediaan setelah void.
+    await restoreSerialsForStockDocumentVoid(tx, {
+      companyId: input.companyId,
+      userId: input.userId,
+      documentId: doc.id,
+      documentNumber: doc.number,
+      note: `Pembatalan dokumen stok ${doc.number} — ${input.reason}`,
     });
   }
 

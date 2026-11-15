@@ -15,19 +15,24 @@ Status per 2026-11-11. Severity mengikuti dampak bisnis: **Kritis** = uang/stok/
 | ID | Temuan | Status |
 | --- | --- | --- |
 | AKN-003 | Jurnal tutup buku ikut dihitung di P&L periode → P&L tahun tertutup menjadi 0. | **DIPERBAIKI** — `getIncomeStatement(..., {excludeClosing:true})` untuk P&L/dashboard/export; neraca & ekuitas tetap memakai closing. |
-| AKN-004 | Void beban/payroll memakai tanggal hari ini → beban bulan berjalan negatif. | **SEBAGIAN** — void beban memakai tanggal asal bila periode terbuka, fallback hari ini + audit; payroll/sale/bank transfer masih memakai hari ini (BLOKIR). |
+| AKN-004 | Void beban/payroll/penjualan/transfer bank memakai tanggal hari ini → beban/pendapatan bulan berjalan negatif. | **DIPERBAIKI** — `reverseSourceJournalPreferringDate` memakai tanggal dokumen asal; fallback hari ini hanya bila periode tertutup. |
 | AKN-005 | `isPostable=false` pada akun berjurnal menghapus histori dari P&L. | **DIPERBAIKI** — guard `CONFLICT` bila `journalLineCount > 0`. |
 | AKN-006 | Section akun impor dipercaya; beban bisa masuk kelompok pendapatan atau hilang dari P&L. | **DIPERBAIKI** — matriks tipe→section di impor + fallback P&L ke section tipe. |
 | AKN-007 | Laporan penjualan menghitung penjualan yang sudah diretur; retur tidak mengurangi omzet/profit. | **DIPERBAIKI** — summary, per hari, per kasir, per kategori, top produk mengurangi retur; PPN retur diproporsikan. |
 | AKN-008 | Kategori/top produk menambahkan `taxAmount` lagi padahal `lineTotal` sudah termasuk pajak. | **DIPERBAIKI** — hanya `lineTotal`. |
 | GDG-001 | Void penerimaan memakai harga bruto, bukan DPP/diskon → AVCO ≠ GL. | **DIPERBAIKI** — memakai `lineTotal/qty`; test void diskon + GL lulus. |
-| GDG-002 | Void retur pemasok/dokumen stok tidak menghitung ulang AVCO. | **DIPERBAIKI** untuk retur pemasok & dokumen stok; serial adjustment/opname masih terbuka (BLOKIR). |
+| GDG-002 | Void retur pemasok/dokumen stok tidak menghitung ulang AVCO. | **DIPERBAIKI** — AVCO dihitung ulang; serial adjustment/opname/karantina kini juga dipulihkan (`restoreSerialsForStockDocumentVoid`). |
 | POS-002 | Refund tunai memilih sesi kas tanpa lock → bisa masuk sesi yang baru ditutup. | **DIPERBAIKI** — `FOR UPDATE` pada sesi refund. |
 | POS-003 | Default pembulatan grup 500/down membuat harga grup 1.000 menjadi 500. | **DIPERBAIKI** — default grup baru 0 (tanpa pembulatan); grup lama perlu diedit manual. |
 | DATA-001 | Unique index idempotency di migrasi awal `(company_id,key)`, sedangkan runtime `(company_id,scope,key)` → checkout gagal di instalasi baru. | **DIPERBAIKI** — migrasi `0070` membuat index yang benar; diterapkan + backup. |
 | SEC-001 | Eskalasi peran: non-owner bisa memberi admin/owner, mengedit peran sendiri, atau memberi izin yang tidak dimiliki. | **SEBAGIAN** — admin/owner hanya owner, izin dibatasi subset aktor, peran sendiri tidak bisa diedit, reset password memutus sesi. Audit peran kustom masih terbatas. |
 | SEC-002 | `import.manage` bisa membuat akun/pemetaan/saldo awal tanpa izin akuntansi. | **DIPERBAIKI** — commit impor akuntansi memerlukan `accounting.manage`/`accounting.post` pada konteks produksi. |
-| SEC-003 | `inventory.cost` bocor di dashboard gudang, pergerakan, PO/penerimaan/retur/dokumen/reservasi. | **SEBAGIAN** — dashboard gudang, dashboard utama, dan pergerakan sudah disaring; PO/penerimaan/retur/dokumen/reservasi masih terbuka. |
+| SEC-003 | `inventory.cost` bocor di dashboard gudang, pergerakan, PO/penerimaan/retur/dokumen/reservasi. | **DIPERBAIKI** — dashboard, pergerakan, nilai, PO, penerimaan, retur, dokumen, dan cetak dokumen memakai gerbang `canSeeInventoryCost`; test matriks izin lulus. |
+| SEC-011 | Aksi PO/PR/reservasi memakai `requirePermission` biasa; modul Gudang nonaktif tetap bisa diakses. | **DIPERBAIKI** — semuanya memakai `requirePermissionInModule(..., "gudang")`. |
+| SEC-006 | Route export mengembalikan 500 untuk 401/403/validasi. | **DIPERBAIKI** — `withApiError` memetakan AppError/ZodError ke 400/403/404/409/500; test mapper lulus. |
+| SEC-008 | Upload impor membaca body/workbook sebelum validasi ukuran/format. | **DIPERBAIKI** — streaming limit 20MB, magic bytes XLSX/XLS/CSV, batas entri/rasio/ukuran ZIP; test valid/palsu/oversize/zip bomb lulus. |
+| GDG-UI-01 | Pencarian Nilai Persediaan hanya menyaring 50 baris halaman tampil. | **DIPERBAIKI** — filter nama/SKU/kategori server-side sebelum paginasi + ekspor. |
+| GDG-UI-02 | Jatuh tempo utang pembelian hanya tanggal penerimaan + termin; tanggal faktur pemasok tidak tersimpan. | **DIPERBAIKI** — `supplier_invoice_date` & `due_date` pada penerimaan; form, koreksi, detail, cetak, dan aging utang memakainya. |
 | SEC-004 | Default installer memakai HTTP untuk auth; cookie tidak Secure. | **DIPERBAIKI di runtime** — produksi wajib `https` kecuali `BISA_ALLOW_INSECURE_AUTH_URL=1`; contoh installer masih perlu diperbarui (BLOKIR). |
 | SEC-005 | Token terminal POS tetap bisa membaca snapshot setelah user dicabut/di-demote. | **DIPERBAIKI** — resolusi token mengecek membership, role custom aktif, dan `pos.sell`. |
 | SEC-007 | Reset password tidak mencabut session lama. | **DIPERBAIKI** — session user dihapus. |
@@ -38,8 +43,6 @@ Status per 2026-11-11. Severity mengikuti dampak bisnis: **Kritis** = uang/stok/
 - Route export mengembalikan 500 untuk 401/403/validasi (belum dibungkus mapper error) — TERBUKA.
 - Upload impor membaca seluruh body/workbook sebelum cek baris; belum ada validasi magic bytes — TERBUKA.
 - Perubahan mapping belum menulis audit before/after — TERBUKA.
-- Modul gudang bisa dimatikan tetapi beberapa aksi PO/PR/reservasi memakai `requirePermission` biasa — TERBUKA.
-- `inventory.cost` leak (SEC-003) — TERBUKA.
 - Laporan penjualan: transaksi retur masih dihitung sebagai transaksi; nilai sudah neto.
 - PPN retur diproporsikan dari total penjualan asal; bukan pajak per baris.
 - HR list kasbon/klaim/pinjaman belum search/pagination.

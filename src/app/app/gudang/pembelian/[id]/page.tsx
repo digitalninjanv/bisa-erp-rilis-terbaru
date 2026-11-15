@@ -4,6 +4,7 @@ import { withCompanyReadOnly } from "@/db/tenant";
 import { getPurchaseOrderDetail } from "@/server/purchasing";
 import { requirePermissionPage } from "@/lib/session";
 import { can } from "@/lib/permissions";
+import { canSeeInventoryCost } from "@/lib/inventory-cost";
 import { formatIDR, formatQty } from "@/lib/money";
 import { formatDate, formatDateLong } from "@/lib/format";
 import { DocumentMetaRows, DocumentPage } from "@/components/blocks/document-page";
@@ -25,6 +26,7 @@ export default async function PurchaseOrderDetailPage({
 }) {
   const { id } = await params;
   const ctx = await requirePermissionPage("inventory.view");
+  const canSeeCost = canSeeInventoryCost(ctx);
 
   const data = await withCompanyReadOnly(ctx.company.id, (tx) =>
     getPurchaseOrderDetail(tx, ctx.company.id, id),
@@ -109,7 +111,7 @@ export default async function PurchaseOrderDetailPage({
               label: "Perkiraan tiba",
               value: order.expectedDate ? formatDate(order.expectedDate) : "—",
             },
-            { label: "Total nilai PO", value: formatIDR(order.total) },
+            ...(canSeeCost ? [{ label: "Total nilai PO", value: formatIDR(order.total) }] : []),
             { label: "Total dipesan", value: `${formatQty(totalOrderedQty)} unit` },
           ]}
         />
@@ -128,8 +130,8 @@ export default async function PurchaseOrderDetailPage({
                 <th className="text-right">Diterima</th>
                 <th className="text-right">Sisa</th>
                 <th>Progres</th>
-                <th className="text-right">Harga beli</th>
-                <th className="text-right">Subtotal</th>
+                {canSeeCost ? <th className="text-right">Harga beli</th> : null}
+                {canSeeCost ? <th className="text-right">Subtotal</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -160,16 +162,16 @@ export default async function PurchaseOrderDetailPage({
                       </div>
                       <span className="num text-[10px] text-muted-foreground">{progress}%</span>
                     </td>
-                    <td className="num text-right">{formatIDR(line.unitCost)}</td>
-                    <td className="num text-right font-medium">{formatIDR(line.lineTotal)}</td>
+                    {canSeeCost ? <td className="num text-right">{formatIDR(line.unitCost)}</td> : null}
+                    {canSeeCost ? <td className="num text-right font-medium">{formatIDR(line.lineTotal)}</td> : null}
                   </tr>
                 );
               })}
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan={6} className="text-right font-semibold">Total nilai PO</td>
-                <td className="num text-right font-semibold">{formatIDR(order.total)}</td>
+                <td colSpan={canSeeCost ? 6 : 4} className="text-right font-semibold">Total nilai PO</td>
+                {canSeeCost ? <td className="num text-right font-semibold">{formatIDR(order.total)}</td> : null}
               </tr>
             </tfoot>
           </table>
@@ -210,7 +212,7 @@ export default async function PurchaseOrderDetailPage({
                   <th>Nomor penerimaan</th>
                   <th>Tanggal</th>
                   <th>Gudang</th>
-                  <th className="text-right">Total</th>
+                  {canSeeCost ? <th className="text-right">Total</th> : null}
                   <th>Status</th>
                   <th className="text-right">Aksi</th>
                 </tr>
@@ -221,7 +223,7 @@ export default async function PurchaseOrderDetailPage({
                     <td className="num font-medium">{receipt.number}</td>
                     <td className="num text-[12px] text-muted-foreground">{formatDate(receipt.date)}</td>
                     <td className="text-[12px]">{receipt.warehouseName ?? "—"}</td>
-                    <td className="num text-right">{formatIDR(receipt.total)}</td>
+                    {canSeeCost ? <td className="num text-right">{formatIDR(receipt.total)}</td> : null}
                     <td>
                       <StatusBadge
                         status={receipt.status}

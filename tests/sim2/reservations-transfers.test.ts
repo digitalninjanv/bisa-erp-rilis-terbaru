@@ -29,6 +29,10 @@ import {
   getInTransitSummary,
   getReservedQuantities,
   releaseReservation,
+  getConsumableReservation,
+  consumeReservationForSale,
+  listReservationsPage,
+  countReservationsSummary,
 } from "@/server/reservations";
 import { d } from "@/lib/money";
 import { wipeCompanyFixture } from "../helpers/wipe-company";
@@ -94,6 +98,7 @@ async function bootstrap() {
       { companyId: ORG, code: "4010", name: "Diskon Penjualan", type: "revenue", normalBalance: "debit" },
       { companyId: ORG, code: "4020", name: "Retur Penjualan", type: "revenue", normalBalance: "debit" },
       { companyId: ORG, code: "5000", name: "Harga Pokok Penjualan", type: "cogs", normalBalance: "debit" },
+      { companyId: ORG, code: "6000", name: "Beban Susut Persediaan", type: "expense", normalBalance: "debit" },
       { companyId: ORG, code: "9000", name: "Pembulatan Penjualan (Laba)", type: "revenue", normalBalance: "credit" },
       { companyId: ORG, code: "9001", name: "Selisih Pembulatan (Rugi)", type: "expense", normalBalance: "debit" },
     ])
@@ -108,6 +113,7 @@ async function bootstrap() {
     { companyId: ORG, key: "sales_discount", accountId: acc["4010"] },
     { companyId: ORG, key: "sales_return", accountId: acc["4020"] },
     { companyId: ORG, key: "cogs", accountId: acc["5000"] },
+    { companyId: ORG, key: "inventory_shrink", accountId: acc["6000"] },
     { companyId: ORG, key: "rounding_gain", accountId: acc["9000"] },
     { companyId: ORG, key: "rounding_loss", accountId: acc["9001"] },
   ]);
@@ -330,5 +336,396 @@ describe("Transfer antar-gudang", () => {
     expect(await onHand(whA)).toBe(8);
     const [stored] = await adminDb.select().from(stockDocuments).where(eq(stockDocuments.id, doc.id));
     expect(stored.status).toBe("void");
+  });
+});
+
+describe("Cabang validasi reservasi", () => {
+  it("menolak qty tidak valid, gudang/produk hilang, produk non-stok, dan stok kurang", async () => {
+    await withCompany(ORG, async (tx) => {
+      const base = {
+        companyId: ORG,
+        userId: OWNER,
+        warehouseId: whA,
+        productId,
+        date: "2026-04-01",
+      };
+      await expect(createReservation(tx, { ...base, qty: 0 })).rejects.toMatchObject({
+        code: "VALIDATION",
+      });
+      await expect(createReservation(tx, { ...base, qty: -1 })).rejects.toMatchObject({
+        code: "VALIDATION",
+      });
+      await expect(
+        createReservation(tx, { ...base, qty: 1, warehouseId: crypto.randomUUID() }),
+      ).rejects.toMatchObject({ code: "VALIDATION" });
+      await expect(
+        createReservation(tx, { ...base, qty: 1, productId: crypto.randomUUID() }),
+      ).rejects.toMatchObject({ code: "VALIDATION" });
+      const [nonTrack] = await tx
+        .insert(products)
+        .values({
+          companyId: ORG,
+          sku: `NONTRACK-${crypto.randomUUID().slice(0, 6)}`,
+          name: "Jasa Tanpa Stok",
+          salePrice: "1000",
+          costPrice: "0",
+          trackStock: false,
+        })
+        .returning({ id: products.id });
+      await expect(
+        createReservation(tx, { ...base, qty: 1, productId: nonTrack.id }),
+      ).rejects.toMatchObject({ code: "VALIDATION" });
+      await expect(createReservation(tx, { ...base, qty: 999_999 })).rejects.toMatchObject({
+        code: "VALIDATION",
+      });
+    });
+  });
+
+  it("rilis: tidak ditemukan, sudah nonaktif, dan excludeReservationId", async () => {
+    const created = await withCompany(ORG, (tx) =>
+      createReservation(tx, {
+        companyId: ORG,
+        userId: OWNER,
+        warehouseId: whA,
+        productId,
+        qty: 2,
+        date: "2026-04-02",
+      }),
+    );
+    await withCompany(ORG, async (tx) => {
+      const reserved = await getReservedQuantities(tx, ORG, whA, [productId], new Date(), {
+        excludeReservationId: created.id,
+      });
+      expect(d(reserved.get(productId) ?? 0).toNumber()).toBe(0);
+      const other = await getReservedQuantities(tx, ORG, whA, [productId], new Date(), {
+        excludeReservationId: crypto.randomUUID(),
+      });
+      expect(d(other.get(productId) ?? 0).toNumber()).toBeGreaterThanOrEqual(2);
+      const none = await getReservedQuantities(tx, ORG, whA, []);
+      expect(none.size).toBe(0);
+
+      await releaseReservation(tx, { companyId: ORG, userId: OWNER, reservationId: created.id });
+      await expect(
+        releaseReservation(tx, { companyId: ORG, userId: OWNER, reservationId: created.id }),
+      ).rejects.toMatchObject({ code: "CONFLICT" });
+      await expect(
+        releaseReservation(tx, {
+          companyId: ORG,
+          userId: OWNER,
+          reservationId: crypto.randomUUID(),
+        }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    });
+  });
+
+  it("getConsumable dan consume: gudang salah, nonaktif, kedaluwarsa, dan partial", async () => {
+    const active = await withCompany(ORG, (tx) =>
+      createReservation(tx, {
+        companyId: ORG,
+        userId: OWNER,
+        warehouseId: whA,
+        productId,
+        qty: 3,
+        date: "2026-04-03",
+      }),
+    );
+    const expired = await withCompany(ORG, (tx) =>
+      createReservation(tx, {
+        companyId: ORG,
+        userId: OWNER,
+        warehouseId: whA,
+        productId,
+        qty: 1,
+        date: "2026-04-03",
+        expiresAt: new Date(Date.now() - 60_000),
+      }),
+    );
+    const released = await withCompany(ORG, (tx) =>
+      createReservation(tx, {
+        companyId: ORG,
+        userId: OWNER,
+        warehouseId: whA,
+        productId,
+        qty: 1,
+        date: "2026-04-03",
+      }),
+    );
+    await withCompany(ORG, async (tx) => {
+      await expect(
+        getConsumableReservation(tx, {
+          companyId: ORG,
+          reservationId: crypto.randomUUID(),
+          warehouseId: whA,
+        }),
+      ).rejects.toMatchObject({ code: "VALIDATION" });
+      await expect(
+        getConsumableReservation(tx, {
+          companyId: ORG,
+          reservationId: active.id,
+          warehouseId: whB,
+        }),
+      ).rejects.toMatchObject({ code: "VALIDATION" });
+      await expect(
+        getConsumableReservation(tx, {
+          companyId: ORG,
+          reservationId: expired.id,
+          warehouseId: whA,
+        }),
+      ).rejects.toMatchObject({ code: "VALIDATION" });
+      await releaseReservation(tx, { companyId: ORG, userId: OWNER, reservationId: released.id });
+      await expect(
+        getConsumableReservation(tx, {
+          companyId: ORG,
+          reservationId: released.id,
+          warehouseId: whA,
+        }),
+      ).rejects.toMatchObject({ code: "VALIDATION" });
+      const consumed = await consumeReservationForSale(tx, {
+        companyId: ORG,
+        userId: OWNER,
+        reservationId: active.id,
+        soldQtyByProduct: new Map([[productId, d(2)]]),
+      });
+      expect(consumed.consumedQty.toNumber()).toBe(2);
+      expect(consumed.fulfilled).toBe(false);
+      const none = await consumeReservationForSale(tx, {
+        companyId: ORG,
+        userId: OWNER,
+        reservationId: crypto.randomUUID(),
+        soldQtyByProduct: new Map([[productId, d(1)]]),
+      });
+      expect(none.consumedQty.toNumber()).toBe(0);
+      const zero = await consumeReservationForSale(tx, {
+        companyId: ORG,
+        userId: OWNER,
+        reservationId: active.id,
+        soldQtyByProduct: new Map(),
+      });
+      expect(zero.consumedQty.toNumber()).toBe(0);
+      const final = await consumeReservationForSale(tx, {
+        companyId: ORG,
+        userId: OWNER,
+        reservationId: active.id,
+        soldQtyByProduct: new Map([[productId, d(5)]]),
+      });
+      expect(final.consumedQty.toNumber()).toBe(1);
+      expect(final.fulfilled).toBe(true);
+      await releaseReservation(tx, { companyId: ORG, userId: OWNER, reservationId: expired.id });
+    });
+  });
+
+  it("daftar reservasi: filter, pagination, dan ringkasan", async () => {
+    await withCompany(ORG, async (tx) => {
+      const empty = await listReservationsPage(tx, ORG, {});
+      expect(empty.total).toBeGreaterThanOrEqual(0);
+      const filtered = await listReservationsPage(tx, ORG, {
+        q: "tidak-ada",
+        page: 0,
+        pageSize: 5000,
+      });
+      expect(filtered.page).toBe(1);
+      expect(filtered.pageSize).toBe(200);
+      expect(filtered.rows).toEqual([]);
+      const summary = await countReservationsSummary(tx, ORG);
+      expect(summary.total).toBeGreaterThanOrEqual(0);
+      const future = await countReservationsSummary(tx, ORG, new Date("2099-01-01"));
+      expect(future.active).toBeGreaterThanOrEqual(0);
+    });
+  });
+});
+
+describe("Cabang validasi penerimaan transfer", () => {
+  it("menolak dokumen hilang, bukan transfer, status salah, dan tanpa gudang tujuan", async () => {
+    await withCompany(ORG, async (tx) => {
+      await expect(
+        receiveTransfer(tx, {
+          companyId: ORG,
+          userId: OWNER,
+          documentId: crypto.randomUUID(),
+          date: "2026-04-10",
+        }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+
+      const [nonTransfer] = await tx
+        .insert(stockDocuments)
+        .values({
+          companyId: ORG,
+          type: "adjustment",
+          number: `ADJ-${crypto.randomUUID().slice(0, 8)}`,
+          date: "2026-04-10",
+          warehouseId: whA,
+          status: "in_transit",
+        })
+        .returning({ id: stockDocuments.id });
+      await expect(
+        receiveTransfer(tx, {
+          companyId: ORG,
+          userId: OWNER,
+          documentId: nonTransfer.id,
+          date: "2026-04-10",
+        }),
+      ).rejects.toMatchObject({ code: "VALIDATION" });
+
+      const [posted] = await tx
+        .insert(stockDocuments)
+        .values({
+          companyId: ORG,
+          type: "transfer",
+          number: `TRF-${crypto.randomUUID().slice(0, 8)}`,
+          date: "2026-04-10",
+          warehouseId: whA,
+          toWarehouseId: whB,
+          status: "posted",
+        })
+        .returning({ id: stockDocuments.id });
+      await expect(
+        receiveTransfer(tx, {
+          companyId: ORG,
+          userId: OWNER,
+          documentId: posted.id,
+          date: "2026-04-10",
+        }),
+      ).rejects.toMatchObject({ code: "INVALID_STATE" });
+
+      const [noDestination] = await tx
+        .insert(stockDocuments)
+        .values({
+          companyId: ORG,
+          type: "transfer",
+          number: `TRF-${crypto.randomUUID().slice(0, 8)}`,
+          date: "2026-04-10",
+          warehouseId: whA,
+          status: "in_transit",
+        })
+        .returning({ id: stockDocuments.id });
+      await expect(
+        receiveTransfer(tx, {
+          companyId: ORG,
+          userId: OWNER,
+          documentId: noDestination.id,
+          date: "2026-04-10",
+        }),
+      ).rejects.toMatchObject({ code: "VALIDATION" });
+    });
+  });
+
+  it("penerimaan sebagian, qty tidak valid, dan penutupan selisih", async () => {
+    await withCompany(ORG, (tx) =>
+      applyStockMovement(tx, {
+        companyId: ORG,
+        warehouseId: whA,
+        productId,
+        delta: 50,
+        unitCost: "10000",
+        movementType: "purchase",
+        referenceType: "opening",
+        userId: OWNER,
+      }),
+    );
+    const doc = await withCompany(ORG, (tx) =>
+      createTransfer(tx, {
+        companyId: ORG,
+        userId: OWNER,
+        fromWarehouseId: whA,
+        toWarehouseId: whB,
+        date: "2026-04-11",
+        lines: [{ productId, qty: 5 }],
+      }),
+    );
+    await withCompany(ORG, async (tx) => {
+      const dup = await receiveTransfer(tx, {
+        companyId: ORG,
+        userId: OWNER,
+        documentId: doc.id,
+        date: "2026-04-12",
+        lines: [
+          { productId, receivedQty: 1 },
+          { productId, receivedQty: 1 },
+        ],
+      }).catch((error) => error);
+      expect(dup).toMatchObject({ code: "VALIDATION" });
+
+      await expect(
+        receiveTransfer(tx, {
+          companyId: ORG,
+          userId: OWNER,
+          documentId: doc.id,
+          date: "2026-04-12",
+          lines: [{ productId, receivedQty: -1 }],
+        }),
+      ).rejects.toMatchObject({ code: "VALIDATION" });
+      await expect(
+        receiveTransfer(tx, {
+          companyId: ORG,
+          userId: OWNER,
+          documentId: doc.id,
+          date: "2026-04-12",
+          lines: [{ productId, receivedQty: 99 }],
+        }),
+      ).rejects.toMatchObject({ code: "VALIDATION" });
+      await expect(
+        receiveTransfer(tx, {
+          companyId: ORG,
+          userId: OWNER,
+          documentId: doc.id,
+          date: "2026-04-12",
+          lines: [{ productId: crypto.randomUUID(), receivedQty: 1 }],
+        }),
+      ).rejects.toMatchObject({ code: "VALIDATION" });
+      await expect(
+        receiveTransfer(tx, {
+          companyId: ORG,
+          userId: OWNER,
+          documentId: doc.id,
+          date: "2026-04-12",
+          lines: [{ productId, receivedQty: 0 }],
+        }),
+      ).rejects.toMatchObject({ code: "VALIDATION" });
+
+      await expect(
+        receiveTransfer(tx, {
+          companyId: ORG,
+          userId: OWNER,
+          userRole: "warehouse",
+          documentId: doc.id,
+          date: "2026-04-12",
+          lines: [{ productId, receivedQty: 2 }],
+        }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+      const partial = await receiveTransfer(tx, {
+        companyId: ORG,
+        userId: OWNER,
+        userRole: "owner",
+        documentId: doc.id,
+        date: "2026-04-12",
+        lines: [{ productId, receivedQty: 2 }],
+      });
+      expect(partial.status).toBe("in_transit");
+
+      await expect(
+        receiveTransfer(tx, {
+          companyId: ORG,
+          userId: OWNER,
+          documentId: doc.id,
+          date: "2026-04-13",
+          lines: [{ productId, receivedQty: 1 }],
+          closeRemainder: true,
+          differenceReason: "   ",
+        }),
+      ).rejects.toMatchObject({ code: "VALIDATION" });
+
+      const closed = await receiveTransfer(tx, {
+        companyId: ORG,
+        userId: OWNER,
+        userRole: "owner",
+        documentId: doc.id,
+        date: "2026-04-13",
+        lines: [{ productId, receivedQty: 1 }],
+        closeRemainder: true,
+        differenceReason: "Hilang di jalan",
+      });
+      expect(closed.status).toBe("posted");
+    });
   });
 });

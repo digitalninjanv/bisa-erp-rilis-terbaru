@@ -6,6 +6,7 @@ import { EmptyState } from "@/components/blocks/empty-state";
 import { PageHeader } from "@/components/blocks/page-header";
 import { SupplierReturnList } from "@/components/gudang/supplier-return-list";
 import { can } from "@/lib/permissions";
+import { canSeeInventoryCost } from "@/lib/inventory-cost";
 import { requirePermissionPage } from "@/lib/session";
 import { listSupplierReturnWorkQueue } from "@/server/supplier-returns";
 
@@ -26,6 +27,7 @@ export default async function SupplierReturnsPage({
     redirect(`/app/gudang/retur-pembelian/riwayat?${legacyQuery.toString()}`);
   }
   const ctx = await requirePermissionPage("inventory.view");
+  const canSeeCost = canSeeInventoryCost(ctx);
   const queue = await withCompanyReadOnly(ctx.company.id, (tx) =>
     listSupplierReturnWorkQueue(tx, ctx.company.id),
   );
@@ -76,7 +78,7 @@ export default async function SupplierReturnsPage({
             description="Draf dan klaim pemasok yang belum selesai akan tampil di sini. Retur yang sudah selesai dapat dilihat melalui Riwayat."
           />
         ) : (
-          <SupplierReturnList rows={queue.rows} compact />
+          <SupplierReturnList rows={queue.rows} canSeeCost={canSeeCost} compact />
         )}
       </section>
     </div>

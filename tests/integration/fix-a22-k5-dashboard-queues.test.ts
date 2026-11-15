@@ -26,6 +26,8 @@ import { countPendingReimbursementClaims } from "@/server/reimbursements";
 import {
   getAccountingOnboardingState,
   getReceivablePayableQueues,
+  listPayables,
+  listReceivables,
 } from "@/server/reports";
 
 // A-22 Tahap K5: dashboard akuntansi menjadi daftar kerja — angka
@@ -242,6 +244,20 @@ describe("antrean dashboard akuntansi (A-22 K5)", () => {
     expect(queues.payables.overdueTotal).toBe(200000);
     expect(queues.payables.dueSoonCount).toBe(1);
     expect(queues.payables.dueSoonTotal).toBe(75000);
+    expect(queues.payables.openCount).toBe(3);
+    expect(queues.payables.openTotal).toBe(335000);
+  });
+
+  it("ringkasan dashboard memakai daftar piutang & utang yang sudah dimuat", async () => {
+    const queues = await withCompanyReadOnly(ORG, async (tx) => {
+      const [receivables, payables] = await Promise.all([
+        listReceivables(tx, ORG),
+        listPayables(tx, ORG),
+      ]);
+      return getReceivablePayableQueues(tx, ORG, TODAY, { receivables, payables });
+    });
+    expect(queues.receivables.openCount).toBe(3);
+    expect(queues.receivables.openTotal).toBe(170000);
     expect(queues.payables.openCount).toBe(3);
     expect(queues.payables.openTotal).toBe(335000);
   });

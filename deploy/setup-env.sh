@@ -8,7 +8,9 @@
 #   - file mode 600
 #
 # Usage:
-#   bash deploy/setup-env.sh --untuk docker [--port 3000] [--auth-url http://192.168.1.10:3000]
+#   bash deploy/setup-env.sh --untuk docker [--port 3000] [--auth-url https://erp.toko.local]
+# TLS diterminasi reverse proxy (nginx/Caddy) di depan aplikasi; skrip
+# ini hanya menulis alamat HTTPS, bukan memasang proxy.
 # For the systemd path you do NOT need this script: deploy/install.sh
 # writes /etc/bisa-erp/bisa-erp.env itself (host db = 127.0.0.1).
 set -euo pipefail
@@ -38,7 +40,9 @@ command -v openssl >/dev/null 2>&1 || { echo "openssl tidak ditemukan." >&2; exi
 db_host="db"
 if [[ -z "$auth_url" ]]; then
   lan_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
-  auth_url="http://${lan_ip:-ALAMAT-SERVER}:${port}"
+  # SEC-013: produksi wajib HTTPS. Operator yang memakai nama domain
+  # sebaiknya memberikan --auth-url https://domain.
+  auth_url="https://${lan_ip:-ALAMAT-SERVER}"
 fi
 
 erp_pw="$(openssl rand -hex 24)"
@@ -57,6 +61,9 @@ DATABASE_URL=postgres://app_user:${app_pw}@${db_host}:5432/bisa
 DIRECT_URL=postgres://erp:${erp_pw}@${db_host}:5432/bisa
 BETTER_AUTH_SECRET=$secret
 BETTER_AUTH_URL=$auth_url
+# Isi dengan IP reverse proxy tepercaya (SEC-012), mis. 127.0.0.1 bila
+# proxy berada di host yang sama. Biarkan kosong bila tidak ada proxy.
+BISA_TRUSTED_PROXIES=${BISA_TRUSTED_PROXIES:-127.0.0.1}
 NEXT_PUBLIC_APP_NAME="Bisa ERP"
 NODE_ENV=production
 EOF

@@ -42,6 +42,8 @@ const DOMAINS = [
 
 const EXCEPTIONS: Record<string, string> = {
   // "components/contoh.tsx -> server/inventory/opname-tasks.ts": "alasan tertulis mengapa impor internal di sini sah",
+  "app/api/export/ledger/route.ts -> server/reports/ledger-export-stream.ts":
+    "Rute ekspor ledger memakai cursor stream khusus tanpa memperluas barrel laporan umum.",
 };
 
 function listSourceFiles(dir: string): string[] {

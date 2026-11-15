@@ -1,10 +1,11 @@
+import { withApiError } from "@/lib/api-error";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { requirePermission } from "@/lib/session";
 import { todayISO } from "@/lib/format";
-import { csvResponse } from "@/lib/csv";
+import { csvStreamResponse } from "@/lib/csv";
 import {
   buildAgingExportTable,
-  reportTableToCsv,
+  reportTableToCsvStream,
   xlsxResponse,
 } from "@/server/reports";
 
@@ -22,7 +23,7 @@ export const dynamic = "force-dynamic";
 // buildAgingExportTable — satu model untuk CSV warisan (byte-identik)
 // & XLSX berformat (format=xlsx).
 
-export async function GET(request: Request) {
+async function GETHandler(request: Request) {
   const ctx = await requirePermission("accounting.view");
   const url = new URL(request.url);
   const kind = url.searchParams.get("kind") === "utang" ? "utang" : "piutang";
@@ -36,5 +37,7 @@ export async function GET(request: Request) {
   if (format === "xlsx") {
     return xlsxResponse(`aging-${kind}-${today}.xlsx`, table);
   }
-  return csvResponse(`aging-${kind}-${today}.csv`, reportTableToCsv(table));
+  return csvStreamResponse(`aging-${kind}-${today}.csv`, reportTableToCsvStream(table));
 }
+
+export const GET = withApiError(GETHandler);

@@ -13,6 +13,12 @@ import {
   CATEGORY_FIELDS,
   UNIT_FIELDS,
 } from "./import-taxonomy";
+import { BRANCH_FIELDS, WAREHOUSE_FIELDS } from "./import-locations";
+import {
+  CUSTOMER_GROUP_FIELDS,
+  PAYMENT_METHOD_FIELDS,
+} from "./import-commerce";
+import { EMPLOYEE_FIELDS, FIXED_ASSET_FIELDS } from "./import-hr-assets";
 
 export * from "./import-taxonomy";
 import { IMPORT_FIELDS } from "./import-products";
@@ -30,49 +36,32 @@ export type { MappedProduct, MapRowErrorKind } from "./import-products";
 export { parseAccuratePackagings, parseProductAttributes } from "./import-accurate";
 export { parsePackagingCells } from "./import-packaging";
 export { normalizeBarcode, normalizeHeader, parseNumber, suggestMappingFor } from "./import-cells";
+export {
+  BRANCH_FIELDS,
+  WAREHOUSE_FIELDS,
+  mapBranchRow,
+  mapWarehouseRow,
+} from "./import-locations";
+export type { MappedBranch, MappedWarehouse } from "./import-locations";
+export {
+  CUSTOMER_GROUP_FIELDS,
+  PAYMENT_METHOD_FIELDS,
+  mapCustomerGroupRow,
+  mapPaymentMethodRow,
+} from "./import-commerce";
+export type { MappedCustomerGroup, MappedPaymentMethod } from "./import-commerce";
+export {
+  EMPLOYEE_FIELDS,
+  FIXED_ASSET_FIELDS,
+  mapEmployeeRow,
+  mapFixedAssetRow,
+} from "./import-hr-assets";
+export type { MappedEmployee, MappedFixedAsset } from "./import-hr-assets";
 export type { ImportField, ImportFieldDef } from "./import-cells";
 
-export type ImportEntity =
-  | "products"
-  | "suppliers"
-  | "customers"
-  | "accounts"
-  | "categories"
-  | "units"
-  | "account_mappings"
-  | "opening_stock"
-  | "opening_payables"
-  | "opening_receivables";
-
-export const IMPORT_ENTITIES: ImportEntity[] = [
-  "products",
-  "suppliers",
-  "customers",
-  "accounts",
-  "categories",
-  "units",
-  "account_mappings",
-  "opening_stock",
-  "opening_payables",
-  "opening_receivables",
-];
-
-export function isImportEntity(value: string): value is ImportEntity {
-  return (IMPORT_ENTITIES as string[]).includes(value);
-}
-
-export const IMPORT_ENTITY_LABELS: Record<ImportEntity, string> = {
-  products: "Produk",
-  suppliers: "Pemasok",
-  customers: "Pelanggan",
-  accounts: "Akun (Bagan Akun)",
-  categories: "Kategori Produk",
-  units: "Satuan",
-  account_mappings: "Pemetaan Akun",
-  opening_stock: "Stok Awal",
-  opening_payables: "Saldo Awal Utang",
-  opening_receivables: "Saldo Awal Piutang",
-};
+export type { ImportEntity } from "./import-entities";
+export { IMPORT_ENTITIES, IMPORT_ENTITY_LABELS, isImportEntity } from "./import-entities";
+import type { ImportEntity } from "./import-entities";
 
 export const SUPPLIER_FIELDS: ImportFieldDef[] = [
   { key: "code", label: "Kode pemasok", aliases: ["kode pemasok", "kode", "code", "supplier code", "no pemasok", "nomor pemasok"] },
@@ -192,6 +181,12 @@ export const ENTITY_FIELDS: Record<ImportEntity, ImportFieldDef[]> = {
   categories: CATEGORY_FIELDS,
   units: UNIT_FIELDS,
   account_mappings: ACCOUNT_MAPPING_FIELDS,
+  branches: BRANCH_FIELDS,
+  warehouses: WAREHOUSE_FIELDS,
+  payment_methods: PAYMENT_METHOD_FIELDS,
+  customer_groups: CUSTOMER_GROUP_FIELDS,
+  employees: EMPLOYEE_FIELDS,
+  fixed_assets: FIXED_ASSET_FIELDS,
   opening_stock: OPENING_STOCK_FIELDS,
   opening_payables: OPENING_PAYABLE_FIELDS,
   opening_receivables: OPENING_RECEIVABLE_FIELDS,
@@ -647,76 +642,4 @@ export function mapOpeningBalanceRow(
   };
 }
 
-/**
- * Contoh CSV per tipe impor. Header di baris pertama HARUS persis yang
- * dikenali parser (alias di ENTITY_FIELDS), karena berkas inilah yang
- * diunduh pengguna dari UI sebagai templat.
- */
-export const IMPORT_SAMPLES: Record<ImportEntity, { fileName: string; csv: string }> = {
-  products: {
-    fileName: "contoh-impor-produk.csv",
-    csv: [
-      "Kode Barang,Nama Barang,Barcode,Kategori,Satuan,Pemasok,Harga Beli,Harga Jual,Stok Minimum,Stok Awal,Keterangan,Kemasan,Isi Kemasan,Harga Beli Kemasan,Harga Jual Kemasan,Barcode Kemasan,Status Kemasan,Kemasan Bawaan",
-      "UJI-001,Produk Uji Impor,899000000001,Umum,PCS,,5000,7500,2,10,Contoh baris produk,Dus,24,110000,132000,,Aktif,Beli+Jual",
-    ].join("\n"),
-  },
-  suppliers: {
-    fileName: "contoh-impor-pemasok.csv",
-    csv: [
-      "Kode,Nama,Telepon,Email,Alamat,Catatan",
-      "SUP-UJI-01,PT Sumber Data Uji,0812000111,halo@sumberdata.id,Jl Merdeka No 1,Contoh pemasok pertama",
-      ",Kedai Bahan Uji,0812000222,,Jl Melati No 2,Baris tanpa kode dibuatkan kode otomatis",
-    ].join("\n"),
-  },
-  customers: {
-    fileName: "contoh-impor-pelanggan.csv",
-    csv: [
-      "Kode,Nama,Telepon,Email,Alamat,Kelompok Harga,Batas Kredit,Catatan",
-      "CUST-UJI-01,Toko Berkah Uji,0813000111,berkah@toko.id,Jl Sudirman No 3,,5000000,Contoh pelanggan",
-      ",Tania Uji,0813000222,tania@uji.id,Jl Kenanga No 4,,0,",
-    ].join("\n"),
-  },
-  accounts: {
-    fileName: "contoh-impor-akun.csv",
-    csv: [
-      "Kode,Nama,Tipe,Saldo Normal,Bagian,Keterangan",
-      "6950,Beban Uji Impor,expense,debit,operating_expense,Contoh akun beban",
-      "2950,Utang Uji Impor,liability,kredit,current_liability,Contoh akun liabilitas",
-    ].join("\n"),
-  },
-  categories: {
-    fileName: "contoh-impor-kategori.csv",
-    csv: [
-      "Nama Kategori,Induk Kategori,Status",
-      "Minuman,,Aktif",
-      "Kopi & Teh,Minuman,Aktif",
-    ].join("\n"),
-  },
-  units: {
-    fileName: "contoh-impor-satuan.csv",
-    csv: ["Kode Satuan,Nama Satuan,Status", "PCS,Pieces,Aktif", "BOX,Box,Aktif"].join("\n"),
-  },
-  account_mappings: {
-    fileName: "contoh-impor-pemetaan-akun.csv",
-    csv: ["Kunci pemetaan,Kode akun", "cash,110101", "payable,210101"].join("\n"),
-  },
-  opening_stock: {
-    fileName: "contoh-impor-stok-awal.csv",
-    csv: ["SKU,Nama Produk,Qty,Biaya Satuan", ",Contoh Produk Stok Awal,10,2500"].join("\n"),
-  },
-  opening_payables: {
-    fileName: "contoh-impor-saldo-awal-utang.csv",
-    csv: [
-      "Nama Pemasok,Tanggal,Jatuh Tempo,Jumlah,Referensi",
-      "PT Sumber Data Uji,2026-10-01,2026-10-31,1500000,INV-LAMA-001",
-    ].join("\n"),
-  },
-  opening_receivables: {
-    fileName: "contoh-impor-saldo-awal-piutang.csv",
-    csv: [
-      "Nama Pelanggan,Tanggal,Jatuh Tempo,Jumlah,Referensi",
-      "Toko Berkah Uji,2026-10-05,2026-11-04,2750000,INV-LAMA-101",
-    ].join("\n"),
-  },
-};
-
+export { IMPORT_SAMPLES } from "./import-samples";

@@ -75,7 +75,8 @@ export function DifferenceText({ difference }: { difference: string | null }) {
 
 export function SessionHistoryTable({ rows }: { rows: SessionHistoryRowData[] }) {
   return (
-    <div className="overflow-x-auto">
+    <>
+    <div className="hidden overflow-x-auto lg:block">
       <table className="data-table">
         <thead>
           <tr>
@@ -157,5 +158,56 @@ export function SessionHistoryTable({ rows }: { rows: SessionHistoryRowData[] })
         </tbody>
       </table>
     </div>
+
+    <div className="divide-y divide-border/70 lg:hidden">
+      {rows.map((row) => (
+        <div key={row.id} className="px-4 py-3">
+          <div className="flex items-baseline justify-between gap-2">
+            <Link
+              href={`/app/pos/sesi/riwayat/${row.id}`}
+              className="text-[12px] font-medium text-primary hover:underline"
+            >
+              {row.userName ?? "Kasir"}
+            </Link>
+            <SessionStatusBadge status={row.status} />
+          </div>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
+            {row.branchName ? `${row.branchName} · ` : ""}
+            {formatDateTime(row.openedAt)}
+            {row.closedAt ? ` — ${formatDateTime(row.closedAt)}` : ""}
+          </p>
+          <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+            <div className="flex justify-between gap-2">
+              <dt className="text-muted-foreground">Transaksi</dt>
+              <dd className="num">{row.transactionCount}</dd>
+            </div>
+            <div className="flex justify-between gap-2">
+              <dt className="text-muted-foreground">Non-tunai</dt>
+              <dd className="num">{formatIDR(row.nonCashSalesTotal ?? "0")}</dd>
+            </div>
+            <div className="flex justify-between gap-2">
+              <dt className="text-muted-foreground">Seharusnya</dt>
+              <dd className="num">{formatIDR(row.expectedCash)}</dd>
+            </div>
+            <div className="flex justify-between gap-2">
+              <dt className="text-muted-foreground">Dihitung</dt>
+              <dd className="num">{row.countedCash != null ? formatIDR(row.countedCash) : "—"}</dd>
+            </div>
+            <div className="flex justify-between gap-2">
+              <dt className="text-muted-foreground">Selisih</dt>
+              <dd><DifferenceText difference={row.difference} /></dd>
+            </div>
+            <div className="flex justify-between gap-2">
+              <dt className="text-muted-foreground">Modal</dt>
+              <dd className="num">{formatIDR(row.openingCash)}</dd>
+            </div>
+          </dl>
+          {row.longOpen ? (
+            <p className="mt-1 text-[10px] font-medium text-destructive">Terbuka &gt;24 jam</p>
+          ) : null}
+        </div>
+      ))}
+    </div>
+    </>
   );
 }

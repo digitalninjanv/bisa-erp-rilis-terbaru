@@ -186,7 +186,7 @@ export default async function VatReportPage({
                   description="Jurnal yang menyentuh akun PPN Keluaran atau PPN Masukan akan tampil di sini."
                 />
               }
-              footerNote="DPP dan faktur pajak tetap berada di dokumen sumber (POS, penerimaan, beban, klaim). Buku PPN ini adalah rekonsiliasi tingkat buku besar; tarif dan DPP tidak dihitung ulang di sini."
+              footerNote="DPP diambil dari dokumen sumber (POS, penerimaan, beban) dan ditampilkan untuk rekonsiliasi. Buku PPN tetap rekonsiliasi tingkat buku besar; tarif tidak dihitung ulang di sini."
             >
               <div className="overflow-x-auto">
                 <table className="data-table min-w-[760px]">
@@ -195,7 +195,9 @@ export default async function VatReportPage({
                       <th>Tanggal</th>
                       <th>Jurnal</th>
                       <th>Sumber</th>
+                      <th>Dokumen</th>
                       <th>Keterangan</th>
+                      <th className="text-right">DPP</th>
                       <th className="text-right">PPN Masukan</th>
                       <th className="text-right">PPN Keluaran</th>
                     </tr>
@@ -217,8 +219,24 @@ export default async function VatReportPage({
                         <td className="text-[11px] text-muted-foreground">
                           {journalSourceLabel(row.sourceType)}
                         </td>
-                        <td className="max-w-[360px] truncate text-[12px]">
+                        <td className="text-[11px]">
+                          {row.sourceNumber ? (
+                            row.sourceHref ? (
+                              <Link href={row.sourceHref} className="text-primary hover:underline">
+                                {row.sourceNumber}
+                              </Link>
+                            ) : (
+                              <span>{row.sourceNumber}</span>
+                            )
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </td>
+                        <td className="max-w-[300px] truncate text-[12px]">
                           {row.description || "—"}
+                        </td>
+                        <td className="num text-right text-[12px]">
+                          {row.dpp != null ? formatIDR(row.dpp) : "—"}
                         </td>
                         <td className="num text-right text-[12px]">
                           {row.direction === "input" ? formatIDR(row.amount) : "—"}
@@ -231,14 +249,19 @@ export default async function VatReportPage({
                   </tbody>
                   <tfoot>
                     <tr className="border-t border-border bg-muted/40 font-semibold">
-                      <td colSpan={4} className="px-3 py-2 text-right text-[11px] uppercase tracking-wide text-muted-foreground">
+                      <td colSpan={5} className="px-3 py-2 text-right text-[11px] uppercase tracking-wide text-muted-foreground">
                         Total
+                      </td>
+                      <td className="num px-3 py-2 text-right text-[12px]">
+                        {formatIDR(
+                          data.lines.reduce((acc, row) => acc + (row.dpp ?? 0), 0),
+                        )}
                       </td>
                       <td className="num px-3 py-2 text-right text-[12px]">{formatIDR(data.input)}</td>
                       <td className="num px-3 py-2 text-right text-[12px]">{formatIDR(data.output)}</td>
                     </tr>
                     <tr>
-                      <td colSpan={4} className="px-3 py-2 text-right text-[11px] text-muted-foreground">
+                      <td colSpan={6} className="px-3 py-2 text-right text-[11px] text-muted-foreground">
                         {data.net > 0 ? "PPN kurang bayar" : data.net < 0 ? "PPN lebih bayar" : "PPN neto"}
                       </td>
                       <td colSpan={2} className={`num px-3 py-2 text-right text-[12px] font-semibold ${amountTone(data.net)}`}>

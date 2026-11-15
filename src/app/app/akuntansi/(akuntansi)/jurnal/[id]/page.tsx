@@ -10,6 +10,7 @@ import { formatDate, formatDateTime, todayISO } from "@/lib/format";
 import { DocumentMetaRows, DocumentPage } from "@/components/blocks/document-page";
 import { journalFlowSteps } from "@/lib/document-flow";
 import { JournalReverseButton } from "@/components/akuntansi/journal-reverse";
+import { JournalDraftActions } from "@/components/akuntansi/journal-draft-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +40,7 @@ export default async function JournalDetailPage({ params }: { params: Promise<{ 
   if (!data) notFound();
   const { entry, lines, reversal, original, source } = data;
   const isManualJournal = entry.sourceType === "manual";
+  const isDraft = entry.status === "draft";
   const originLabel = SOURCE_MODULE_LABEL[entry.sourceType] ?? "modul asalnya";
   const debit = lines.reduce((acc, line) => acc + Number(line.debit), 0);
   const credit = lines.reduce((acc, line) => acc + Number(line.credit), 0);
@@ -59,7 +61,15 @@ export default async function JournalDetailPage({ params }: { params: Promise<{ 
       steps={journalFlowSteps(entry.status, Boolean(reversal))}
       actions={
         <>
-          {can(ctx, "accounting.post") ? (
+          {isDraft ? (
+            can(ctx, "accounting.post") ? (
+              <JournalDraftActions entryId={entry.id} number={entry.number} />
+            ) : (
+              <span className="inline-flex h-8 items-center rounded-md border border-border bg-muted px-3 text-[12px] text-muted-foreground">
+                Draf — menunggu pemegang izin posting
+              </span>
+            )
+          ) : can(ctx, "accounting.post") ? (
             isManualJournal ? (
               <JournalReverseButton
                 entryId={entry.id}
@@ -76,6 +86,8 @@ export default async function JournalDetailPage({ params }: { params: Promise<{ 
           {/* CT-08: the old single "Cetak / CSV" button only downloaded
               a CSV. The two actions are now separate and honestly
               labelled: Unduh Excel downloads, Cetak opens the print view. */}
+          {!isDraft ? (
+          <>
           <Link
             href={`/api/export/journal/${entry.id}?format=xlsx`}
             className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] transition-colors hover:bg-muted"
@@ -88,11 +100,19 @@ export default async function JournalDetailPage({ params }: { params: Promise<{ 
           >
             <Printer className="size-3.5" /> Cetak
           </Link>
+          </>
+          ) : null}
         </>
       }
       banners={
         <>
-          {!isManualJournal ? (
+          {isDraft ? (
+            <div className="border-t border-border bg-tone-amber-soft px-5 py-2 text-[11px] text-tone-amber">
+              Draf belum memengaruhi buku besar, saldo akun, atau laporan. Review baris di
+              bawah, lalu <strong>Posting draf</strong> untuk membentuk jurnal resmi.
+            </div>
+          ) : null}
+          {!isDraft && !isManualJournal ? (
             <div className="no-print border-t border-border bg-muted/40 px-5 py-2 text-[11px] text-muted-foreground">
               Jurnal ini dibuat otomatis oleh {originLabel} dan tidak bisa dibalik dari halaman ini — pembalikan di
               sini hanya mengubah buku besar, sedangkan dokumen sumbernya tetap aktif. Untuk membatalkannya, void

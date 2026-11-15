@@ -7,6 +7,7 @@ import {
   companySettings,
   customers,
   paymentMethods,
+  products,
   saleLines,
   salePayments,
   sales,
@@ -49,6 +50,7 @@ vi.mock("@/lib/session", () => ({
 
 async function cleanupFixture() {
   await adminDb.delete(sales).where(eq(sales.companyId, ORG));
+  await adminDb.delete(products).where(eq(products.companyId, ORG));
   await adminDb.delete(customers).where(eq(customers.companyId, ORG));
   await adminDb.delete(paymentMethods).where(eq(paymentMethods.companyId, ORG));
   await adminDb.delete(warehouses).where(eq(warehouses.companyId, ORG));
@@ -113,6 +115,15 @@ beforeAll(async () => {
     .insert(paymentMethods)
     .values({ companyId: ORG, code: "CASH", name: "Tunai", type: "cash", sortOrder: 1 })
     .returning();
+  await adminDb.insert(products).values({
+    id: PRODUCT_ID,
+    companyId: ORG,
+    sku: "UJI-FAKTUR-1",
+    name: "Produk Uji Faktur",
+    costPrice: "80000",
+    salePrice: "111000",
+    trackStock: true,
+  });
   await adminDb.insert(sales).values({
     id: SALE_ID,
     companyId: ORG,

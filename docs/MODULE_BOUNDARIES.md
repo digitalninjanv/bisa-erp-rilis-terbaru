@@ -127,6 +127,10 @@ hasil gabungan; by-design dan memang harus terpusat di sana.
 
 | Tabel | Pemilik | Penulis lain yang sah (berkas — pola/alasan) |
 |---|---|---|
+| `branches`, `warehouses` | Platform/Pengaturan (`server/actions/settings/lokasi.ts` CRUD lokasi) | Impor `server/import/commit-locations.ts` — insert saat commit impor cabang/gudang; duplikat kode/nama dilewati. Kuantitas `stockOnHand` tidak disentuh jalur ini |
+| `customerGroups` | Platform/Pengaturan (`server/actions/settings/kelompok-harga.ts` CRUD kelompok harga) | Impor `server/import/commit-commerce.ts` — insert kelompok harga saat commit; nama duplikat dilewati |
+| `paymentMethods` | Platform/Pengaturan (`server/actions/settings/pembayaran.ts` CRUD metode pembayaran) | Impor `server/import/commit-commerce.ts` — insert metode pembayaran saat commit; kode/nama duplikat dilewati, akun sumber divalidasi |
+| `employees` | HR (`server/actions/hr/karyawan.ts` CRUD; `server/hr/final-pay.ts` update status terminasi lewat proses final pay) | Impor `server/import/commit-hr-assets.ts` — insert karyawan saat commit; kode/NIK duplikat dilewati |
 | `customers` | Master Data (CRUD: `server/actions/inventory/pihak.ts`) | POS `server/actions/pos.ts` — insert tambah pelanggan cepat di terminal untuk penjualan kredit (D-19). Impor `server/import/commit.ts` — insert saat commit impor. Pengaturan `server/actions/settings/kelompok-harga.ts` — update melepaskan `groupId` saat grup harga dihapus |
 | `suppliers` | Master Data (CRUD: `server/actions/inventory/pihak.ts`) | Impor `server/import/commit.ts` + `server/actions/import/commit-phases.ts` — insert saat commit impor |
 | `products` | Gudang (`server/actions/inventory/produk.ts` CRUD; `server/inventory/movements.ts` update `costPrice` AVCO sebagai bagian posting ledger stok) | Impor `server/actions/import/commit-phases.ts` — insert/update saat commit. Platform `server/master-data/bulk-edit.ts` — update edit massal; `server/master-data/merge.ts` — update gabung produk |

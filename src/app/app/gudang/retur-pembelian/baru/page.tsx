@@ -1,4 +1,4 @@
-import { listSupplierReturnReceiptOptions } from "@/server/catalog";
+import { getSupplierReturnableQtyByReceiptLine, listSupplierReturnReceiptOptions } from "@/server/catalog";
 import Link from "next/link";
 import { ArrowLeft, FileText, PencilLine } from "lucide-react";
 import { withCompanyReadOnly } from "@/db/tenant";
@@ -15,6 +15,7 @@ import {
 } from "@/server/supplier-returns";
 import { requirePermissionPageInModule } from "@/lib/session";
 import { todayISO } from "@/lib/format";
+import { d, formatQty } from "@/lib/money";
 import { parsePageParam } from "@/lib/pagination";
 import { SupplierReturnForm } from "@/components/gudang/supplier-return-form";
 
@@ -43,12 +44,20 @@ export default async function NewSupplierReturnPage({
         q: params.q,
       }),
     ]);
+    const returnableQtyByLine = receipt
+      ? await getSupplierReturnableQtyByReceiptLine(
+          tx,
+          ctx.company.id,
+          receipt.lines.map((line) => line.id),
+        )
+      : new Map<string, string>();
     return {
       warehouseRows,
       supplierRows,
       defaultWarehouseId: pickDefaultWarehouseId(warehouseRows, settings?.defaultWarehouseId),
       receipt,
       receiptOptions,
+      returnableQtyByLine,
     };
   });
 
@@ -59,6 +68,49 @@ export default async function NewSupplierReturnPage({
   const reasonOptions = Object.entries(SUPPLIER_RETURN_REASON_LABELS).map(([value, label]) => ({ value, label }));
   const resolutionOptions = Object.entries(SUPPLIER_RETURN_RESOLUTION_LABELS).map(([value, label]) => ({ value, label }));
   const prerequisitesMissing = data.warehouseRows.length === 0 || data.supplierRows.length === 0;
+  const unavailableBatchLines: {
+    name: string;
+    qty: string;
+    batchNumber: string | null;
+    expiryDate: string | null;
+  }[] = [];
+  const initialReturnLines = data.receipt?.lines.flatMap((line) => {
+    const returnableQty = data.returnableQtyByLine.get(line.id) ?? "0";
+    if (!d(returnableQty).gt(0)) return [];
+    const sourceHasBatchIdentity = line.batchNumber !== null || line.expiryDate !== null;
+    const sourceBatchQty = line.sourceBatchQty ?? "0";
+    if (
+      line.trackBatch &&
+      sourceHasBatchIdentity &&
+      (!line.sourceBatchId || !d(sourceBatchQty).gt(0))
+    ) {
+      unavailableBatchLines.push({
+        name: line.productName,
+        qty: returnableQty,
+        batchNumber: line.batchNumber,
+        expiryDate: line.expiryDate,
+      });
+      return [];
+    }
+    const effectiveQty =
+      line.trackBatch && line.sourceBatchId && d(sourceBatchQty).lt(d(returnableQty))
+        ? sourceBatchQty
+        : returnableQty;
+    return [{
+      receiptLineId: line.id,
+      productId: line.productId,
+      name: line.productName,
+      sku: line.sku ?? "",
+      qty: line.trackBatch && !line.sourceBatchId ? "0" : effectiveQty,
+      returnableQty,
+      trackBatch: line.trackBatch,
+      sourceBatchId: line.sourceBatchId,
+      sourceBatchNumber: line.batchNumber,
+      sourceExpiryDate: line.expiryDate,
+      sourceBatchQty: line.sourceBatchQty,
+      unitCost: line.unitCost,
+    }];
+  }) ?? [];
 
   return (
     <div>
@@ -74,8 +126,22 @@ export default async function NewSupplierReturnPage({
         <div className="rounded-lg border border-dashed border-border bg-card px-4 py-3 text-[12px] text-muted-foreground">
           Retur membutuhkan minimal satu gudang dan satu pemasok. Tambahkan lewat menu Gudang (Pemasok) atau Pengaturan (gudang) terlebih dahulu.
         </div>
-      ) : receiptReady ? (
+      ) : receiptReady && initialReturnLines.length > 0 ? (
         <div>
+          {unavailableBatchLines.length > 0 ? (
+            <div role="status" className="mb-3 rounded-md border border-tone-amber/40 bg-tone-amber-soft px-3 py-2 text-[11px] text-tone-amber">
+              Beberapa sisa faktur belum bisa diretur karena batch sumber tidak ditemukan atau stok batch sudah habis.
+              <ul className="mt-1 list-disc pl-4">
+                {unavailableBatchLines.map((line, index) => (
+                  <li key={`${line.name}-${line.batchNumber ?? ""}-${index}`}>
+                    {line.name} · sisa faktur {formatQty(line.qty)}
+                    {line.batchNumber ? ` · batch ${line.batchNumber}` : ""}
+                    {line.expiryDate ? ` · ED ${line.expiryDate}` : ""}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <p className="text-[11px] text-muted-foreground">
               Sumber: penerimaan <span className="num font-medium text-foreground">{data.receipt!.receipt.number}</span>
@@ -94,20 +160,37 @@ export default async function NewSupplierReturnPage({
             today={todayISO()}
             initialSupplierId={data.receipt!.receipt.supplierId ?? undefined}
             initialWarehouseId={data.receipt!.receipt.warehouseId ?? undefined}
-            initialLines={data.receipt!.lines.map((line) => ({
-              receiptLineId: line.id,
-              productId: line.productId,
-              name: line.productName,
-              sku: line.sku ?? "",
-              qty: line.qty,
-              trackBatch: Boolean(line.batchNumber),
-              unitCost: line.unitCost,
-            }))}
+            initialLines={initialReturnLines}
             sourceReceiptNumber={data.receipt!.receipt.number}
             lockSource
             reasonOptions={reasonOptions}
             resolutionOptions={resolutionOptions}
           />
+        </div>
+      ) : receiptReady ? (
+        <div className="rounded-lg border border-border bg-card px-4 py-4">
+          <h2 className="text-[13px] font-semibold">
+            {unavailableBatchLines.length > 0 ? "Stok batch sumber tidak tersedia" : "Tidak ada sisa untuk diretur"}
+          </h2>
+          <p className="mt-1 text-[12px] text-muted-foreground">
+            {unavailableBatchLines.length > 0
+              ? `Masih ada sisa pada faktur ${data.receipt!.receipt.number}, tetapi batch sumbernya tidak ditemukan atau tidak memiliki stok. Retur tidak dibuat agar lot lain tidak ikut terpotong.`
+              : `Semua jumlah pada penerimaan ${data.receipt!.receipt.number} sudah tercatat dalam retur terposting.`}
+          </p>
+          {unavailableBatchLines.length > 0 ? (
+            <ul className="mt-2 list-disc pl-5 text-[11px] text-muted-foreground">
+              {unavailableBatchLines.map((line, index) => (
+                <li key={`${line.name}-${line.batchNumber ?? ""}-${index}`}>
+                  {line.name} · sisa faktur {formatQty(line.qty)}
+                  {line.batchNumber ? ` · batch ${line.batchNumber}` : ""}
+                  {line.expiryDate ? ` · ED ${line.expiryDate}` : ""}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <Link href="/app/gudang/retur-pembelian/baru" className="mt-3 inline-flex text-[12px] font-medium text-primary hover:underline">
+            Pilih penerimaan lain
+          </Link>
         </div>
       ) : manualMode ? (
         <SupplierReturnForm
@@ -170,7 +253,7 @@ export default async function NewSupplierReturnPage({
                   {data.receiptOptions.rows.map((option) => (
                     <option key={option.id} value={option.id}>
                       {option.supplierInvoiceNumber || "No. faktur belum dicatat"} · {option.number} · {option.date} · {option.supplierName}
-                      {option.poNumber ? ` · ${option.poNumber}` : ""}
+                      {option.poNumber ? ` · ${option.poNumber}` : ""} · sisa {formatQty(option.availableQty)}
                     </option>
                   ))}
                 </select>

@@ -6,6 +6,8 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
 import {
+  products,
+  stockBatches,
   stockReceiptLines,
   stockReceipts,
   supplierReturnLines,
@@ -13,6 +15,7 @@ import {
 } from "@/db/schema";
 import { AppError } from "@/lib/errors";
 import { d, type Decimal } from "@/lib/money";
+import { matchesReceiptBatchIdentity } from "@/lib/supplier-return-batch";
 import { POSTED_RETURN_STATUSES, formatQtyExact } from "./shared";
 
 type ReturnProvenance = { received: Decimal; returned: Decimal; replaced: Decimal };
@@ -133,16 +136,34 @@ export async function assertReturnWithinReceiptLines(
   input: {
     companyId: string;
     supplierId: string;
-    lines: { receiptLineId: string | null | undefined; qty: Decimal; productName: string }[];
+    warehouseId: string;
+    lines: {
+      receiptLineId: string | null | undefined;
+      productId: string;
+      batchId: string | null | undefined;
+      qty: Decimal;
+      productName: string;
+    }[];
   },
 ): Promise<void> {
-  const requested = new Map<string, { qty: Decimal; productName: string }>();
+  const requested = new Map<
+    string,
+    { qty: Decimal; productName: string; productId: string; batchId: string | null }
+  >();
   for (const line of input.lines) {
     if (!line.receiptLineId) continue;
     const current = requested.get(line.receiptLineId);
+    if (
+      current &&
+      (current.productId !== line.productId || current.batchId !== (line.batchId ?? null))
+    ) {
+      throw new AppError("VALIDATION", "Satu baris retur tidak boleh memakai produk atau batch sumber yang berbeda.");
+    }
     requested.set(line.receiptLineId, {
       qty: (current?.qty ?? d(0)).plus(line.qty),
       productName: line.productName,
+      productId: line.productId,
+      batchId: line.batchId ?? null,
     });
   }
   const receiptLineIds = [...requested.keys()];
@@ -156,9 +177,14 @@ export async function assertReturnWithinReceiptLines(
       supplierId: stockReceipts.supplierId,
       source: stockReceipts.source,
       status: stockReceipts.status,
+      warehouseId: stockReceipts.warehouseId,
+      batchNumber: stockReceiptLines.batchNumber,
+      expiryDate: stockReceiptLines.expiryDate,
+      trackBatch: products.trackBatch,
     })
     .from(stockReceiptLines)
     .innerJoin(stockReceipts, eq(stockReceiptLines.receiptId, stockReceipts.id))
+    .innerJoin(products, eq(stockReceiptLines.productId, products.id))
     .where(
       and(
         eq(stockReceiptLines.companyId, input.companyId),
@@ -185,6 +211,20 @@ export async function assertReturnWithinReceiptLines(
     )
     .groupBy(supplierReturnLines.receiptLineId);
   const returnedByLine = new Map(returnedRows.map((row) => [row.receiptLineId, d(row.qty)]));
+  const batchIds = [...new Set([...requested.values()].flatMap((line) => line.batchId ? [line.batchId] : []))];
+  const batchRows = batchIds.length > 0
+    ? await tx
+        .select({
+          id: stockBatches.id,
+          productId: stockBatches.productId,
+          warehouseId: stockBatches.warehouseId,
+          batchNumber: stockBatches.batchNumber,
+          expiryDate: stockBatches.expiryDate,
+        })
+        .from(stockBatches)
+        .where(and(eq(stockBatches.companyId, input.companyId), inArray(stockBatches.id, batchIds)))
+    : [];
+  const batchById = new Map(batchRows.map((batch) => [batch.id, batch]));
 
   for (const origin of origins) {
     if (
@@ -198,6 +238,20 @@ export async function assertReturnWithinReceiptLines(
       );
     }
     const line = requested.get(origin.id)!;
+    if (origin.productId !== line.productId || origin.warehouseId !== input.warehouseId) {
+      throw new AppError("VALIDATION", "Retur harus mempertahankan produk dan gudang pada penerimaan asal.");
+    }
+    if (origin.trackBatch) {
+      const batch = line.batchId ? batchById.get(line.batchId) : undefined;
+      if (
+        !batch ||
+        batch.productId !== origin.productId ||
+        batch.warehouseId !== origin.warehouseId ||
+        !matchesReceiptBatchIdentity(origin, batch)
+      ) {
+        throw new AppError("VALIDATION", `Batch retur ${line.productName} harus sama dengan batch pada penerimaan asal.`);
+      }
+    }
     const remaining = d(origin.qty).minus(returnedByLine.get(origin.id) ?? d(0));
     if (line.qty.gt(remaining)) {
       throw new AppError(

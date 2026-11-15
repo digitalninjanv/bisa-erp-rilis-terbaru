@@ -373,7 +373,7 @@ export type PartyCreditListRow = PartyCreditRow & {
 export async function listPartyCredits(
   tx: Tx,
   companyId: string,
-  filter?: { partyType?: PartyCreditPartyType; partyId?: string },
+  filter?: { partyType?: PartyCreditPartyType; partyId?: string; status?: "open" | "settled" },
 ): Promise<PartyCreditListRow[]> {
   const rows = await tx
     .select({
@@ -396,6 +396,7 @@ export async function listPartyCredits(
         ne(partyCredits.status, "void"),
         ...(filter?.partyType ? [eq(partyCredits.partyType, filter.partyType)] : []),
         ...(filter?.partyId ? [eq(partyCredits.partyId, filter.partyId)] : []),
+        ...(filter?.status ? [eq(partyCredits.status, filter.status)] : []),
       ),
     )
     .orderBy(asc(partyCredits.date), asc(partyCredits.createdAt));

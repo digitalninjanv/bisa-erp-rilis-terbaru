@@ -60,11 +60,13 @@ describe("pair-throttle (AUD-015)", () => {
     expect(pairAttemptAllowed("1.2.3.4", T0 + 200)).toBe(true);
   });
 
-  it("kunci sumber: X-Forwarded-For pertama, lalu X-Real-IP, lalu 'unknown'", () => {
+  it("kunci sumber: rantai proksi tepercaya, lalu X-Real-IP, lalu 'unknown'", () => {
     const withForwarded = new Request("http://localhost/api/pos/pair", {
       headers: { "x-forwarded-for": " 203.0.113.9 , 10.0.0.1" },
     });
-    expect(pairAttemptSource(withForwarded)).toBe("203.0.113.9");
+    expect(pairAttemptSource(withForwarded, ["10.0.0.0/8"])).toBe("203.0.113.9");
+    // Tanpa proksi tepercaya, rantai dua hop tidak ditebak.
+    expect(pairAttemptSource(withForwarded)).toBe("unknown");
     const withRealIp = new Request("http://localhost/api/pos/pair", {
       headers: { "x-real-ip": "198.51.100.7" },
     });

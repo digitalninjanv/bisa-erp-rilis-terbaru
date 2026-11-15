@@ -1,3 +1,4 @@
+import { withApiError } from "@/lib/api-error";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { listAllCategories } from "@/server/catalog";
 import { requirePermission } from "@/lib/session";
@@ -9,7 +10,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** Ekspor kategori produk; CSV tetap tersedia, XLSX untuk input ulang. */
-export async function GET(request: Request) {
+async function GETHandler(request: Request) {
   const ctx = await requirePermission("inventory.view");
   const format = new URL(request.url).searchParams.get("format") === "xlsx" ? "xlsx" : "csv";
   const rows = await withCompanyReadOnly(ctx.company.id, (tx) =>
@@ -30,3 +31,5 @@ export async function GET(request: Request) {
   }
   return csvResponse(`${filename}.csv`, toCsv(headers, cells));
 }
+
+export const GET = withApiError(GETHandler);

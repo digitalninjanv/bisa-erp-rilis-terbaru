@@ -141,7 +141,7 @@ export default async function SalesHistoryPage({
           />
         }
       >
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto lg:block">
           <table className="data-table">
             <thead>
               <tr>
@@ -192,6 +192,39 @@ export default async function SalesHistoryPage({
               ))}
             </tbody>
           </table>
+        </div>
+        <div className="divide-y divide-border/70 lg:hidden">
+          {data.list.rows.map((sale) => (
+            <div key={sale.id} className="px-4 py-3">
+              <div className="flex items-baseline justify-between gap-2">
+                <Link
+                  href={`/app/pos/nota/${sale.id}?salinan=1`}
+                  className="num text-[12px] font-medium text-primary hover:underline"
+                >
+                  {sale.number}
+                </Link>
+                <span className="num text-[12px] font-semibold">{formatIDR(sale.total)}</span>
+              </div>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                {formatDateTime(sale.createdAt)} · {sale.customerName ?? "Umum"} · {sale.itemCount} item
+              </p>
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                <StatusBadge status={sale.status} />
+                {sale.paymentStatus !== "paid" && sale.status === "completed" ? (
+                  <StatusBadge status={sale.paymentStatus} />
+                ) : null}
+                <span className="ml-auto">
+                  <SaleRowActions
+                    saleId={sale.id}
+                    number={sale.number}
+                    status={sale.status}
+                    canVoid={can(ctx, "pos.void")}
+                    canReturn={can(ctx, "pos.return")}
+                  />
+                </span>
+              </div>
+            </div>
+          ))}
         </div>
       </DataList>
     </div>

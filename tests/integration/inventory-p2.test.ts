@@ -546,7 +546,20 @@ describe("GD-P2-10 / D-4 canonical low-stock definition", () => {
       });
       const valuationDefault = await getInventoryValuation(tx, ORG_ID, warehouse.id);
       const valuationOther = await getInventoryValuation(tx, ORG_ID, other.id);
-      return { product, listDefault, listOther, valuationDefault, valuationOther };
+      const valuationPage = await getInventoryValuation(tx, ORG_ID, warehouse.id, {
+        page: 1,
+        pageSize: 1,
+        skipLowStockRows: true,
+      });
+      expect(valuationDefault.lowStockCount).toBe(valuationDefault.lowStock.length);
+      expect(valuationOther.lowStockCount).toBe(valuationOther.lowStock.length);
+      expect(valuationPage.items).toEqual(valuationDefault.items.slice(0, 1));
+      expect(valuationPage.lowStock).toEqual([]);
+      expect(valuationPage.lowStockCount).toBe(valuationDefault.lowStock.length);
+      expect(valuationPage.totalQty).toBe(valuationDefault.totalQty);
+      expect(valuationPage.totalValue).toBe(valuationDefault.totalValue);
+      expect(valuationPage.totalPotential).toBe(valuationDefault.totalPotential);
+      return { product, listDefault, listOther, valuationDefault, valuationOther, valuationPage };
     });
 
     // Default warehouse displays 3 <= minStock 10: low there.

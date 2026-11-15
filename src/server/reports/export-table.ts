@@ -19,8 +19,7 @@
 // Penanda visual grup/total di XLSX karenanya memakai label &
 // indentasi, bukan tipografi.
 
-import * as XLSX from "xlsx";
-import { moneyCsv, toCsv } from "@/lib/csv";
+import { csvRow, moneyCsv, toCsv } from "@/lib/csv";
 
 export type ReportCell =
   | { type: "text"; value: string }
@@ -92,11 +91,68 @@ export function reportTableToCsv(table: ReportTable): string {
   return toCsv(firstRow, body);
 }
 
+/**
+ * Stream the legacy CSV representation one row at a time. The report table
+ * is still materialized by its builder, but this avoids constructing both a
+ * second array for every row and one additional full-size CSV string.
+ */
+export function reportTableToCsvStream(table: ReportTable): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  const titleRowCount = table.titleRow === null ? 0 : 1;
+  const headerRowCount = table.headerRow === null ? 0 : 1;
+  const totalRows = 1 + titleRowCount + headerRowCount + table.rows.length;
+  const batchRows = 128;
+  let rowIndex = 0;
+
+  return new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (rowIndex >= totalRows) {
+        controller.close();
+        return;
+      }
+
+      const endRow = Math.min(totalRows, rowIndex + batchRows);
+      const lines: string[] = [];
+      while (rowIndex < endRow) {
+        let values: (string | number)[];
+        if (rowIndex === 0) {
+          values = table.csvFirstRow.map((cell) => {
+            const value = cellToCsvValue(cell);
+            return typeof value === "number" ? String(value) : value;
+          });
+        } else {
+          let bodyIndex = rowIndex - 1;
+          if (titleRowCount > 0 && bodyIndex === 0) {
+            values = table.titleRow!.map(cellToCsvValue);
+          } else {
+            bodyIndex -= titleRowCount;
+            if (headerRowCount > 0 && bodyIndex === 0) {
+              values = table.headerRow!.map(cellToCsvValue);
+            } else {
+              bodyIndex -= headerRowCount;
+              values = table.rows[bodyIndex].cells
+                .slice(0, table.csvWidth)
+                .map(cellToCsvValue);
+            }
+          }
+        }
+
+        lines.push(`${rowIndex === 0 ? "\uFEFF" : "\r\n"}${csvRow(values)}`);
+        rowIndex += 1;
+      }
+
+      controller.enqueue(encoder.encode(lines.join("")));
+      if (rowIndex >= totalRows) controller.close();
+    },
+  });
+}
+
 const MONEY_FORMAT = "#,##0";
 const NUM_FORMAT = "#,##0.##";
 
 /** Serialisasi XLSX berformat laporan dari model yang sama dengan CSV. */
-export function reportTableToXlsx(table: ReportTable): Buffer {
+export async function reportTableToXlsx(table: ReportTable): Promise<Buffer> {
+  const XLSX = await import("xlsx");
   const aoa: (string | number | null)[][] = [
     [table.company],
     [table.title],
@@ -141,8 +197,9 @@ export function reportTableToXlsx(table: ReportTable): Buffer {
   return XLSX.write(workbook, { bookType: "xlsx", type: "buffer" }) as Buffer;
 }
 
-export function xlsxResponse(filename: string, table: ReportTable): Response {
-  return new Response(new Uint8Array(reportTableToXlsx(table)), {
+export async function xlsxResponse(filename: string, table: ReportTable): Promise<Response> {
+  const workbook = await reportTableToXlsx(table);
+  return new Response(new Uint8Array(workbook), {
     status: 200,
     headers: {
       "Content-Type":

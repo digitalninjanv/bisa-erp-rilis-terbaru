@@ -15,6 +15,8 @@
  * multi-instance batas berlaku per instance, bukan global.
  */
 
+import { resolveClientIp, trustedProxiesFromEnv } from "./client-ip";
+
 export const PAIR_THROTTLE_WINDOW_MS = 10 * 60 * 1000;
 export const PAIR_THROTTLE_MAX_FAILURES = 20;
 
@@ -63,16 +65,14 @@ export function _clearPairThrottle(): void {
 }
 
 /**
- * Kunci sumber dari header permintaan: alamat pertama X-Forwarded-For
- * (di belakang proksi), lalu X-Real-IP, lalu kunci tetap "unknown"
- * (panggilan lokal langsung tanpa proksi berbagi satu ember).
+ * Kunci sumber dari header permintaan (SEC-012): hanya header dari
+ * proksi tepercaya yang dipakai; rantai multi-hop tanpa daftar proksi
+ * tidak ditebak. Bila tidak ada IP yang dapat dipercaya, semua
+ * panggilan berbagi ember "unknown" (fail closed).
  */
-export function pairAttemptSource(request: Request): string {
-  const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) {
-    const first = forwarded.split(",")[0]?.trim();
-    if (first) return first;
-  }
-  const realIp = request.headers.get("x-real-ip")?.trim();
-  return realIp || "unknown";
+export function pairAttemptSource(
+  request: Request,
+  trustedProxies: string[] = trustedProxiesFromEnv(),
+): string {
+  return resolveClientIp(request.headers, trustedProxies) ?? "unknown";
 }

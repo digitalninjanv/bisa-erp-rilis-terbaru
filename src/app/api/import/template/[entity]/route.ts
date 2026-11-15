@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
-import * as XLSX from "xlsx";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import type { Tx } from "@/db";
 import { withCompanyReadOnly } from "@/db/tenant";
-import { accounts, customers, products } from "@/db/schema";
+import { accounts, branches, customerGroups, customers, employees, fixedAssetCategories, products } from "@/db/schema";
 import {
   listCategories,
   listCustomerGroups,
@@ -38,7 +37,8 @@ export const dynamic = "force-dynamic";
 
 type Reference = { name: string; headers: string[]; rows: XlsxCell[][] };
 
-function sampleMatrix(csv: string): { headers: string[]; rows: XlsxCell[][] } {
+async function sampleMatrix(csv: string): Promise<{ headers: string[]; rows: XlsxCell[][] }> {
+  const XLSX = await import("xlsx");
   const workbook = XLSX.read(csv, { type: "string" });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
@@ -92,6 +92,41 @@ const INSTRUCTIONS: Record<string, string[]> = {
     "Kode akun harus sudah ada di bagan akun. Baris dengan kunci yang sudah dipetakan akan MEMPERBARUI akunnya.",
     "Satu kunci hanya boleh muncul sekali dalam file.",
   ],
+  branches: [
+    "Nama cabang wajib. Kode kosong dibuat otomatis dengan format CBG-###.",
+    "Cabang dengan kode atau nama yang sama dilewati, bukan diduplikasi.",
+    "Status: Aktif/Nonaktif. Kosong dianggap Aktif.",
+  ],
+  warehouses: [
+    "Nama gudang wajib. Kode kosong dibuat otomatis dengan format GD-###.",
+    "Kode cabang harus sudah ada; kosongkan bila gudang tidak terikat cabang.",
+    "Tipe: Gudang, Toko, atau Karantina (kosong = Gudang).",
+    "Gudang dengan kode atau nama yang sama dilewati.",
+  ],
+  payment_methods: [
+    "Nama metode wajib. Kode kosong dibuat otomatis dengan format PM-###.",
+    "Tipe: Tunai, Bank, QRIS, Kredit, atau Piutang (kosong = Tunai).",
+    "Kode akun opsional, tetapi bila diisi harus sudah ada di bagan akun.",
+    "Metode dengan kode atau nama yang sama dilewati.",
+  ],
+  customer_groups: [
+    "Nama kelompok harga wajib dan harus unik.",
+    "Tipe diskon: Percent (0–100) atau Amount (nominal rupiah).",
+    "Pembulatan = kelipatan harga; arah: down/up/nearest.",
+    "Bulatkan Total Tunai: Ya/Tidak. Status: Aktif/Nonaktif.",
+  ],
+  employees: [
+    "Nama karyawan wajib; kode kosong dibuat otomatis dengan format EMP-###.",
+    "Gaji pokok/tunjangan/potongan berupa angka ≥ 0.",
+    "Tanggal masuk wajib YYYY-MM-DD bila diisi.",
+    "Karyawan dengan kode atau NIK yang sama dilewati.",
+  ],
+  fixed_assets: [
+    "Nama, tanggal perolehan, harga perolehan, dan kode akun sumber wajib.",
+    "Umur manfaat (bulan) wajib bila kategori tidak punya bawaan.",
+    "Jurnal perolehan dibuat otomatis oleh aturan akuntansi yang sama dengan form aset.",
+    "Aset dengan nama+tanggal+harga yang sama dilewati (idempoten).",
+  ],
   opening_stock: [
     "Produk harus sudah ada dan dicocokkan dari SKU atau nama.",
     "Qty wajib > 0 dan biaya satuan wajib. Tanggal memakai format YYYY-MM-DD.",
@@ -128,7 +163,7 @@ export async function GET(
 
   if (format === "csv") {
     if (customFields.length === 0) return csvResponse(sample.fileName, sample.csv);
-    const sampleData = sampleMatrix(sample.csv);
+    const sampleData = await sampleMatrix(sample.csv);
     const headers = [...sampleData.headers, ...customFields.map(customFieldImportHeader)];
     const rows = sampleData.rows.map((row) => [...row, ...customFields.map(() => "")]);
     return csvResponse(sample.fileName, toCsv(headers, rows));
@@ -178,6 +213,78 @@ export async function GET(
           rows: categories.map((row) => [row.name, row.parentId ? byId.get(row.parentId) ?? "" : ""]),
         },
       ];
+    }
+    if (entity === "branches") {
+      const rows = await tx
+        .select({ code: branches.code })
+        .from(branches)
+        .where(eq(branches.companyId, ctx.company.id))
+        .orderBy(asc(branches.code));
+      return [{ name: "Cabang", headers: ["Kode cabang"], rows: rows.map((row) => [row.code]) }];
+    }
+    if (entity === "warehouses") {
+      const rows = await tx
+        .select({ code: branches.code, name: branches.name })
+        .from(branches)
+        .where(eq(branches.companyId, ctx.company.id))
+        .orderBy(asc(branches.code));
+      return [{ name: "Cabang", headers: ["Kode cabang", "Nama cabang"], rows: rows.map((row) => [row.code, row.name]) }];
+    }
+    if (entity === "employees") {
+      const rows = await tx
+        .select({ code: employees.code, name: employees.name })
+        .from(employees)
+        .where(eq(employees.companyId, ctx.company.id))
+        .orderBy(asc(employees.code));
+      return [{ name: "Karyawan", headers: ["Kode", "Nama"], rows: rows.map((row) => [row.code, row.name]) }];
+    }
+    if (entity === "fixed_assets") {
+      const [categories, assetAccounts] = await Promise.all([
+        tx
+          .select({ code: fixedAssetCategories.code, name: fixedAssetCategories.name })
+          .from(fixedAssetCategories)
+          .where(eq(fixedAssetCategories.companyId, ctx.company.id))
+          .orderBy(asc(fixedAssetCategories.code)),
+        tx
+          .select({ code: accounts.code, name: accounts.name })
+          .from(accounts)
+          .where(and(eq(accounts.companyId, ctx.company.id), eq(accounts.isActive, true)))
+          .orderBy(asc(accounts.code)),
+      ]);
+      return [
+        {
+          name: "Kategori aset",
+          headers: ["Kode kategori", "Nama kategori"],
+          rows: categories.map((row) => [row.code, row.name]),
+        },
+        {
+          name: "Akun",
+          headers: ["Kode akun", "Nama akun"],
+          rows: assetAccounts.map((row) => [row.code, row.name]),
+        },
+      ];
+    }
+    if (entity === "payment_methods") {
+      const accountRows = await tx
+        .select({ code: accounts.code, name: accounts.name, type: accounts.type })
+        .from(accounts)
+        .where(and(eq(accounts.companyId, ctx.company.id), eq(accounts.isActive, true)))
+        .orderBy(asc(accounts.code));
+      return [
+        {
+          name: "Akun",
+          headers: ["Kode akun", "Nama akun", "Tipe"],
+          rows: accountRows.map((row) => [row.code, row.name, row.type]),
+        },
+      ];
+    }
+    if (entity === "customer_groups") {
+      const rows = await tx
+        .select({ name: customerGroups.name })
+        .from(customerGroups)
+        .where(eq(customerGroups.companyId, ctx.company.id))
+        .orderBy(asc(customerGroups.name));
+      return [{ name: "Kelompok", headers: ["Nama kelompok"], rows: rows.map((row) => [row.name]) }];
     }
     if (entity === "account_mappings") {
       const accountRows = await tx
@@ -231,7 +338,7 @@ export async function GET(
     return [];
   });
 
-  const sampleData = sampleMatrix(sample.csv);
+  const sampleData = await sampleMatrix(sample.csv);
   const fileBase = sample.fileName.replace(/\.csv$/i, "");
   const customFieldInstructions = customFields.map((field) => {
     const type =
@@ -244,27 +351,23 @@ export async function GET(
             : "";
     return `Kolom kustom ${field.label}.${type}${field.required ? " Kolom kosong tetap dapat diimpor dan akan diberi catatan untuk dilengkapi." : ""}`;
   });
-  return new Response(
-    new Uint8Array(
-      buildImportTemplate({
-        entityLabel: IMPORT_ENTITY_LABELS[entity],
-        headers: [...sampleData.headers, ...customFields.map(customFieldImportHeader)],
-        exampleRows: sampleData.rows.map((row) => [...row, ...customFields.map(() => "")]),
-        fields: [...ENTITY_FIELDS[entity], ...customFields.map(customFieldImportField)],
-        instructions: [...(INSTRUCTIONS[entity] ?? []), ...customFieldInstructions],
-        references,
-      }),
-    ),
-    {
-      status: 200,
-      headers: {
-        "Content-Type":
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="${fileBase}.xlsx"`,
-        "Cache-Control": "no-store",
-      },
+  const workbook = await buildImportTemplate({
+    entityLabel: IMPORT_ENTITY_LABELS[entity],
+    headers: [...sampleData.headers, ...customFields.map(customFieldImportHeader)],
+    exampleRows: sampleData.rows.map((row) => [...row, ...customFields.map(() => "")]),
+    fields: [...ENTITY_FIELDS[entity], ...customFields.map(customFieldImportField)],
+    instructions: [...(INSTRUCTIONS[entity] ?? []), ...customFieldInstructions],
+    references,
+  });
+  return new Response(new Uint8Array(workbook), {
+    status: 200,
+    headers: {
+      "Content-Type":
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "Content-Disposition": `attachment; filename="${fileBase}.xlsx"`,
+      "Cache-Control": "no-store",
     },
-  );
+  });
 }
 
 /** Daftar pelanggan ringkas untuk sheet referensi saldo awal piutang. */

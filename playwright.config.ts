@@ -23,6 +23,11 @@ export default defineConfig({
     baseURL: "http://localhost:3000",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
+    // Lingkungan tanpa browser unduhan Playwright dapat memakai Chrome
+    // sistem lewat PLAYWRIGHT_CHROME_PATH=/usr/bin/google-chrome.
+    ...(process.env.PLAYWRIGHT_CHROME_PATH
+      ? { launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROME_PATH } }
+      : {}),
   },
   projects: [
     { name: "setup", testMatch: /.*\.setup\.ts/ },
@@ -42,6 +47,12 @@ export default defineConfig({
     // otherwise (correctly) reject as a production misconfiguration.
     // This flag is the explicit, logged operator acknowledgement for
     // that harness only — never set it on a real deployment.
-    env: { BISA_ALLOW_LOCALHOST_AUTH_URL: "1" },
+    env: {
+      BISA_ALLOW_LOCALHOST_AUTH_URL: "1",
+      // Standalone Next binds to the machine hostname by default; pin it
+      // to loopback so the baseURL health check and Playwright reach it.
+      HOSTNAME: "127.0.0.1",
+      PORT: "3000",
+    },
   },
 });

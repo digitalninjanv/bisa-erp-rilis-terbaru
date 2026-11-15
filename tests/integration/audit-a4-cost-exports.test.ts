@@ -1,4 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import * as XLSX from "xlsx";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -192,6 +193,21 @@ describe("AUD-013 — gerbang inventory.cost pada ekspor & halaman nilai", () =>
     expect(text).toContain("Nilai Persediaan");
     expect(text).toContain(COST_FORMATTED);
     expect(text).toContain(VALUE_FORMATTED);
+  });
+
+  it("owner: ekspor XLSX persediaan mengalirkan lembar dan angka valuasi", async () => {
+    await setRole("owner");
+    const response = await inventoryExportGET(
+      new Request("http://localhost/api/export/inventory?format=xlsx"),
+    );
+    expect(response.status).toBe(200);
+    const workbook = XLSX.read(Buffer.from(await response.arrayBuffer()), { type: "buffer" });
+    expect(workbook.SheetNames).toEqual(["Nilai Persediaan"]);
+    const sheet = workbook.Sheets["Nilai Persediaan"];
+    expect(sheet.B2).toMatchObject({ t: "s", v: "Produk Uji A4" });
+    expect(sheet.E2).toMatchObject({ t: "n", v: 3 });
+    expect(sheet.F2).toMatchObject({ t: "n", v: 12345 });
+    expect(sheet.G2).toMatchObject({ t: "n", v: 37035 });
   });
 
   it("viewer: halaman Nilai Persediaan tidak merender nilai biaya apa pun", async () => {

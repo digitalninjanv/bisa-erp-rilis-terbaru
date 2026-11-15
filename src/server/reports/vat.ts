@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, gte, lte } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { accounts, journalEntries, journalLines } from "@/db/schema";
+import { accounts, expenses, journalEntries, journalLines, sales, stockReceipts } from "@/db/schema";
 import { getAccountMap } from "@/server/accounting";
 
 /**
@@ -27,6 +27,12 @@ export type VatReportLine = {
   debit: number;
   credit: number;
   amount: number;
+  /** Nomor dokumen sumber (POS/penerimaan/beban) bila dapat dipetakan. */
+  sourceNumber: string | null;
+  /** Tautan ke dokumen sumber; null untuk sumber tanpa halaman. */
+  sourceHref: string | null;
+  /** Dasar pengenaan pajak dari dokumen sumber; null bila tidak tersedia. */
+  dpp: number | null;
 };
 
 export type VatReport = {
@@ -81,6 +87,7 @@ export async function getVatReport(
       description: journalLines.description,
       entryDescription: journalEntries.description,
       sourceType: journalEntries.sourceType,
+      sourceId: journalEntries.sourceId,
       accountId: journalLines.accountId,
       debit: journalLines.debit,
       credit: journalLines.credit,
@@ -97,6 +104,66 @@ export async function getVatReport(
       ),
     )
     .orderBy(asc(journalEntries.date), asc(journalEntries.createdAt));
+
+  const baseSource = (sourceType: string) => sourceType.replace(/_reversal$/, "");
+  const saleIds = [...new Set(rows.filter((row) => baseSource(row.sourceType) === "sale" && row.sourceId).map((row) => row.sourceId!))];
+  const receiptIds = [...new Set(rows.filter((row) => ["purchase", "receipt_opening", "receipt_bonus", "receipt_customer_return", "receipt_other"].includes(baseSource(row.sourceType)) && row.sourceId).map((row) => row.sourceId!))];
+  const expenseIds = [...new Set(rows.filter((row) => baseSource(row.sourceType) === "expense" && row.sourceId).map((row) => row.sourceId!))];
+  const sourceById = new Map<string, { number: string; dpp: number; href: string }>();
+  if (saleIds.length > 0) {
+    const saleRows = await tx
+      .select({
+        id: sales.id,
+        number: sales.number,
+        subtotal: sales.subtotal,
+        discountTotal: sales.discountTotal,
+      })
+      .from(sales)
+      .where(and(eq(sales.companyId, companyId), inArray(sales.id, saleIds)));
+    for (const row of saleRows) {
+      sourceById.set(`sale:${row.id}`, {
+        number: row.number,
+        dpp: Number(row.subtotal) - Number(row.discountTotal),
+        href: `/app/pos/nota/${row.id}`,
+      });
+    }
+  }
+  if (receiptIds.length > 0) {
+    const receiptRows = await tx
+      .select({
+        id: stockReceipts.id,
+        number: stockReceipts.number,
+        total: stockReceipts.total,
+        taxAmount: stockReceipts.taxAmount,
+      })
+      .from(stockReceipts)
+      .where(and(eq(stockReceipts.companyId, companyId), inArray(stockReceipts.id, receiptIds)));
+    for (const row of receiptRows) {
+      sourceById.set(`receipt:${row.id}`, {
+        number: row.number,
+        dpp: Number(row.total) - Number(row.taxAmount),
+        href: `/app/gudang/penerimaan/${row.id}/cetak`,
+      });
+    }
+  }
+  if (expenseIds.length > 0) {
+    const expenseRows = await tx
+      .select({
+        id: expenses.id,
+        number: expenses.number,
+        amount: expenses.amount,
+        taxAmount: expenses.taxAmount,
+      })
+      .from(expenses)
+      .where(and(eq(expenses.companyId, companyId), inArray(expenses.id, expenseIds)));
+    for (const row of expenseRows) {
+      sourceById.set(`expense:${row.id}`, {
+        number: row.number,
+        dpp: Number(row.amount) - Number(row.taxAmount),
+        href: "",
+      });
+    }
+  }
 
   let output = 0;
   let input = 0;
@@ -121,6 +188,28 @@ export async function getVatReport(
       debit,
       credit,
       amount,
+      sourceNumber:
+        row.sourceId && baseSource(row.sourceType) === "sale"
+          ? (sourceById.get(`sale:${row.sourceId}`)?.number ?? null)
+          : row.sourceId && ["purchase", "receipt_opening", "receipt_bonus", "receipt_customer_return", "receipt_other"].includes(baseSource(row.sourceType))
+            ? (sourceById.get(`receipt:${row.sourceId}`)?.number ?? null)
+            : row.sourceId && baseSource(row.sourceType) === "expense"
+              ? (sourceById.get(`expense:${row.sourceId}`)?.number ?? null)
+              : null,
+      sourceHref:
+        row.sourceId && baseSource(row.sourceType) === "sale"
+          ? (sourceById.get(`sale:${row.sourceId}`)?.href ?? null)
+          : row.sourceId && ["purchase", "receipt_opening", "receipt_bonus", "receipt_customer_return", "receipt_other"].includes(baseSource(row.sourceType))
+            ? (sourceById.get(`receipt:${row.sourceId}`)?.href ?? null)
+            : null,
+      dpp:
+        row.sourceId && baseSource(row.sourceType) === "sale"
+          ? (sourceById.get(`sale:${row.sourceId}`)?.dpp ?? null)
+          : row.sourceId && ["purchase", "receipt_opening", "receipt_bonus", "receipt_customer_return", "receipt_other"].includes(baseSource(row.sourceType))
+            ? (sourceById.get(`receipt:${row.sourceId}`)?.dpp ?? null)
+            : row.sourceId && baseSource(row.sourceType) === "expense"
+              ? (sourceById.get(`expense:${row.sourceId}`)?.dpp ?? null)
+              : null,
     };
   });
 

@@ -349,3 +349,85 @@ Scheduler `a24-lanjut-otomatis` (tiap 2 jam) menggerakkan kelanjutannya.
 - **Launcher printer**: `deploy/print/bisa-pos-print.sh` / `.bat`
   membuka POS (`/app/pos`) di Chrome/Edge dengan `--kiosk-printing`;
   pengaturan cetak menampilkan petunjuk printer default OS.
+
+## [Deep Audit Gudang → Akuntansi] 2026-11-15
+
+- **Nilai persediaan**: pencarian `q` (nama/SKU/kategori) kini server-side
+  sebelum paginasi dan agregasi; ekspor XLSX/CSV ikut tersaring.
+- **Gerbang modul**: aksi purchasing, purchase request, dan reservasi memakai
+  `requirePermissionInModule(..., "gudang")`.
+- **Void dokumen stok**: serial penyesuaian/opname/karantina dipulihkan ke
+  gudang asal; hanya seri yang gerakan terakhirnya milik dokumen tersebut.
+- **Tanggal void**: penjualan, payroll, dan transfer bank memakai tanggal
+  dokumen asal bila periode terbuka; fallback hari ini bila tertutup.
+- **Payroll Indonesia dipulihkan**: `runPayrollAction` kembali memakai engine
+  statutory (TER/PPh 21, BPJS, THR/lembur, cuti tidak berbayar, kasbon,
+  pinjaman); `final-pay.ts` menghitung PPh 21 masa terakhir + BPJS.
+- **Ratchet arsitektur**: `receipt-form`, `supplier-return-form`, dan
+  `supplier-returns/posting` dipecah ke berkas pendukung (≤800 baris);
+  import-cycle dan table-writers kembali lulus.
+- **Arsitektur**: impor `receipt-links` dan `supplier-returns/shared` lewat
+  barrel; dua pelanggaran batas modul ditutup.
+- **SEC-003**: HPP/nilai persediaan di PO, penerimaan, retur, dokumen, dan
+  cetak dokumen disembunyikan tanpa `inventory.cost`; test matriks izin
+  `tests/unit/cost-masking.test.ts`.
+- **Analisa bisnis**: tren omzet harian, banner aksi risiko stok
+  (stok habis/dead stock), pagination 20 produk, dan card view mobile;
+  audit di `docs/audit/ANALISA-UX-AUDIT-2026-11-15.md`.
+- **Dashboard utama**: hierarki baru Ringkasan → Perlu tindakan →
+  Tren → Ruang kerja → Aktivitas; KPI piutang/utang, aksi utama di
+  header, modul tanpa blok warna dekoratif; audit di
+  `docs/audit/DASHBOARD-UX-AUDIT-2026-11-15.md`.
+- **POS UX**: terminal mobile kini membuka keranjang + pembayaran
+  sebagai sheet dari bar bawah; riwayat penjualan, pesanan ditahan,
+  riwayat sesi, piutang, dan detail sesi memakai kartu di mobile
+  (tabel tetap desktop);
+  audit lengkap di `docs/audit/POS-UX-AUDIT-2026-11-15.md`.
+- **Akuntansi UX**: Bagan akun 1.700+ baris kini hanya merender
+  ringkasan kelompok (klik untuk membuka; pencarian membuka hasil);
+  rekening bank/clearing punya tautan langsung ke rekonsiliasi akun;
+  riwayat jurnal punya card view mobile; buku PPN menampilkan dokumen
+  sumber + DPP; form jurnal punya **Simpan draf → review → Posting
+  draf/Hapus draf**. Audit lengkap di
+  `docs/audit/AKUNTANSI-UX-AUDIT-2026-11-15.md`.
+- **Penerimaan barang (Fiori Post Goods Receipt)**: formulir dibagi
+  tiga langkah (Dokumen & tujuan → Pemasok & faktur → Barang diterima);
+  tautan PO dipindah dari panel "advanced" ke permukaan form karena
+  itu jalur kerja utama penerimaan pembelian; hint jumlah PO terbuka.
+- **UI/UX workflow (Fiori list report)**: filter status kerja pada
+  Transfer stok (Dalam perjalanan/Selesai/Dibatalkan), Penyesuaian
+  (Menunggu/Terposting/Ditolak/Dibatalkan), Riwayat opname, dan Aset
+  Tetap (Aktif/Dilepas) + pencarian aset; KPI/empty state menjelaskan
+  aksi berikutnya. E2E `gudang-workflow.spec.ts` menjaga chip, URL,
+  dan responsivitas 390px.
+- **QA**: rate limit login DB dibersihkan sebelum reseed E2E; tes PWA
+  dibuat tahan cache service worker antar-spec.
+- **SEC-012/013**: rate limit login tersimpan di tabel `rate_limit`
+  (migrasi `0083`), `BISA_TRUSTED_PROXIES` untuk hop forwarded, dan CSP
+  nonce per request di `src/proxy.ts` (`script-src` tanpa `unsafe-inline`).
+- **Installer HTTPS**: `deploy/install.sh` default nginx + TLS,
+  redirect HTTP→HTTPS, HSTS, `BETTER_AUTH_URL=https://...`,
+  `BISA_TRUSTED_PROXIES=127.0.0.1`; sertifikat resmi lewat
+  `BISA_TLS_CERT`/`BISA_TLS_KEY`.
+- **Tahap 8**: impor massal cabang, gudang, metode pembayaran, kelompok
+  harga, karyawan, dan aset tetap — template, preview, commit idempoten,
+  validasi per baris; aset tetap membuat jurnal perolehan lewat aturan
+  akuntansi yang sama. E2E tab impor + unduh template.
+- **Tahap 7**: coverage kini lines 92.37%, statements 89.92%, functions
+  93.83%, branches 79.35% (26 cabang lagi menuju 80%).
+- **SEC-008**: upload impor dibatasi saat streaming (20MB), magic bytes
+  XLSX/XLS/CSV divalidasi, entri/rasio/ukuran dekompresi ZIP dibatasi.
+- **SEC-006**: seluruh 16 route export memakai `withApiError`; `AppError`/
+  `ZodError` dipetakan ke 400/403/404/409/500, detail internal diredaksi.
+- **Faktur pemasok**: migrasi `0082` menambah `stock_receipts.supplier_invoice_date`
+  dan `due_date`; form penerimaan, koreksi nomor/tanggal faktur, detail,
+  cetak GRN, dan aging utang (`listPayables`/`listPayablesPage`) memakai
+  jatuh tempo eksplisit bila diisi.
+- **UI/UX**: label ringkasan HR dan buku besar dinaikkan ke 11px; header dan
+  sel kolom numerik buku besar kini rata kanan; sidebar Pengaturan yang
+  terlipat dibuka sebelum navigasi pada E2E.
+- **Test**: 53 test valuasi/gudang, 79 test purchasing/PR/reservasi, 39 test
+  serial/adjustment, 14 test sale/payroll/bank void, 41 test payroll/HR.
+  Suite penuh **2444/2444 lulus (276 file)**, E2E **57/57 lulus**,
+  typecheck/lint/build lulus.
+- **Dokumentasi**: `docs/audit/DEEP-AUDIT-2026-11-15.md`.

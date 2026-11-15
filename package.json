@@ -3,12 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "dev": "next dev --turbopack",
+    "build": "next build && pnpm typecheck",
+    "start": "node .next/standalone/server.js",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:integration": "vitest run tests/integration",
     "test:e2e": "playwright test",
     "db:generate": "drizzle-kit generate",
@@ -22,7 +23,10 @@
     "db:restore": "bash scripts/restore.sh",
     "bench:import": "tsx scripts/bench-import.ts",
     "pos:export": "cd pos-desktop && ../node_modules/.bin/next build",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "dev:webpack": "next dev --webpack",
+    "dev:turbopack": "next dev --turbopack",
+    "dev:clean": "rm -rf .next/dev && next dev --webpack"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
@@ -51,6 +55,7 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",
     "@playwright/test": "^1.57.0",
+    "@tailwindcss/postcss": "^4.3.3",
     "@tailwindcss/turbopack": "^4",
     "@tauri-apps/api": "^2.12.4",
     "@tauri-apps/cli": "^2.12.4",
@@ -58,6 +63,7 @@
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitest/coverage-v8": "5.0.5",
     "dotenv": "^17.2.3",
     "drizzle-kit": "^0.31.5",
     "eslint": "^9",

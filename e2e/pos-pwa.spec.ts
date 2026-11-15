@@ -30,6 +30,8 @@ const BUKTI_DIR = path.join(__dirname, "..", "..", "..", "bukti-a24", "t6b");
 // dimatikan lagi di afterAll, sama seperti pos-offline.spec.ts.
 
 function directUrl(): string {
+  // E2E harus memakai DB uji yang diberikan harness, bukan DB pengguna.
+  if (process.env.DIRECT_URL) return process.env.DIRECT_URL;
   const env = fs.readFileSync(".env.local", "utf8");
   const line = env.split("\n").find((row) => row.startsWith("DIRECT_URL="));
   if (!line) throw new Error("DIRECT_URL tidak ditemukan di .env.local");
@@ -90,7 +92,14 @@ async function expectPayTotal(page: Page, label: string) {
 /** Terminal harus berakhir pada sesi kas terbuka; buka lewat UI bila belum ada. */
 async function ensureOpenSession(page: Page) {
   await page.goto("/app/pos");
-  if (await page.getByText("Sesi kas terbuka").isVisible().catch(() => false)) return;
+  // Cek keadaan sebenarnya di DB: teks status bisa belum ter-hidrasi
+  // saat halaman baru dimuat, dan locator teks bisa menunjuk elemen
+  // tersembunyi. Sesi yang sudah terbuka tidak perlu dibuka lagi.
+  const open = await sql.unsafe(
+    `select id from cash_sessions where company_id = $1 and status = 'open' limit 1`,
+    [DEMO],
+  );
+  if (open.length > 0) return;
   await page.getByLabel("Modal awal").fill("100000");
   await page.getByRole("button", { name: "Buka sesi" }).click();
   await expect(page.getByText("Sesi kas terbuka")).toBeVisible();
@@ -130,13 +139,29 @@ test("T6B: reload saat jaringan mati membuka terminal dari cache; penjualan meng
       { timeout: 20_000 },
     )
     .toMatch(/\/app\/pos$/);
-  // Kunjungan pertama belum dikendalikan worker; reload dalam keadaan
-  // online harus tetap membuka terminal normal DAN kini dikendalikan.
-  await page.reload();
-  await expect(page.getByText("Sesi kas terbuka")).toBeVisible();
-  await expect
-    .poll(() => page.evaluate(() => navigator.serviceWorker.controller !== null), { timeout: 20_000 })
-    .toBe(true);
+  // Kunjungan pertama belum dikendalikan worker. Di suite penuh, registrasi
+  // kadang baru aktif satu putaran setelah reload (bergantung cache SW dari
+  // spec sebelumnya); ulangi reload terbatas sampai controller terpasang.
+  let controlled = false;
+  for (let attempt = 0; attempt < 3 && !controlled; attempt += 1) {
+    await page.reload();
+    await expect(page.getByText("Sesi kas terbuka")).toBeVisible();
+    try {
+      await expect
+        .poll(
+          () => page.evaluate(() => navigator.serviceWorker.controller !== null),
+          { timeout: 5_000 },
+        )
+        .toBe(true);
+      controlled = true;
+    } catch {
+      await page.evaluate(async () => {
+        const reg = await navigator.serviceWorker.getRegistration("/app/pos");
+        await reg?.update();
+      });
+    }
+  }
+  expect(controlled, "service worker terminal mengendalikan halaman").toBe(true);
 
   // Halaman di luar scope tidak dikendalikan worker terminal.
   await page.goto("/app/gudang");

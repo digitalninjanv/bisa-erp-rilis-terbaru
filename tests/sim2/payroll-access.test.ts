@@ -193,7 +193,15 @@ function asCustom(permissions: string[]) {
 }
 
 async function expectForbidden(promise: Promise<unknown>) {
-  await expect(promise).rejects.toMatchObject({ code: "FORBIDDEN" });
+  try {
+    const result = await promise;
+    // Route API kini memetakan FORBIDDEN ke Response 403 (SEC-006),
+    // bukan melempar ke error boundary.
+    expect(result).toBeInstanceOf(Response);
+    expect((result as Response).status).toBe(403);
+  } catch (error) {
+    expect(error).toMatchObject({ code: "FORBIDDEN" });
+  }
 }
 
 const SURFACES: Array<[string, () => Promise<unknown>]> = [

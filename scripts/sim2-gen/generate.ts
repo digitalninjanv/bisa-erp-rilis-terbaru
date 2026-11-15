@@ -401,10 +401,10 @@ async function main() {
   log(`header penjualan (${cfg.sales})`, started);
 
   await sql`
-    insert into sale_lines (company_id, sale_id, product_id, line_no, qty, unit_price,
+    insert into sale_lines (company_id, sale_id, product_id, line_no, qty, qty_input, unit_price,
                             discount_value, discount_amount, tax_amount, line_total,
                             unit_cost, tax_rate, product_name, product_sku)
-    select ${C}, s.id, l.product_id, l.line_no, l.qty, l.unit_price,
+    select ${C}, s.id, l.product_id, l.line_no, l.qty, l.qty, l.unit_price,
            0, 0, 0, l.qty * l.unit_price, l.unit_cost, 0,
            pr.name, pr.sku
     from tmp_lines l

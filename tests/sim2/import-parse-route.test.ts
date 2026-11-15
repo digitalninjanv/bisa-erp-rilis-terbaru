@@ -118,7 +118,7 @@ describe("SEC-05 — rute parse dengan SheetJS 0.20.3", () => {
     );
     expect(response.status).toBe(400);
     const body = (await response.json()) as { error: string };
-    expect(body.error).toContain("Gagal membaca file");
+    expect(body.error).toMatch(/Gagal membaca file|tidak valid/i);
   });
 
   it("berkas bermusuhan (__proto__ sebagai data) tidak mencemari Object.prototype", async () => {

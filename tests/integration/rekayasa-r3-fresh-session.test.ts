@@ -194,15 +194,11 @@ describe("K-5 — titik sensitif bernama", () => {
     expect(role.ok).toBe(false);
     if (!role.ok) expect(role.code).toBe("FORBIDDEN");
 
-    let rejection: unknown;
-    try {
-      await payrollExportGET(
-        new NextRequest("http://localhost/api/export/payroll?runId=01900000-0000-7000-8000-00000000e399"),
-      );
-    } catch (error) {
-      rejection = error;
-    }
-    expect(rejection).toMatchObject({ code: "FORBIDDEN" });
+    const exportResponse = await payrollExportGET(
+      new NextRequest("http://localhost/api/export/payroll?runId=01900000-0000-7000-8000-00000000e399"),
+    );
+    expect(exportResponse.status).toBe(403);
+    expect(await exportResponse.json()).toMatchObject({ code: "FORBIDDEN" });
   });
 
   it("kontrol negatif: sesi TUA tetap lolos di permukaan yang sengaja tidak digerbang", async () => {

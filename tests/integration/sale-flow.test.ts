@@ -93,11 +93,14 @@ describe("POS sale flow", () => {
       expect(quote.total).toBeGreaterThan(0);
 
       const key = crypto.randomUUID();
+      // Tanggal dokumen sengaja di awal bulan berjalan (bukan hari ini)
+      // agar pembalik void terbukti memakai tanggal asal, bukan today.
+      const saleDate = `${todayISO().slice(0, 8)}01`;
       const sale = await createSale(tx, {
         companyId: ORG_ID,
         userId: USER_ID,
         warehouseId: warehouse.id,
-        date: todayISO(),
+        date: saleDate,
         lines,
         payments: [{ methodId: method.id, amount: quote.total, tendered: quote.total + 10_000 }],
         idempotencyKey: key,
@@ -162,7 +165,7 @@ describe("POS sale flow", () => {
         companyId: ORG_ID,
         userId: USER_ID,
         warehouseId: warehouse.id,
-        date: todayISO(),
+        date: saleDate,
         lines,
         payments: [{ methodId: method.id, amount: quote.total, tendered: quote.total + 10_000 }],
         idempotencyKey: key,
@@ -216,6 +219,7 @@ describe("POS sale flow", () => {
           ),
         );
       expect(reversal).toHaveLength(1);
+      expect(String(reversal[0].date).slice(0, 10)).toBe(saleDate);
       const reversalLines = await tx
         .select()
         .from(journalLines)

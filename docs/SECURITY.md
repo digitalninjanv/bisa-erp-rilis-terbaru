@@ -31,14 +31,14 @@ Status: audit read-only + perbaikan putaran ini. Temuan terbuka ada di `docs/BLO
 
 | ID | Risiko | Rekomendasi |
 | --- | --- | --- |
-| SEC-003 | HPP/nilai persediaan terlihat oleh `inventory.view` tanpa `inventory.cost` di beberapa halaman. | Pusatkan masking biaya di query/helper; tambah test matriks izin. |
-| SEC-005 | Token terminal POS tetap bisa membaca snapshot setelah user dicabut/di-demote. | Cek membership + `pos.sell` di snapshot; cabut token saat role/membership berubah. |
-| SEC-006 | Route export mengembalikan 500 untuk 401/403/validasi. | Helper error mapper `AppError`/`ZodError` → status HTTP benar. |
-| SEC-008 | Upload membaca body/workbook sebelum batas baris; belum validasi magic bytes. | Batas body di proxy, validasi signature, batas sheet/row saat baca. |
+| SEC-003 | HPP/nilai persediaan terlihat tanpa `inventory.cost`. | **SELESAI** — masking di PO/penerimaan/retur/dokumen/cetak + test matriks izin. |
+| SEC-005 | Token terminal POS membaca snapshot setelah user dicabut/di-demote. | **SELESAI** — cek membership + `pos.sell`; token dicabut saat role/membership berubah. |
+| SEC-006 | Route export mengembalikan 500 untuk 401/403/validasi. | **SELESAI** — `withApiError` memetakan 400/403/404/409/500 untuk 16 route. |
+| SEC-008 | Upload membaca body/workbook sebelum batas baris; belum validasi magic bytes. | **SELESAI** — streaming 20MB, magic bytes XLSX/XLS/CSV, batas entri/rasio ZIP. |
 | SEC-009 | Perubahan pemetaan akun belum diaudit before/after. | Tulis audit `account_mapping.update` dengan nilai lama/baru. |
-| SEC-011 | Beberapa aksi PO/PR/reservasi memakai `requirePermission`, bukan `requirePermissionInModule`. | Ganti ke gerbang modul; uji modul nonaktif. |
-| SEC-012 | Rate limit in-memory; `X-Forwarded-For` dipercaya. | Rate limit terpusat / proxy tepercaya untuk multi-instance. |
-| SEC-013 | CSP `script-src 'unsafe-inline'`; logo URL diblokir CSP. | Nonce/hash; ubah logo URL menjadi data URL/upload. |
+| SEC-011 | Aksi PO/PR/reservasi memakai `requirePermission`. | **SELESAI** — `requirePermissionInModule(..., "gudang")`; uji modul nonaktif. |
+| SEC-012 | Rate limit in-memory; `X-Forwarded-For` dipercaya. | **SELESAI** — storage `rate_limit` di database; `BISA_TRUSTED_PROXIES` membatasi hop yang dipercaya. Pair throttle POS masih in-memory (lapisan tambahan). |
+| SEC-013 | CSP `script-src 'unsafe-inline'`; logo URL diblokir CSP. | **SELESAI** — CSP nonce per request di `src/proxy.ts`; `img-src` mengizinkan https/http untuk logo. |
 
 ## Aturan operasi
 

@@ -1,3 +1,4 @@
+import { withApiError } from "@/lib/api-error";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { listSuppliersFiltered } from "@/server/catalog";
 import { requirePermission } from "@/lib/session";
@@ -13,7 +14,7 @@ export const dynamic = "force-dynamic";
  * (`q` kata kunci, `status` aktif/nonaktif) lewat fungsi daftar yang
  * sama dengan halaman (S3 §18F).
  */
-export async function GET(request?: Request) {
+async function GETHandler(request?: Request) {
   const ctx = await requirePermission("inventory.view");
   const url = new URL(request?.url ?? "http://localhost");
   const filter = {
@@ -49,3 +50,5 @@ export async function GET(request?: Request) {
   }
   return csvResponse(`${filename}.csv`, toCsv(headers, cells));
 }
+
+export const GET = withApiError(GETHandler);

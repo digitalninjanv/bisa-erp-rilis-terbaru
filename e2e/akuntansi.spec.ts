@@ -11,10 +11,10 @@ test.describe("Akuntansi", () => {
     // Validasi 2 (V-06): periode berjalan data demo memang tanpa
     // mutasi laba rugi dan akun nol bawaan tersembunyi — yang tampil
     // adalah SATU keadaan kosong ringkas, bukan lima kelompok kosong.
-    await expect(page.getByText("Tidak ada mutasi pada periode ini.")).toBeVisible();
+    await expect(page.getByText(/Tidak ada mutasi pada periode ini/)).toBeVisible();
     // Menampilkan akun bersaldo nol mengembalikan struktur kelompok
     // penuh dengan baris angkanya (kontrak V-06 yang sama).
-    await page.getByRole("link", { name: "Tampilkan akun bersaldo nol" }).click();
+    await page.getByRole("link", { name: "Tampilkan akun nol" }).click();
     await expect(page.getByText("Pendapatan", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("Laba kotor", { exact: true })).toBeVisible();
     await expect(page.getByText("Laba bersih", { exact: true })).toBeVisible();
@@ -25,8 +25,8 @@ test.describe("Akuntansi", () => {
   test("jurnal umum memuat daftar entri", async ({ page }) => {
     // Halaman jurnal bawaan hanya menampilkan bulan berjalan; jurnal seed
     // tersebar di tahun fiskal demo — buka rentang lebar secara eksplisit.
-    await page.goto("/app/akuntansi/jurnal?from=2020-01-01&to=2030-12-31");
-    await expect(page.getByRole("heading", { name: "Jurnal umum" })).toBeVisible();
+    await page.goto("/app/akuntansi/jurnal/riwayat?from=2020-01-01&to=2030-12-31");
+    await expect(page.getByRole("heading", { name: "Riwayat jurnal" })).toBeVisible();
     const rows = page.locator("tbody tr");
     await expect(rows.first()).toBeVisible();
     expect(await rows.count()).toBeGreaterThan(0);
@@ -41,8 +41,8 @@ test.describe("Akuntansi", () => {
     // dua kali, searchParams menjadi array, dan halaman melempar error.
     // Test ini mengirim pencarian lewat UI sungguhan dan menegaskan URL
     // hasil kirim memuat tiap parameter tepat satu kali.
-    await page.goto("/app/akuntansi/jurnal?from=2020-01-01&to=2030-12-31");
-    await expect(page.getByRole("heading", { name: "Jurnal umum" })).toBeVisible();
+    await page.goto("/app/akuntansi/jurnal/riwayat?from=2020-01-01&to=2030-12-31");
+    await expect(page.getByRole("heading", { name: "Riwayat jurnal" })).toBeVisible();
     const nomor = (await page.locator("tbody tr td:first-child").first().innerText()).trim();
     expect(nomor).toMatch(/^[A-Z]+-\d{4}-/);
     await page.getByLabel("Kata kunci pencarian").fill(nomor);

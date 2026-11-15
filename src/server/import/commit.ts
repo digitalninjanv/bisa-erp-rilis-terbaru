@@ -3,12 +3,15 @@ import type { Tx } from "@/db";
 import {
   accounts,
   accountMappings,
+  branches,
   categories,
   customerGroups,
   customers,
   importRows,
+  paymentMethods,
   suppliers,
   units,
+  warehouses,
 } from "@/db/schema";
 import { ACCOUNT_MAPPING_KEYS, mappingAllowsAccountType, MAPPING_LABELS } from "@/lib/account-mappings";
 import { defaultSection } from "@/lib/accounting";
@@ -21,6 +24,20 @@ import {
   requiredCustomFieldsNote,
   type MasterEntity,
 } from "./masters";
+import {
+  commitCustomerGroup,
+  commitPaymentMethod,
+  markSimpleResult,
+  type SimpleMasterContext,
+} from "./commit-commerce";
+import { commitBranch, commitWarehouse } from "./commit-locations";
+import {
+  commitEmployee,
+  commitFixedAsset,
+  loadEmployeeExisting,
+  loadFixedAssetExisting,
+  markHrAssetResult,
+} from "./commit-hr-assets";
 import { finalizeJob, markRow, type JobRow, type Mapping, type RowData } from "./shared";
 
 /**
@@ -87,7 +104,14 @@ export async function commitMasterBatch(
         if (mapped.value.kind === "suppliers" || mapped.value.kind === "customers") {
           return [mapped.value.value.name.toLowerCase()];
         }
-        if (mapped.value.kind === "categories" || mapped.value.kind === "units") {
+        if (
+          mapped.value.kind === "categories" ||
+          mapped.value.kind === "units" ||
+          mapped.value.kind === "branches" ||
+          mapped.value.kind === "warehouses" ||
+          mapped.value.kind === "payment_methods" ||
+          mapped.value.kind === "customer_groups"
+        ) {
           return [mapped.value.value.name.toLowerCase()];
         }
         return [];
@@ -100,6 +124,9 @@ export async function commitMasterBatch(
         if (!mapped.value) return [];
         if (mapped.value.kind === "accounts") return [mapped.value.value.code.toLowerCase()];
         if (mapped.value.kind === "units") return [mapped.value.value.code.toLowerCase()];
+        if (mapped.value.kind === "branches" || mapped.value.kind === "warehouses") {
+          return mapped.value.value.code ? [mapped.value.value.code.toLowerCase()] : [];
+        }
         if (mapped.value.kind === "suppliers" || mapped.value.kind === "customers") {
           return mapped.value.value.code ? [mapped.value.value.code.toLowerCase()] : [];
         }
@@ -112,9 +139,19 @@ export async function commitMasterBatch(
   const existingCodes = new Map<string, string>();
   let supplierSeq = 0;
   let customerSeq = 0;
+  let branchSeq = 0;
+  let warehouseSeq = 0;
+  let paymentMethodSeq = 0;
+  let employeeSeq = 0;
+  const existingNiks = new Set<string>();
+  const seenNiks = new Set<string>();
+  const assetCategoryByName = new Map<string, string>();
+  const existingAssetKeys = new Set<string>();
+  const assetKeysInFile = new Set<string>();
   const groupByName = new Map<string, string>();
   const categoryByName = new Map<string, string>();
   const existingUnitNames = new Map<string, string>();
+  const branchIdByCode = new Map<string, string>();
   const accountIdByCode = new Map<string, string>();
   const accountMetaByCode = new Map<
     string,
@@ -190,6 +227,78 @@ export async function commitMasterBatch(
       existingCodes.set(row.code.toLowerCase(), row.id);
       existingUnitNames.set(row.name.toLowerCase(), row.id);
     }
+  } else if (entity === "branches") {
+    const found = await tx
+      .select({ id: branches.id, name: branches.name, code: branches.code })
+      .from(branches)
+      .where(eq(branches.companyId, companyId));
+    for (const row of found) {
+      existingNames.set(row.name.toLowerCase(), row.id);
+      existingCodes.set(row.code.toLowerCase(), row.id);
+    }
+    const [countRow] = await tx
+      .select({ value: count() })
+      .from(branches)
+      .where(eq(branches.companyId, companyId));
+    branchSeq = (countRow?.value ?? 0) + 1;
+  } else if (entity === "warehouses") {
+    const [found, branchRows] = await Promise.all([
+      tx
+        .select({ id: warehouses.id, name: warehouses.name, code: warehouses.code })
+        .from(warehouses)
+        .where(eq(warehouses.companyId, companyId)),
+      tx
+        .select({ id: branches.id, code: branches.code })
+        .from(branches)
+        .where(eq(branches.companyId, companyId)),
+    ]);
+    for (const row of found) {
+      existingNames.set(row.name.toLowerCase(), row.id);
+      existingCodes.set(row.code.toLowerCase(), row.id);
+    }
+    for (const row of branchRows) branchIdByCode.set(row.code.toLowerCase(), row.id);
+    const [countRow] = await tx
+      .select({ value: count() })
+      .from(warehouses)
+      .where(eq(warehouses.companyId, companyId));
+    warehouseSeq = (countRow?.value ?? 0) + 1;
+  } else if (entity === "payment_methods") {
+    const [found, accountRows] = await Promise.all([
+      tx
+        .select({ id: paymentMethods.id, name: paymentMethods.name, code: paymentMethods.code })
+        .from(paymentMethods)
+        .where(eq(paymentMethods.companyId, companyId)),
+      tx
+        .select({ id: accounts.id, code: accounts.code })
+        .from(accounts)
+        .where(eq(accounts.companyId, companyId)),
+    ]);
+    for (const row of found) {
+      existingNames.set(row.name.toLowerCase(), row.id);
+      existingCodes.set(row.code.toLowerCase(), row.id);
+    }
+    for (const row of accountRows) accountIdByCode.set(row.code.toLowerCase(), row.id);
+    const [countRow] = await tx
+      .select({ value: count() })
+      .from(paymentMethods)
+      .where(eq(paymentMethods.companyId, companyId));
+    paymentMethodSeq = (countRow?.value ?? 0) + 1;
+  } else if (entity === "customer_groups") {
+    const found = await tx
+      .select({ id: customerGroups.id, name: customerGroups.name })
+      .from(customerGroups)
+      .where(eq(customerGroups.companyId, companyId));
+    for (const row of found) existingNames.set(row.name.toLowerCase(), row.id);
+  } else if (entity === "employees") {
+    const found = await loadEmployeeExisting(tx, companyId);
+    for (const [code, id] of found.codes) existingCodes.set(code, id);
+    for (const nik of found.niks) existingNiks.add(nik);
+    employeeSeq = found.count + 1;
+  } else if (entity === "fixed_assets") {
+    const found = await loadFixedAssetExisting(tx, companyId);
+    for (const [name, id] of found.categoryByName) assetCategoryByName.set(name, id);
+    for (const [code, id] of found.accountIdByCode) accountIdByCode.set(code, id);
+    for (const key of found.keys) existingAssetKeys.add(key);
   } else if (entity === "account_mappings") {
     const [accountRows, mappingRows] = await Promise.all([
       tx
@@ -225,6 +334,11 @@ export async function commitMasterBatch(
   let imported = 0;
   let skipped = 0;
   let failed = 0;
+  const apply = (delta: { imported: number; skipped: number; failed: number }) => {
+    imported += delta.imported;
+    skipped += delta.skipped;
+    failed += delta.failed;
+  };
 
   const customFields =
     entity === "suppliers" || entity === "customers"
@@ -363,6 +477,95 @@ export async function commitMasterBatch(
         imported += 1;
         await markRow(tx, row.id, "imported", customNote, created.id);
       }
+      continue;
+    }
+
+    if (value.kind === "payment_methods" || value.kind === "customer_groups") {
+      const ctx: SimpleMasterContext = {
+        tx,
+        companyId,
+        rowId: row.id,
+        existingNames,
+        existingCodes,
+        accountIdByCode,
+        seenNames,
+        seenCodes,
+        nextCode,
+        seq: value.kind === "payment_methods" ? paymentMethodSeq : 0,
+      };
+      if (value.kind === "payment_methods") {
+        const { result, seq } = await commitPaymentMethod(ctx, value.value);
+        paymentMethodSeq = seq;
+        apply(await markSimpleResult(tx, row.id, result));
+      } else {
+        apply(await markSimpleResult(tx, row.id, await commitCustomerGroup(ctx, value.value)));
+      }
+      continue;
+    }
+
+    if (value.kind === "employees") {
+      const { result, seq } = await commitEmployee(
+        {
+          tx,
+          companyId,
+          existingCodes,
+          existingNiks,
+          seenCodes,
+          seenNiks,
+          nextCode,
+          seq: employeeSeq,
+        },
+        value.value,
+      );
+      employeeSeq = seq;
+      apply(await markHrAssetResult(tx, row.id, result));
+      continue;
+    }
+
+    if (value.kind === "fixed_assets") {
+      const result = await commitFixedAsset(
+        {
+          tx,
+          companyId,
+          userId: input.userId,
+          categoryByName: assetCategoryByName,
+          accountIdByCode,
+          existingKeys: existingAssetKeys,
+          keysInFile: assetKeysInFile,
+        },
+        value.value,
+      );
+      apply(await markHrAssetResult(tx, row.id, result));
+      continue;
+    }
+
+    if (value.kind === "branches") {
+      const { result, seq } = await commitBranch(
+        { tx, companyId, existingNames, existingCodes, seenNames, seenCodes, nextCode, seq: branchSeq },
+        value.value,
+      );
+      branchSeq = seq;
+      apply(await markSimpleResult(tx, row.id, result));
+      continue;
+    }
+
+    if (value.kind === "warehouses") {
+      const { result, seq } = await commitWarehouse(
+        {
+          tx,
+          companyId,
+          existingNames,
+          existingCodes,
+          seenNames,
+          seenCodes,
+          nextCode,
+          seq: warehouseSeq,
+          branchIdByCode,
+        },
+        value.value,
+      );
+      warehouseSeq = seq;
+      apply(await markSimpleResult(tx, row.id, result));
       continue;
     }
 

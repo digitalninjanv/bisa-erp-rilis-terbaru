@@ -105,6 +105,7 @@ export type QueuedSale = OfflineSalePayload & {
 export interface OfflineQueueStorage {
   add(item: QueuedSale): Promise<void>;
   put(item: QueuedSale): Promise<void>;
+  get?(clientKey: string): Promise<QueuedSale | undefined>;
   list(): Promise<QueuedSale[]>;
   remove(clientKey: string): Promise<void>;
 }
@@ -119,6 +120,10 @@ export class MemoryOfflineStorage implements OfflineQueueStorage {
 
   async put(item: QueuedSale): Promise<void> {
     this.items.set(item.clientKey, item);
+  }
+
+  async get(clientKey: string): Promise<QueuedSale | undefined> {
+    return this.items.get(clientKey);
   }
 
   async list(): Promise<QueuedSale[]> {
@@ -189,6 +194,12 @@ export class IndexedDbOfflineStorage implements OfflineQueueStorage {
     await this.run("readwrite", (store) => store.put(item));
   }
 
+  async get(clientKey: string): Promise<QueuedSale | undefined> {
+    return (await this.run("readonly", (store) => store.get(clientKey))) as
+      | QueuedSale
+      | undefined;
+  }
+
   async list(): Promise<QueuedSale[]> {
     const rows = await this.run("readonly", (store) => store.getAll());
     return (rows as QueuedSale[]).sort((a, b) => a.queuedAt.localeCompare(b.queuedAt));
@@ -218,7 +229,9 @@ export async function enqueueOfflineSale(
   storage: OfflineQueueStorage,
   payload: OfflineSalePayload,
 ): Promise<{ queued: QueuedSale; duplicate: boolean }> {
-  const existing = (await storage.list()).find((item) => item.clientKey === payload.clientKey);
+  const existing = storage.get
+    ? await storage.get(payload.clientKey)
+    : (await storage.list()).find((item) => item.clientKey === payload.clientKey);
   if (existing) return { queued: existing, duplicate: true };
   const queued: QueuedSale = { ...payload };
   await storage.add(queued);
@@ -253,7 +266,9 @@ export async function applySyncResults(
       removed.push(result.clientKey);
       continue;
     }
-    const existing = (await storage.list()).find((item) => item.clientKey === result.clientKey);
+    const existing = storage.get
+      ? await storage.get(result.clientKey)
+      : (await storage.list()).find((item) => item.clientKey === result.clientKey);
     if (existing) {
       await storage.put({
         ...existing,

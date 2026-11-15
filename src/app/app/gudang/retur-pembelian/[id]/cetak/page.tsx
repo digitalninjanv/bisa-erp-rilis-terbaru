@@ -9,6 +9,7 @@ import {
   getSupplierReturnPrintData,
 } from "@/server/supplier-returns";
 import { requirePermissionPage } from "@/lib/session";
+import { canSeeInventoryCost } from "@/lib/inventory-cost";
 import { d, formatIDR, formatQty } from "@/lib/money";
 import { formatDate } from "@/lib/format";
 import { ReceiptPrint } from "@/components/pos/receipt-print";
@@ -38,6 +39,7 @@ export default async function SupplierReturnPrintPage({
   const { id } = await params;
   const query = await searchParams;
   const ctx = await requirePermissionPage("inventory.view");
+  const canSeeCost = canSeeInventoryCost(ctx);
 
   const data = await withCompanyReadOnly(ctx.company.id, async (tx) => {
     const printData = await getSupplierReturnPrintData(tx, ctx.company.id, id);
@@ -167,8 +169,8 @@ export default async function SupplierReturnPrintPage({
                 <th className="py-1.5 pr-2 font-semibold">Produk</th>
                 <th className="py-1.5 pr-2 font-semibold">Batch</th>
                 <th className="py-1.5 pr-2 text-right font-semibold">Qty</th>
-                <th className="py-1.5 pr-2 text-right font-semibold">Harga pokok</th>
-                <th className="py-1.5 text-right font-semibold">Subtotal</th>
+                {canSeeCost ? <th className="py-1.5 pr-2 text-right font-semibold">Harga pokok</th> : null}
+                {canSeeCost ? <th className="py-1.5 text-right font-semibold">Subtotal</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -191,10 +193,10 @@ export default async function SupplierReturnPrintPage({
                       {formatQty(line.qty)}{info?.unitName ? ` ${info.unitName}` : ""}
                     </td>
                     <td className="num py-1.5 pr-2 text-right whitespace-nowrap">
-                      {isDraft ? "—" : formatIDR(line.unitCost)}
+                      {canSeeCost ? (isDraft ? "—" : formatIDR(line.unitCost)) : null}
                     </td>
                     <td className="num py-1.5 text-right whitespace-nowrap">
-                      {isDraft ? "—" : formatIDR(line.lineTotal)}
+                      {canSeeCost ? (isDraft ? "—" : formatIDR(line.lineTotal)) : null}
                     </td>
                   </tr>
                 );
@@ -203,15 +205,29 @@ export default async function SupplierReturnPrintPage({
           </table>
 
           {/* CT-05/CT-10: total di luar tabel agar tidak berulang prematur di dokumen multipel-halaman. */}
-          {!isDraft ? (
+          {!isDraft && canSeeCost ? (
             <div className="print-total-bar mt-2 flex items-baseline justify-end gap-6 break-inside-avoid text-[12px]">
-              <span className="font-bold tracking-wide">TOTAL NILAI RETUR</span>
+              <span className="font-bold tracking-wide">NILAI PERSEDIAAN KELUAR (AVCO)</span>
               <span className="num font-bold">{formatIDR(detail.totalValue)}</span>
             </div>
           ) : null}
 
           {!isDraft && detail.status !== "void" ? (
             <div className="mt-3 space-y-1 text-[11px]">
+              {d(detail.invoiceCreditAmount).gt(0) ? (
+                <>
+                  <p>
+                    <span className="text-black/60">Nilai kredit nota faktur (termasuk PPN): </span>
+                    <span className="num font-medium">{formatIDR(detail.invoiceCreditAmount)}</span>
+                    <span className="text-black/60"> · PPN Masukan dibalik: </span>
+                    <span className="num font-medium">{formatIDR(detail.taxAmount)}</span>
+                  </p>
+                  {canSeeCost ? <p>
+                    <span className="text-black/60">Selisih bersih terhadap nilai AVCO (HPP): </span>
+                    <span className="num font-medium">{formatIDR(detail.priceVarianceAmount)}</span>
+                  </p> : null}
+                </>
+              ) : null}
               <p>
                 <span className="text-black/60">Memotong utang pemasok: </span>
                 <span className="num font-medium">{formatIDR(detail.payableAmount)}</span>

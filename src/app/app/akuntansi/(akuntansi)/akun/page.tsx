@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CornerDownRight, Download, Lock, SearchX, Upload } from "lucide-react";
+import { ChevronRight, CornerDownRight, Download, Lock, SearchX, Upload } from "lucide-react";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { listAccountBalances } from "@/server/reports";
 import { requirePermissionPage } from "@/lib/session";
@@ -55,6 +55,10 @@ export default async function AccountsPage({
     : allBalances;
   const balances = params.type ? filteredByTerm.filter((row) => row.type === params.type) : filteredByTerm;
   const canManage = can(ctx, "accounting.manage");
+  // Fiori tree/accordion: 1.700+ akun tidak boleh tampil terbuka semua.
+  // Pencarian/filter tipe membuka kelompok otomatis agar hasil langsung
+  // terlihat; tanpa filter, pengguna membuka kelompok yang dibutuhkan.
+  const expandGroups = Boolean(term || params.type);
   const parentById = new Map(allBalances.map((row) => [row.id, row.parentId]));
   const depthOf = (id: string) => {
     let depth = 0;
@@ -178,6 +182,11 @@ export default async function AccountsPage({
                 ]}
               />
             </div>
+            {!params.type && !term ? (
+              <p className="mt-1 text-[10px] text-muted-foreground">
+                Pilih kelompok untuk melihat akunnya. Pencarian membuka hasil lintas kelompok otomatis.
+              </p>
+            ) : null}
           </>
         }
         isEmpty={balances.length === 0}
@@ -203,14 +212,42 @@ export default async function AccountsPage({
         {GROUPS.map((group) => {
           const rows = balances.filter((row) => row.type === group.type);
           if (rows.length === 0) return null;
-          return (
-            <div key={group.type} className="border-b border-border last:border-b-0">
-              <div className="flex items-center justify-between bg-muted/30 px-4 py-2">
-                <h2 className="text-[12px] font-semibold">{group.label}</h2>
+          if (!expandGroups) {
+            return (
+              <Link
+                key={group.type}
+                href={`/app/akuntansi/akun?type=${group.type}`}
+                className="flex items-center justify-between gap-2 border-b border-border px-4 py-2.5 transition-colors last:border-b-0 hover:bg-muted/50"
+                aria-label={`Buka ${group.label}: ${rows.length} akun`}
+              >
+                <span className="flex items-center gap-1.5">
+                  <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+                  <h2 className="text-[12px] font-semibold">{group.label}</h2>
+                </span>
                 <span className="num text-[11px] text-muted-foreground">
                   {rows.length} akun · {formatIDRSigned(detailTotal(rows))}
                 </span>
-              </div>
+              </Link>
+            );
+          }
+          return (
+            <details
+              key={group.type}
+              open
+              className="group border-b border-border last:border-b-0"
+            >
+              <summary
+                className="flex cursor-pointer list-none items-center justify-between gap-2 bg-muted/30 px-4 py-2.5 transition-colors hover:bg-muted/50 [&::-webkit-details-marker]:hidden"
+                aria-label={`${group.label}: ${rows.length} akun`}
+              >
+                <span className="flex items-center gap-1.5">
+                  <ChevronRight className="size-3.5 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
+                  <h2 className="text-[12px] font-semibold">{group.label}</h2>
+                </span>
+                <span className="num text-[11px] text-muted-foreground">
+                  {rows.length} akun · {formatIDRSigned(detailTotal(rows))}
+                </span>
+              </summary>
               <div className="overflow-x-auto">
                 <table className="data-table">
                   <thead>
@@ -316,7 +353,7 @@ export default async function AccountsPage({
                   </tbody>
                 </table>
               </div>
-            </div>
+            </details>
           );
         })}
       </DataList>

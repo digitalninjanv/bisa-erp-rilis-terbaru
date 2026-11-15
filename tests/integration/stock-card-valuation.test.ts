@@ -241,6 +241,31 @@ describe("GD-P2-6 valuasi Decimal berpaginasi", () => {
     expect(outcome.valuation.lowStock.map((r) => r.productId)).toContain(outcome.fixture.precision.id);
   });
 
+  it("pencarian q menyaring seluruh katalog sebelum paginasi", async () => {
+    const outcome = await rollbackTransaction(async (tx) => {
+      const fixture = await seedValuationFixture(tx);
+      const byName = await getInventoryValuation(tx, ORG_ID, fixture.warehouse.id, {
+        q: "Uji Valuasi B",
+        page: 1,
+        pageSize: 1,
+      });
+      const bySku = await getInventoryValuation(tx, ORG_ID, fixture.warehouse.id, {
+        q: "TST-T41",
+        page: 1,
+        pageSize: 2,
+      });
+      return { fixture, byName, bySku };
+    });
+
+    // Satu produk cocok dari tiga; total & KPI mengikuti himpunan tersaring.
+    expect(outcome.byName.total).toBe(1);
+    expect(outcome.byName.items).toHaveLength(1);
+    expect(outcome.byName.items[0]?.productId).toBe(outcome.fixture.second.id);
+    // Pencarian SKU tetap melihat seluruh katalog, bukan hanya halaman.
+    expect(outcome.bySku.total).toBe(3);
+    expect(outcome.bySku.items).toHaveLength(2);
+  });
+
   it("pagination membatasi baris tetapi total tetap agregat seluruh hasil", async () => {
     const outcome = await rollbackTransaction(async (tx) => {
       const fixture = await seedValuationFixture(tx);

@@ -180,3 +180,26 @@ describe("parseEnv — kegagalan wajib keras dan menyebut variabelnya", () => {
     expect(() => parseEnv({})).toThrow();
   });
 });
+
+describe("parseEnv — SEC-012 proksi tepercaya", () => {
+  it("memecah BISA_TRUSTED_PROXIES menjadi daftar IP/CIDR", () => {
+    const env = parseEnv({
+      ...VALID_DEV,
+      BISA_TRUSTED_PROXIES: "127.0.0.1, 10.0.0.0/8, 2001:db8::/32",
+    });
+    expect(env.trustedProxies).toEqual(["127.0.0.1", "10.0.0.0/8", "2001:db8::/32"]);
+  });
+
+  it("menolak entri yang bukan IP/CIDR", () => {
+    expect(() =>
+      parseEnv({ ...VALID_DEV, BISA_TRUSTED_PROXIES: "127.0.0.1, bukan-ip" }),
+    ).toThrow(/BISA_TRUSTED_PROXIES/);
+    expect(() =>
+      parseEnv({ ...VALID_DEV, BISA_TRUSTED_PROXIES: "10.0.0.0/99" }),
+    ).toThrow(/BISA_TRUSTED_PROXIES/);
+  });
+
+  it("kosong berarti tidak ada proksi tepercaya", () => {
+    expect(parseEnv(VALID_DEV).trustedProxies).toEqual([]);
+  });
+});

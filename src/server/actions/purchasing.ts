@@ -11,7 +11,7 @@ import {
   listPurchaseRecommendations,
   sendPurchaseOrder,
 } from "@/server/purchasing";
-import { requirePermission } from "@/lib/session";
+import { requirePermissionInModule } from "@/lib/session";
 import { todayISO } from "@/lib/format";
 import { guard } from "@/lib/errors";
 import { amountField, isoDateField, parseInput } from "@/lib/action-validation";
@@ -37,7 +37,7 @@ const purchaseOrderSchema = z.object({
 
 export async function savePurchaseOrderAction(input: z.input<typeof purchaseOrderSchema>) {
   return guard(async () => {
-    const ctx = await requirePermission("inventory.manage");
+    const ctx = await requirePermissionInModule("inventory.manage", "gudang");
     const data = parseInput(purchaseOrderSchema, input);
     const result = await withCompany(ctx.company.id, (tx) =>
       createPurchaseOrder(tx, {
@@ -60,7 +60,7 @@ const orderIdSchema = z.object({ id: z.string().uuid() });
 
 export async function sendPurchaseOrderAction(input: z.input<typeof orderIdSchema>) {
   return guard(async () => {
-    const ctx = await requirePermission("inventory.manage");
+    const ctx = await requirePermissionInModule("inventory.manage", "gudang");
     const data = parseInput(orderIdSchema, input);
     const result = await withCompany(ctx.company.id, (tx) =>
       sendPurchaseOrder(tx, { companyId: ctx.company.id, userId: ctx.user.id, orderId: data.id }),
@@ -73,7 +73,7 @@ export async function sendPurchaseOrderAction(input: z.input<typeof orderIdSchem
 
 export async function cancelPurchaseOrderAction(input: z.input<typeof orderIdSchema>) {
   return guard(async () => {
-    const ctx = await requirePermission("inventory.manage");
+    const ctx = await requirePermissionInModule("inventory.manage", "gudang");
     const data = parseInput(orderIdSchema, input);
     const result = await withCompany(ctx.company.id, (tx) =>
       cancelPurchaseOrder(tx, { companyId: ctx.company.id, userId: ctx.user.id, orderId: data.id }),
@@ -87,7 +87,7 @@ export async function cancelPurchaseOrderAction(input: z.input<typeof orderIdSch
 
 export async function listOpenPurchaseOrdersAction(input: { supplierId: string }) {
   return guard(async () => {
-    const ctx = await requirePermission("inventory.view");
+    const ctx = await requirePermissionInModule("inventory.view", "gudang");
     const data = parseInput(z.object({ supplierId: z.string().uuid() }), input);
     return withCompany(ctx.company.id, (tx) =>
       listOpenPurchaseOrdersForSupplier(tx, ctx.company.id, data.supplierId),
@@ -97,7 +97,7 @@ export async function listOpenPurchaseOrdersAction(input: { supplierId: string }
 
 export async function listPurchaseRecommendationsAction() {
   return guard(async () => {
-    const ctx = await requirePermission("inventory.view");
+    const ctx = await requirePermissionInModule("inventory.view", "gudang");
     return withCompany(ctx.company.id, (tx) => listPurchaseRecommendations(tx, ctx.company.id));
   });
 }
@@ -110,7 +110,7 @@ export async function createOrdersFromRecommendationsAction(
   input: z.input<typeof fromRecommendationsSchema>,
 ) {
   return guard(async () => {
-    const ctx = await requirePermission("inventory.manage");
+    const ctx = await requirePermissionInModule("inventory.manage", "gudang");
     const data = parseInput(fromRecommendationsSchema, input);
     const result = await withCompany(ctx.company.id, (tx) =>
       createPurchaseOrdersFromRecommendations(tx, {

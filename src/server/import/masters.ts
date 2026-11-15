@@ -10,20 +10,32 @@ import {
   mapAccountMappingRow,
   mapAccountRow,
   mapCategoryRow,
+  mapCustomerGroupRow,
   mapCustomerRow,
+  mapEmployeeRow,
+  mapFixedAssetRow,
+  mapPaymentMethodRow,
   mapOpeningBalanceRow,
   mapOpeningStockRow,
+  mapBranchRow,
   mapSupplierRow,
   mapUnitRow,
+  mapWarehouseRow,
   type ImportEntity,
   type MappedAccount,
   type MappedAccountMapping,
+  type MappedBranch,
   type MappedCategory,
   type MappedCustomer,
+  type MappedCustomerGroup,
+  type MappedEmployee,
+  type MappedFixedAsset,
   type MappedOpeningBalance,
   type MappedOpeningStock,
+  type MappedPaymentMethod,
   type MappedSupplier,
   type MappedUnit,
+  type MappedWarehouse,
 } from "@/lib/import-parse";
 import { getCompanySettingsRow } from "@/server/settings";
 import type { Mapping, RowData } from "./shared";
@@ -76,6 +88,12 @@ export type MasterMapped =
   | { kind: "categories"; value: MappedCategory }
   | { kind: "units"; value: MappedUnit }
   | { kind: "account_mappings"; value: MappedAccountMapping }
+  | { kind: "branches"; value: MappedBranch }
+  | { kind: "warehouses"; value: MappedWarehouse }
+  | { kind: "payment_methods"; value: MappedPaymentMethod }
+  | { kind: "customer_groups"; value: MappedCustomerGroup }
+  | { kind: "employees"; value: MappedEmployee }
+  | { kind: "fixed_assets"; value: MappedFixedAsset }
   | { kind: "opening_stock"; value: MappedOpeningStock }
   | { kind: "opening_payables"; value: MappedOpeningBalance }
   | { kind: "opening_receivables"; value: MappedOpeningBalance };
@@ -110,6 +128,36 @@ export function mapMasterRow(
       const mapped = mapAccountMappingRow(row, mapping);
       return mapped.value
         ? { value: { kind: "account_mappings", value: mapped.value } }
+        : { error: mapped.error };
+    }
+    case "branches": {
+      const mapped = mapBranchRow(row, mapping);
+      return mapped.value ? { value: { kind: "branches", value: mapped.value } } : { error: mapped.error };
+    }
+    case "warehouses": {
+      const mapped = mapWarehouseRow(row, mapping);
+      return mapped.value ? { value: { kind: "warehouses", value: mapped.value } } : { error: mapped.error };
+    }
+    case "payment_methods": {
+      const mapped = mapPaymentMethodRow(row, mapping);
+      return mapped.value
+        ? { value: { kind: "payment_methods", value: mapped.value } }
+        : { error: mapped.error };
+    }
+    case "customer_groups": {
+      const mapped = mapCustomerGroupRow(row, mapping);
+      return mapped.value
+        ? { value: { kind: "customer_groups", value: mapped.value } }
+        : { error: mapped.error };
+    }
+    case "employees": {
+      const mapped = mapEmployeeRow(row, mapping);
+      return mapped.value ? { value: { kind: "employees", value: mapped.value } } : { error: mapped.error };
+    }
+    case "fixed_assets": {
+      const mapped = mapFixedAssetRow(row, mapping);
+      return mapped.value
+        ? { value: { kind: "fixed_assets", value: mapped.value } }
         : { error: mapped.error };
     }
     case "opening_stock": {
@@ -175,6 +223,63 @@ export function masterPreview(value: MasterMapped): MasterRowPreview {
         label: value.value.key,
         detail: `Akun ${value.value.accountCode}`,
       };
+    case "branches":
+      return {
+        label: value.value.name,
+        detail: [value.value.code ?? "Kode otomatis", value.value.isActive ? "Aktif" : "Nonaktif"].join(" · "),
+      };
+    case "warehouses":
+      return {
+        label: value.value.name,
+        detail: [
+          value.value.code ?? "Kode otomatis",
+          value.value.type,
+          value.value.branchCode ? `Cabang: ${value.value.branchCode}` : "Tanpa cabang",
+          value.value.isActive ? "Aktif" : "Nonaktif",
+        ].join(" · "),
+      };
+    case "payment_methods":
+      return {
+        label: value.value.name,
+        detail: [
+          value.value.code ?? "Kode otomatis",
+          value.value.type,
+          value.value.accountCode ? `Akun ${value.value.accountCode}` : null,
+          value.value.isActive ? "Aktif" : "Nonaktif",
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      };
+    case "customer_groups":
+      return {
+        label: value.value.name,
+        detail: [
+          value.value.discountType === "percent"
+            ? `Diskon ${value.value.discountValue}%`
+            : `Diskon ${formatIDR(value.value.discountValue)}`,
+          value.value.roundingStep > 0 ? `Bulat ${value.value.roundingStep}` : null,
+          value.value.isActive ? "Aktif" : "Nonaktif",
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      };
+    case "employees":
+      return {
+        label: value.value.name,
+        detail: [
+          value.value.code ?? "Kode otomatis",
+          value.value.position ?? "Tanpa jabatan",
+          `${formatIDR(value.value.baseSalary)}/bulan`,
+          value.value.isActive ? "Aktif" : "Nonaktif",
+        ].join(" · "),
+      };
+    case "fixed_assets":
+      return {
+        label: value.value.name,
+        detail: `${formatIDR(value.value.cost)} · ${value.value.acquisitionDate}${
+          value.value.usefulLifeMonths ? ` · ${value.value.usefulLifeMonths} bulan` : ""
+        }`,
+      };
     case "opening_stock":
       return {
         label: value.value.sku ?? value.value.name ?? "—",
@@ -200,6 +305,12 @@ export function assertMasterEntity(entity: string): MasterEntity {
     entity === "categories" ||
     entity === "units" ||
     entity === "account_mappings" ||
+    entity === "branches" ||
+    entity === "warehouses" ||
+    entity === "payment_methods" ||
+    entity === "customer_groups" ||
+    entity === "employees" ||
+    entity === "fixed_assets" ||
     entity === "opening_stock" ||
     entity === "opening_payables" ||
     entity === "opening_receivables"

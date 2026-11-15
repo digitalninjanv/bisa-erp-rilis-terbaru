@@ -23,15 +23,25 @@
    ```bash
    pnpm exec drizzle-kit migrate
    ```
-   Migrasi `0070` memperbaiki unique index idempotency; `0071` default pembulatan grup 0.
+   Migrasi `0070` memperbaiki unique index idempotency; `0071` default pembulatan grup 0;
+   `0083` membuat tabel `rate_limit` untuk rate limit login terpusat (SEC-012).
 4. **Build**:
    ```bash
    pnpm build
    ```
-5. **Jalankan** di belakang reverse proxy TLS:
+5. **Jalankan** di belakang reverse proxy TLS. Untuk jalur systemd,
+   `deploy/install.sh` sekarang memasang nginx + sertifikat (self-signed
+   bila `BISA_TLS_CERT`/`BISA_TLS_KEY` tidak diberikan), menulis
+   `BETTER_AUTH_URL=https://...`, dan `BISA_TRUSTED_PROXIES=127.0.0.1`:
    ```bash
-   pnpm start
+   sudo bash deploy/install.sh /path/bisa-erp-<versi>.tar.gz
+   # sertifikat resmi:
+   BISA_TLS_CERT=/etc/ssl/erp/fullchain.pem BISA_TLS_KEY=/etc/ssl/erp/privkey.pem \
+     BISA_TLS_SERVER_NAME=erp.toko.local sudo -E bash deploy/install.sh <tarball>
    ```
+   Jalur Docker: terminasi TLS di reverse proxy eksternal yang meneruskan
+   ke port aplikasi, lalu isi `BETTER_AUTH_URL` HTTPS dan
+   `BISA_TRUSTED_PROXIES` dengan IP proxy.
 6. **Health check**:
    ```bash
    curl -fsS https://DOMAIN/api/health
@@ -53,7 +63,9 @@
 - [ ] `inventory.cost` hanya untuk owner/akuntan.
 - [ ] Backup terenkripsi + retensi.
 - [ ] Restore drill berhasil.
-- [ ] Rate limit di reverse proxy/multi-instance.
+- [ ] Rate limit login tersimpan di tabel `rate_limit` (bukan memori proses).
+- [ ] `BISA_TRUSTED_PROXIES` diisi IP/CIDR reverse proxy, bukan rentang klien.
+- [ ] CSP dokumen memakai nonce (`script-src` tanpa `'unsafe-inline'`).
 - [ ] Log audit dipertahankan.
 - [ ] Firewall: DB tidak terbuka ke publik.
 

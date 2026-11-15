@@ -4,6 +4,7 @@ import { Search } from "lucide-react";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { requirePermissionPage } from "@/lib/session";
 import { getBusinessAnalytics } from "@/server/analytics";
+import { getSalesByDay } from "@/server/reports";
 import { formatIDR, formatNumber, formatQty } from "@/lib/money";
 import { formatMargin } from "@/lib/margin";
 import { addDaysISO } from "@/lib/due-date";
@@ -13,6 +14,8 @@ import { PageHeader } from "@/components/blocks/page-header";
 import { DateRangeField } from "@/components/date-field";
 import { EmptyState } from "@/components/blocks/empty-state";
 import { AutoFilterForm } from "@/components/blocks/auto-filter-form";
+import { Pagination } from "@/components/blocks/pagination";
+import { SalesTrendChart } from "@/components/akuntansi/charts";
 
 export const metadata = { title: "Analisa bisnis" };
 export const dynamic = "force-dynamic";
@@ -66,7 +69,7 @@ function MetricCell({
 export default async function AnalisaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string; to?: string; view?: string; q?: string }>;
+  searchParams: Promise<{ from?: string; to?: string; view?: string; q?: string; page?: string }>;
 }) {
   const params = await searchParams;
   const ctx = await requirePermissionPage("analytics.view");
@@ -94,10 +97,24 @@ export default async function AnalisaPage({
     : "terlaris";
   const term = params.q?.trim().toLowerCase() ?? "";
 
-  const data = await withCompanyReadOnly(ctx.company.id, async (tx) =>
-    getBusinessAnalytics(tx, ctx.company.id, from, to),
+  const [data, trendRows] = await withCompanyReadOnly(ctx.company.id, async (tx) =>
+    Promise.all([
+      getBusinessAnalytics(tx, ctx.company.id, from, to),
+      getSalesByDay(tx, ctx.company.id, { from, to }),
+    ]),
   );
   const { health, drivers, risk } = data;
+  const byDate = new Map(trendRows.map((row) => [row.date, row]));
+  const trend: { date: string; label: string; total: number; transactions: number }[] = [];
+  for (let date = from; date <= to; date = addDaysISO(date, 1)) {
+    const row = byDate.get(date);
+    trend.push({
+      date,
+      label: formatDate(date),
+      total: row?.total ?? 0,
+      transactions: row?.transactions ?? 0,
+    });
+  }
 
   const slowRows = drivers.abcFsn
     .filter((row) => row.abc === "C" || row.fsn === "N")
@@ -132,6 +149,10 @@ export default async function AnalisaPage({
         : view === "kurang"
           ? slowRows.length
           : bestRows.length;
+
+  const PAGE_SIZE = 20;
+  const page = Math.max(1, Number(params.page) || 1);
+  const pageRows = activeRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const abcMatrix = (["F", "S", "N"] as const).map((fsn) =>
     (["A", "B", "C"] as const).map(
@@ -237,6 +258,71 @@ export default async function AnalisaPage({
         </div>
       </div>
 
+      {/* Antrean aksi: angka risiko harus berujung pada pekerjaan. */}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-card px-4 py-3">
+        <div className="flex min-w-0 items-start gap-2.5">
+          <span
+            className={cn(
+              "mt-1 size-2 shrink-0 rounded-full",
+              risk.stockoutProducts.length + risk.deadStock.length > 0 ? "bg-chart-3" : "bg-tone-green",
+            )}
+          />
+          <div className="min-w-0">
+            <p className="text-[12px] font-semibold">
+              {risk.stockoutProducts.length + risk.deadStock.length > 0
+                ? "Ada risiko stok yang perlu ditinjau"
+                : "Tidak ada risiko stok utama"}
+            </p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              {risk.stockoutProducts.length} SKU stok habis · {risk.deadStock.length} produk tidak bergerak
+              {risk.deadValue > 0 ? ` · nilai stok mati ${formatIDR(risk.deadValue)}` : ""}
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {risk.stockoutProducts.length > 0 ? (
+            <Link
+              href={tabHref("habis")}
+              className="inline-flex h-8 items-center rounded-md border border-border bg-card px-3 text-[11px] font-medium hover:bg-muted"
+            >
+              Tinjau stok habis
+            </Link>
+          ) : null}
+          {risk.deadStock.length > 0 ? (
+            <Link
+              href={tabHref("tidak")}
+              className="inline-flex h-8 items-center rounded-md border border-border bg-card px-3 text-[11px] font-medium hover:bg-muted"
+            >
+              Tinjau dead stock
+            </Link>
+          ) : null}
+        </div>
+      </div>
+
+      <section className="overflow-hidden rounded-lg border border-border bg-card">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
+          <div>
+            <h2 className="text-[13px] font-semibold">Tren omzet</h2>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">{periodLabel}</p>
+          </div>
+          <div className="text-right">
+            <p className="num text-[14px] font-semibold">{formatIDR(health.revenue)}</p>
+            <p className="text-[11px] text-muted-foreground">
+              {health.growth === null
+                ? `${formatNumber(health.transactions)} transaksi`
+                : `${health.growth >= 0 ? "Naik" : "Turun"} ${percent(Math.abs(health.growth))} vs periode sebelumnya`}
+            </p>
+          </div>
+        </div>
+        <div className="p-3">
+          {health.revenue > 0 ? (
+            <SalesTrendChart data={trend} />
+          ) : (
+            <EmptyState size="compact" title="Belum ada penjualan pada periode ini." />
+          )}
+        </div>
+      </section>
+
       <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_290px]">
         <section className="overflow-hidden rounded-lg border border-border bg-card">
           <div className="space-y-2.5 border-b border-border px-4 py-3">
@@ -248,11 +334,7 @@ export default async function AnalisaPage({
                 </p>
               </div>
               <span className="num text-[11px] text-muted-foreground">
-                {term
-                  ? `${activeRows.length} hasil`
-                  : activeTotal > 12
-                    ? `12 dari ${activeTotal} produk`
-                    : `${activeTotal} produk`}
+                {term ? `${activeRows.length} hasil` : `${activeTotal} produk`}
               </span>
             </div>
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -297,7 +379,8 @@ export default async function AnalisaPage({
               />
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+            <div className="hidden overflow-x-auto lg:block">
               <table className="data-table">
                 <thead>
                   <tr>
@@ -326,7 +409,7 @@ export default async function AnalisaPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {activeRows.slice(0, 12).map((row, index) => {
+                  {pageRows.map((row, index) => {
                     if (view === "tidak") {
                       const item = row as (typeof deadRows)[number];
                       return (
@@ -403,6 +486,83 @@ export default async function AnalisaPage({
                 </tbody>
               </table>
             </div>
+
+            <div className="divide-y divide-border/70 lg:hidden">
+              {pageRows.map((row, index) => {
+                if (view === "tidak") {
+                  const item = row as (typeof deadRows)[number];
+                  return (
+                    <div key={item.productId} className="px-4 py-3">
+                      <p className="text-[12px] font-medium">{item.name}</p>
+                      <p className="num text-[10px] text-muted-foreground">
+                        {item.sku} · {item.category}
+                      </p>
+                      <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px]">
+                        <span className="text-muted-foreground">
+                          Stok {formatQty(item.qty)} · nilai {formatIDR(item.value)}
+                        </span>
+                        <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                          90+ hari
+                        </span>
+                      </div>
+                    </div>
+                  );
+                }
+                if (view === "habis") {
+                  const item = row as (typeof stockoutRows)[number];
+                  return (
+                    <div key={item.productId} className="px-4 py-3">
+                      <p className="text-[12px] font-medium">{item.name}</p>
+                      <p className="num text-[10px] text-muted-foreground">
+                        {item.sku} · {item.category}
+                      </p>
+                      <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px]">
+                        <span className="text-muted-foreground">Min. stok {formatQty(item.minStock)}</span>
+                        <span className="rounded-full bg-tone-red-soft px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-tone-red">
+                          Stok habis
+                        </span>
+                      </div>
+                    </div>
+                  );
+                }
+                const item = row as (typeof bestRows)[number];
+                return (
+                  <div key={`${item.productId}-${index}`} className="px-4 py-3">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <p className="text-[12px] font-medium">{item.name}</p>
+                      <p className="num text-[12px] font-semibold">{formatIDR(item.revenue)}</p>
+                    </div>
+                    <p className="num text-[10px] text-muted-foreground">
+                      {item.sku} · {item.category}
+                    </p>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                      <span>{formatQty(item.qty)} terjual</span>
+                      <span>margin {formatMargin(item.margin)}</span>
+                      <span className={cn(
+                        "rounded-full px-1.5 py-0.5 text-[10px] font-bold",
+                        item.abc === "A"
+                          ? "bg-tone-green-soft text-tone-green"
+                          : item.abc === "B"
+                            ? "bg-tone-amber-soft text-tone-amber"
+                            : "bg-muted text-muted-foreground",
+                      )}>
+                        {item.abc}/{item.fsn}
+                      </span>
+                      <span className="ml-auto">{formatDate(item.lastSoldDate)}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <Pagination
+              page={page}
+              pageSize={PAGE_SIZE}
+              total={activeRows.length}
+              basePath="/app/analisa"
+              params={{ view, from, to, q: params.q }}
+            />
+            </>
           )}
         </section>
 

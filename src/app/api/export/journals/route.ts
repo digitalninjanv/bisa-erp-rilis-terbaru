@@ -1,3 +1,4 @@
+import { withApiError } from "@/lib/api-error";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { listJournalEntries } from "@/server/reports";
 import { requirePermission } from "@/lib/session";
@@ -22,7 +23,7 @@ const MAX_PAGES = 100; // plafon ekspor 10.000 jurnal per unduhan
  * aktif di halaman Jurnal (rentang, pencarian, sumber, akun, status) —
  * sebelumnya CSV hanya ada per satu jurnal di halaman detail.
  */
-export async function GET(request: Request) {
+async function GETHandler(request: Request) {
   const ctx = await requirePermission("accounting.view");
   const url = new URL(request.url);
   const from = url.searchParams.get("from") || monthStartISO();
@@ -82,3 +83,5 @@ export async function GET(request: Request) {
     ])),
   );
 }
+
+export const GET = withApiError(GETHandler);

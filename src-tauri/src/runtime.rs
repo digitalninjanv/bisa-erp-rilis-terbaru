@@ -95,10 +95,7 @@ pub fn device_status(app: &AppHandle) -> DeviceRuntimeStatus {
         .lock()
         .ok()
         .map(|conn| {
-            let pending = posdb::list_outbox(&conn, None)
-                .ok()
-                .map(|items| items.iter().filter(|i| i.status == "pending").count() as i64)
-                .unwrap_or(0);
+            let pending = posdb::count_outbox(&conn, "pending").unwrap_or(0);
             let identity = posdb::terminal_identity(&conn).ok().flatten().map(|view| {
                 device::TerminalIdentityView {
                     terminal_name: view.name,
@@ -568,8 +565,8 @@ fn any_open_session(app: &AppHandle) -> bool {
     let Ok(conn) = db_state.0.lock() else {
         return true;
     };
-    match posdb::list_cash_sessions(&conn) {
-        Ok(sessions) => sessions.iter().any(|session| session.status == "open"),
+    match posdb::has_open_cash_session(&conn) {
+        Ok(is_open) => is_open,
         Err(_) => true,
     }
 }

@@ -5,6 +5,7 @@ import { withCompanyReadOnly } from "@/db/tenant";
 import { getSettings, listWarehouses } from "@/server/catalog";
 import { PURCHASE_ORDER_STATUS_LABELS, getPurchaseOrderPrintData } from "@/server/purchasing";
 import { requirePermissionPage } from "@/lib/session";
+import { canSeeInventoryCost } from "@/lib/inventory-cost";
 import { d, formatIDR, formatQty } from "@/lib/money";
 import { formatDate } from "@/lib/format";
 import { ReceiptPrint } from "@/components/pos/receipt-print";
@@ -26,6 +27,7 @@ export default async function PurchaseOrderPrintPage({
   const { id } = await params;
   const query = await searchParams;
   const ctx = await requirePermissionPage("inventory.view");
+  const canSeeCost = canSeeInventoryCost(ctx);
 
   const data = await withCompanyReadOnly(ctx.company.id, async (tx) => {
     const printData = await getPurchaseOrderPrintData(tx, ctx.company.id, id);
@@ -158,8 +160,8 @@ export default async function PurchaseOrderPrintPage({
               <th className="py-1.5 pr-2 text-right font-semibold">Qty dipesan</th>
               <th className="py-1.5 pr-2 text-right font-semibold">Diterima</th>
               <th className="py-1.5 pr-2 text-right font-semibold">Sisa</th>
-              <th className="py-1.5 pr-2 text-right font-semibold">Harga beli</th>
-              <th className="py-1.5 text-right font-semibold">Subtotal</th>
+              {canSeeCost ? <th className="py-1.5 pr-2 text-right font-semibold">Harga beli</th> : null}
+              {canSeeCost ? <th className="py-1.5 text-right font-semibold">Subtotal</th> : null}
             </tr>
           </thead>
           <tbody>
@@ -187,12 +189,12 @@ export default async function PurchaseOrderPrintPage({
                       ? `${formatQty(remaining)}${line.unitName ? ` ${line.unitName}` : ""}`
                       : "—"}
                   </td>
-                  <td className="num py-1.5 pr-2 text-right whitespace-nowrap">
+                  {canSeeCost ? <td className="num py-1.5 pr-2 text-right whitespace-nowrap">
                     {line.packagingId
                       ? formatIDR(d(line.unitCost).mul(d(line.isiSnapshot)))
                       : formatIDR(line.unitCost)}
-                  </td>
-                  <td className="num py-1.5 text-right whitespace-nowrap">{formatIDR(line.lineTotal)}</td>
+                  </td> : null}
+                  {canSeeCost ? <td className="num py-1.5 text-right whitespace-nowrap">{formatIDR(line.lineTotal)}</td> : null}
                 </tr>
               );
             })}
@@ -201,10 +203,10 @@ export default async function PurchaseOrderPrintPage({
 
         {/* CT-05/CT-10: summary block after the table — a <tfoot> TOTAL
             would repeat on every page fragment (see the GRN print page). */}
-        <div className="print-total-bar mt-2 flex items-baseline justify-end gap-6 break-inside-avoid text-[12px]">
+        {canSeeCost ? <div className="print-total-bar mt-2 flex items-baseline justify-end gap-6 break-inside-avoid text-[12px]">
           <span className="font-bold tracking-wide">TOTAL</span>
           <span className="num font-bold">{formatIDR(order.total)}</span>
-        </div>
+        </div> : null}
 
         {order.notes ? (
           <p className="mt-3 text-[11px]">

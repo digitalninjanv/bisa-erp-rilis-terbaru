@@ -9,6 +9,7 @@ import {
 import { requirePermissionPage } from "@/lib/session";
 import { parsePageParam } from "@/lib/pagination";
 import { can } from "@/lib/permissions";
+import { canSeeInventoryCost } from "@/lib/inventory-cost";
 import { resolveAdjustmentReasons } from "@/lib/adjustment-reasons";
 import { formatIDR } from "@/lib/money";
 import { formatDate, todayISO } from "@/lib/format";
@@ -20,6 +21,7 @@ import { StatusBadge } from "@/components/blocks/status-badge";
 import { GateNotice, viewModeText } from "@/components/blocks/gate-notice";
 import { AdjustmentForm } from "@/components/gudang/adjustment-form";
 import { StockDocumentRowActions } from "@/components/gudang/void-buttons";
+import { FilterChips } from "@/components/blocks/search-form";
 import {
   AdjustmentApproveButton,
   AdjustmentCancelButton,
@@ -46,10 +48,11 @@ const ADJUSTMENT_TYPES = [
 export default async function AdjustmentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; q?: string }>;
+  searchParams: Promise<{ page?: string; q?: string; status?: string }>;
 }) {
   const params = await searchParams;
   const ctx = await requirePermissionPage("inventory.view");
+  const canSeeCost = canSeeInventoryCost(ctx);
 
   const data = await withCompanyReadOnly(ctx.company.id, async (tx) => {
     const [warehouseRows, settings, history] = await Promise.all([
@@ -61,6 +64,7 @@ export default async function AdjustmentsPage({
         page: parsePageParam(params.page),
         pageSize: PAGE_SIZE,
         q: params.q,
+        status: params.status,
       }),
     ]);
     return {
@@ -128,14 +132,36 @@ export default async function AdjustmentsPage({
           baris (batalkan/setujui/tolak) tetap komponen bersama
           void-buttons/approval-buttons apa adanya. Bentuk pengambilan
           data tidak berubah (ARS1-01). */}
-      <div className="mt-4">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+        <FilterChips
+          options={[
+            { label: "Semua", value: "" },
+            { label: "Menunggu persetujuan", value: "pending" },
+            { label: "Terposting", value: "posted" },
+            { label: "Ditolak", value: "rejected" },
+            { label: "Dibatalkan", value: "void" },
+          ]}
+          value={params.status ?? ""}
+          basePath="/app/gudang/penyesuaian"
+          param="status"
+          q={params.q}
+        />
+        {params.status === "pending" ? (
+          <p className="text-[11px] text-muted-foreground">
+            Menunggu pemeriksa kedua — setujui atau tolak dari kolom aksi.
+          </p>
+        ) : null}
+      </div>
+      <div className="mt-3">
         <DataList
           toolbar={
             <DataListToolbar
               action="/app/gudang/penyesuaian"
               q={params.q}
               placeholder="Cari nomor dokumen atau catatan…"
-              resetHref={params.q ? "/app/gudang/penyesuaian" : undefined}
+              resetHref={
+                params.q || params.status ? "/app/gudang/penyesuaian" : undefined
+              }
             />
           }
           isEmpty={data.docs.length === 0}
@@ -151,7 +177,7 @@ export default async function AdjustmentsPage({
               pageSize={data.history.pageSize}
               total={data.history.total}
               basePath="/app/gudang/penyesuaian"
-              params={{ q: params.q }}
+              params={{ q: params.q, status: params.status }}
             />
           }
         >
@@ -166,7 +192,7 @@ export default async function AdjustmentsPage({
                   <th>Gudang</th>
                   <th>Alasan</th>
                   <th className="text-right">Item</th>
-                  <th className="text-right">Nilai</th>
+                  {canSeeCost ? <th className="text-right">Nilai</th> : null}
                   <th>Status</th>
                   <th className="text-right">Aksi</th>
                 </tr>
@@ -191,7 +217,7 @@ export default async function AdjustmentsPage({
                         : ""}
                     </td>
                     <td className="num text-right text-[11px]">{Number(row.itemCount)}</td>
-                    <td className="num text-right font-medium">{formatIDR(row.total)}</td>
+                    {canSeeCost ? <td className="num text-right font-medium">{formatIDR(row.total)}</td> : null}
                     <td>
                       {row.status === "void" ? (
                         <StatusBadge status="void" label="Dibatalkan" />
@@ -227,7 +253,7 @@ export default async function AdjustmentsPage({
                   <Link href={`/app/gudang/dokumen/${row.id}`} className="num text-[12px] font-medium text-primary hover:underline">
                     {row.number}
                   </Link>
-                  <span className="num text-[12px] font-semibold">{formatIDR(row.total)}</span>
+                  {canSeeCost ? <span className="num text-[12px] font-semibold">{formatIDR(row.total)}</span> : null}
                 </div>
                 <p className="mt-0.5 text-[12px]">
                   {typeLabel(row.type)}

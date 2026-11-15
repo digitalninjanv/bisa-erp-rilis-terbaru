@@ -1,3 +1,4 @@
+import { withApiError } from "@/lib/api-error";
 import { asc, eq } from "drizzle-orm";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { accountMappings, accounts } from "@/db/schema";
@@ -11,7 +12,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** Ekspor pemetaan akun: kunci, label, grup, dan akun yang dipakai. */
-export async function GET(request: Request) {
+async function GETHandler(request: Request) {
   const ctx = await requirePermission("accounting.view");
   const format = new URL(request.url).searchParams.get("format") === "xlsx" ? "xlsx" : "csv";
   const rows = await withCompanyReadOnly(ctx.company.id, (tx) =>
@@ -46,3 +47,5 @@ export async function GET(request: Request) {
   }
   return csvResponse(`${filename}.csv`, toCsv(headers, cells));
 }
+
+export const GET = withApiError(GETHandler);

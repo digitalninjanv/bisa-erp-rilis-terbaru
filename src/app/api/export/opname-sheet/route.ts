@@ -1,3 +1,4 @@
+import { withApiError } from "@/lib/api-error";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { requirePermission } from "@/lib/session";
 import { listProducts, listWarehouses, pickDefaultWarehouseId, getSettings } from "@/server/catalog";
@@ -9,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 const MAX_ROWS = 1000;
 
-export async function GET(request: Request) {
+async function GETHandler(request: Request) {
   const ctx = await requirePermission("inventory.view");
   const url = new URL(request.url);
   const warehouseParam = url.searchParams.get("warehouse") || undefined;
@@ -83,3 +84,5 @@ export async function GET(request: Request) {
     },
   ]);
 }
+
+export const GET = withApiError(GETHandler);

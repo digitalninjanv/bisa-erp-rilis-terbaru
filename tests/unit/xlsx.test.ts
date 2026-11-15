@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import * as XLSX from "xlsx";
-import { buildXlsx } from "@/lib/xlsx";
+import { buildImportTemplate, buildXlsx } from "@/lib/xlsx";
 
 describe("serializer XLSX master data", () => {
-  it("menjaga kode berawalan nol sebagai teks dan angka sebagai number", () => {
-    const buffer = buildXlsx([
+  it("menjaga kode berawalan nol sebagai teks dan angka sebagai number", async () => {
+    const buffer = await buildXlsx([
       {
         name: "Data",
         headers: ["SKU", "Nama", "Harga"],
@@ -19,8 +19,8 @@ describe("serializer XLSX master data", () => {
     expect(sheet.C2.v).toBe(5000);
   });
 
-  it("tidak mengeksekusi teks yang dimulai dengan tanda sama dengan", () => {
-    const buffer = buildXlsx([
+  it("tidak mengeksekusi teks yang dimulai dengan tanda sama dengan", async () => {
+    const buffer = await buildXlsx([
       {
         name: "Data",
         headers: ["Nama"],
@@ -32,5 +32,21 @@ describe("serializer XLSX master data", () => {
     expect(cell.t).toBe("s");
     expect(cell.v).toBe("=1+1");
     expect(cell.f).toBeUndefined();
+  });
+
+  it("membangun template impor dan sheet referensi melalui serializer async", async () => {
+    const buffer = await buildImportTemplate({
+      entityLabel: "Produk",
+      headers: ["SKU"],
+      exampleRows: [["00123"]],
+      fields: [{ label: "SKU", required: true }],
+      instructions: ["Jangan mengubah header."],
+      references: [{ name: "Satuan", headers: ["Kode"], rows: [["PCS"]] }],
+    });
+    const workbook = XLSX.read(buffer, { type: "buffer" });
+
+    expect(workbook.SheetNames).toEqual(["Data", "Petunjuk", "Satuan"]);
+    expect(workbook.Sheets.Data.A2.v).toBe("00123");
+    expect(workbook.Sheets.Satuan.A2.v).toBe("PCS");
   });
 });

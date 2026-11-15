@@ -1,5 +1,3 @@
-import * as XLSX from "xlsx";
-
 /**
  * Serializer XLSX bersama untuk master data dan template impor.
  *
@@ -41,7 +39,8 @@ function sheetWidths(sheet: XlsxSheet): { wch: number }[] {
   });
 }
 
-export function buildXlsx(sheets: XlsxSheet[]): Buffer {
+export async function buildXlsx(sheets: XlsxSheet[]): Promise<Buffer> {
+  const XLSX = await import("xlsx");
   const workbook = XLSX.utils.book_new();
   for (const sheet of sheets) {
     const aoa: XlsxCell[][] = [
@@ -53,7 +52,7 @@ export function buildXlsx(sheets: XlsxSheet[]): Buffer {
       aoa,
       // SheetJS mendukung opsi ini saat runtime meski belum ada di tipe;
       // mematikannya mencegah teks sel diperlakukan sebagai formula.
-      { cellFormula: false } as XLSX.AOA2SheetOpts,
+      { cellFormula: false } as import("xlsx").AOA2SheetOpts,
     );
     ws["!cols"] = sheetWidths(sheet);
     if (sheet.autoFilter !== false && sheet.rows.length > 0) {
@@ -69,8 +68,9 @@ export function buildXlsx(sheets: XlsxSheet[]): Buffer {
   return XLSX.write(workbook, { bookType: "xlsx", type: "buffer" }) as Buffer;
 }
 
-export function xlsxResponse(filename: string, sheets: XlsxSheet[]): Response {
-  return new Response(new Uint8Array(buildXlsx(sheets)), {
+export async function xlsxResponse(filename: string, sheets: XlsxSheet[]): Promise<Response> {
+  const workbook = await buildXlsx(sheets);
+  return new Response(new Uint8Array(workbook), {
     status: 200,
     headers: {
       "Content-Type":
@@ -87,14 +87,14 @@ export function xlsxResponse(filename: string, sheets: XlsxSheet[]): Response {
  * ditambahkan sebagai sheet terpisah agar pengguna menyalin nilai yang
  * memang dikenal sistem, bukan menebak ejaan.
  */
-export function buildImportTemplate(input: {
+export async function buildImportTemplate(input: {
   entityLabel: string;
   headers: string[];
   exampleRows: XlsxCell[][];
   fields: { label: string; required?: boolean; aliases?: string[] }[];
   instructions: string[];
   references?: { name: string; headers: string[]; rows: XlsxCell[][] }[];
-}): Buffer {
+}): Promise<Buffer> {
   const dataSheet: XlsxSheet = {
     name: "Data",
     headers: input.headers,

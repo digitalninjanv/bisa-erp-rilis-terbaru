@@ -13,12 +13,17 @@ import {
   hashImportFile,
 } from "@/server/import-files";
 import { AppError, type AppErrorCode } from "@/lib/errors";
+import {
+  ImportFileTooLargeError,
+  MAX_IMPORT_BYTES,
+  readFormDataWithLimit,
+  validateImportFile,
+} from "@/lib/import-file-validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MAX_ROWS = 25_000;
-const MAX_BYTES = 20 * 1024 * 1024;
 
 const APP_ERROR_STATUS: Partial<Record<AppErrorCode, number>> = {
   VALIDATION: 400,
@@ -42,10 +47,18 @@ export async function POST(request: Request) {
   try {
     const ctx = await requirePermission("import.manage");
     const contentLength = Number(request.headers.get("content-length") ?? 0);
-    if (Number.isFinite(contentLength) && contentLength > MAX_BYTES) {
+    if (Number.isFinite(contentLength) && contentLength > MAX_IMPORT_BYTES) {
       return NextResponse.json({ error: "Ukuran file maksimum 20MB." }, { status: 413 });
     }
-    const form = await request.formData();
+    let form: FormData;
+    try {
+      form = await readFormDataWithLimit(request);
+    } catch (error) {
+      if (error instanceof ImportFileTooLargeError) {
+        return NextResponse.json({ error: error.message }, { status: 413 });
+      }
+      throw error;
+    }
     // T4-5a: jenis impor dipilih pengunggah; bawaan "products" menjaga
     // wizard produk lama tetap bekerja tanpa perubahan kontrak.
     const entityRaw = String(form.get("entity") ?? "products");
@@ -57,11 +70,13 @@ export async function POST(request: Request) {
     if (!(file instanceof File)) {
       return NextResponse.json({ error: "File wajib diunggah." }, { status: 400 });
     }
-    if (file.size > MAX_BYTES) {
+    if (file.size > MAX_IMPORT_BYTES) {
       return NextResponse.json({ error: "Ukuran file maksimum 20MB." }, { status: 413 });
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
+    // SEC-008: magic bytes + batas ZIP diperiksa SEBELUM XLSX.read.
+    validateImportFile(buffer, file.name);
     // GDG3-15: sidik isi berkas dihitung dari byte mentah SEBELUM
     // parsing — dua berkas dengan isi identik dikenali walau namanya
     // berbeda.
@@ -182,6 +197,9 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     if (isRedirectError(error)) throw error;
+    if (error instanceof ImportFileTooLargeError) {
+      return NextResponse.json({ error: error.message }, { status: 413 });
+    }
     // GD-P3-10: error otorisasi/izin (PermissionError adalah AppError)
     // diteruskan dengan status dan pesan aslinya — bukan 500 generik.
     if (error instanceof AppError) {

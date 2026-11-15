@@ -1,3 +1,4 @@
+import { withApiError } from "@/lib/api-error";
 import { and, asc, eq, ilike, or } from "drizzle-orm";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { accounts } from "@/db/schema";
@@ -14,7 +15,7 @@ export const dynamic = "force-dynamic";
  * (`q` kode/nama, `type` tipe akun) agar hasil unduhan sama dengan
  * yang sedang tampil (S3 §18F).
  */
-export async function GET(request?: Request) {
+async function GETHandler(request?: Request) {
   const ctx = await requirePermission("accounting.view");
   const url = new URL(request?.url ?? "http://localhost");
   const q = url.searchParams.get("q")?.trim();
@@ -65,3 +66,5 @@ export async function GET(request?: Request) {
   }
   return csvResponse(`${filename}.csv`, toCsv(headers, cells));
 }
+
+export const GET = withApiError(GETHandler);

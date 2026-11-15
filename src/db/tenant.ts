@@ -26,3 +26,19 @@ export async function withCompanyReadOnly<T>(
     return fn(tx);
   });
 }
+
+/**
+ * Read-only tenant snapshot for work that runs across multiple queries and
+ * must remain point-in-time consistent, such as a streamed ledger export.
+ * Keep the transaction open only for the lifetime of that stream.
+ */
+export async function withCompanyReadOnlySnapshot<T>(
+  companyId: string,
+  fn: (tx: Tx) => Promise<T>,
+): Promise<T> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`set transaction isolation level repeatable read, read only`);
+    await tx.execute(sql`select set_config('app.company_id', ${companyId}, true)`);
+    return fn(tx);
+  });
+}

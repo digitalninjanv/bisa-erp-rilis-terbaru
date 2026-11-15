@@ -156,16 +156,16 @@ export default async function PayrollPage() {
                       <Link href={`/app/akuntansi/karyawan/${row.id}`} className="text-[12px] font-medium transition-colors hover:underline">
                         {row.name}
                       </Link>
-                      <span className="num ml-1.5 text-[10px] text-muted-foreground">{row.code}</span>
+                      <span className="num ml-1.5 text-[11px] text-muted-foreground">{row.code}</span>
                       <span
-                        className={`ml-1.5 text-[10px] font-medium md:hidden ${
+                        className={`ml-1.5 text-[11px] font-medium md:hidden ${
                           row.isActive ? "text-tone-green" : "text-muted-foreground"
                         }`}
                       >
                         {row.isActive ? "Aktif" : "Nonaktif"}
                       </span>
                       {canSeeSalary ? (
-                        <span className="num block text-[10px] text-muted-foreground md:hidden">
+                        <span className="num block text-[11px] text-muted-foreground md:hidden">
                           Bersih {formatIDR(net)}
                         </span>
                       ) : null}

@@ -625,6 +625,12 @@ export async function listExpiringBatches(tx: Tx, companyId: string, withinDays:
   const cutoffDate = new Date(`${today}T00:00:00Z`);
   cutoffDate.setUTCDate(cutoffDate.getUTCDate() + withinDays);
   const cutoff = cutoffDate.toISOString().slice(0, 10);
+  const where = and(
+    eq(stockBatches.companyId, companyId),
+    isNotNull(stockBatches.expiryDate),
+    lte(stockBatches.expiryDate, cutoff),
+    sql`${stockBatches.qty} > 0`,
+  );
   return tx
     .select({
       id: stockBatches.id,
@@ -640,13 +646,63 @@ export async function listExpiringBatches(tx: Tx, companyId: string, withinDays:
     .from(stockBatches)
     .innerJoin(products, eq(stockBatches.productId, products.id))
     .innerJoin(warehouses, eq(stockBatches.warehouseId, warehouses.id))
-    .where(
-      and(
-        eq(stockBatches.companyId, companyId),
-        isNotNull(stockBatches.expiryDate),
-        lte(stockBatches.expiryDate, cutoff),
-        sql`${stockBatches.qty} > 0`,
-      ),
-    )
+    .where(where)
     .orderBy(sql`${stockBatches.expiryDate} asc`, asc(stockBatches.createdAt));
+}
+
+/** Bounded warehouse-home list plus exact full-set counters. */
+export async function getExpiringBatchDashboard(
+  tx: Tx,
+  companyId: string,
+  withinDays: number,
+  limit = 15,
+) {
+  const today = todayISO();
+  const cutoffDate = new Date(`${today}T00:00:00Z`);
+  cutoffDate.setUTCDate(cutoffDate.getUTCDate() + withinDays);
+  const cutoff = cutoffDate.toISOString().slice(0, 10);
+  const where = and(
+    eq(stockBatches.companyId, companyId),
+    isNotNull(stockBatches.expiryDate),
+    lte(stockBatches.expiryDate, cutoff),
+    sql`${stockBatches.qty} > 0`,
+  );
+  const rows = await tx
+    .select({
+      id: stockBatches.id,
+      productId: stockBatches.productId,
+      productName: products.name,
+      productSku: products.sku,
+      warehouseId: stockBatches.warehouseId,
+      warehouseName: warehouses.name,
+      batchNumber: stockBatches.batchNumber,
+      expiryDate: stockBatches.expiryDate,
+      qty: stockBatches.qty,
+      totalCount: sql<string>`count(*) over ()`,
+      expiredCount: sql<string>`count(*) filter (where ${stockBatches.expiryDate} < ${today}) over ()`,
+    })
+    .from(stockBatches)
+    .innerJoin(products, eq(stockBatches.productId, products.id))
+    .innerJoin(warehouses, eq(stockBatches.warehouseId, warehouses.id))
+    .where(where)
+    .orderBy(sql`${stockBatches.expiryDate} asc`, asc(stockBatches.createdAt))
+    .limit(Math.max(1, Math.min(100, limit)));
+  const first = rows[0];
+  const items = rows.map((row) => ({
+    id: row.id,
+    productId: row.productId,
+    productName: row.productName,
+    productSku: row.productSku,
+    warehouseId: row.warehouseId,
+    warehouseName: row.warehouseName,
+    batchNumber: row.batchNumber,
+    expiryDate: row.expiryDate,
+    qty: row.qty,
+  }));
+
+  return {
+    items,
+    totalCount: Number(first?.totalCount ?? 0),
+    expiredCount: Number(first?.expiredCount ?? 0),
+  };
 }

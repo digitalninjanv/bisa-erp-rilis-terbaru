@@ -188,19 +188,12 @@ export async function listOpenPayableDocs(
     )
     .orderBy(asc(partyOpeningBalances.date), asc(partyOpeningBalances.createdAt));
 
-  const allocatedByDoc = new Map<string, Decimal>();
-  for (const receipt of receipts) {
-    allocatedByDoc.set(
-      `receipt:${receipt.id}`,
-      await sumReturnAllocations(tx, companyId, { receiptId: receipt.id }),
-    );
-  }
-  for (const opening of openings) {
-    allocatedByDoc.set(
-      `opening:${opening.id}`,
-      await sumReturnAllocations(tx, companyId, { openingId: opening.id }),
-    );
-  }
+  const allocatedByDoc = await sumReturnAllocationsForDocs(
+    tx,
+    companyId,
+    receipts.map((row) => row.id),
+    openings.map((row) => row.id),
+  );
   return assembleOpenPayableDocs(receipts, openings, allocatedByDoc);
 }
 

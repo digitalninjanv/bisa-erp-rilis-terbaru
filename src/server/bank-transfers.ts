@@ -3,9 +3,9 @@ import type { Tx } from "@/db";
 import { bankTransfers, user } from "@/db/schema";
 import { listLinkedJournalsBySourceIds } from "@/server/catalog";
 import { AppError } from "@/lib/errors";
-import { todayISO } from "@/lib/format";
 import { d, toDb, type MoneyInput } from "@/lib/money";
-import { getAccountMap, postJournal, reverseSourceJournal } from "@/server/accounting";
+import { getAccountMap, postJournal } from "@/server/accounting";
+import { reverseSourceJournalPreferringDate } from "@/server/accounting-reversal";
 import { writeAudit } from "@/server/audit";
 import { assertCashLikeAccount } from "@/server/employee-advances";
 import { claimIdempotencyKey } from "@/server/idempotency";
@@ -263,11 +263,11 @@ export async function voidBankTransfer(
   // biaya admin), jadi pembalikannya lewat reverseSourceJournal; hasil
   // null tidak boleh ditelan — tanpa pembalik, dokumen void akan membuat
   // riwayat transfer dan buku besar berbeda diam-diam.
-  const reversal = await reverseSourceJournal(tx, {
+  const reversal = await reverseSourceJournalPreferringDate(tx, {
     companyId: input.companyId,
     sourceType: "bank_transfer",
     sourceId: transfer.id,
-    date: todayISO(),
+    originalDate: String(transfer.date).slice(0, 10),
     description: `Pembatalan transfer bank ${transfer.number} — ${input.reason}`,
     createdBy: input.userId,
   });

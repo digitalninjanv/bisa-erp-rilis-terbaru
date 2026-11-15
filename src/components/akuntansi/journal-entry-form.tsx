@@ -18,7 +18,7 @@ import {
   summarizeJournalLines,
   type JournalLineDraft,
 } from "@/lib/journal-form";
-import { postManualJournalAction } from "@/server/actions/accounting/jurnal";
+import { postManualJournalAction, saveJournalDraftAction } from "@/server/actions/accounting/jurnal";
 import { periodStatusForDate, type PeriodStatusRow } from "@/lib/period-status";
 import { AccountCombobox, type ComboboxAccount } from "./account-combobox";
 import { BalanceIndicator } from "./balance-indicator";
@@ -58,6 +58,7 @@ export function JournalEntryForm({
   const [lines, setLines] = useState<Line[]>(initialJournalLines);
   const [invalidAmounts, setInvalidAmounts] = useState<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
   // AK-P3-02: one idempotency key per form session (same pattern as the
   // POS terminal) — a network retry or double submit replays this key and
   // the server returns the already-posted journal instead of duplicating it.
@@ -236,6 +237,42 @@ export function JournalEntryForm({
     router.refresh();
   }
 
+  async function saveDraft() {
+    if (invalidAmounts.size > 0) {
+      toast.error("Ada nominal yang tidak terbaca. Periksa bidang yang ditandai.");
+      return;
+    }
+    if (filledLines.length < 2) {
+      toast.error("Isi minimal dua baris jurnal.");
+      return;
+    }
+    if (!totals.balanced) {
+      toast.error(`Debit dan kredit belum sama. Selisih ${formatIDR(totals.difference)}.`);
+      return;
+    }
+    setSavingDraft(true);
+    const result = await saveJournalDraftAction({
+      date,
+      description: description.trim() || "Jurnal umum",
+      idempotencyKey: idempotencyKey.current,
+      lines: filledLines.map((line) => ({
+        accountId: line.accountId,
+        debit: d(line.debit || "0").gt(0) ? line.debit : undefined,
+        credit: d(line.credit || "0").gt(0) ? line.credit : undefined,
+        partyType: line.partyId ? line.partyType : undefined,
+        partyId: line.partyId || undefined,
+      })),
+    });
+    setSavingDraft(false);
+    if (!result.ok) {
+      toast.error(result.message);
+      return;
+    }
+    toast.success(`Draf ${result.data.number} disimpan. Review lalu posting dari halaman detail.`);
+    router.push(`/app/akuntansi/jurnal/${result.data.id}`);
+    router.refresh();
+  }
+
   // A-25 U2: form memakai DocumentForm bersama — slot ringkasan,
   // panduan terlipat, dan bilah aksi terpaku disusun di sini lalu
   // diteruskan ke bingkai; editor baris tetap anak bingkai.
@@ -333,8 +370,16 @@ export function JournalEntryForm({
           </Link>
           <button
             type="button"
+            onClick={() => void saveDraft()}
+            disabled={busy || savingDraft || blockReason !== null}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] font-medium transition-colors hover:bg-muted disabled:opacity-50"
+          >
+            <Save className="size-3.5" /> {savingDraft ? "Menyimpan…" : "Simpan draf"}
+          </button>
+          <button
+            type="button"
             onClick={submit}
-            disabled={busy || blockReason !== null}
+            disabled={busy || savingDraft || blockReason !== null}
             className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-4 text-[12px] font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
           >
             <Save className="size-3.5" /> {busy ? "Memposting…" : "Posting jurnal"}

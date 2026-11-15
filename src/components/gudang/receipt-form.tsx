@@ -14,97 +14,21 @@ import {
   docLineReceiptNet,
   type DocLine,
 } from "@/components/gudang/line-editor";
-import type { PickedPackaging } from "@/components/gudang/product-picker";
 import { d, formatIDR, formatQty } from "@/lib/money";
+import { findPurchaseOrderPriceVariances } from "@/lib/purchase-order-price-variance";
 import { labelClass, fieldClass } from "@/components/blocks/field-classes";
-import { DocumentForm, DocumentFormAdvanced } from "@/components/blocks/document-form";
+import { DocumentForm } from "@/components/blocks/document-form";
+import {
+  SOURCE_OPTIONS,
+  StatRow,
+  type OpenPurchaseOrder,
+  type SourceChoice,
+} from "@/components/gudang/receipt-form-parts";
 import { DateField } from "@/components/date-field";
 import { PercentInput } from "@/components/percent-input";
 import { ReceiptAdvanceField } from "@/components/gudang/receipt-advance-field";
 import { ReceiptConfirmations } from "@/components/gudang/receipt-confirmations";
 import { requireFilled } from "@/components/use-action-runner";
-
-type OpenPurchaseOrder = {
-  id: string;
-  number: string;
-  date: string;
-  status: string;
-  lines: {
-    productId: string;
-    productName: string;
-    sku: string;
-    trackBatch: boolean;
-    trackSerial: boolean;
-    qty: string;
-    receivedQty: string;
-    remainingQty: string;
-    unitCost: string;
-    // S2: cuplikan kemasan baris PO + opsi kemasan produk.
-    packagingId: string | null;
-    packagingName: string | null;
-    qtyInput: string;
-    isiSnapshot: string;
-    packagings: PickedPackaging[];
-    remainingInputQty: string | null;
-    packagingUnitCost: string | null;
-  }[];
-};
-
-// The six choices the user sees. "Pembelian tunai" is one receipt source
-// (purchase) plus a payment account; the other five map 1:1 to D-5 sources.
-type SourceChoice =
-  | "purchase_credit"
-  | "purchase_cash"
-  | "opening"
-  | "bonus"
-  | "customer_return"
-  | "other";
-
-const SOURCE_OPTIONS: { value: SourceChoice; label: string; hint: string }[] = [
-  {
-    value: "purchase_credit",
-    label: "Pembelian kredit",
-    hint: "Stok bertambah dan menjadi utang pemasok. Tagihan dibayar kemudian dari menu Utang.",
-  },
-  {
-    value: "purchase_cash",
-    label: "Pembelian tunai",
-    hint: "Stok bertambah dan langsung dibayar dari akun Kas/Bank pilihan — tidak menimbulkan utang.",
-  },
-  {
-    value: "opening",
-    label: "Stok awal",
-    hint: "Persediaan awal perusahaan; lawan akunnya adalah Modal. Pemasok tidak diperlukan.",
-  },
-  {
-    value: "bonus",
-    label: "Bonus barang",
-    hint: "Barang gratis dari pemasok; dicatat sebagai pendapatan lain-lain (atau pendapatan penjualan bila akun pendapatan lain-lain belum dipetakan).",
-  },
-  {
-    value: "customer_return",
-    label: "Retur pelanggan",
-    hint: "Barang yang dikembalikan pelanggan masuk lagi ke stok; lawan akunnya adalah Retur penjualan.",
-  },
-  {
-    value: "other",
-    label: "Lainnya",
-    hint: "Penerimaan di luar kategori di atas; lawan akunnya adalah Modal dan alasan wajib ditulis di catatan.",
-  },
-];
-
-function StatRow({
-  label,
-  value,
-  valueClass = "font-medium",
-}: { label: string; value: React.ReactNode; valueClass?: string }) {
-  return (
-    <div className="flex justify-between gap-3">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className={valueClass}>{value}</dd>
-    </div>
-  );
-}
 
 export function ReceiptForm({
   warehouses,
@@ -153,6 +77,8 @@ export function ReceiptForm({
     d(taxRate || "0").gt(0) ? String(d(taxRate || "0").toNumber()) : "0",
   );
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState("");
+  const [supplierInvoiceDate, setSupplierInvoiceDate] = useState("");
+  const [dueDate, setDueDate] = useState("");
   const [date, setDate] = useState(today);
   const [notes, setNotes] = useState("");
   const [lines, setLines] = useState<DocLine[]>([]);
@@ -192,26 +118,40 @@ export function ReceiptForm({
   const expectedByProduct: Record<string, string> | undefined = pickedOrder
     ? Object.fromEntries(pickedOrder.lines.map((line) => [line.productId, line.remainingQty]))
     : undefined;
+  const receivedQtyByProduct = new Map<string, ReturnType<typeof d>>();
+  for (const line of lines) {
+    receivedQtyByProduct.set(
+      line.productId,
+      (receivedQtyByProduct.get(line.productId) ?? d(0)).plus(docLineBaseQty(line)),
+    );
+  }
   const receiptDiffs = pickedOrder
-    ? [
-        ...pickedOrder.lines
-          .map((orderLine) => {
-            const line = lines.find((row) => row.productId === orderLine.productId);
-            // S2: konfirmasi selalu dibandingkan dalam SATUAN DASAR.
-            const confirmed = line ? docLineBaseQty(line) : d(0);
-            return {
-              name: orderLine.productName,
-              expected: d(orderLine.remainingQty),
-              confirmed,
-            };
-          })
-          .filter((row) => !row.confirmed.eq(row.expected)),
-        ...lines
-          .filter(
-            (line) => !pickedOrder.lines.some((orderLine) => orderLine.productId === line.productId),
-          )
-          .map((line) => ({ name: line.name, expected: d(0), confirmed: docLineBaseQty(line) })),
-      ]
+    ? pickedOrder.lines
+        .map((orderLine) => ({
+          name: orderLine.productName,
+          expected: d(orderLine.remainingQty),
+          confirmed: receivedQtyByProduct.get(orderLine.productId) ?? d(0),
+        }))
+        .filter((row) => !row.confirmed.eq(row.expected))
+    : [];
+  const receiptPriceDiffs = pickedOrder
+    ? findPurchaseOrderPriceVariances(
+        pickedOrder.lines.map((line) => ({
+          productId: line.productId,
+          productName: line.productName,
+          unitCost: line.unitCost,
+        })),
+        lines.map((line) => {
+          const qty = docLineBaseQty(line);
+          const net = docLineReceiptNet(line);
+          return {
+            productId: line.productId,
+            name: line.name,
+            qty: qty.toString(),
+            stockUnitCost: qty.gt(0) ? net.div(qty).toString() : "0",
+          };
+        }),
+      )
     : [];
   const confirmationDifferences = receiptDiffs.map((row) => {
     const difference = row.confirmed.minus(row.expected);
@@ -319,6 +259,21 @@ export function ReceiptForm({
       toast.error("Tambahkan minimal satu produk.");
       return false;
     }
+    if (pickedOrder) {
+      const allowedProducts = new Set(pickedOrder.lines.map((line) => line.productId));
+      const outsideOrder = lines.find((line) => !allowedProducts.has(line.productId));
+      if (outsideOrder) {
+        toast.error(`${outsideOrder.name} tidak tercantum pada PO ${pickedOrder.number}. Hapus baris atau lepaskan tautan PO.`);
+        return false;
+      }
+      const overReceived = pickedOrder.lines.find((line) =>
+        (receivedQtyByProduct.get(line.productId) ?? d(0)).gt(d(line.remainingQty)),
+      );
+      if (overReceived) {
+        toast.error(`Jumlah ${overReceived.productName} melebihi sisa PO (${formatQty(overReceived.remainingQty)}). Kurangi qty sebelum posting.`);
+        return false;
+      }
+    }
     const missingBatch = lines.find((line) => line.trackBatch && !line.batchNumber?.trim());
     if (missingBatch) {
       toast.error(`Nomor batch wajib diisi untuk ${missingBatch.name} karena produk ini dilacak per batch.`);
@@ -344,20 +299,18 @@ export function ReceiptForm({
   }
 
   /**
-   * Gerbang G2: penerimaan tertaut PO yang berselisih dari sisa PO
-   * melewati ringkasan selisih dulu; semua pas (atau tanpa PO) →
-   * posting langsung seperti sebelumnya.
+   * Perbedaan jumlah atau harga terhadap PO harus dilihat sebelum posting.
    */
   function submit() {
     if (!validateBasics()) return;
-    if (pickedOrder && receiptDiffs.length > 0) {
+    if (pickedOrder && (receiptDiffs.length > 0 || receiptPriceDiffs.length > 0)) {
       setConfirmOpen(true);
       return;
     }
     void doSubmit();
   }
 
-  async function doSubmit() {
+  async function doSubmit(priceVarianceReason?: string) {
     const parseSerials = (text?: string) =>
       (text ?? "")
         .split(/[\n,]/)
@@ -370,9 +323,12 @@ export function ReceiptForm({
       source: isPurchase ? "purchase" : sourceChoice,
       supplierId: supplierId || undefined,
       purchaseOrderId: isPurchase && purchaseOrderId ? purchaseOrderId : undefined,
+      priceVarianceReason: priceVarianceReason || undefined,
       paymentAccountId: isCashPurchase ? paymentAccountId : undefined,
       supplierInvoiceNumber:
         isPurchase && supplierInvoiceNumber.trim() ? supplierInvoiceNumber.trim() : undefined,
+      supplierInvoiceDate: isPurchase && supplierInvoiceDate ? supplierInvoiceDate : undefined,
+      dueDate: isPurchase && dueDate ? dueDate : undefined,
       // PPN dalam persen; 0 berarti non-PPN. Kolom yang dikosongkan
       // dikirim sebagai "0" agar schema angka tidak menolak string kosong.
       taxPercent:
@@ -479,6 +435,14 @@ export function ReceiptForm({
                   </button>
                 </div>
                 <div className="space-y-3 p-4">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    1 · Dokumen &amp; tujuan
+                  </p>
+                  <p className="mt-0.5 text-[10px] leading-4 text-muted-foreground">
+                    Tentukan jenis penerimaan, gudang yang menerima, dan tanggal dokumen.
+                  </p>
+                </div>
                 <div className="grid gap-2 sm:grid-cols-3">
                   <label className="space-y-1">
                     <span className={labelClass}>Sumber penerimaan</span>
@@ -551,6 +515,16 @@ export function ReceiptForm({
                   </p>
                 ) : null}
 
+                <div className="border-t border-border pt-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    2 · Pemasok &amp; faktur
+                  </p>
+                  <p className="mt-0.5 text-[10px] leading-4 text-muted-foreground">
+                    {isPurchase
+                      ? "Pilih pemasok dan pesanan pembelian lebih dulu agar baris serta harga terisi otomatis."
+                      : "Pemasok opsional untuk penerimaan non-pembelian."}
+                  </p>
+                </div>
                 <div className="grid gap-2 sm:grid-cols-3">
                   <label className="space-y-1">
                     <span className={labelClass}>
@@ -574,17 +548,54 @@ export function ReceiptForm({
 
                   {isPurchase ? (
                     <label className="space-y-1">
-                      <span className={labelClass}>No. faktur pemasok (opsional)</span>
-                      <input
-                        value={supplierInvoiceNumber}
-                        onChange={(event) => setSupplierInvoiceNumber(event.target.value)}
+                      <span className={labelClass}>Pesanan pembelian (opsional)</span>
+                      <select
+                        value={purchaseOrderId}
+                        onChange={(event) => pickPurchaseOrder(event.target.value)}
                         className={fieldClass}
-                        placeholder="INV/2026/001"
-                      />
+                        aria-label="Tautkan pesanan pembelian"
+                      >
+                        <option value="">— Tanpa tautan PO —</option>
+                        {visibleOpenOrders.map((order) => (
+                          <option key={order.id} value={order.id}>
+                            {order.number} · {order.lines.length} produk belum diterima penuh
+                          </option>
+                        ))}
+                      </select>
                       <span className="block text-[10px] leading-4 text-muted-foreground">
-                        Isi jika faktur sudah diterima bersama barang; nomor bisa dicari di riwayat pembelian.
+                        {visibleOpenOrders.length > 0
+                          ? `${visibleOpenOrders.length} PO terbuka untuk pemasok ini. Baris terisi dari sisa PO dan qty melebihi sisa ditolak server.`
+                          : "Tidak ada PO terbuka untuk pemasok ini."}
                       </span>
                     </label>
+                  ) : null}
+
+                  {isPurchase ? (
+                    <>
+                      <label className="space-y-1">
+                        <span className={labelClass}>No. faktur pemasok (opsional)</span>
+                        <input
+                          value={supplierInvoiceNumber}
+                          onChange={(event) => setSupplierInvoiceNumber(event.target.value)}
+                          className={fieldClass}
+                          placeholder="INV/2026/001"
+                        />
+                        <span className="block text-[10px] leading-4 text-muted-foreground">
+                          Isi jika faktur sudah diterima bersama barang; nomor bisa dicari di riwayat pembelian.
+                        </span>
+                      </label>
+                      <label className="space-y-1">
+                        <span className={labelClass}>Tanggal faktur pemasok</span>
+                        <DateField value={supplierInvoiceDate} onChange={setSupplierInvoiceDate} aria-label="Tanggal faktur pemasok" />
+                      </label>
+                      <label className="space-y-1">
+                        <span className={labelClass}>Jatuh tempo (opsional)</span>
+                        <DateField value={dueDate} onChange={setDueDate} aria-label="Jatuh tempo faktur" />
+                        <span className="block text-[10px] leading-4 text-muted-foreground">
+                          Kosong = tanggal penerimaan + termin pemasok.
+                        </span>
+                      </label>
+                    </>
                   ) : null}
 
                   {isPurchase ? (
@@ -638,33 +649,6 @@ export function ReceiptForm({
                   grandTotal={grandTotal.toString()}
                   onAppliedChange={setAdvanceApplied}
                 />
-
-                {isPurchase && supplierId ? (
-                  <DocumentFormAdvanced>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <label className="space-y-1">
-                        <span className={labelClass}>Tautkan pesanan pembelian (opsional)</span>
-                        <select
-                          value={purchaseOrderId}
-                          onChange={(event) => pickPurchaseOrder(event.target.value)}
-                          className={fieldClass}
-                        >
-                          <option value="">— Tanpa tautan PO —</option>
-                          {visibleOpenOrders.map((order) => (
-                            <option key={order.id} value={order.id}>
-                              {order.number} · {order.lines.length} produk belum diterima penuh
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      {purchaseOrderId ? (
-                        <p className="self-end pb-1 text-[10px] leading-4 text-muted-foreground">
-                          Baris terisi dari sisa PO; qty melebihi sisa akan ditolak server.
-                        </p>
-                      ) : null}
-                    </div>
-                  </DocumentFormAdvanced>
-                ) : null}
                 </div>
               </div>
             }
@@ -691,9 +675,16 @@ export function ReceiptForm({
                   {pickedOrder ? <StatRow label="PO tertaut" value={pickedOrder.number} valueClass="num font-medium" /> : null}
                   {pickedOrder ? (
                     <StatRow
-                      label="Selisih vs sisa PO"
+                      label="Selisih jumlah vs PO"
                       value={receiptDiffs.length > 0 ? `${formatQty(receiptDiffs.length)} baris berselisih` : "Pas"}
                       valueClass={`font-medium ${receiptDiffs.length > 0 ? "text-tone-amber" : "text-tone-green"}`}
+                    />
+                  ) : null}
+                  {pickedOrder ? (
+                    <StatRow
+                      label="Selisih harga vs PO"
+                      value={receiptPriceDiffs.length > 0 ? `${formatQty(receiptPriceDiffs.length)} produk` : "Pas"}
+                      valueClass={`font-medium ${receiptPriceDiffs.length > 0 ? "text-tone-amber" : "text-tone-green"}`}
                     />
                   ) : null}
                 </dl>
@@ -704,7 +695,7 @@ export function ReceiptForm({
                 <li>Akun lawan mengikuti sumber: pembelian kredit menjadi utang pemasok, tunai dibayar dari Kas/Bank, stok awal dari Modal.</li>
                 <li>Produk terlacak batch wajib nomor batch; produk berseri wajib nomor seri sejumlah qty.</li>
                 <li>Penerimaan tertaut PO tidak boleh melebihi sisa pesanan — kelebihan ditolak server.</li>
-                <li>Selisih dari sisa PO diringkas untuk konfirmasi sebelum posting.</li>
+                <li>Selisih jumlah diringkas; perubahan harga dari PO wajib diberi alasan sebelum posting.</li>
               </ul>
             }
             actions={
@@ -737,6 +728,19 @@ export function ReceiptForm({
             }
           >
             <div className="space-y-3 p-4">
+              <div className="flex flex-wrap items-end justify-between gap-2 border-t border-border pt-3">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    3 · Barang diterima
+                  </p>
+                  <p className="mt-0.5 text-[10px] leading-4 text-muted-foreground">
+                    Pindai atau cari produk, lalu sesuaikan qty, batch/seri, dan harga bila perlu.
+                  </p>
+                </div>
+                <p className="num text-[11px] text-muted-foreground">
+                  {lines.length} baris · {formatQty(totalQty)} qty
+                </p>
+              </div>
               <LineEditor
                 lines={lines}
                 onChange={setLines}
@@ -771,9 +775,16 @@ export function ReceiptForm({
             busy={busy}
             orderNumber={pickedOrder?.number}
             differences={confirmationDifferences}
-            onConfirmDifference={() => {
+            priceDifferences={receiptPriceDiffs.map((row) => ({
+              name: row.name,
+              expectedUnitCost: formatIDR(row.expectedUnitCost),
+              receivedUnitCost: formatIDR(row.receivedUnitCost),
+              differenceUnitCost: formatIDR(row.differenceUnitCost),
+              differenceAmount: formatIDR(row.differenceAmount),
+            }))}
+            onConfirmDifference={(reason) => {
               setConfirmOpen(false);
-              void doSubmit();
+              void doSubmit(reason);
             }}
             onCancelDifference={() => setConfirmOpen(false)}
             onDiscard={() => {

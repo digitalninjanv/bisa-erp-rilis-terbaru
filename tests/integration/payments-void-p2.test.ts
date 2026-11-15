@@ -329,6 +329,8 @@ describe("void payroll run (AK-P2-04)", () => {
     expect(original).toBeDefined();
     expect(reversal).toBeDefined();
     expect(reversal!.reversalOfId).toBe(original!.id);
+    // AKN-004: pembalik memakai akhir periode payroll asal.
+    expect(String(reversal!.date).slice(0, 10)).toBe("2099-09-30");
     // Salary expense of this run nets to zero after the reversal.
     expect(data.expenseNet).toBeCloseTo(0, 2);
 
@@ -540,8 +542,9 @@ describe("void pembayaran piutang/utang (AK-P2-03)", () => {
 describe("void transfer bank (AK-P2-04)", () => {
   it("voids a posted transfer: journal incl. fee reversed, status void, double void rejected", async () => {
     const map = await withCompanyReadOnly(ORG_ID, (tx) => getAccountMap(tx, ORG_ID));
+    const transferDate = `${todayISO().slice(0, 8)}01`;
     const created = await createBankTransferAction({
-      date: todayISO(),
+      date: transferDate,
       fromAccountId: map.cash,
       toAccountId: map.bank,
       amount: 300000,
@@ -612,6 +615,8 @@ describe("void transfer bank (AK-P2-04)", () => {
     const reversal = after.entries.find((entry) => entry.sourceType === "bank_transfer_reversal");
     expect(reversal).toBeDefined();
     expect(reversal!.reversalOfId).toBe(before.entry.id);
+    // AKN-004: pembalik memakai tanggal transfer asal, bukan hari ini.
+    expect(String(reversal!.date).slice(0, 10)).toBe(transferDate);
     // Biaya admin dan dana keluar sama-sama net-nol setelah pembalikan.
     expect(after.feeNet).toBeCloseTo(0, 2);
     expect(after.cashNet).toBeCloseTo(0, 2);

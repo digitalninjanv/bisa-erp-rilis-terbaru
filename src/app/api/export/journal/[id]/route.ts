@@ -1,3 +1,4 @@
+import { withApiError } from "@/lib/api-error";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { getJournalDetail } from "@/server/reports";
 import { requirePermission } from "@/lib/session";
@@ -7,7 +8,7 @@ import { xlsxResponse } from "@/lib/xlsx";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
+async function GETHandler(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
   const format = new URL(request.url).searchParams.get("format") === "xlsx" ? "xlsx" : "csv";
   const ctx = await requirePermission("accounting.view");
@@ -55,3 +56,5 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   );
   return csvResponse(`jurnal-${entry.number}.csv`, csv);
 }
+
+export const GET = withApiError(GETHandler);

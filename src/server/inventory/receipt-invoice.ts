@@ -12,6 +12,8 @@ export async function recordReceiptInvoiceNumber(
     userId: string;
     receiptId: string;
     supplierInvoiceNumber: string;
+    supplierInvoiceDate?: string | null;
+    dueDate?: string | null;
   },
 ) {
   const invoiceNumber = input.supplierInvoiceNumber.trim();
@@ -27,6 +29,8 @@ export async function recordReceiptInvoiceNumber(
       source: stockReceipts.source,
       status: stockReceipts.status,
       supplierInvoiceNumber: stockReceipts.supplierInvoiceNumber,
+      supplierInvoiceDate: stockReceipts.supplierInvoiceDate,
+      dueDate: stockReceipts.dueDate,
     })
     .from(stockReceipts)
     .where(and(eq(stockReceipts.companyId, input.companyId), eq(stockReceipts.id, input.receiptId)))
@@ -69,7 +73,11 @@ export async function recordReceiptInvoiceNumber(
 
   await tx
     .update(stockReceipts)
-    .set({ supplierInvoiceNumber: invoiceNumber })
+    .set({
+      supplierInvoiceNumber: invoiceNumber,
+      supplierInvoiceDate: input.supplierInvoiceDate ?? receipt.supplierInvoiceDate,
+      dueDate: input.dueDate ?? receipt.dueDate,
+    })
     .where(and(eq(stockReceipts.companyId, input.companyId), eq(stockReceipts.id, receipt.id)));
   await writeAudit(tx, {
     companyId: input.companyId,
@@ -77,9 +85,25 @@ export async function recordReceiptInvoiceNumber(
     action: "update_supplier_invoice_number",
     entityType: "stock_receipt",
     entityId: receipt.id,
-    before: { number: receipt.number, supplierInvoiceNumber: receipt.supplierInvoiceNumber },
-    after: { number: receipt.number, supplierInvoiceNumber: invoiceNumber },
+    before: {
+      number: receipt.number,
+      supplierInvoiceNumber: receipt.supplierInvoiceNumber,
+      supplierInvoiceDate: receipt.supplierInvoiceDate,
+      dueDate: receipt.dueDate,
+    },
+    after: {
+      number: receipt.number,
+      supplierInvoiceNumber: invoiceNumber,
+      supplierInvoiceDate: input.supplierInvoiceDate ?? receipt.supplierInvoiceDate,
+      dueDate: input.dueDate ?? receipt.dueDate,
+    },
   });
 
-  return { id: receipt.id, number: receipt.number, supplierInvoiceNumber: invoiceNumber };
+  return {
+    id: receipt.id,
+    number: receipt.number,
+    supplierInvoiceNumber: invoiceNumber,
+    supplierInvoiceDate: input.supplierInvoiceDate ?? receipt.supplierInvoiceDate,
+    dueDate: input.dueDate ?? receipt.dueDate,
+  };
 }

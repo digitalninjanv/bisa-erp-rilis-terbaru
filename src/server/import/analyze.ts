@@ -5,15 +5,21 @@ import { importCustomFieldValues } from "@/lib/import/import-custom-fields";
 import {
   accountMappings,
   accounts,
+  branches,
   categories,
   customerGroups,
   customers,
+  employees,
+  fixedAssetCategories,
+  fixedAssets,
   importJobs,
+  paymentMethods,
   importRows,
   partyOpeningBalances,
   products,
   suppliers,
   units,
+  warehouses,
 } from "@/db/schema";
 import { ACCOUNT_MAPPING_KEYS, mappingAllowsAccountType, MAPPING_LABELS } from "@/lib/account-mappings";
 import {
@@ -103,6 +109,18 @@ export async function analyzeMasterImport(
   const existingCategoryNames = new Set<string>();
   const existingUnitCodes = new Set<string>();
   const existingUnitNames = new Set<string>();
+  const existingBranchNames = new Set<string>();
+  const existingBranchCodes = new Set<string>();
+  const existingWarehouseNames = new Set<string>();
+  const existingWarehouseCodes = new Set<string>();
+  const branchIdByCode = new Map<string, string>();
+  const existingPaymentCodes = new Set<string>();
+  const existingPaymentNames = new Set<string>();
+  const existingGroupNames = new Set<string>();
+  const existingEmployeeCodes = new Set<string>();
+  const existingEmployeeNiks = new Set<string>();
+  const assetCategoryByName = new Map<string, string>();
+  const existingFixedAssetKeys = new Set<string>();
   const categoryByName = new Map<string, string>();
   const groupByName = new Map<string, string>();
   const productBySku = new Map<string, { id: string }>();
@@ -195,6 +213,91 @@ export async function analyzeMasterImport(
       existingUnitCodes.add(row.code.toLowerCase());
       existingUnitNames.add(row.name.toLowerCase());
     }
+  } else if (entity === "branches") {
+    const found = await tx
+      .select({ name: branches.name, code: branches.code })
+      .from(branches)
+      .where(eq(branches.companyId, companyId));
+    for (const row of found) {
+      existingBranchNames.add(row.name.toLowerCase());
+      existingBranchCodes.add(row.code.toLowerCase());
+    }
+  } else if (entity === "warehouses") {
+    const [found, branchRows] = await Promise.all([
+      tx
+        .select({ name: warehouses.name, code: warehouses.code })
+        .from(warehouses)
+        .where(eq(warehouses.companyId, companyId)),
+      tx
+        .select({ id: branches.id, code: branches.code })
+        .from(branches)
+        .where(eq(branches.companyId, companyId)),
+    ]);
+    for (const row of found) {
+      existingWarehouseNames.add(row.name.toLowerCase());
+      existingWarehouseCodes.add(row.code.toLowerCase());
+    }
+    for (const row of branchRows) branchIdByCode.set(row.code.toLowerCase(), row.id);
+  } else if (entity === "payment_methods") {
+    const [found, accountRows] = await Promise.all([
+      tx
+        .select({ code: paymentMethods.code, name: paymentMethods.name })
+        .from(paymentMethods)
+        .where(eq(paymentMethods.companyId, companyId)),
+      tx
+        .select({ code: accounts.code })
+        .from(accounts)
+        .where(eq(accounts.companyId, companyId)),
+    ]);
+    for (const row of found) {
+      existingPaymentCodes.add(row.code.toLowerCase());
+      existingPaymentNames.add(row.name.toLowerCase());
+    }
+    for (const row of accountRows) existingAccountCodes.add(row.code.toLowerCase());
+  } else if (entity === "customer_groups") {
+    const found = await tx
+      .select({ name: customerGroups.name })
+      .from(customerGroups)
+      .where(eq(customerGroups.companyId, companyId));
+    for (const row of found) existingGroupNames.add(row.name.toLowerCase());
+  } else if (entity === "employees") {
+    const found = await tx
+      .select({ code: employees.code, nik: employees.nik })
+      .from(employees)
+      .where(eq(employees.companyId, companyId));
+    for (const row of found) {
+      existingEmployeeCodes.add(row.code.toLowerCase());
+      if (row.nik) existingEmployeeNiks.add(row.nik);
+    }
+  } else if (entity === "fixed_assets") {
+    const [assetRows, categoryRows, accountRows] = await Promise.all([
+      tx
+        .select({
+          name: fixedAssets.name,
+          acquisitionDate: fixedAssets.acquisitionDate,
+          cost: fixedAssets.cost,
+        })
+        .from(fixedAssets)
+        .where(eq(fixedAssets.companyId, companyId)),
+      tx
+        .select({ id: fixedAssetCategories.id, code: fixedAssetCategories.code, name: fixedAssetCategories.name })
+        .from(fixedAssetCategories)
+        .where(eq(fixedAssetCategories.companyId, companyId)),
+      tx
+        .select({ code: accounts.code })
+        .from(accounts)
+        .where(eq(accounts.companyId, companyId)),
+    ]);
+    for (const row of assetRows) {
+      existingFixedAssetKeys.add(
+        `${row.name.trim().toLowerCase()}|${row.acquisitionDate}|${Number(row.cost).toFixed(4)}`,
+      );
+    }
+    for (const row of categoryRows) {
+      assetCategoryByName.set(row.code.toLowerCase(), row.id);
+      assetCategoryByName.set(row.name.toLowerCase(), row.id);
+    }
+    for (const row of accountRows) existingAccountCodes.add(row.code.toLowerCase());
   } else if (entity === "opening_stock") {
     const found = await tx
       .select({ id: products.id, sku: products.sku, name: products.name })
@@ -261,6 +364,8 @@ export async function analyzeMasterImport(
   const seenCodes = new Set<string>();
   const seenMappingKeys = new Set<string>();
   const seenOpeningKeys = new Set<string>();
+  const seenNiks = new Set<string>();
+  const seenAssetKeys = new Set<string>();
 
   for (const row of rows) {
     const source = (row.data ?? {}) as RowData;
@@ -313,6 +418,143 @@ export async function analyzeMasterImport(
               summary.unknownGroups.push(value.value.group);
             }
             issue = `Kelompok harga "${value.value.group}" tidak ditemukan`;
+            storedIssue = issue;
+            action = "error";
+          }
+        }
+      } else if (value.kind === "branches") {
+        const nameKey = value.value.name.toLowerCase();
+        const codeKey = value.value.code?.toLowerCase() ?? null;
+        if (seenNames.has(nameKey) || (codeKey && seenCodes.has(codeKey))) {
+          summary.duplicateInFile += 1;
+          issue = "Nama/kode cabang duplikat di file (baris pertama dipakai)";
+          storedIssue = issue;
+          action = "error";
+        } else {
+          seenNames.add(nameKey);
+          if (codeKey) seenCodes.add(codeKey);
+          if (existingBranchNames.has(nameKey) || (codeKey && existingBranchCodes.has(codeKey))) {
+            summary.existingCount += 1;
+            issue = "Cabang sudah ada — akan dilewati";
+            action = "skip";
+          }
+        }
+      } else if (value.kind === "warehouses") {
+        const nameKey = value.value.name.toLowerCase();
+        const codeKey = value.value.code?.toLowerCase() ?? null;
+        if (seenNames.has(nameKey) || (codeKey && seenCodes.has(codeKey))) {
+          summary.duplicateInFile += 1;
+          issue = "Nama/kode gudang duplikat di file (baris pertama dipakai)";
+          storedIssue = issue;
+          action = "error";
+        } else {
+          seenNames.add(nameKey);
+          if (codeKey) seenCodes.add(codeKey);
+          if (existingWarehouseNames.has(nameKey) || (codeKey && existingWarehouseCodes.has(codeKey))) {
+            summary.existingCount += 1;
+            issue = "Gudang sudah ada — akan dilewati";
+            action = "skip";
+          } else if (
+            value.value.branchCode &&
+            !branchIdByCode.has(value.value.branchCode.toLowerCase())
+          ) {
+            summary.invalidRows += 1;
+            issue = `Kode cabang "${value.value.branchCode}" tidak ditemukan — buat cabang dulu`;
+            storedIssue = issue;
+            action = "error";
+          }
+        }
+      } else if (value.kind === "payment_methods") {
+        const nameKey = value.value.name.toLowerCase();
+        const codeKey = value.value.code?.toLowerCase() ?? null;
+        if (seenNames.has(nameKey) || (codeKey && seenCodes.has(codeKey))) {
+          summary.duplicateInFile += 1;
+          issue = "Nama/kode metode pembayaran duplikat di file (baris pertama dipakai)";
+          storedIssue = issue;
+          action = "error";
+        } else {
+          seenNames.add(nameKey);
+          if (codeKey) seenCodes.add(codeKey);
+          if (existingPaymentNames.has(nameKey) || (codeKey && existingPaymentCodes.has(codeKey))) {
+            summary.existingCount += 1;
+            issue = "Metode pembayaran sudah ada — akan dilewati";
+            action = "skip";
+          } else if (
+            value.value.accountCode &&
+            !existingAccountCodes.has(value.value.accountCode.toLowerCase())
+          ) {
+            summary.invalidRows += 1;
+            issue = `Kode akun "${value.value.accountCode}" tidak ditemukan`;
+            storedIssue = issue;
+            action = "error";
+          }
+        }
+      } else if (value.kind === "customer_groups") {
+        const nameKey = value.value.name.toLowerCase();
+        if (seenNames.has(nameKey)) {
+          summary.duplicateInFile += 1;
+          issue = "Nama kelompok harga duplikat di file (baris pertama dipakai)";
+          storedIssue = issue;
+          action = "error";
+        } else {
+          seenNames.add(nameKey);
+          if (existingGroupNames.has(nameKey)) {
+            summary.existingCount += 1;
+            issue = "Kelompok harga sudah ada — akan dilewati";
+            action = "skip";
+          }
+        }
+      } else if (value.kind === "employees") {
+        const codeKey = value.value.code?.toLowerCase() ?? null;
+        if (codeKey && seenCodes.has(codeKey)) {
+          summary.duplicateInFile += 1;
+          issue = "Kode karyawan duplikat di file (baris pertama dipakai)";
+          storedIssue = issue;
+          action = "error";
+        } else {
+          if (codeKey) seenCodes.add(codeKey);
+          if (value.value.nik && seenNiks.has(value.value.nik)) {
+            summary.duplicateInFile += 1;
+            issue = `NIK ${value.value.nik} duplikat di file`;
+            storedIssue = issue;
+            action = "error";
+          } else if (value.value.nik) {
+            seenNiks.add(value.value.nik);
+            if (existingEmployeeNiks.has(value.value.nik)) {
+              summary.existingCount += 1;
+              issue = "NIK sudah terdaftar — akan dilewati";
+              action = "skip";
+            }
+          } else if (codeKey && existingEmployeeCodes.has(codeKey)) {
+            summary.existingCount += 1;
+            issue = "Karyawan sudah ada — akan dilewati";
+            action = "skip";
+          }
+        }
+      } else if (value.kind === "fixed_assets") {
+        const key = `${value.value.name.trim().toLowerCase()}|${value.value.acquisitionDate}|${value.value.cost.toFixed(4)}`;
+        if (seenAssetKeys.has(key)) {
+          summary.duplicateInFile += 1;
+          issue = "Aset yang sama duplikat di file (baris pertama dipakai)";
+          storedIssue = issue;
+          action = "error";
+        } else {
+          seenAssetKeys.add(key);
+          if (existingFixedAssetKeys.has(key)) {
+            summary.existingCount += 1;
+            issue = "Aset sudah ada — akan dilewati";
+            action = "skip";
+          } else if (!existingAccountCodes.has(value.value.sourceAccountCode.toLowerCase())) {
+            summary.invalidRows += 1;
+            issue = `Kode akun sumber "${value.value.sourceAccountCode}" tidak ditemukan`;
+            storedIssue = issue;
+            action = "error";
+          } else if (
+            value.value.category &&
+            !assetCategoryByName.has(value.value.category.trim().toLowerCase())
+          ) {
+            summary.invalidRows += 1;
+            issue = `Kategori aset "${value.value.category}" tidak ditemukan`;
             storedIssue = issue;
             action = "error";
           }

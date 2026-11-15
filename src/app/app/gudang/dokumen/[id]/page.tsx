@@ -4,6 +4,7 @@ import { withCompanyReadOnly } from "@/db/tenant";
 import { getStockDocumentDetail } from "@/server/catalog";
 import { requirePermissionPage } from "@/lib/session";
 import { can } from "@/lib/permissions";
+import { canSeeInventoryCost } from "@/lib/inventory-cost";
 import { d, formatIDR, formatQty } from "@/lib/money";
 import { formatCountBreakdown } from "@/lib/packaging";
 import { formatDate, formatDateTime, todayISO } from "@/lib/format";
@@ -89,6 +90,7 @@ export default async function StockDocumentDetailPage({
 }) {
   const { id } = await params;
   const ctx = await requirePermissionPage("inventory.view");
+  const canSeeCost = canSeeInventoryCost(ctx);
 
   const data = await withCompanyReadOnly(ctx.company.id, async (tx) =>
     getStockDocumentDetail(tx, ctx.company.id, id),
@@ -168,7 +170,7 @@ export default async function StockDocumentDetailPage({
   if (doc.reason) {
     metaRows.push({ label: "Alasan dokumen", value: REASON_LABELS[doc.reason] ?? doc.reason });
   }
-  metaRows.push({ label: "Nilai dokumen", value: formatIDR(doc.total) });
+  if (canSeeCost) metaRows.push({ label: "Nilai dokumen", value: formatIDR(doc.total) });
   metaRows.push({ label: "Dibuat", value: formatDateTime(doc.createdAt) });
   if (doc.postedAt) metaRows.push({ label: "Terposting", value: formatDateTime(doc.postedAt) });
   if (doc.approvedAt) metaRows.push({ label: "Disahkan", value: formatDateTime(doc.approvedAt) });
@@ -258,8 +260,8 @@ export default async function StockDocumentDetailPage({
                 ) : (
                   <th className="text-right">Qty</th>
                 )}
-                <th className="text-right">Biaya satuan</th>
-                <th className="text-right">Nilai</th>
+                {canSeeCost ? <th className="text-right">Biaya satuan</th> : null}
+                {canSeeCost ? <th className="text-right">Nilai</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -328,8 +330,8 @@ export default async function StockDocumentDetailPage({
                         ) : null}
                       </td>
                     )}
-                    <td className="num text-right">{formatIDR(line.unitCost)}</td>
-                    <td className="num text-right font-medium">{formatIDR(line.lineTotal)}</td>
+                    {canSeeCost ? <td className="num text-right">{formatIDR(line.unitCost)}</td> : null}
+                    {canSeeCost ? <td className="num text-right font-medium">{formatIDR(line.lineTotal)}</td> : null}
                   </tr>
                 );
               })}
@@ -337,12 +339,12 @@ export default async function StockDocumentDetailPage({
             <tfoot>
               <tr className="border-t border-border bg-muted/40">
                 <td
-                  colSpan={doc.type === "opname" || doc.type === "transfer" ? 5 : 3}
+                  colSpan={canSeeCost ? (doc.type === "opname" || doc.type === "transfer" ? 5 : 3) : (doc.type === "opname" || doc.type === "transfer" ? 3 : 1)}
                   className="px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
                 >
                   Total dokumen
                 </td>
-                <td className="num px-3 py-2 text-right font-semibold">{formatIDR(doc.total)}</td>
+                {canSeeCost ? <td className="num px-3 py-2 text-right font-semibold">{formatIDR(doc.total)}</td> : null}
               </tr>
             </tfoot>
           </table>

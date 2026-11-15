@@ -8,7 +8,8 @@ import type { Tx } from "@/db";
 import { cashMovements, cashSessions, journalEntries, partyPayments, paymentMethods, saleLines, salePayments, saleReturns, sales } from "@/db/schema";
 import { AppError } from "@/lib/errors";
 import { D, d, toDb } from "@/lib/money";
-import { reverseJournalEntry, reverseSourceJournal } from "@/server/accounting";
+import { reverseJournalEntry } from "@/server/accounting";
+import { reverseSourceJournalPreferringDate } from "@/server/accounting-reversal";
 import { writeAudit } from "@/server/audit";
 import { applyStockMovement } from "@/server/inventory";
 import { restoreReservationForVoidSale } from "@/server/reservations";
@@ -22,11 +23,11 @@ export async function voidSale(tx: Tx, input: VoidSaleInput) {
 
   await restoreVoidedSaleStock(tx, input, sale);
 
-  await reverseSourceJournal(tx, {
+  await reverseSourceJournalPreferringDate(tx, {
     companyId: input.companyId,
     sourceType: "sale",
     sourceId: sale.id,
-    date: todayISO(),
+    originalDate: String(sale.date).slice(0, 10),
     description: `Void penjualan ${sale.number}`,
     createdBy: input.userId,
   });

@@ -18,7 +18,8 @@ import {
 import { PageHeader } from "@/components/blocks/page-header";
 import { StatCard } from "@/components/blocks/stat-card";
 import { EmptyState } from "@/components/blocks/empty-state";
-import { DataList } from "@/components/blocks/data-list";
+import { DataList, DataListToolbar } from "@/components/blocks/data-list";
+import { FilterChips } from "@/components/blocks/search-form";
 import { StatusBadge } from "@/components/blocks/status-badge";
 import {
   AssetForm,
@@ -31,7 +32,12 @@ import {
 export const metadata = { title: "Aset Tetap" };
 export const dynamic = "force-dynamic";
 
-export default async function AsetTetapPage() {
+export default async function AsetTetapPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; status?: string }>;
+}) {
+  const params = await searchParams;
   const ctx = await requirePermissionPage("accounting.view");
 
   // A-22 K6: BUKAN withCompanyReadOnly — getAccumulatedDepreciationGlBalance
@@ -75,6 +81,22 @@ export default async function AsetTetapPage() {
 
   const canManage = can(ctx, "accounting.manage");
   const activeAssets = data.report.rows.filter((row) => row.status === "active");
+  // Fiori list report: pencarian + filter status aset di server render.
+  const q = params.q?.trim().toLowerCase() ?? "";
+  const status = params.status === "active" || params.status === "disposed" ? params.status : "";
+  const visibleAssets = data.report.rows.filter((row) => {
+    if (status && row.status !== status) return false;
+    if (!q) return true;
+    return `${row.number} ${row.name} ${row.categoryName ?? ""}`.toLowerCase().includes(q);
+  });
+  const visibleTotals = visibleAssets.reduce(
+    (acc, row) => ({
+      cost: acc.cost + Number(row.cost),
+      accumulated: acc.accumulated + Number(row.accumulated),
+      bookValue: acc.bookValue + Number(row.bookValue),
+    }),
+    { cost: 0, accumulated: 0, bookValue: 0 },
+  );
   const glMatches = Number(data.glAccumulated) === Number(data.report.totals.accumulated);
 
   return (
@@ -131,12 +153,41 @@ export default async function AsetTetapPage() {
 
       {/* A-25 U4: daftar aset memakai DataList bersama (judul seksi di
           luar bingkai); panel riwayat & kategori menyusul di bawah. */}
-      <h2 className="mb-2 px-0.5 text-[13px] font-semibold">Daftar aset & nilai buku</h2>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="px-0.5 text-[13px] font-semibold">Daftar aset & nilai buku</h2>
+        <FilterChips
+          options={[
+            { label: "Semua", value: "" },
+            { label: "Aktif", value: "active" },
+            { label: "Dilepas", value: "disposed" },
+          ]}
+          value={status}
+          basePath="/app/akuntansi/aset"
+          param="status"
+          q={params.q}
+        />
+      </div>
       <DataList
         className="mb-3"
-        isEmpty={data.report.rows.length === 0}
+        toolbar={
+          <DataListToolbar
+            action="/app/akuntansi/aset"
+            q={params.q}
+            placeholder="Cari nomor, nama, atau kategori aset…"
+            resetHref={params.q || status ? "/app/akuntansi/aset" : undefined}
+          />
+        }
+        isEmpty={visibleAssets.length === 0}
         empty={
-          <EmptyState title="Belum ada aset tetap" description="Daftarkan aset pertama lewat tombol Daftarkan Aset." icon={<Building2 className="size-5" />} />
+          <EmptyState
+            title={data.report.rows.length === 0 ? "Belum ada aset tetap" : "Tidak ada aset yang cocok"}
+            description={
+              data.report.rows.length === 0
+                ? "Daftarkan aset pertama lewat tombol Daftarkan Aset."
+                : "Ubah kata kunci atau filter status untuk melihat aset lain."
+            }
+            icon={<Building2 className="size-5" />}
+          />
         }
       >
           <div className="hidden overflow-x-auto lg:block">
@@ -155,7 +206,7 @@ export default async function AsetTetapPage() {
                 </tr>
               </thead>
               <tbody>
-                {data.report.rows.map((row) => (
+                {visibleAssets.map((row) => (
                   <tr key={row.id}>
                     <td className="num text-[11px] text-muted-foreground">
                       {row.number}
@@ -214,16 +265,16 @@ export default async function AsetTetapPage() {
               <tfoot>
                 <tr>
                   <td colSpan={4} className="text-[12px] font-semibold">Total</td>
-                  <td className="num text-right text-[12px] font-semibold">{formatIDR(data.report.totals.cost)}</td>
-                  <td className="num text-right text-[12px] font-semibold">{formatIDR(data.report.totals.accumulated)}</td>
-                  <td className="num text-right text-[12px] font-semibold">{formatIDR(data.report.totals.bookValue)}</td>
+                  <td className="num text-right text-[12px] font-semibold">{formatIDR(visibleTotals.cost)}</td>
+                  <td className="num text-right text-[12px] font-semibold">{formatIDR(visibleTotals.accumulated)}</td>
+                  <td className="num text-right text-[12px] font-semibold">{formatIDR(visibleTotals.bookValue)}</td>
                   <td colSpan={canManage ? 2 : 1} />
                 </tr>
               </tfoot>
             </table>
           </div>
           <div className="divide-y divide-border/70 lg:hidden">
-            {data.report.rows.map((row) => (
+            {visibleAssets.map((row) => (
               <div key={row.id} className="px-4 py-3">
                 <div className="flex items-baseline justify-between gap-2">
                   <div>

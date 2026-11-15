@@ -8,6 +8,7 @@ import {
   eq,
   inArray,
   isNull,
+  or,
   sql,
 } from "drizzle-orm";
 import type { Tx } from "@/db";
@@ -108,16 +109,41 @@ export async function listReceivables(tx: Tx, companyId: string) {
   return merged.sort((a, b) => String(a.date).localeCompare(String(b.date)));
 }
 
+export function openPurchaseReceiptFilter(companyId: string) {
+  return and(
+    eq(stockReceipts.companyId, companyId),
+    eq(stockReceipts.status, "posted"),
+    // D-5: only credit purchases are payables. Cash purchases are born
+    // paid and non-purchase receipts owe nothing — neither may ever
+    // surface here as a phantom payable.
+    eq(stockReceipts.source, "purchase"),
+    isNull(stockReceipts.paymentAccountId),
+    inArray(stockReceipts.paymentStatus, ["unpaid", "partial"]),
+  );
+}
+
+export function openPayableOpeningFilter(companyId: string) {
+  return and(
+    eq(partyOpeningBalances.companyId, companyId),
+    eq(partyOpeningBalances.kind, "payable"),
+    eq(partyOpeningBalances.status, "open"),
+  );
+}
+
 export async function listPayables(tx: Tx, companyId: string) {
   // FIX-P1 Tahap 5 (AK3-07): bawaan termin perusahaan untuk pemasok
   // tanpa termin sendiri (satu baca per panggilan daftar).
   const settings = await getCompanySettingsRow(tx, companyId);
   const defaultTermDays = settings?.payableDefaultTermDays ?? 30;
+  const receiptFilter = openPurchaseReceiptFilter(companyId);
+  const openingFilter = openPayableOpeningFilter(companyId);
   const rows = await tx
     .select({
       id: stockReceipts.id,
       number: stockReceipts.number,
       date: stockReceipts.date,
+      supplierInvoiceDate: stockReceipts.supplierInvoiceDate,
+      dueDate: stockReceipts.dueDate,
       total: stockReceipts.total,
       paidAmount: stockReceipts.paidAmount,
       paymentStatus: stockReceipts.paymentStatus,
@@ -127,18 +153,7 @@ export async function listPayables(tx: Tx, companyId: string) {
     })
     .from(stockReceipts)
     .leftJoin(suppliers, eq(stockReceipts.supplierId, suppliers.id))
-    .where(
-      and(
-        eq(stockReceipts.companyId, companyId),
-        eq(stockReceipts.status, "posted"),
-        // D-5: only credit purchases are payables. Cash purchases are born
-        // paid and non-purchase receipts owe nothing — neither may ever
-        // surface here as a phantom payable.
-        eq(stockReceipts.source, "purchase"),
-        isNull(stockReceipts.paymentAccountId),
-        inArray(stockReceipts.paymentStatus, ["unpaid", "partial"]),
-      ),
-    )
+    .where(receiptFilter)
     .orderBy(asc(stockReceipts.date));
   // T4-5b (D-14): dokumen saldo awal utang yang masih terbuka ikut
   // tampil dengan penanda sumber "opening" (lihat listReceivables).
@@ -157,13 +172,7 @@ export async function listPayables(tx: Tx, companyId: string) {
     })
     .from(partyOpeningBalances)
     .leftJoin(suppliers, eq(partyOpeningBalances.partyId, suppliers.id))
-    .where(
-      and(
-        eq(partyOpeningBalances.companyId, companyId),
-        eq(partyOpeningBalances.kind, "payable"),
-        eq(partyOpeningBalances.status, "open"),
-      ),
-    )
+    .where(openingFilter)
     .orderBy(asc(partyOpeningBalances.date));
   // A-21 (R3-11): beban terutang adalah dokumen utang ketiga —
   // definisi terbukanya memakai helper yang sama dengan FIFO
@@ -200,6 +209,14 @@ export async function listPayables(tx: Tx, companyId: string) {
   // below is identical to the pre-return formula.
   const receiptAllocations = new Map<string, Decimal>();
   const openingAllocations = new Map<string, Decimal>();
+  const openReceiptIds = tx
+    .select({ id: stockReceipts.id })
+    .from(stockReceipts)
+    .where(receiptFilter);
+  const openOpeningIds = tx
+    .select({ id: partyOpeningBalances.id })
+    .from(partyOpeningBalances)
+    .where(openingFilter);
   const allocationRows = await tx
     .select({
       receiptId: supplierReturnAllocations.receiptId,
@@ -207,7 +224,15 @@ export async function listPayables(tx: Tx, companyId: string) {
       total: sql<string>`coalesce(sum(${supplierReturnAllocations.amount}), 0)`,
     })
     .from(supplierReturnAllocations)
-    .where(eq(supplierReturnAllocations.companyId, companyId))
+    .where(
+      and(
+        eq(supplierReturnAllocations.companyId, companyId),
+        or(
+          inArray(supplierReturnAllocations.receiptId, openReceiptIds),
+          inArray(supplierReturnAllocations.openingId, openOpeningIds),
+        ),
+      ),
+    )
     .groupBy(supplierReturnAllocations.receiptId, supplierReturnAllocations.openingId);
   for (const allocation of allocationRows) {
     if (allocation.receiptId) {
@@ -235,7 +260,7 @@ export async function listPayables(tx: Tx, companyId: string) {
           // FIX-P1 Tahap 5 (AK3-07): jatuh tempo nyata = tanggal
           // penerimaan + termin pemasok; termin kosong memakai bawaan
           // perusahaan (company_settings.payable_default_term_days).
-          dueDate: addDaysISO(String(r.date), r.supplierTermDays ?? defaultTermDays),
+          dueDate: r.dueDate ?? addDaysISO(String(r.date), r.supplierTermDays ?? defaultTermDays),
           reference: null as string | null,
           source: "document" as const,
           outstanding: outstanding.toNumber(),
@@ -253,6 +278,7 @@ export async function listPayables(tx: Tx, companyId: string) {
           ...r,
           paymentStatus: settled.gt(0) ? "partial" : "unpaid",
           source: "opening" as const,
+          supplierInvoiceDate: null as string | null,
           outstanding: outstanding.toNumber(),
           journalNumber: r.journalId ? (openingJournalNumbers.get(r.journalId) ?? null) : null,
         };
@@ -265,6 +291,7 @@ export async function listPayables(tx: Tx, companyId: string) {
         dueDate: addDaysISO(String(r.date), r.supplierTermDays ?? defaultTermDays),
         reference: null as string | null,
         source: "expense" as const,
+        supplierInvoiceDate: null as string | null,
         outstanding: d(r.total).minus(r.paidAmount).toNumber(),
         journalId: null as string | null,
         journalNumber: null as string | null,
@@ -272,84 +299,4 @@ export async function listPayables(tx: Tx, companyId: string) {
       .filter((r) => r.outstanding > 0),
   ];
   return merged.sort((a, b) => String(a.date).localeCompare(String(b.date)));
-}
-
-export type ReceivablePayableQueues = {
-  receivables: { openCount: number; openTotal: number; overdueCount: number; overdueTotal: number };
-  payables: {
-    openCount: number;
-    openTotal: number;
-    overdueCount: number;
-    overdueTotal: number;
-    dueSoonCount: number;
-    dueSoonTotal: number;
-  };
-};
-
-/**
- * A-22 Tahap K5: angka antrean kerja dashboard akuntansi (pola
- * dashboard kartu aksi Odoo). Diturunkan dari daftar yang PERSIS sama
- * dengan halaman Piutang & utang (listReceivables/listPayables) agar
- * angka kartu tidak pernah berbeda pendapat dengan daftar tujuannya.
- * Terlambat = jatuh tempo < hari ini; utang "jatuh tempo" pada kartu
- * mencakup terlambat + yang jatuh tempo dalam 7 hari ke depan.
- * Fungsi baca bernama — halaman tidak boleh mengagregasi sendiri
- * (ARS1-01).
- */
-export async function getReceivablePayableQueues(
-  tx: Tx,
-  companyId: string,
-  today: string,
-): Promise<ReceivablePayableQueues> {
-  const [receivables, payables] = await Promise.all([
-    listReceivables(tx, companyId),
-    listPayables(tx, companyId),
-  ]);
-  const dueSoonLimit = addDaysISO(today, 7);
-
-  const ar = { openCount: 0, openTotal: d(0), overdueCount: 0, overdueTotal: d(0) };
-  for (const row of receivables) {
-    ar.openCount += 1;
-    ar.openTotal = ar.openTotal.plus(d(row.outstanding));
-    if (row.dueDate && String(row.dueDate) < today) {
-      ar.overdueCount += 1;
-      ar.overdueTotal = ar.overdueTotal.plus(d(row.outstanding));
-    }
-  }
-  const ap = {
-    openCount: 0,
-    openTotal: d(0),
-    overdueCount: 0,
-    overdueTotal: d(0),
-    dueSoonCount: 0,
-    dueSoonTotal: d(0),
-  };
-  for (const row of payables) {
-    ap.openCount += 1;
-    ap.openTotal = ap.openTotal.plus(d(row.outstanding));
-    const due = String(row.dueDate);
-    if (due < today) {
-      ap.overdueCount += 1;
-      ap.overdueTotal = ap.overdueTotal.plus(d(row.outstanding));
-    } else if (due <= dueSoonLimit) {
-      ap.dueSoonCount += 1;
-      ap.dueSoonTotal = ap.dueSoonTotal.plus(d(row.outstanding));
-    }
-  }
-  return {
-    receivables: {
-      openCount: ar.openCount,
-      openTotal: ar.openTotal.toNumber(),
-      overdueCount: ar.overdueCount,
-      overdueTotal: ar.overdueTotal.toNumber(),
-    },
-    payables: {
-      openCount: ap.openCount,
-      openTotal: ap.openTotal.toNumber(),
-      overdueCount: ap.overdueCount,
-      overdueTotal: ap.overdueTotal.toNumber(),
-      dueSoonCount: ap.dueSoonCount,
-      dueSoonTotal: ap.dueSoonTotal.toNumber(),
-    },
-  };
 }

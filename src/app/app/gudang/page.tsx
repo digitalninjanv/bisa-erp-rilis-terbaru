@@ -12,7 +12,7 @@ import { withCompanyReadOnly } from "@/db/tenant";
 import { getInventoryValuation } from "@/server/reports";
 import { getWarehouseDashboardData } from "@/server/catalog";
 import { getOpnameReminders } from "@/server/inventory";
-import { listExpiringBatches } from "@/server/batches";
+import { getExpiringBatchDashboard } from "@/server/batches";
 import { getCompanySettingsRow } from "@/server/settings";
 import { requirePermissionPage } from "@/lib/session";
 import { can } from "@/lib/permissions";
@@ -43,11 +43,17 @@ export default async function WarehouseDashboard({
     const settingsRow = await getCompanySettingsRow(tx, ctx.company.id);
     const expiryWarningDays = settingsRow?.expiryWarningDays ?? 30;
     const [valuation, dashboard, expiring, opnameReminders] = await Promise.all([
-      getInventoryValuation(tx, ctx.company.id),
+      // The dashboard only renders aggregate values, not a product list.
+      // Keep the all-product SQL totals while returning at most one row.
+      getInventoryValuation(tx, ctx.company.id, undefined, {
+        page: 1,
+        pageSize: 1,
+        skipLowStock: true,
+      }),
       getWarehouseDashboardData(tx, ctx.company.id),
       // G8/D-7: batches already expired or expiring within the
       // configured warning window.
-      listExpiringBatches(tx, ctx.company.id, expiryWarningDays),
+      getExpiringBatchDashboard(tx, ctx.company.id, expiryWarningDays),
       // A-24 T3 (G3): pengingat opname jatuh tempo dari frekuensi
       // hitung berkonfigurasi per perusahaan (Pengaturan → lokasi).
       getOpnameReminders(tx, ctx.company.id, todayISO()),
@@ -56,7 +62,9 @@ export default async function WarehouseDashboard({
     return {
       valuation,
       ...dashboard,
-      expiring,
+      expiring: expiring.items,
+      expiringCount: expiring.totalCount,
+      expiredCount: expiring.expiredCount,
       opnameReminders,
       expiryWarningDays,
     };
@@ -67,7 +75,7 @@ export default async function WarehouseDashboard({
   // menggantikan seksi pengingat opname khusus + panel lipat
   // kedaluwarsa yang dulu selalu tampil (AUDIT-UI-A25 GDG-11,
   // POLA-08/09). Angka-angkanya dari data yang sama dengan halaman.
-  const expiredCount = data.expiring.filter((row) => (row.expiryDate ?? "") < todayISO()).length;
+  const expiredCount = data.expiredCount;
   const queueItems: WorkQueueItem[] = [
     {
       key: "opname",
@@ -102,11 +110,11 @@ export default async function WarehouseDashboard({
     {
       key: "expiring",
       label: "Kedaluwarsa & mendekati",
-      count: data.expiring.length,
+      count: data.expiringCount,
       headline:
         expiredCount > 0
           ? `${formatNumber(expiredCount)} batch sudah kedaluwarsa`
-          : `${formatNumber(data.expiring.length)} batch mendekati kedaluwarsa`,
+          : `${formatNumber(data.expiringCount)} batch mendekati kedaluwarsa`,
       detail: "Batch kedaluwarsa tidak bisa dijual; keluarkan lewat penyesuaian stok.",
       href: "#kedaluwarsa",
       actionLabel: "Lihat daftar batch",
@@ -206,9 +214,9 @@ export default async function WarehouseDashboard({
               </tbody>
             </table>
           </div>
-        {data.expiring.length > 15 ? (
+        {data.expiringCount > data.expiring.length ? (
           <p className="border-t border-border px-4 py-2 text-[11px] text-muted-foreground">
-            Menampilkan 15 dari {data.expiring.length} batch. Buka detail produk untuk daftar lengkap per produk.
+            Menampilkan {formatNumber(data.expiring.length)} dari {formatNumber(data.expiringCount)} batch. Buka detail produk untuk daftar lengkap per produk.
           </p>
         ) : null}
       </section>

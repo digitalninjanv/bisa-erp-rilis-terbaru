@@ -37,7 +37,7 @@ export function DecimalMin(a: Decimal, b: Decimal): Decimal {
 /* ------------------------------------------------------------------ */
 
 /** Status retur yang qty-nya sudah benar-benar keluar dari perusahaan. */
-export const POSTED_RETURN_STATUSES = ["posted", "partially_resolved", "resolved"] as const;
+export { POSTED_RETURN_STATUSES } from "@/lib/supplier-return-status";
 
 /**
  * A-26 Q1b (D-07): format qty untuk pesan validasi retur — presisi

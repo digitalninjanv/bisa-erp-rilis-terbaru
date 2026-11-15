@@ -6,7 +6,7 @@ import { withCompany } from "@/db/tenant";
 import { guard } from "@/lib/errors";
 import { amountField, isoDateField, parseInput } from "@/lib/action-validation";
 import { todayISO } from "@/lib/format";
-import { requirePermission } from "@/lib/session";
+import { requirePermissionInModule } from "@/lib/session";
 import { writeAudit } from "@/server/audit";
 import {
   convertPurchaseRequestToPo,
@@ -45,7 +45,7 @@ const createSchema = z.object({
 
 export async function createPurchaseRequestAction(input: z.input<typeof createSchema>) {
   return guard(async () => {
-    const ctx = await requirePermission("inventory.manage");
+    const ctx = await requirePermissionInModule("inventory.manage", "gudang");
     const data = parseInput(createSchema, input);
     const row = await withCompany(ctx.company.id, async (tx) => {
       const created = await createPurchaseRequest(tx, {
@@ -85,7 +85,7 @@ const decideSchema = z.object({
 
 export async function decidePurchaseRequestAction(input: z.input<typeof decideSchema>) {
   return guard(async () => {
-    const ctx = await requirePermission("inventory.manage");
+    const ctx = await requirePermissionInModule("inventory.manage", "gudang");
     const data = parseInput(decideSchema, input);
     const row = await withCompany(ctx.company.id, async (tx) => {
       const decided = await decidePurchaseRequest(tx, {
@@ -119,7 +119,7 @@ const convertSchema = z.object({
 
 export async function convertPurchaseRequestAction(input: z.input<typeof convertSchema>) {
   return guard(async () => {
-    const ctx = await requirePermission("inventory.manage");
+    const ctx = await requirePermissionInModule("inventory.manage", "gudang");
     const data = parseInput(convertSchema, input);
     const row = await withCompany(ctx.company.id, async (tx) => {
       const po = await convertPurchaseRequestToPo(tx, {

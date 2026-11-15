@@ -295,7 +295,7 @@ describe("A-28 Tahap 6 — rantai satu hari minimarket (simulasi diperluas)", ()
         from,
         today,
       );
-      const buffer = reportTableToXlsx(table);
+      const buffer = await reportTableToXlsx(table);
       const workbook = XLSX.read(buffer, { type: "buffer" });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true }) as unknown[][];

@@ -8,6 +8,7 @@ import { Pagination } from "@/components/blocks/pagination";
 import { SupplierReturnList } from "@/components/gudang/supplier-return-list";
 import { parsePageParam } from "@/lib/pagination";
 import { can } from "@/lib/permissions";
+import { canSeeInventoryCost } from "@/lib/inventory-cost";
 import { requirePermissionPage } from "@/lib/session";
 import { listSupplierReturnsPage } from "@/server/supplier-returns";
 
@@ -35,6 +36,7 @@ export default async function SupplierReturnHistoryPage({
     : undefined;
   const q = params.q?.trim() || undefined;
   const ctx = await requirePermissionPage("inventory.view");
+  const canSeeCost = canSeeInventoryCost(ctx);
 
   const history = await withCompanyReadOnly(ctx.company.id, (tx) =>
     listSupplierReturnsPage(tx, ctx.company.id, {
@@ -111,7 +113,7 @@ export default async function SupplierReturnHistoryPage({
           />
         }
       >
-        <SupplierReturnList rows={history.rows} />
+        <SupplierReturnList rows={history.rows} canSeeCost={canSeeCost} />
       </DataList>
     </div>
   );

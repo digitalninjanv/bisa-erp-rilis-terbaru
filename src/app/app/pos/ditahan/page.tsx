@@ -44,7 +44,7 @@ export default async function HeldPage() {
           />
         }
       >
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto lg:block">
           <table className="data-table">
             <thead>
               <tr>
@@ -77,6 +77,27 @@ export default async function HeldPage() {
               ))}
             </tbody>
           </table>
+        </div>
+        <div className="divide-y divide-border/70 lg:hidden">
+          {rows.map((row) => (
+            <div key={row.id} className="px-4 py-3">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-[12px] font-medium">{row.heldLabel ?? row.number}</span>
+                <span className="num text-[12px] font-semibold">{formatIDR(row.total)}</span>
+              </div>
+              <p className="num mt-0.5 text-[11px] text-muted-foreground">
+                {row.number} · {formatDateTime(row.createdAt)} · {row.customerName ?? "Umum"} ·{" "}
+                {formatNumber(Number(row.itemCount))} item
+              </p>
+              <div className="mt-1.5 flex justify-end">
+                <HeldActions
+                  id={row.id}
+                  label={row.heldLabel}
+                  canDelete={row.cashierId === ctx.user.id || can(ctx, "pos.void")}
+                />
+              </div>
+            </div>
+          ))}
         </div>
       </DataList>
     </div>

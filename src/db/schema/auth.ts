@@ -5,6 +5,7 @@
  */
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   index,
   integer,
@@ -34,6 +35,18 @@ export const user = pgTable("user", {
   banReason: text("ban_reason"),
   banExpires: timestamp("ban_expires", { withTimezone: true }),
 });
+/**
+ * SEC-012: penyimpanan rate limit Better Auth yang terpusat di database.
+ * Better Auth membuat/menghapus baris ini sendiri; jangan ditulis manual.
+ * Kolom mengikuti model `rateLimit` (key unik, count, lastRequest epoch-ms).
+ */
+export const rateLimit = pgTable("rate_limit", {
+  id: text("id").primaryKey(),
+  key: text("key").notNull().unique(),
+  count: integer("count").notNull(),
+  lastRequest: bigint("last_request", { mode: "number" }).notNull(),
+});
+
 export const session = pgTable(
   "session",
   {

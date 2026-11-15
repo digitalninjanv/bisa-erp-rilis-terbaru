@@ -13,6 +13,7 @@ import { withCompanyReadOnly } from "@/db/tenant";
 import {
   getHomeSummary,
   getSalesByDay,
+  getReceivablePayableQueues,
   getSalesSummary,
   getTopProducts,
   listSales,
@@ -94,7 +95,7 @@ export default async function AppHomePage({
   });
 
   const data = await withCompanyReadOnly(ctx.company.id, async (tx) => {
-    const [summary, recent, trendRows, topProducts, periodSummary, staff] = await Promise.all([
+    const [summary, recent, trendRows, topProducts, periodSummary, staff, queues] = await Promise.all([
       getHomeSummary(tx, ctx.company.id, today, summaryScope),
       canSeePosSales ? listSales(tx, { companyId: ctx.company.id, pageSize: 6 }) : Promise.resolve(null),
       canSeePosSales
@@ -109,6 +110,9 @@ export default async function AppHomePage({
       // A-24 T2: statistik kartu HR hanya dibaca bila modul HR memang
       // terlihat pengguna ini (pola penyaringan SIS-06 yang sama).
       canSeeHr ? listEmployees(tx, ctx.company.id) : Promise.resolve([]),
+      canSeeAkuntansi
+        ? getReceivablePayableQueues(tx, ctx.company.id, today)
+        : Promise.resolve(null),
     ]);
     const byDate = new Map(trendRows.map((row) => [row.date, row]));
     const trend: { date: string; label: string; total: number; transactions: number }[] = [];
@@ -121,7 +125,7 @@ export default async function AppHomePage({
         transactions: row?.transactions ?? 0,
       });
     }
-    return { summary, recent: recent?.rows ?? [], trend, topProducts, periodSummary, staff };
+    return { summary, recent: recent?.rows ?? [], trend, topProducts, periodSummary, staff, queues };
   });
 
   const { summary } = data;
@@ -142,11 +146,26 @@ export default async function AppHomePage({
             </h1>
             <p className="mt-1 text-[12px] text-muted-foreground">{formatDateLong(today)}</p>
             <p className="mt-1 text-[13px] text-muted-foreground">
-              Pantau penjualan, stok, dan keuangan. Pilih modul untuk mulai bekerja — semua transaksi
-              otomatis memperbarui stok dan jurnal.
+              Ringkasan operasional toko: penjualan, stok, dan posisi keuangan.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {canSeePosSales ? (
+              <Link
+                href="/app/pos"
+                className="inline-flex h-9 items-center gap-1.5 rounded-md bg-primary px-3.5 text-[12px] font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                Mulai kasir <ArrowUpRight className="size-3.5" />
+              </Link>
+            ) : null}
+            {canSeeAkuntansi && can(ctx, "accounting.post") ? (
+              <Link
+                href="/app/akuntansi/jurnal/baru"
+                className="inline-flex h-9 items-center rounded-md border border-border bg-card px-3 text-[12px] font-medium transition-colors hover:bg-muted"
+              >
+                Jurnal baru
+              </Link>
+            ) : null}
             {canSeePos && can(ctx, "pos.session") ? (
               summary.openSession ? (
                 <span className="inline-flex items-center gap-1.5 rounded-md border border-tone-teal/25 bg-tone-teal-soft px-2.5 py-1.5 text-[11px] font-medium text-tone-teal">
@@ -172,10 +191,9 @@ export default async function AppHomePage({
           </div>
         </div>
 
-        {/* UX4-05 (G2): cip ikon kartu statistik Beranda netral —
-            teal/plum/amber/green di sini dekoratif, bukan bermakna
-            (arah desain §2.1: satu gaya netral untuk semua kartu). */}
-        <div className="mt-5 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+        {/* KPI band: penjualan, kas, dan posisi pihak — pola Odoo/Accurate
+            (angka kerja dulu, dekorasi belakangan). */}
+        <div className="mt-5 grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-5">
           {canSeePosSales ? (
             <StatCard
               label="Penjualan hari ini"
@@ -188,15 +206,7 @@ export default async function AppHomePage({
             <StatCard
               label={`Penjualan ${periodShortLabel}`}
               value={formatIDR(data.periodSummary?.total ?? 0)}
-              hint={`Rata-rata ${formatIDR(data.periodSummary?.average ?? 0)} / transaksi`}
-              icon={ReceiptText}
-            />
-          ) : null}
-          {canSeePosSales ? (
-            <StatCard
-              label={`Transaksi ${periodShortLabel}`}
-              value={formatNumber(data.periodSummary?.transactions ?? 0)}
-              hint={`${formatDate(from)} — ${formatDate(to)}`}
+              hint={`${formatNumber(data.periodSummary?.transactions ?? 0)} transaksi · rata-rata ${formatIDR(data.periodSummary?.average ?? 0)}`}
               icon={ReceiptText}
             />
           ) : null}
@@ -209,12 +219,86 @@ export default async function AppHomePage({
             />
           ) : canSeeGudang && canSeeCost ? (
             <StatCard
-              label="Nilai persediaan (GL)"
+              label="Nilai persediaan"
               value={formatIDR(summary.inventoryValue)}
               hint="Saldo buku persediaan"
               icon={Boxes}
             />
           ) : null}
+          {canSeeAkuntansi && data.queues ? (
+            <StatCard
+              label="Piutang terbuka"
+              value={formatIDR(data.queues.receivables.openTotal)}
+              hint={
+                data.queues.receivables.overdueCount > 0
+                  ? `${data.queues.receivables.overdueCount} lewat jatuh tempo`
+                  : `${data.queues.receivables.openCount} dokumen`
+              }
+              icon={ReceiptText}
+              tone={data.queues.receivables.overdueCount > 0 ? "amber" : "neutral"}
+            />
+          ) : null}
+          {canSeeAkuntansi && data.queues ? (
+            <StatCard
+              label="Utang terbuka"
+              value={formatIDR(data.queues.payables.openTotal)}
+              hint={
+                data.queues.payables.overdueCount > 0
+                  ? `${data.queues.payables.overdueCount} lewat jatuh tempo`
+                  : `${data.queues.payables.openCount} dokumen`
+              }
+              icon={Wallet}
+              tone={data.queues.payables.overdueCount > 0 ? "amber" : "neutral"}
+            />
+          ) : null}
+        </div>
+
+        {/* Antrean tindakan: hanya hal yang butuh keputusan hari ini. */}
+        <div className="mt-3 rounded-lg border border-border bg-card">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2.5">
+            <h2 className="text-[12px] font-semibold">Perlu tindakan</h2>
+            <span className="text-[11px] text-muted-foreground">Klik untuk membuka daftar kerja</span>
+          </div>
+          <ul className="grid gap-x-6 gap-y-2.5 px-4 py-3 sm:grid-cols-2 xl:grid-cols-4">
+            {canSeeGudang ? (
+              <Attention
+                label="Stok menipis"
+                value={`${summary.lowStockCount} produk`}
+                href="/app/gudang/produk?lowStock=1"
+                tone={summary.lowStockCount > 0 ? "red" : "neutral"}
+              />
+            ) : null}
+            {canSeePos && can(ctx, "pos.session") ? (
+              <Attention
+                label="Sesi kas"
+                value={summary.openSession ? "Sedang berjalan" : "Belum dibuka"}
+                href="/app/pos/sesi"
+                tone={summary.openSession ? "green" : "amber"}
+              />
+            ) : null}
+            {canSeeAkuntansi && data.queues && data.queues.receivables.overdueCount > 0 ? (
+              <Attention
+                label="Piutang terlambat"
+                value={`${data.queues.receivables.overdueCount} nota · ${formatIDR(data.queues.receivables.overdueTotal)}`}
+                href="/app/akuntansi/piutang-utang?status=terlambat"
+                tone="red"
+              />
+            ) : null}
+            {canSeeAkuntansi && data.queues && data.queues.payables.overdueCount > 0 ? (
+              <Attention
+                label="Utang jatuh tempo"
+                value={`${data.queues.payables.overdueCount} tagihan · ${formatIDR(data.queues.payables.overdueTotal)}`}
+                href="/app/akuntansi/piutang-utang?tab=utang&status=jatuh-tempo"
+                tone="amber"
+              />
+            ) : null}
+            {canSeePosSales ? (
+              <Attention label="Pesanan ditahan" value="Lihat daftar" href="/app/pos/ditahan" />
+            ) : null}
+            {canSeeGudang ? (
+              <Attention label="Migrasi data" value="Impor produk" href="/app/gudang/impor" />
+            ) : null}
+          </ul>
         </div>
 
         {params.denied ? (
@@ -338,8 +422,8 @@ export default async function AppHomePage({
 
         <div className="mt-6 flex items-end justify-between">
           <div>
-            <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Modul</h2>
-            <p className="mt-1 text-[13px] text-muted-foreground">Area kerja dan ringkasannya.</p>
+            <h2 className="text-[14px] font-semibold">Ruang kerja</h2>
+            <p className="mt-1 text-[12px] text-muted-foreground">Akses cepat ke modul yang tersedia untuk akun ini.</p>
           </div>
         </div>
 
@@ -363,13 +447,10 @@ export default async function AppHomePage({
               <Link
                 key={module.key}
                 href={module.href}
-                className="group flex flex-col rounded-lg border border-border bg-card p-4 transition-colors hover:border-primary/40"
+                className="group flex flex-col rounded-lg border border-border bg-card p-3.5 transition-colors hover:border-primary/40"
               >
                 <div className="flex items-center gap-2.5">
-                  <span
-                    className="grid size-8 shrink-0 place-items-center rounded-md text-white"
-                    style={{ backgroundColor: module.accent }}
-                  >
+                  <span className="grid size-8 shrink-0 place-items-center rounded-md border border-border bg-muted text-foreground">
                     <Icon className="size-4" />
                   </span>
                   <div className="min-w-0 flex-1">
@@ -459,36 +540,6 @@ export default async function AppHomePage({
           ) : null}
 
           <aside className="space-y-3">
-            {canSeePosSales || canSeeGudang ? (
-              <div className="rounded-lg border border-border bg-card p-4">
-                <h2 className="text-[13px] font-semibold">Perlu perhatian</h2>
-                <ul className="mt-2 space-y-2.5">
-                  {canSeeGudang ? (
-                    <Attention
-                      label="Stok menipis"
-                      value={`${summary.lowStockCount} produk`}
-                      href="/app/gudang/produk?lowStock=1"
-                      tone={summary.lowStockCount > 0 ? "red" : "neutral"}
-                    />
-                  ) : null}
-                  {canSeePos && can(ctx, "pos.session") ? (
-                    <Attention
-                      label="Sesi kas"
-                      value={summary.openSession ? "Sedang berjalan" : "Belum dibuka"}
-                      href="/app/pos/sesi"
-                      tone={summary.openSession ? "green" : "amber"}
-                    />
-                  ) : null}
-                  {canSeePosSales ? (
-                    <Attention label="Pesanan ditahan" value="Lihat daftar" href="/app/pos/ditahan" />
-                  ) : null}
-                  {canSeeGudang ? (
-                    <Attention label="Migrasi Accurate.id" value="Impor produk" href="/app/gudang/impor" />
-                  ) : null}
-                </ul>
-              </div>
-            ) : null}
-
             <div className="rounded-lg border border-dashed border-border bg-card/60 p-4">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Pintasan</p>
               <div className="mt-2 grid gap-1.5">

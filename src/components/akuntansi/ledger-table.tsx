@@ -95,6 +95,18 @@ const columnClasses: Record<string, string> = {
   balance: "w-[160px]",
 };
 
+const headerAlignClasses: Record<string, string> = {
+  debit: "text-right",
+  credit: "text-right",
+  balance: "text-right",
+};
+
+const cellAlignClasses: Record<string, string> = {
+  debit: "text-right",
+  credit: "text-right",
+  balance: "text-right",
+};
+
 export function LedgerTable({
   rows,
   total,
@@ -136,7 +148,9 @@ export function LedgerTable({
                 {headerGroup.headers.map((header) => (
                   <TableHead
                     key={header.id}
-                    className={columnClasses[header.column.id]}
+                    className={`${columnClasses[header.column.id] ?? ""} ${
+                      headerAlignClasses[header.column.id] ?? ""
+                    }`}
                   >
                     {header.isPlaceholder
                       ? null
@@ -165,7 +179,12 @@ export function LedgerTable({
               table.getRowModel().rows.map((row) => (
                 <TableRow key={row.id}>
                   {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id} className={columnClasses[cell.column.id]}>
+                    <TableCell
+                      key={cell.id}
+                      className={`${columnClasses[cell.column.id] ?? ""} ${
+                        cellAlignClasses[cell.column.id] ?? ""
+                      }`}
+                    >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </TableCell>
                   ))}
@@ -201,7 +220,7 @@ export function LedgerTable({
                   </Link>
                 </div>
                 <div className="shrink-0 text-right">
-                  <p className="text-[10px] text-muted-foreground">Saldo berjalan</p>
+                  <p className="text-[11px] text-muted-foreground">Saldo berjalan</p>
                   <p className="num mt-0.5 text-[13px] font-semibold">{amount(row.balance)}</p>
                 </div>
               </div>

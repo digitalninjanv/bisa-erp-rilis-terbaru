@@ -1,3 +1,4 @@
+import { withApiError } from "@/lib/api-error";
 import { NextRequest } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { withCompanyReadOnly } from "@/db/tenant";
@@ -36,7 +37,7 @@ function sumRecord(record: Record<string, string>): string {
   return toDb(Object.values(record).reduce((acc, value) => acc.plus(d(value)), d(0)));
 }
 
-export async function GET(request: NextRequest) {
+async function GETHandler(request: NextRequest) {
   // A-28 Tahap 5 (H-HR-01): rekap ini adalah dokumen angka gaji yang
   // keluar dari layar — gerbangnya izin lihat angka gaji
   // `payroll.salary`, bukan payroll.view umum. Pemilik dapat memberi
@@ -117,3 +118,5 @@ export async function GET(request: NextRequest) {
   }
   return csvResponse(`${filename}.csv`, toCsv(headers, rows));
 }
+
+export const GET = withApiError(GETHandler);

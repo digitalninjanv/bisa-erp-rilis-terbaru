@@ -1,21 +1,9 @@
 import type { NextConfig } from "next";
 
-// AUD-014 (Audit Produksi A4): header keamanan global. CSP disusun
-// konservatif terhadap permukaan aplikasi yang nyata:
-// - script 'unsafe-inline': App Router men-stream skrip inline
-//   (self.__next_f) — tanpa infrastruktur nonce, menghilangkannya
-//   mematahkan hidrasi.
-// - style 'unsafe-inline': Tailwind + suntikan <style> recharts.
-// - img data:/blob:: gambar QRIS perusahaan disimpan sebagai data URL;
-//   pratinjau unggahan memakai blob URL.
-// - font 'self': next/font meng-self-host berkas font saat build.
-// Tidak ada websocket dan tidak ada sumber eksternal runtime lain di
-// aplikasi, jadi connect-src cukup 'self'. HSTS diabaikan peramban
-// pada HTTP polos (dev lokal) dan berlaku pada deployment HTTPS.
-// Turbopack/React dev memakai eval() untuk rekonstruksi callstack & HMR.
-// CSP produksi tetap tanpa 'unsafe-eval'; hanya development yang dilonggarkan
-// agar terminal browser tidak dipenuhi error dan React DevTools tetap hidup.
-const IS_DEVELOPMENT = process.env.NODE_ENV !== "production";
+// AUD-014 (Audit Produksi A4): header keamanan global non-CSP.
+// SEC-013: CSP dokumen dipindah ke src/proxy.ts karena memerlukan nonce
+// per request; header di sini tidak lagi memasang CSP agar tidak ada
+// dua kebijakan yang saling bertentangan.
 
 const SECURITY_HEADERS = [
   { key: "X-Content-Type-Options", value: "nosniff" },
@@ -25,28 +13,7 @@ const SECURITY_HEADERS = [
     key: "Strict-Transport-Security",
     value: "max-age=63072000; includeSubDomains",
   },
-  {
-    key: "Content-Security-Policy",
-    value: [
-      "default-src 'self'",
-      IS_DEVELOPMENT
-        ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
-        : "script-src 'self' 'unsafe-inline'",
-      "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: blob:",
-      "font-src 'self' data:",
-      // Dev: HMR/React refresh memakai WebSocket ke host yang sama.
-      // Sebagian browser tidak mencocokkan ws:// dengan 'self', dan
-      // kegagalan itu membuat halaman dev memuat ulang terus.
-      IS_DEVELOPMENT ? "connect-src 'self' ws: wss:" : "connect-src 'self'",
-      "worker-src 'self'",
-      "manifest-src 'self'",
-      "object-src 'none'",
-      "base-uri 'self'",
-      "form-action 'self'",
-      "frame-ancestors 'self'",
-    ].join("; "),
-  },
+
 ];
 
 // Tunnel publik (mis. Cloudflare Quick Tunnel) memakai hostname acak.
@@ -93,7 +60,32 @@ const nextConfig: NextConfig = {
   outputFileTracingExcludes: { "/*": ["./backups/**/*", "./.env*"] },
   // ERP pages are request-time and tenant-scoped. Caching stays opt-in per query.
   cacheComponents: false,
+  // `pnpm build` runs the same TypeScript gate after Next generates route
+  // types; keeping it out of the Turbopack build avoids overlapping peaks.
+  typescript: { ignoreBuildErrors: true },
+  // Dev only: discard inactive compiled pages to keep navigation across the
+  // ERP's many routes from retaining every page module in the dev server.
+  onDemandEntries: {
+    maxInactiveAge: 25_000,
+    pagesBufferLength: 2,
+  },
+  // Mitigasi memory leak Turbopack dev (Next 16.4.5):
+  // - GC + memory eviction membuang pekerjaan yang tidak terjangkau.
+  // - nonaktifkan Server Fast Refresh yang menyebabkan pertumbuhan RAM
+  //   tak terbatas pada sesi panjang (#91396, #81161).
+  experimental: {
+    // Ada 101 route App Router; muat entry per permintaan agar proses
+    // produksi tidak menahan seluruh modul halaman sejak server mulai.
+    // Kunjungan pertama ke route yang jarang dipakai dapat sedikit lebih lambat.
+    preloadEntriesOnStart: false,
+    turbopackGc: true,
+    turbopackMemoryEviction: "full",
+    turbopackServerFastRefresh: false,
+  },
   turbopack: {
+    // Batasi Turbopack ke direktori aplikasi agar tidak memindai pohon
+    // yang lebih luas (monorepo/parent) dan menahan cache yang tidak perlu.
+    root: process.cwd(),
     rules: {
       "*.css": {
         loaders: ["@tailwindcss/turbopack"],

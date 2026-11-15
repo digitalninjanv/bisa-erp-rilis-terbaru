@@ -4,17 +4,24 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { recordReceiptInvoiceNumberAction } from "@/server/actions/inventory/penerimaan";
+import { DateField } from "@/components/date-field";
 
 export function ReceiptInvoiceNumberForm({
   receiptId,
   initialValue,
+  initialInvoiceDate = null,
+  initialDueDate = null,
 }: {
   receiptId: string;
   initialValue: string | null;
+  initialInvoiceDate?: string | null;
+  initialDueDate?: string | null;
 }) {
   const router = useRouter();
   const [value, setValue] = useState(initialValue ?? "");
   const [savedValue, setSavedValue] = useState(initialValue ?? "");
+  const [invoiceDate, setInvoiceDate] = useState(initialInvoiceDate ?? "");
+  const [dueDate, setDueDate] = useState(initialDueDate ?? "");
   const [busy, setBusy] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -25,7 +32,12 @@ export function ReceiptInvoiceNumberForm({
       return;
     }
     setBusy(true);
-    const result = await recordReceiptInvoiceNumberAction({ receiptId, supplierInvoiceNumber });
+    const result = await recordReceiptInvoiceNumberAction({
+      receiptId,
+      supplierInvoiceNumber,
+      supplierInvoiceDate: invoiceDate || undefined,
+      dueDate: dueDate || undefined,
+    });
     setBusy(false);
     if (!result.ok) {
       toast.error(result.message);
@@ -33,7 +45,9 @@ export function ReceiptInvoiceNumberForm({
     }
     setValue(result.data.supplierInvoiceNumber);
     setSavedValue(result.data.supplierInvoiceNumber);
-    toast.success("Nomor faktur tersimpan.");
+    setInvoiceDate(result.data.supplierInvoiceDate ?? "");
+    setDueDate(result.data.dueDate ?? "");
+    toast.success("Nomor dan tanggal faktur tersimpan.");
     router.refresh();
   }
 
@@ -50,6 +64,14 @@ export function ReceiptInvoiceNumberForm({
             placeholder="Masukkan nomor faktur"
             className="h-9 w-full rounded-md border border-input bg-background px-2 text-[12px]"
           />
+        </label>
+        <label className="space-y-1">
+          <span className="text-[11px] font-medium">Tanggal faktur</span>
+          <DateField value={invoiceDate} onChange={setInvoiceDate} aria-label="Tanggal faktur pemasok" className="h-9 w-40" />
+        </label>
+        <label className="space-y-1">
+          <span className="text-[11px] font-medium">Jatuh tempo</span>
+          <DateField value={dueDate} onChange={setDueDate} aria-label="Jatuh tempo faktur" className="h-9 w-40" />
         </label>
         <button
           type="submit"
