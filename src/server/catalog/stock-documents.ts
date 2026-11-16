@@ -5,7 +5,7 @@
  * Badan kueri dipindah apa adanya; mekanik paginasi kini lewat
  * lib/pagination (P-06).
  */
-import { and, count, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, ilike, inArray, lte, ne, or, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
 import {
   productPackagings,
@@ -16,13 +16,18 @@ import {
   stockMovements,
   stockReceiptLines,
   stockReceipts,
+  supplierReturnLines,
+  supplierReturns,
   suppliers,
   units,
   warehouses,
 } from "@/db/schema";
-import { d, formatQty } from "@/lib/money";
+import { d, formatQty, type Decimal } from "@/lib/money";
 import { formatCountBreakdown, type CountBreakdownComponent } from "@/lib/packaging";
 import { normalizePage, normalizePageParams, pageOffset, pageResult } from "@/lib/pagination";
+import { POSTED_RETURN_STATUSES } from "@/lib/supplier-return-status";
+
+export type ReceiptReturnStatus = "none" | "has_draft" | "partial" | "full";
 
 export async function listMovements(
   tx: Tx,
@@ -220,9 +225,11 @@ export async function listReceiptHistory(
     warehouseId?: string;
     status?: string;
     source?: string;
+    returnStatus?: string;
   },
 ) {
   const { page, pageSize } = normalizePageParams(input, 40);
+  const postedSqlStatuses = sql.join(POSTED_RETURN_STATUSES.map((s) => sql`${s}`), sql`, `);
   // FIX-GDG Tahap 4 (GDG2-06): pencarian nomor dokumen / no. invoice
   // pemasok / nama pemasok — sebelumnya daftar ini hanya berpaginasi.
   const q = input.q?.trim();
@@ -234,6 +241,40 @@ export async function listReceiptHistory(
     input.warehouseId ? eq(stockReceipts.warehouseId, input.warehouseId) : undefined,
     input.status ? eq(stockReceipts.status, input.status) : undefined,
     input.source ? eq(stockReceipts.source, input.source) : undefined,
+    input.returnStatus === "none"
+      ? sql`NOT EXISTS (
+          SELECT 1 FROM stock_receipt_lines srl
+          INNER JOIN supplier_return_lines srel ON srel.receipt_line_id = srl.id
+          INNER JOIN supplier_returns sret ON sret.id = srel.return_id
+          WHERE srl.receipt_id = ${stockReceipts.id} AND sret.status != 'void'
+        )`
+      : input.returnStatus === "returned"
+        ? sql`EXISTS (
+            SELECT 1 FROM stock_receipt_lines srl
+            INNER JOIN supplier_return_lines srel ON srel.receipt_line_id = srl.id
+            INNER JOIN supplier_returns sret ON sret.id = srel.return_id
+            WHERE srl.receipt_id = ${stockReceipts.id} AND sret.status in (${postedSqlStatuses})
+          )`
+        : input.returnStatus === "full"
+          ? sql`(
+              SELECT coalesce(sum(srl.qty), 0) FROM stock_receipt_lines srl WHERE srl.receipt_id = ${stockReceipts.id}
+            ) > 0 AND (
+              SELECT coalesce(sum(srel.qty), 0)
+              FROM stock_receipt_lines srl
+              INNER JOIN supplier_return_lines srel ON srel.receipt_line_id = srl.id
+              INNER JOIN supplier_returns sret ON sret.id = srel.return_id
+              WHERE srl.receipt_id = ${stockReceipts.id} AND sret.status in (${postedSqlStatuses})
+            ) >= (
+              SELECT coalesce(sum(srl.qty), 0) FROM stock_receipt_lines srl WHERE srl.receipt_id = ${stockReceipts.id}
+            )`
+          : input.returnStatus === "has_draft"
+            ? sql`EXISTS (
+                SELECT 1 FROM stock_receipt_lines srl
+                INNER JOIN supplier_return_lines srel ON srel.receipt_line_id = srl.id
+                INNER JOIN supplier_returns sret ON sret.id = srel.return_id
+                WHERE srl.receipt_id = ${stockReceipts.id} AND sret.status = 'draft'
+              )`
+            : undefined,
     q
       ? or(
           ilike(stockReceipts.number, `%${q}%`),
@@ -273,7 +314,88 @@ export async function listReceiptHistory(
     .limit(pageSize)
     .offset(pageOffset(page, pageSize));
 
-  return pageResult(rows, totalRow?.value ?? 0, page, pageSize);
+  const receiptIds = rows.map((r) => r.id);
+  const returnRows = receiptIds.length === 0
+    ? []
+    : await tx
+        .select({
+          receiptId: stockReceiptLines.receiptId,
+          returnId: supplierReturns.id,
+          returnNumber: supplierReturns.number,
+          returnStatus: supplierReturns.status,
+          returnDate: supplierReturns.date,
+          qty: sql<string>`coalesce(sum(${supplierReturnLines.qty}), 0)`,
+        })
+        .from(supplierReturnLines)
+        .innerJoin(supplierReturns, eq(supplierReturnLines.returnId, supplierReturns.id))
+        .innerJoin(stockReceiptLines, eq(supplierReturnLines.receiptLineId, stockReceiptLines.id))
+        .where(
+          and(
+            eq(supplierReturnLines.companyId, input.companyId),
+            inArray(stockReceiptLines.receiptId, receiptIds),
+            ne(supplierReturns.status, "void"),
+          ),
+        )
+        .groupBy(
+          stockReceiptLines.receiptId,
+          supplierReturns.id,
+          supplierReturns.number,
+          supplierReturns.status,
+          supplierReturns.date,
+        );
+
+  const returnsByReceipt = new Map<
+    string,
+    {
+      postedReturnedQty: Decimal;
+      hasDraft: boolean;
+      latestReturn: { id: string; number: string; status: string } | null;
+      count: number;
+    }
+  >();
+
+  for (const r of returnRows) {
+    const current = returnsByReceipt.get(r.receiptId) ?? {
+      postedReturnedQty: d(0),
+      hasDraft: false,
+      latestReturn: null,
+      count: 0,
+    };
+    current.count += 1;
+    if (r.returnStatus === "draft") {
+      current.hasDraft = true;
+      if (!current.latestReturn) {
+        current.latestReturn = { id: r.returnId, number: r.returnNumber, status: r.returnStatus };
+      }
+    } else if ((POSTED_RETURN_STATUSES as readonly string[]).includes(r.returnStatus)) {
+      current.postedReturnedQty = current.postedReturnedQty.plus(d(r.qty));
+      current.latestReturn = { id: r.returnId, number: r.returnNumber, status: r.returnStatus };
+    }
+    returnsByReceipt.set(r.receiptId, current);
+  }
+
+  const enrichedRows = rows.map((row) => {
+    const info = returnsByReceipt.get(row.id);
+    const totalQty = d(row.itemCount);
+    const returnedQty = info?.postedReturnedQty ?? d(0);
+    let returnStatus: ReceiptReturnStatus = "none";
+    if (totalQty.gt(0) && returnedQty.gte(totalQty)) {
+      returnStatus = "full";
+    } else if (returnedQty.gt(0)) {
+      returnStatus = "partial";
+    } else if (info?.hasDraft) {
+      returnStatus = "has_draft";
+    }
+    return {
+      ...row,
+      returnStatus,
+      returnedQty: returnedQty.toString(),
+      latestReturn: info?.latestReturn ?? null,
+      returnsCount: info?.count ?? 0,
+    };
+  });
+
+  return pageResult(enrichedRows, totalRow?.value ?? 0, page, pageSize);
 }
 
 /**

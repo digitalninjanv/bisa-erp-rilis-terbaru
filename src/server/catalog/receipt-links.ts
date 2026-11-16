@@ -129,6 +129,10 @@ export async function getSupplierReturnableQtyByReceiptLine(
 ) {
   if (receiptLineIds.length === 0) return new Map<string, string>();
   const postedStatuses = sql.join(POSTED_RETURN_STATUSES.map((status) => sql`${status}`), sql`, `);
+  // Drizzle shortens this outer-column reference inside the raw SQL
+  // fragment to `"id"`; qualify `"stock_receipt_lines"."id"` to avoid ambiguity with
+  // `return_line.id` and `return_doc.id` in the correlated subquery.
+  const receiptLineId = sql.raw('"stock_receipt_lines"."id"');
   const rows = await tx
     .select({
       id: stockReceiptLines.id,
@@ -138,7 +142,7 @@ export async function getSupplierReturnableQtyByReceiptLine(
         from supplier_return_lines return_line
         inner join supplier_returns return_doc on return_doc.id = return_line.return_id
         where return_line.company_id = ${companyId}
-          and return_line.receipt_line_id = ${stockReceiptLines.id}
+          and return_line.receipt_line_id = ${receiptLineId}
           and return_doc.company_id = ${companyId}
           and return_doc.status in (${postedStatuses})
       ), 0)`,

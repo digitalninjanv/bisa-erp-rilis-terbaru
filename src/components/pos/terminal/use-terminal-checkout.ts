@@ -94,10 +94,12 @@ export function useTerminalCheckout(params: {
    *  (terminal tidak berpindah halaman) agar induk mengembalikan
    *  fokus ke kotak cari. */
   onSaleQueued?: () => void;
+  /** Callback saat penjualan online sukses agar kasir tetap berada di terminal (tanpa redirect halaman). */
+  onCheckoutSuccess?: (sale: { id: string; number: string; total: number; change: number }) => void;
 }) {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
-  const { cart, sessionOpen, mode, singleMethod, single, cashTendered, entries, methodById, outstanding, debtActive, customer, dueDate, total, quote, cache, posOfflineEnabled, reservationId, selectedWarehouse, groupId, storageKey, sessionId, userId, receivableDefaultTermDays, appliedCredit, setCart, setEntries, setCustomer, setCustomerQuery, setCustomerResults, setDueDate, resetCredit, setQuoteResult, heldSaleId, setHeldSaleId, setHeldTotal, setLastSale, setReservationId, setQueuedCount, setOldestQueuedAt, idempotencyKeyRef, checkoutAttemptedRef, onSaleQueued } = params;
+  const { cart, sessionOpen, mode, singleMethod, single, cashTendered, entries, methodById, outstanding, debtActive, customer, dueDate, total, quote, cache, posOfflineEnabled, reservationId, selectedWarehouse, groupId, storageKey, sessionId, userId, receivableDefaultTermDays, appliedCredit, setCart, setEntries, setCustomer, setCustomerQuery, setCustomerResults, setDueDate, resetCredit, setQuoteResult, heldSaleId, setHeldSaleId, setHeldTotal, setLastSale, setReservationId, setQueuedCount, setOldestQueuedAt, idempotencyKeyRef, checkoutAttemptedRef, onSaleQueued, onCheckoutSuccess } = params;
 
   // A-24 T6 (T6-01/T6-02): antrekan penjualan ini ke antrean offline
   // lokal. Dipakai oleh DUA pemicu dengan semantik yang sama persis:
@@ -330,7 +332,16 @@ export function useTerminalCheckout(params: {
       setReservationId(null);
       idempotencyKeyRef.current = newUuid();
       checkoutAttemptedRef.current = false;
-      router.push(`/app/pos/nota/${result.data.id}?autoprint=1`);
+      if (onCheckoutSuccess) {
+        onCheckoutSuccess({
+          id: result.data.id,
+          number: result.data.number,
+          total: result.data.total,
+          change: result.data.change,
+        });
+      } else {
+        router.push(`/app/pos/nota/${result.data.id}?autoprint=1`);
+      }
     } catch {
       // A-24 T6 (temuan T6-02): panggilan checkout melempar berarti
       // server tidak terjangkau (transportasi gagal total) — BUKAN

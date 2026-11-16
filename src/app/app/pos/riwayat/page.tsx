@@ -9,7 +9,7 @@ import { formatDateTime, formatDate, todayISO, monthStartISO } from "@/lib/forma
 import { PageHeader } from "@/components/blocks/page-header";
 import { DataList, DataListToolbar } from "@/components/blocks/data-list";
 import { DateRangeField } from "@/components/date-field";
-import { StatCard } from "@/components/blocks/stat-card";
+import { SummaryStrip } from "@/components/blocks/summary-strip";
 import { StatusBadge } from "@/components/blocks/status-badge";
 import { Pagination } from "@/components/blocks/pagination";
 import { FilterChips } from "@/components/blocks/search-form";
@@ -78,12 +78,14 @@ export default async function SalesHistoryPage({
           yang sama seperti daftar berdialog di U3/U4). */}
       <DataList
         kpis={
-          <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-            <StatCard label="Transaksi" value={formatNumber(data.summary.transactions)} hint="Periode terpilih" icon={ReceiptText} tone="teal" />
-            <StatCard label="Penjualan" value={formatIDR(data.summary.total)} hint="Setelah diskon & pembulatan" tone="plum" />
-            <StatCard label="Diskon" value={formatIDR(data.summary.discount)} hint="Diskon baris & pelanggan" tone="amber" />
-            <StatCard label="Rata-rata / nota" value={formatIDR(data.summary.average)} hint="Nilai transaksi rata-rata" tone="green" />
-          </div>
+          <SummaryStrip
+            items={[
+              { label: "Transaksi", value: formatNumber(data.summary.transactions), hint: "Periode terpilih" },
+              { label: "Penjualan", value: formatIDR(data.summary.total), hint: "Setelah diskon & pembulatan" },
+              { label: "Diskon", value: formatIDR(data.summary.discount), hint: "Diskon baris & pelanggan" },
+              { label: "Rata-rata / nota", value: formatIDR(data.summary.average), hint: "Nilai transaksi rata-rata" },
+            ]}
+          />
         }
         toolbar={
           <>

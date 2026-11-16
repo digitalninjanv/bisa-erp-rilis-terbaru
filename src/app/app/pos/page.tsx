@@ -167,6 +167,7 @@ export default async function PosPage({
       offlineTaxRate={data.settings?.taxEnabled ? Number(data.settings?.taxRate ?? 0) : 0}
       offlineRoundingMode={data.settings?.roundingMode ?? "none"}
       receivableDefaultTermDays={data.settings?.receivableDefaultTermDays ?? 7}
+      allowNegativeStock={data.settings?.allowNegativeStock ?? false}
       />
     </>
   );

@@ -126,6 +126,31 @@ export default async function NewSupplierReturnPage({
         <div className="rounded-lg border border-dashed border-border bg-card px-4 py-3 text-[12px] text-muted-foreground">
           Retur membutuhkan minimal satu gudang dan satu pemasok. Tambahkan lewat menu Gudang (Pemasok) atau Pengaturan (gudang) terlebih dahulu.
         </div>
+      ) : receiptReady && data.receipt?.returnStatus === "has_draft" && data.receipt.linkedReturns.find((r) => r.status === "draft") ? (
+        <div className="rounded-lg border border-tone-amber/40 bg-tone-amber-soft p-4">
+          <h2 className="text-[13px] font-semibold text-tone-amber">Draf Retur Sudah Ada untuk Penerimaan Ini</h2>
+          <p className="mt-1 text-[12px] text-foreground/80">
+            Penerimaan <span className="font-semibold">{data.receipt.receipt.number}</span> sudah memiliki draf retur aktif dengan nomor{" "}
+            <span className="font-semibold">{data.receipt.linkedReturns.find((r) => r.status === "draft")!.number}</span>.
+          </p>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            Untuk mencegah duplikasi dokumen retur, silakan lanjutkan pengeditan pada draf yang sudah dibuat atau hapus draf tersebut jika ingin membuat ulang.
+          </p>
+          <div className="mt-3 flex items-center gap-2">
+            <Link
+              href={`/app/gudang/retur-pembelian/${data.receipt.linkedReturns.find((r) => r.status === "draft")!.id}`}
+              className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/90"
+            >
+              Buka Draf {data.receipt.linkedReturns.find((r) => r.status === "draft")!.number} →
+            </Link>
+            <Link
+              href="/app/gudang/retur-pembelian/baru"
+              className="inline-flex h-8 items-center rounded-md border border-border bg-card px-3 text-[12px] font-medium hover:bg-muted"
+            >
+              Pilih penerimaan lain
+            </Link>
+          </div>
+        </div>
       ) : receiptReady && initialReturnLines.length > 0 ? (
         <div>
           {unavailableBatchLines.length > 0 ? (
@@ -170,12 +195,12 @@ export default async function NewSupplierReturnPage({
       ) : receiptReady ? (
         <div className="rounded-lg border border-border bg-card px-4 py-4">
           <h2 className="text-[13px] font-semibold">
-            {unavailableBatchLines.length > 0 ? "Stok batch sumber tidak tersedia" : "Tidak ada sisa untuk diretur"}
+            {unavailableBatchLines.length > 0 ? "Stok batch sumber tidak tersedia" : "Penerimaan Sudah Selesai Diretur"}
           </h2>
           <p className="mt-1 text-[12px] text-muted-foreground">
             {unavailableBatchLines.length > 0
               ? `Masih ada sisa pada faktur ${data.receipt!.receipt.number}, tetapi batch sumbernya tidak ditemukan atau tidak memiliki stok. Retur tidak dibuat agar lot lain tidak ikut terpotong.`
-              : `Semua jumlah pada penerimaan ${data.receipt!.receipt.number} sudah tercatat dalam retur terposting.`}
+              : `Semua jumlah pada penerimaan ${data.receipt!.receipt.number} sudah selesai diretur lewat dokumen retur terposting.`}
           </p>
           {unavailableBatchLines.length > 0 ? (
             <ul className="mt-2 list-disc pl-5 text-[11px] text-muted-foreground">
@@ -188,9 +213,22 @@ export default async function NewSupplierReturnPage({
               ))}
             </ul>
           ) : null}
-          <Link href="/app/gudang/retur-pembelian/baru" className="mt-3 inline-flex text-[12px] font-medium text-primary hover:underline">
-            Pilih penerimaan lain
-          </Link>
+          <div className="mt-3 flex items-center gap-2">
+            {data.receipt?.linkedReturns.find((r) => r.status !== "draft") ? (
+              <Link
+                href={`/app/gudang/retur-pembelian/${data.receipt.linkedReturns.find((r) => r.status !== "draft")!.id}`}
+                className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/90"
+              >
+                Lihat Retur {data.receipt.linkedReturns.find((r) => r.status !== "draft")!.number} →
+              </Link>
+            ) : null}
+            <Link
+              href="/app/gudang/retur-pembelian/baru"
+              className="inline-flex h-8 items-center rounded-md border border-border bg-card px-3 text-[12px] font-medium hover:bg-muted"
+            >
+              Pilih penerimaan lain
+            </Link>
+          </div>
         </div>
       ) : manualMode ? (
         <SupplierReturnForm

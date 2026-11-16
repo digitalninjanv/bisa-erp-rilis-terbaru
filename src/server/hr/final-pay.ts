@@ -51,6 +51,7 @@ import {
   type StatutoryLineDraft,
 } from "@/server/payroll-indonesia";
 import { nextDocumentNumber } from "@/server/sequences";
+import { revokeEmployeeUserAccess } from "@/server/member-permissions";
 import { peekComponentDrafts } from "./drafts";
 import { buildEmployeeHistoryDiff, recordEmployeeHistory } from "./employees";
 import { getApprovedUnpaidLeaveDays, getEmployeeWorkDays } from "./leave";
@@ -551,6 +552,7 @@ export async function processFinalPay(tx: Tx, input: FinalPayInput): Promise<Fin
       note: `Pembayaran akhir ${number}; kasbon tertagih Rp${advanceCharge.toFixed(0)}; pinjaman tertagih Rp${loanCharge.toFixed(0)}; sisa piutang terbuka Rp${leftover.toFixed(0)}.`,
       drafts,
     });
+    await revokeEmployeeUserAccess(tx, companyId, employee.name, userId);
   }
 
   await writeAudit(tx, {

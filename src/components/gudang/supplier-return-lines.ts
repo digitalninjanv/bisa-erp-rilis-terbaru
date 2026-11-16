@@ -86,3 +86,17 @@ export function displayDecimal(value: string) {
   return Number.isFinite(parsed) ? d(parsed) : d(0);
 }
 
+export const RESOLUTION_HINTS: Record<string, string> = {
+  next_purchase_credit:
+    "Sisa nilai retur otomatis menjadi Kredit Pemasok di menu Akuntansi → Piutang & Utang, dan dapat langsung dipotong saat membayar faktur pembelian berikutnya.",
+  purchase_advance:
+    "Saat diposting, nilai retur memotong utang terbuka pemasok lebih dulu. Sisa kreditnya otomatis menjadi Uang Muka Pembelian (DP) dan dapat dipotong pada penerimaan berikutnya.",
+  replacement:
+    "Pemasok akan mengirimkan barang baru pengganti. Penerimaan barang dicatat langsung di gudang tanpa faktur baru.",
+  refund:
+    "Pemasok mengembalikan dana retur via transfer bank atau kas.",
+  other:
+    "Penyelesaian khusus dengan kesepakatan tertulis yang dicatat terpisah.",
+};
+
+

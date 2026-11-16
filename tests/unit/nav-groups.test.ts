@@ -101,8 +101,9 @@ describe("navigasi akuntansi berkelompok (Accurate-like)", () => {
 
     const hrGroups = groupNavItems(MODULES.hr.nav);
     expect(hrGroups.map((group) => group.group)).toEqual([
-      "Karyawan & gaji",
-      "Operasi harian",
+      "Operasi tim",
+      "Pengajuan & saldo",
+      "Pengaturan",
     ]);
     expect(hrGroups.flatMap((group) => group.items)).toHaveLength(MODULES.hr.nav.length);
   });

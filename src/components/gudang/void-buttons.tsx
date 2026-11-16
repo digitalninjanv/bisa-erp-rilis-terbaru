@@ -10,7 +10,7 @@ import {
   voidStockDocumentAction,
 } from "@/server/actions/inventory/penerimaan";
 import { ConfirmDialog } from "@/components/blocks/confirm-dialog";
-import { RowMenu } from "@/components/blocks/row-menu";
+import { RowMenu, type RowMenuItem } from "@/components/blocks/row-menu";
 
 /**
  * Void buttons for posted warehouse documents (GD-P1-5). FIX-GDG
@@ -77,10 +77,12 @@ export function ReceiptRowActions({
   id,
   number,
   canVoid,
+  extraItems,
 }: {
   id: string;
   number: string;
   canVoid: boolean;
+  extraItems?: RowMenuItem[];
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -99,8 +101,13 @@ export function ReceiptRowActions({
     router.refresh();
   }
 
+  const menuItems: RowMenuItem[] = [
+    ...(extraItems ?? []),
+    ...(canVoid ? [{ key: "void", label: "Batalkan penerimaan", danger: true, disabled: busy }] : []),
+  ];
+
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex items-center justify-end gap-1.5">
       <Link
         href={`/app/gudang/penerimaan/${id}/cetak`}
         className="inline-flex h-8 items-center gap-1.5 rounded border border-border bg-card px-2.5 text-[11px] font-medium text-foreground transition-colors hover:bg-muted"
@@ -108,26 +115,28 @@ export function ReceiptRowActions({
         <Printer className="size-3.5" />
         Cetak GRN
       </Link>
-      {canVoid ? (
+      {menuItems.length > 0 ? (
         <>
           <RowMenu
             label={`Aksi lain untuk penerimaan ${number}`}
-            items={[{ key: "void", label: "Batalkan penerimaan", danger: true, disabled: busy }]}
+            items={menuItems}
             onAction={(key) => {
               if (key === "void") setOpen(true);
             }}
           />
-          <ConfirmDialog
-            open={open}
-            title={`Batalkan penerimaan ${number}?`}
-            description="Stok yang masuk lewat penerimaan ini akan dikeluarkan kembali dan jurnal pembalik dibuat. Dokumen tetap tersimpan berstatus Dibatalkan."
-            confirmLabel="Batalkan penerimaan"
-            danger
-            busy={busy}
-            reason={{ label: "Alasan pembatalan", initialValue: "Salah input", minLength: 3 }}
-            onConfirm={(reason) => void remove(reason)}
-            onCancel={() => setOpen(false)}
-          />
+          {canVoid ? (
+            <ConfirmDialog
+              open={open}
+              title={`Batalkan penerimaan ${number}?`}
+              description="Stok yang masuk lewat penerimaan ini akan dikeluarkan kembali dan jurnal pembalik dibuat. Dokumen tetap tersimpan berstatus Dibatalkan."
+              confirmLabel="Batalkan penerimaan"
+              danger
+              busy={busy}
+              reason={{ label: "Alasan pembatalan", initialValue: "Salah input", minLength: 3 }}
+              onConfirm={(reason) => void remove(reason)}
+              onCancel={() => setOpen(false)}
+            />
+          ) : null}
         </>
       ) : null}
     </div>

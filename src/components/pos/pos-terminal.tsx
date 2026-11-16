@@ -9,14 +9,8 @@ import { useHydrated, usePosDisplayPrefs } from "@/components/pos/pos-display";
 import { quickAddCustomerAction, searchCustomersAction, searchProductsAction } from "@/server/actions/pos";
 import { useBarcodeScannerCapture } from "@/components/pos/use-barcode-scanner";
 import {
-  cartLineBaseQty,
-  type CartItem,
-  type CustomerOption,
-  type Method,
-  type PaymentEntry,
-  type ProductOption,
-  type PosTerminalProps,
-  type TerminalReservation,
+  cartLineBaseQty, type CartItem, type CustomerOption, type Method, type PaymentEntry,
+  type ProductOption, type PosTerminalProps, type TerminalReservation,
 } from "@/components/pos/terminal-types";
 import { cartStorageKey, useCartPersistence } from "@/components/pos/use-cart-persistence";
 import { useQuote } from "@/components/pos/use-quote";
@@ -32,6 +26,7 @@ import { useTerminalShortcuts } from "@/components/pos/terminal/use-terminal-sho
 import type { TerminalShortcutAction } from "@/lib/pos/terminal-shortcuts";
 import { defaultDueDate, useTerminalCheckout } from "@/components/pos/terminal/use-terminal-checkout";
 import { ProductCatalog } from "@/components/pos/terminal/product-catalog";
+import { CheckoutSuccessModal, type CompletedSaleInfo } from "@/components/pos/terminal/checkout-success-modal";
 import {
   addCartLine, changeCartLinePackaging, setCartLineDiscount, setCartLineQty, setCartLineSerial,
 } from "@/components/pos/terminal/cart-lines";
@@ -40,26 +35,11 @@ import { MobileCartHeader, MobilePayBar } from "@/components/pos/terminal/mobile
 export type { TerminalReservation };
 
 export function PosTerminal({
-  companyId,
-  userId,
-  companyName,
-  warehouseId,
-  warehouses,
-  methods,
-  creditMethod,
-  debtMethod,
-  initialProducts,
-  qrisImage,
-  groups,
-  sessionOpen,
-  sessionId = null,
-  heldCount,
-  resumeId,
-  posOfflineEnabled = false,
-  offlineTaxRate = 0,
-  offlineRoundingMode = "none",
-  receivableDefaultTermDays = 7,
-  reservations = [],
+  companyId, userId, companyName, warehouseId, warehouses, methods, creditMethod,
+  debtMethod, initialProducts, qrisImage, groups, sessionOpen, sessionId = null,
+  heldCount, resumeId, posOfflineEnabled = false, offlineTaxRate = 0,
+  offlineRoundingMode = "none", receivableDefaultTermDays = 7, reservations = [],
+  allowNegativeStock = false,
 }: PosTerminalProps) {
   // T3R-5: kunci snapshot keranjang milik kasir ini di perusahaan ini.
   const storageKey = cartStorageKey(companyId, userId);
@@ -114,6 +94,7 @@ export function PosTerminal({
   const [quickPhone, setQuickPhone] = useState("");
   const [quickBusy, setQuickBusy] = useState(false);
   const [dueDate, setDueDate] = useState<string>(() => defaultDueDate(receivableDefaultTermDays));
+  const [completedSale, setCompletedSale] = useState<CompletedSaleInfo | null>(null);
 
   const idempotencyKey = useRef(newUuid());
   // POS-IDEM-01: kunci quote boleh dipakai ulang sampai checkout dicoba;
@@ -300,8 +281,8 @@ export function PosTerminal({
     (product: ProductOption, packagingId?: string | null) => {
       // POS-1: produk terlacak stok yang habis tidak dapat masuk
       // keranjang — penjaga ini juga menolak jalur scan barcode, yang
-      // menambahkan lewat fungsi yang sama. Produk jasa tidak diblokir.
-      if (product.trackStock && product.stock <= 0) {
+      // menambahkan lewat fungsi yang sama. Diabaikan jika stok minus diizinkan.
+      if (product.trackStock && product.stock <= 0 && !allowNegativeStock) {
         toast.error(`Stok ${product.name} habis — produk tidak dapat ditambahkan ke keranjang.`);
         return;
       }
@@ -313,7 +294,7 @@ export function PosTerminal({
       setSearch("");
       searchRef.current?.focus();
     },
-    [setSearch],
+    [setSearch, allowNegativeStock],
   );
 
   const handleGlobalBarcodeScan = useCallback(
@@ -323,11 +304,13 @@ export function PosTerminal({
       const product = await scanBarcode(trimmed);
       if (!product) {
         toast.error(`Produk dengan barcode/SKU "${trimmed}" tidak ditemukan.`);
+        setSearch("");
+        searchRef.current?.focus();
         return;
       }
       addProduct(product, product.matchedPackagingId ?? null);
     },
-    [scanBarcode, addProduct],
+    [scanBarcode, addProduct, setSearch],
   );
 
   useBarcodeScannerCapture({
@@ -463,6 +446,7 @@ export function PosTerminal({
     // A-28 UI-1 (UX-B01): penjualan terantre offline tidak berpindah
     // halaman — fokus kembali ke kotak cari sesudah keranjang bersih.
     onSaleQueued: () => searchRef.current?.focus(),
+    onCheckoutSuccess: (sale) => setCompletedSale(sale),
   });
 
   const payDisabled =
@@ -663,6 +647,7 @@ export function PosTerminal({
         resetDisplay={resetDisplay}
         fullscreen={fullscreen}
         setFullscreenOverride={setFullscreenOverride}
+        allowNegativeStock={allowNegativeStock}
       />
 
       {/* Cart + payment */}
@@ -703,6 +688,7 @@ export function PosTerminal({
           setDiscount={setDiscount}
           setLinePackaging={setLinePackaging}
           quoteBusy={quoteBusy}
+          allowNegativeStock={allowNegativeStock}
         />
 
         <PaymentPanel
@@ -791,6 +777,14 @@ export function PosTerminal({
           resumeCancel={resumeCancel}
         />
       ) : null}
+
+      <CheckoutSuccessModal
+        sale={completedSale}
+        onDismiss={() => {
+          setCompletedSale(null);
+          searchRef.current?.focus();
+        }}
+      />
     </div>
   );
 }

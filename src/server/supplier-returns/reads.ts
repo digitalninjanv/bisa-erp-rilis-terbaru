@@ -9,6 +9,7 @@ import {
   eq,
   ilike,
   inArray,
+  ne,
   or,
   sql,
 } from "drizzle-orm";
@@ -16,7 +17,9 @@ import type { Tx } from "@/db";
 import {
   accounts,
   journalEntries,
+  partyCredits,
   partyOpeningBalances,
+  partyPayments,
   productPackagings,
   products,
   stockBatches,
@@ -160,15 +163,55 @@ export async function listSupplierReturnsPage(
       supplierName: suppliers.name,
       warehouseId: supplierReturns.warehouseId,
       warehouseName: warehouses.name,
+      partyCreditUsed: partyCredits.usedAmount,
     })
     .from(supplierReturns)
     .leftJoin(suppliers, eq(supplierReturns.supplierId, suppliers.id))
     .leftJoin(warehouses, eq(supplierReturns.warehouseId, warehouses.id))
+    .leftJoin(
+      partyCredits,
+      and(
+        eq(partyCredits.companyId, supplierReturns.companyId),
+        eq(partyCredits.partyType, "supplier"),
+        eq(partyCredits.partyId, supplierReturns.supplierId),
+        eq(partyCredits.originLabel, sql`'Retur ' || ${supplierReturns.number}`),
+        ne(partyCredits.status, "void"),
+      ),
+    )
     .where(filters)
     .orderBy(desc(supplierReturns.date), desc(supplierReturns.number))
     .limit(pageSize)
     .offset(pageOffset(page, pageSize));
-  return pageResult(rows, countRow?.value ?? 0, page, pageSize);
+
+  const items = rows.map((row) => {
+    const creditUsed = row.partyCreditUsed ? d(row.partyCreditUsed) : d(0);
+    const resolved = d(row.resolvedAmount).gt(creditUsed) ? d(row.resolvedAmount) : creditUsed;
+    const remaining = d(row.creditAmount).minus(resolved);
+    const status =
+      row.status === "void" || row.status === "draft"
+        ? row.status
+        : remaining.lte(0)
+          ? "resolved"
+          : resolved.gt(0)
+            ? "partially_resolved"
+            : row.status;
+    return {
+      id: row.id,
+      number: row.number,
+      date: row.date,
+      status,
+      reasonCategory: row.reasonCategory,
+      resolutionType: row.resolutionType,
+      totalValue: row.totalValue,
+      creditAmount: row.creditAmount,
+      resolvedAmount: toDb(resolved),
+      supplierId: row.supplierId,
+      supplierName: row.supplierName,
+      warehouseId: row.warehouseId,
+      warehouseName: row.warehouseName,
+    };
+  });
+  return pageResult(items, countRow?.value ?? 0, page, pageSize);
 }
 
 /** Draf dan klaim kredit yang masih perlu diselesaikan untuk beranda retur. */
@@ -420,9 +463,96 @@ export async function getSupplierReturnPageData(tx: Tx, companyId: string, retur
     for (const row of rows) accountNameById.set(row.id, `${row.code} — ${row.name}`);
   }
 
-  const remaining = d(detail.creditAmount).minus(d(detail.resolvedAmount));
+  const [returnCredit] = await tx
+    .select({
+      id: partyCredits.id,
+      number: partyCredits.number,
+      amount: partyCredits.amount,
+      usedAmount: partyCredits.usedAmount,
+      status: partyCredits.status,
+      date: partyCredits.date,
+    })
+    .from(partyCredits)
+    .where(
+      and(
+        eq(partyCredits.companyId, companyId),
+        eq(partyCredits.partyType, "supplier"),
+        eq(partyCredits.partyId, detail.supplierId),
+        eq(partyCredits.originLabel, `Retur ${detail.number}`),
+        ne(partyCredits.status, "void"),
+      ),
+    )
+    .limit(1);
+
+  type CreditPaymentHistory = {
+    id: string;
+    number: string;
+    date: string;
+    amount: string;
+    targetDocNumber: string | null;
+  };
+  const creditPayments: CreditPaymentHistory[] = [];
+
+  if (returnCredit) {
+    const paymentRows = await tx
+      .select({
+        id: partyPayments.id,
+        number: partyPayments.number,
+        date: partyPayments.date,
+        amount: partyPayments.amount,
+        receiptId: partyPayments.receiptId,
+        openingId: partyPayments.openingId,
+      })
+      .from(partyPayments)
+      .where(
+        and(
+          eq(partyPayments.companyId, companyId),
+          eq(partyPayments.creditId, returnCredit.id),
+          eq(partyPayments.status, "posted"),
+        ),
+      )
+      .orderBy(asc(partyPayments.date), asc(partyPayments.number));
+
+    if (paymentRows.length > 0) {
+      const pReceiptIds = paymentRows.map((p) => p.receiptId).filter((v): v is string => Boolean(v));
+      const pReceiptNumMap = new Map<string, string>();
+      if (pReceiptIds.length > 0) {
+        const rcRows = await tx
+          .select({ id: stockReceipts.id, number: stockReceipts.number })
+          .from(stockReceipts)
+          .where(and(eq(stockReceipts.companyId, companyId), inArray(stockReceipts.id, pReceiptIds)));
+        for (const r of rcRows) pReceiptNumMap.set(r.id, r.number);
+      }
+
+      for (const p of paymentRows) {
+        const docNum = p.receiptId ? pReceiptNumMap.get(p.receiptId) ?? null : null;
+        creditPayments.push({
+          id: p.id,
+          number: p.number,
+          date: p.date,
+          amount: p.amount,
+          targetDocNumber: docNum,
+        });
+      }
+    }
+  }
+
+  const creditUsed = returnCredit ? d(returnCredit.usedAmount) : d(0);
+  const totalResolved = d(detail.resolvedAmount).gt(creditUsed)
+    ? d(detail.resolvedAmount)
+    : creditUsed;
+  const remaining = d(detail.creditAmount).minus(totalResolved);
   const resolvable =
     (detail.status === "posted" || detail.status === "partially_resolved") && remaining.gt(0);
+
+  const effectiveStatus =
+    detail.status === "void" || detail.status === "draft"
+      ? detail.status
+      : remaining.lte(0)
+        ? "resolved"
+        : totalResolved.gt(0)
+          ? "partially_resolved"
+          : detail.status;
 
   let openPayables: Awaited<ReturnType<typeof listSupplierOpenPayableDocs>> = [];
   let paymentAccounts: Awaited<ReturnType<typeof listPaymentAccounts>> = [];
@@ -432,7 +562,11 @@ export async function getSupplierReturnPageData(tx: Tx, companyId: string, retur
   }
 
   return {
-    detail,
+    detail: {
+      ...detail,
+      resolvedAmount: toDb(totalResolved),
+      status: effectiveStatus,
+    },
     supplierName,
     warehouseName,
     batchById,
@@ -446,6 +580,8 @@ export async function getSupplierReturnPageData(tx: Tx, companyId: string, retur
     resolvable,
     openPayables,
     paymentAccounts,
+    partyCredit: returnCredit ?? null,
+    creditPayments,
   };
 }
 

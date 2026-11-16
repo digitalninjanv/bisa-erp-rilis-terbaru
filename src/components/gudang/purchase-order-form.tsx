@@ -10,6 +10,7 @@ import { d, formatIDR, formatQty } from "@/lib/money";
 import { labelClass, fieldClass } from "@/components/blocks/field-classes";
 import { DocumentForm, DocumentFormAdvanced } from "@/components/blocks/document-form";
 import { ConfirmDialog } from "@/components/blocks/confirm-dialog";
+import { ErrorSummary, type FormErrorItem } from "@/components/blocks/error-summary";
 import { DateField } from "@/components/date-field";
 
 export function PurchaseOrderForm({
@@ -32,6 +33,7 @@ export function PurchaseOrderForm({
   const [lines, setLines] = useState<DocLine[]>([]);
   const [busy, setBusy] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [formErrors, setFormErrors] = useState<FormErrorItem[]>([]);
 
   const isDirty = lines.length > 0 || notes.trim().length > 0;
 
@@ -40,6 +42,7 @@ export function PurchaseOrderForm({
       setConfirmCancel(true);
     } else {
       setOpen(false);
+      setFormErrors([]);
     }
   }
 
@@ -48,17 +51,23 @@ export function PurchaseOrderForm({
     setOpen(false);
     setLines([]);
     setNotes("");
+    setFormErrors([]);
   }
 
   async function submit() {
+    const errs: FormErrorItem[] = [];
     if (!supplierId) {
-      toast.error("Pilih pemasok untuk pesanan pembelian.");
-      return;
+      errs.push({ field: "po-supplier", message: "Pilih pemasok untuk pesanan pembelian." });
     }
     if (lines.length === 0) {
-      toast.error("Tambahkan minimal satu produk.");
+      errs.push({ field: "po-lines", message: "Tambahkan minimal satu produk pesanan." });
+    }
+    if (errs.length > 0) {
+      setFormErrors(errs);
+      toast.error(errs[0].message);
       return;
     }
+    setFormErrors([]);
     setBusy(true);
     const result = await savePurchaseOrderAction({
       supplierId,
@@ -76,6 +85,7 @@ export function PurchaseOrderForm({
     });
     setBusy(false);
     if (!result.ok) {
+      setFormErrors([{ message: result.message }]);
       toast.error(result.message);
       return;
     }
@@ -129,7 +139,7 @@ export function PurchaseOrderForm({
               <div className="grid gap-2 sm:grid-cols-2">
                 <label className="space-y-1">
                   <span className={labelClass}>Pemasok</span>
-                  <select value={supplierId} onChange={(event) => setSupplierId(event.target.value)} className={fieldClass}>
+                  <select id="po-supplier" value={supplierId} onChange={(event) => setSupplierId(event.target.value)} className={fieldClass}>
                     {suppliers.map((row) => (
                       <option key={row.id} value={row.id}>{row.name}</option>
                     ))}
@@ -209,8 +219,13 @@ export function PurchaseOrderForm({
             </div>
           }
         >
-          <div className="p-4">
-            <LineEditor lines={lines} onChange={setLines} mode="receipt" />
+          <div className="space-y-4 p-4">
+            {formErrors.length > 0 ? (
+              <ErrorSummary errors={formErrors} />
+            ) : null}
+            <div id="po-lines" tabIndex={-1} className="outline-none">
+              <LineEditor lines={lines} onChange={setLines} mode="receipt" />
+            </div>
           </div>
         </DocumentForm>
       ) : null}

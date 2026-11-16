@@ -139,6 +139,34 @@ export async function createSupplierReturn(
     })),
   });
 
+  const receiptLineIds = input.lines
+    .map((l) => l.receiptLineId)
+    .filter((id): id is string => Boolean(id));
+
+  if (receiptLineIds.length > 0) {
+    const [existingDraft] = await tx
+      .select({
+        number: supplierReturns.number,
+      })
+      .from(supplierReturnLines)
+      .innerJoin(supplierReturns, eq(supplierReturnLines.returnId, supplierReturns.id))
+      .where(
+        and(
+          eq(supplierReturnLines.companyId, input.companyId),
+          inArray(supplierReturnLines.receiptLineId, receiptLineIds),
+          eq(supplierReturns.status, "draft"),
+        ),
+      )
+      .limit(1);
+
+    if (existingDraft) {
+      throw new AppError(
+        "CONFLICT",
+        `Penerimaan ini sudah memiliki draf retur aktif (${existingDraft.number}). Lanjutkan draf tersebut untuk menghindari duplikasi retur.`,
+      );
+    }
+  }
+
   const number = await nextDocumentNumber(tx, input.companyId, "SUPPLIER_RETURN", input.date);
   const [created] = await tx
     .insert(supplierReturns)

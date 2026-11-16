@@ -8,7 +8,7 @@
 
 import { useEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { toast } from "sonner";
-import { Barcode, ChevronLeft, ChevronRight, CloudOff, RefreshCw, Search, Wifi } from "lucide-react";
+import { ChevronLeft, ChevronRight, CloudOff, RefreshCw, Search, Wifi } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatIDR, formatQty } from "@/lib/money";
 import { POS_COLUMN_CLASS, PosDisplayControls, type PosDisplayPrefs } from "@/components/pos/pos-display";
@@ -16,14 +16,15 @@ import { burstScanCode, createBurstState, feedBurstChar, resetBurst, type BurstS
 import { cartLineBaseQty, type CartItem, type ProductOption, type TerminalReservation } from "@/components/pos/terminal-types";
 import { ShortcutHelp } from "@/components/pos/terminal/shortcut-help";
 import { PosActionMenu } from "@/components/pos/pos-action-menu";
+import { PrinterStatusButton } from "@/components/pos/printer-modal";
 
 const CATEGORY_TONES = [
-  "border-tone-teal/30 bg-tone-teal-soft/40",
-  "border-tone-plum/30 bg-tone-plum-soft/40",
-  "border-tone-amber/30 bg-tone-amber-soft/40",
-  "border-tone-green/30 bg-tone-green-soft/40",
-  "border-tone-blue/30 bg-tone-blue-soft/40",
-  "border-tone-red/30 bg-tone-red-soft/40",
+  "border-l-4 border-l-tone-teal",
+  "border-l-4 border-l-tone-plum",
+  "border-l-4 border-l-tone-amber",
+  "border-l-4 border-l-tone-green",
+  "border-l-4 border-l-tone-blue",
+  "border-l-4 border-l-tone-red",
 ] as const;
 
 /** Warna kartu deterministik dari nama kategori (Odoo category colors). */
@@ -80,8 +81,9 @@ export function ProductCatalog(props: {
   resetDisplay: () => void;
   fullscreen: boolean;
   setFullscreenOverride: Dispatch<SetStateAction<boolean | null>>;
+  allowNegativeStock?: boolean;
 }) {
-  const { searchRef, search, setSearch, products, searching, page, pageFull, goToPage, scanBarcode, addProduct, warehouses, selectedWarehouse, setSelectedWarehouse, setReservationId, reservations, reservationId, applyReservation, sessionOpen, heldCount = 0, posOfflineEnabled, online, queuedCount, oldestQueuedAt, syncing, syncOfflineQueue, cart = [], display, updateDisplay, resetDisplay, fullscreen, setFullscreenOverride } = props;
+  const { searchRef, search, setSearch, products, searching, page, pageFull, goToPage, scanBarcode, addProduct, warehouses, selectedWarehouse, setSelectedWarehouse, setReservationId, reservations, reservationId, applyReservation, sessionOpen, heldCount = 0, posOfflineEnabled, online, queuedCount, oldestQueuedAt, syncing, syncOfflineQueue, cart = [], display, updateDisplay, resetDisplay, fullscreen, setFullscreenOverride, allowNegativeStock = false } = props;
   const searchBurstRef = useRef<BurstState>(createBurstState());
   // A-28 UI-1 (UX-B02): sorotan hasil pencarian untuk navigasi panah.
   // -1 = belum ada sorotan (Enter berperilaku seperti dulu: hasil
@@ -103,7 +105,8 @@ export function ProductCatalog(props: {
       ?.scrollIntoView({ block: "nearest" });
   }, [highlight]);
 
-  const isSoldOut = (product: ProductOption) => product.trackStock && product.stock <= 0;
+  const isSoldOut = (product: ProductOption) =>
+    !allowNegativeStock && product.trackStock && product.stock <= 0;
 
   // Qty keranjang per produk (satuan dasar) untuk badge "sudah dipilih".
   const cartQty = useMemo(() => {
@@ -122,10 +125,10 @@ export function ProductCatalog(props: {
 
   const font =
     display.fontScale === "xl"
-      ? { name: "text-[15px]", price: "text-[17px]", meta: "text-[11px]", badge: "text-[11px]" }
+      ? { name: "text-base", price: "text-xl", meta: "text-xs", badge: "text-xs" }
       : display.fontScale === "large"
-        ? { name: "text-[14px]", price: "text-[15px]", meta: "text-[11px]", badge: "text-[11px]" }
-        : { name: "text-[12px]", price: "text-[13px]", meta: "text-[10px]", badge: "text-[10px]" };
+        ? { name: "text-[15px]", price: "text-lg", meta: "text-xs", badge: "text-[11px]" }
+        : { name: "text-sm", price: "text-base", meta: "text-xs", badge: "text-[11px]" };
 
   /** Pindah sorotan satu langkah, melompati kartu stok habis. */
   function moveHighlight(from: number, direction: 1 | -1): number {
@@ -183,7 +186,14 @@ export function ProductCatalog(props: {
                         // S4: barcode kemasan menambahkan baris
                         // kemasan itu (matchedPackagingId), bukan 1 Pcs.
                         if (found) addProduct(found, found.matchedPackagingId ?? null);
-                        else toast.error(`Barcode ${term} tidak ditemukan.`);
+                        else {
+                          toast.error(`Barcode ${term} tidak ditemukan.`);
+                          // Jangan biarkan kode yang gagal menempel ke scan
+                          // berikutnya. Pertahankan input baru jika kasir
+                          // sudah mulai mengetik saat pencarian berlangsung.
+                          if (searchRef.current?.value === term) setSearch("");
+                          searchRef.current?.focus();
+                        }
                       })();
                       return;
                     }
@@ -210,9 +220,9 @@ export function ProductCatalog(props: {
                     feedBurstChar(searchBurstRef.current, event.key, performance.now());
                   }
                 }}
-                placeholder="Scan barcode / cari produk… (F2)"
+                placeholder="Pindai barcode atau cari nama / SKU (F2)"
                 aria-label="Cari produk atau scan barcode"
-                className="h-10 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
+                className="h-11 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm outline-none transition-shadow placeholder:text-muted-foreground/80 focus:border-ring focus:ring-2 focus:ring-ring/20"
               />
             </div>
             <select
@@ -263,24 +273,6 @@ export function ProductCatalog(props: {
                   ))}
               </select>
             ) : null}
-            {/* POS2-24: warna titik mengikuti status sesi — hijau
-                hanya bila sesi benar-benar terbuka. */}
-            <div className="flex h-10 items-center gap-1.5 rounded-md border border-border bg-muted/60 px-2.5 text-[11px] text-muted-foreground">
-              <span
-                className={cn(
-                  "size-1.5 rounded-full",
-                  sessionOpen ? "bg-tone-green" : "bg-tone-amber",
-                )}
-              />
-              {sessionOpen ? "Sesi kas terbuka" : "Sesi kas belum dibuka"}
-            </div>
-            {/* POS2-03: status penangkap scanner global selalu terlihat. */}
-            <div
-              className="flex h-10 items-center gap-1.5 rounded-md border border-border bg-muted/60 px-2.5 text-[11px] text-muted-foreground"
-              title="Scanner barcode aktif — hasil pindai ditangkap di mana pun fokus berada di terminal"
-            >
-              <Barcode className="size-3.5" /> Scanner siap
-            </div>
             {posOfflineEnabled ? (
               <div
                 className={`flex h-10 items-center gap-1.5 rounded-md border px-2.5 text-[11px] ${
@@ -321,12 +313,21 @@ export function ProductCatalog(props: {
               fullscreen={fullscreen}
               onToggleFullscreen={() => setFullscreenOverride(!fullscreen)}
             />
-            <ShortcutHelp />
+            <PrinterStatusButton compact />
             <PosActionMenu
               sessionOpen={sessionOpen}
               heldCount={heldCount}
               queuedCount={queuedCount}
-            />
+            >
+              <div className="border-t border-border p-3">
+                <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Tampilan & perangkat
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <ShortcutHelp />
+                </div>
+              </div>
+            </PosActionMenu>
           </div>
 
           <div
@@ -368,9 +369,10 @@ export function ProductCatalog(props: {
                       aria-current={highlighted || undefined}
                       onClick={() => addProduct(product)}
                       className={cn(
-                        "group flex w-full items-center gap-3 border text-left transition-colors hover:border-primary/50 hover:bg-accent/40",
+                        "group flex w-full items-center gap-3 border text-left transition-colors hover:border-primary/50 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                         shape,
-                        tone ?? "border-border bg-background",
+                        "border-border bg-card",
+                        tone,
                         display.density === "compact" ? "px-2.5 py-1.5" : "px-3 py-2",
                         soldOut && "cursor-not-allowed opacity-60 hover:border-border hover:bg-background",
                         highlighted && "border-primary bg-accent/40 ring-2 ring-ring/40 hover:border-primary",
@@ -418,7 +420,11 @@ export function ProductCatalog(props: {
                         <span
                           className={cn(
                             "num shrink-0 rounded px-1.5 py-0.5",
-                            soldOut ? "bg-destructive/10 font-semibold text-destructive" : "bg-muted text-muted-foreground",
+                            soldOut
+                              ? "bg-destructive/10 font-semibold text-destructive"
+                              : product.stock <= 0
+                                ? "font-semibold text-tone-amber"
+                                : "bg-muted text-muted-foreground",
                             font.badge,
                           )}
                         >
@@ -443,10 +449,13 @@ export function ProductCatalog(props: {
                     aria-current={highlighted || undefined}
                     onClick={() => addProduct(product)}
                     className={cn(
-                      "group flex flex-col border text-left transition-colors hover:border-primary/50 hover:bg-accent/40",
+                      "group flex flex-col justify-between border text-left transition-colors hover:border-primary/50 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                       shape,
-                      tone ?? "border-border bg-background",
+                      "border-border bg-card",
+                      tone,
                       display.density === "compact" ? "p-2" : "p-2.5",
+                      display.density === "compact" ? "min-h-[88px]" : "min-h-[108px]",
+                      quantity > 0 && "border-primary/40 bg-primary/[0.03]",
                       soldOut && "cursor-not-allowed opacity-60 hover:border-border hover:bg-background",
                       highlighted &&
                         "border-primary bg-accent/40 ring-2 ring-ring/40 hover:border-primary",
@@ -499,7 +508,9 @@ export function ProductCatalog(props: {
                             <span
                               className={cn(
                                 "num rounded px-1.5 py-0.5",
-                                product.stock > 0 ? "bg-muted text-muted-foreground" : "bg-destructive/10 text-destructive",
+                                product.stock > 0
+                                  ? "bg-muted text-muted-foreground"
+                                  : "font-semibold text-tone-amber",
                                 font.badge,
                               )}
                             >

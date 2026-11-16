@@ -135,12 +135,12 @@ export default async function ReceivablePayablePage({
   const pagePartyKeys = new Set(
     pagedRows.map((row) => `${tab === "piutang" ? "customer" : "supplier"}:${row.partyId ?? ""}`),
   );
-  const creditByParty = new Map<string, { id: string; number: string; remaining: number }[]>();
+  const creditByParty = new Map<string, { id: string; number: string; remaining: number; originLabel?: string | null }[]>();
   for (const row of creditsForTab) {
     const key = `${row.partyType}:${row.partyId}`;
     if (!pagePartyKeys.has(key)) continue;
     const list = creditByParty.get(key) ?? [];
-    list.push({ id: row.id, number: row.number, remaining: Number(row.remaining) });
+    list.push({ id: row.id, number: row.number, remaining: Number(row.remaining), originLabel: row.originLabel });
     creditByParty.set(key, list);
   }
 

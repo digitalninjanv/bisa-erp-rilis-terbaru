@@ -135,4 +135,5 @@ export type PosTerminalProps = {
   offlineRoundingMode?: string;
   receivableDefaultTermDays?: number;
   reservations?: TerminalReservation[];
+  allowNegativeStock?: boolean;
 };

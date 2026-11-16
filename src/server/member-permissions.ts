@@ -1,7 +1,8 @@
 import { and, asc, eq } from "drizzle-orm";
 import { db, type Tx } from "@/db";
-import { companyRoles, member, user } from "@/db/schema";
+import { companyRoles, member, session, user } from "@/db/schema";
 import { withCompanyReadOnly } from "@/db/tenant";
+import { writeAudit } from "@/server/audit";
 import {
   builtinRole,
   permissionsFor,
@@ -81,4 +82,54 @@ export async function listCustomRoles(tx: Tx, companyId: string) {
     .from(companyRoles)
     .where(eq(companyRoles.companyId, companyId))
     .orderBy(asc(companyRoles.name));
+}
+
+/**
+ * Mencabut akses aplikasi seorang karyawan saat terminasi (offboarding).
+ * Menghapus keanggotaan organisasi dan menginvalasi sesi aktifnya
+ * sesuai standar keamanan NIST SP 800-53 PS-4 / OWASP IAM.
+ */
+export async function revokeEmployeeUserAccess(
+  tx: Tx,
+  companyId: string,
+  employeeName: string,
+  actorUserId?: string,
+): Promise<{ revoked: boolean; userId?: string }> {
+  const matchedUsers = await tx
+    .select({
+      id: user.id,
+      name: user.name,
+      memberId: member.id,
+      role: member.role,
+    })
+    .from(member)
+    .innerJoin(user, eq(member.userId, user.id))
+    .where(and(eq(member.organizationId, companyId), eq(user.name, employeeName)));
+
+  if (matchedUsers.length === 0) {
+    return { revoked: false };
+  }
+
+  for (const u of matchedUsers) {
+    if (u.role === "owner") continue;
+
+    await tx
+      .delete(member)
+      .where(and(eq(member.organizationId, companyId), eq(member.userId, u.id)));
+
+    await tx.delete(session).where(eq(session.userId, u.id));
+
+    if (actorUserId) {
+      await writeAudit(tx, {
+        companyId,
+        userId: actorUserId,
+        action: "user.remove",
+        entityType: "member",
+        entityId: u.memberId,
+        before: { userId: u.id, role: u.role, reason: "employee_termination" },
+      });
+    }
+  }
+
+  return { revoked: true, userId: matchedUsers[0]?.id };
 }

@@ -14,11 +14,13 @@ export function ReceiptAdvanceField({
   isPurchase,
   grandTotal,
   onAppliedChange,
+  onAvailableChange,
 }: {
   supplierId: string;
   isPurchase: boolean;
   grandTotal: string;
   onAppliedChange: (value: string) => void;
+  onAvailableChange?: (available: boolean) => void;
 }) {
   const [rows, setRows] = useState<{ remainingAmount: string }[]>([]);
   const [loading, setLoading] = useState(true);
@@ -28,20 +30,29 @@ export function ReceiptAdvanceField({
   // state di sini selalu bersih; effect hanya mengambil saldo.
   useEffect(() => {
     let cancelled = false;
-    if (!isPurchase || !supplierId) return;
+    if (!isPurchase || !supplierId) {
+      onAvailableChange?.(false);
+      return;
+    }
     void listSupplierPurchaseAdvancesAction({ supplierId })
       .then((result) => {
         if (cancelled) return;
         setLoading(false);
-        setRows(result.ok ? result.data : []);
+        const nextRows = result.ok ? result.data : [];
+        setRows(nextRows);
+        const hasAvailable = nextRows.some((row) => d(row.remainingAmount).gt(0));
+        onAvailableChange?.(hasAvailable);
       })
       .catch(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          onAvailableChange?.(false);
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [supplierId, isPurchase]);
+  }, [supplierId, isPurchase, onAvailableChange]);
 
   const available = rows.reduce((acc, row) => acc.plus(d(row.remainingAmount)), d(0));
   const total = d(grandTotal);

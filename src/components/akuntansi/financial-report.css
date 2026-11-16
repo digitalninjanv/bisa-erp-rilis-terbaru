@@ -66,6 +66,24 @@
   .financial-report-document > .statement-body { min-width: 480px; }
   .financial-report-document[data-comparative="true"] > .statement-body { min-width: 640px; }
   .financial-report-workspace .report-print > div:first-child { padding: 20px 12px; }
+  .financial-report-document [data-statement-group] td:first-child {
+    position: sticky;
+    left: 0;
+    background: var(--card);
+    z-index: 2;
+  }
+  .financial-report-document [data-statement-total] > span:first-child {
+    position: sticky;
+    left: 0;
+    background: var(--card);
+    z-index: 2;
+  }
+  .financial-report-columns > span:first-child {
+    position: sticky;
+    left: 0;
+    background: var(--muted);
+    z-index: 2;
+  }
 }
 @media print {
   .financial-report-print { color: #000; font-size: 10pt; }

@@ -305,14 +305,22 @@ export function computeOvertimePay(input: {
   const hourlyWage = divisor.gt(0) ? d(input.monthlyWage).div(divisor) : d(0);
   let total = d(0);
   for (const entry of input.entries) {
+    const totalHours = d(entry.hours);
+    if (totalHours.lte(0)) continue;
+
     const rules = input.config.overtimeRules
       .filter((rule) => rule.dayType === entry.dayType)
       .sort((a, b) => a.hourFrom - b.hourFrom);
-    for (let hour = 1; hour <= entry.hours; hour += 1) {
-      const rule = rules.find(
-        (candidate) => hour >= candidate.hourFrom && (candidate.hourTo === null || hour <= candidate.hourTo),
-      );
-      if (rule) total = total.plus(hourlyWage.mul(d(rule.multiplier)));
+
+    for (const rule of rules) {
+      const tierStart = d(Math.max(0, rule.hourFrom - 1));
+      if (totalHours.lte(tierStart)) continue;
+      const tierEnd = rule.hourTo === null ? null : d(rule.hourTo);
+      const effectiveEnd = tierEnd === null ? totalHours : Decimal.min(totalHours, tierEnd);
+      const hoursInTier = effectiveEnd.minus(tierStart);
+      if (hoursInTier.gt(0)) {
+        total = total.plus(hourlyWage.mul(d(rule.multiplier)).mul(hoursInTier));
+      }
     }
   }
   return { hourlyWage, total: roundRupiah(total) };

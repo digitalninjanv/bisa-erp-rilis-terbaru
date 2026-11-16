@@ -1,6 +1,10 @@
 import { and, asc, eq, ne } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { customers, partyCredits, suppliers } from "@/db/schema";
+import {
+  customers,
+  partyCredits,
+  suppliers,
+} from "@/db/schema";
 import { AppError } from "@/lib/errors";
 import { d, toDb, type Decimal, type MoneyInput } from "@/lib/money";
 import { getAccountId } from "@/server/accounting";
@@ -239,6 +243,78 @@ export async function restorePartyCreditUsage(
       usedAmount: toDb(nextUsed),
     },
   });
+}
+
+/** Batalkan dokumen kredit yang lahir dari retur saat retur dibatalkan. */
+export async function voidPartyCreditForReturn(
+  tx: Tx,
+  input: { companyId: string; returnNumber: string },
+): Promise<void> {
+  const [partyCredit] = await tx
+    .select()
+    .from(partyCredits)
+    .where(
+      and(
+        eq(partyCredits.companyId, input.companyId),
+        eq(partyCredits.partyType, "supplier"),
+        eq(partyCredits.originLabel, `Retur ${input.returnNumber}`),
+        ne(partyCredits.status, "void"),
+      ),
+    )
+    .limit(1)
+    .for("update");
+  if (!partyCredit) return;
+  if (d(partyCredit.usedAmount).gt(0)) {
+    throw new AppError(
+      "INVALID_STATE",
+      `Kredit retur ${input.returnNumber} (${partyCredit.number}) sudah terpakai sebesar ${d(partyCredit.usedAmount).toFixed(0)}. Batalkan pembayaran pemakainya terlebih dahulu.`,
+    );
+  }
+  await tx
+    .update(partyCredits)
+    .set({ status: "void" })
+    .where(and(eq(partyCredits.companyId, input.companyId), eq(partyCredits.id, partyCredit.id)));
+}
+
+/** Sinkronkan pemakaian/pelunasan kredit retur saat diselesaikan dari detail retur. */
+export async function syncPartyCreditFromReturnResolution(
+  tx: Tx,
+  input: {
+    companyId: string;
+    supplierId: string;
+    returnNumber: string;
+    amount: Decimal;
+    mode: "consume" | "settle_all";
+  },
+): Promise<void> {
+  const [existingCredit] = await tx
+    .select()
+    .from(partyCredits)
+    .where(
+      and(
+        eq(partyCredits.companyId, input.companyId),
+        eq(partyCredits.partyType, "supplier"),
+        eq(partyCredits.partyId, input.supplierId),
+        eq(partyCredits.originLabel, `Retur ${input.returnNumber}`),
+        ne(partyCredits.status, "void"),
+      ),
+    )
+    .limit(1)
+    .for("update");
+  if (!existingCredit) return;
+  if (input.mode === "settle_all") {
+    await tx
+      .update(partyCredits)
+      .set({ usedAmount: toDb(existingCredit.amount), status: "settled" })
+      .where(and(eq(partyCredits.companyId, input.companyId), eq(partyCredits.id, existingCredit.id)));
+  } else {
+    const used = d(existingCredit.usedAmount).plus(input.amount);
+    const settled = used.gte(d(existingCredit.amount));
+    await tx
+      .update(partyCredits)
+      .set({ usedAmount: toDb(used), status: settled ? "settled" : "open" })
+      .where(and(eq(partyCredits.companyId, input.companyId), eq(partyCredits.id, existingCredit.id)));
+  }
 }
 
 /**

@@ -17,7 +17,7 @@ import { PageHeader } from "@/components/blocks/page-header";
 import { Pagination } from "@/components/blocks/pagination";
 import { DataList, DataListToolbar, dataListFilterClass, dataListFilterWideClass } from "@/components/blocks/data-list";
 import { EmptyState } from "@/components/blocks/empty-state";
-import { StatCard } from "@/components/blocks/stat-card";
+import { SummaryStrip } from "@/components/blocks/summary-strip";
 import { StatusBadge } from "@/components/blocks/status-badge";
 import { RowMenu } from "@/components/blocks/row-menu";
 import { DateRangeField } from "@/components/date-field";
@@ -115,34 +115,19 @@ export default async function JournalPage({
           informasi kerja akuntan, bukan dekorasi. */}
       <DataList density="compact"
         kpis={
-          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-            <StatCard
-              size="compact"
-              label="Jurnal"
-              value={String(data.summary.entries)}
-              hint={`${data.summary.manual} manual`}
-            />
-            <StatCard
-              size="compact"
-              label="Total debit"
-              value={formatIDR(data.summary.debit)}
-              hint="Periode terpilih"
-            />
-            <StatCard
-              size="compact"
-              label="Total kredit"
-              value={formatIDR(data.summary.credit)}
-              hint="Periode terpilih"
-            />
-            <StatCard
-              size="compact"
-              label="Selisih"
-              value={formatIDR(data.summary.debit - data.summary.credit)}
-              hint={Math.abs(data.summary.debit - data.summary.credit) < 0.01 ? "Seimbang" : "Periksa jurnal"}
-              tone={Math.abs(data.summary.debit - data.summary.credit) < 0.01 ? "green" : "red"}
-              valueClassName={Math.abs(data.summary.debit - data.summary.credit) < 0.01 ? "text-tone-green" : "text-destructive"}
-            />
-          </div>
+          <SummaryStrip
+            items={[
+              { label: "Jurnal", value: String(data.summary.entries), hint: `${data.summary.manual} manual` },
+              { label: "Total debit", value: formatIDR(data.summary.debit), hint: "Periode terpilih" },
+              { label: "Total kredit", value: formatIDR(data.summary.credit), hint: "Periode terpilih" },
+              {
+                label: "Selisih",
+                value: formatIDR(data.summary.debit - data.summary.credit),
+                hint: Math.abs(data.summary.debit - data.summary.credit) < 0.01 ? "Seimbang" : "Periksa jurnal",
+                tone: Math.abs(data.summary.debit - data.summary.credit) < 0.01 ? ("green" as const) : ("red" as const),
+              },
+            ]}
+          />
         }
         toolbar={
           /* A-22 K1 (UX-01): JANGAN teruskan from/to/source sebagai

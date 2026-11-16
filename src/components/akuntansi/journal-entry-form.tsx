@@ -25,6 +25,7 @@ import { BalanceIndicator } from "./balance-indicator";
 import { MoneyInput } from "@/components/money-input";
 import { DateField } from "@/components/date-field";
 import { DocumentForm } from "@/components/blocks/document-form";
+import { ErrorSummary, type FormErrorItem } from "@/components/blocks/error-summary";
 import { fieldClass, labelClass } from "@/components/akuntansi/field-classes";
 
 type Account = ComboboxAccount;
@@ -59,6 +60,7 @@ export function JournalEntryForm({
   const [invalidAmounts, setInvalidAmounts] = useState<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
+  const [formErrors, setFormErrors] = useState<FormErrorItem[]>([]);
   // AK-P3-02: one idempotency key per form session (same pattern as the
   // POS terminal) — a network retry or double submit replays this key and
   // the server returns the already-posted journal instead of duplicating it.
@@ -197,18 +199,25 @@ export function JournalEntryForm({
   }
 
   async function submit() {
+    const errs: FormErrorItem[] = [];
+    if (periodWarning) {
+      errs.push({ field: "journal-date", message: periodWarning });
+    }
     if (invalidAmounts.size > 0) {
-      toast.error("Ada nominal yang tidak terbaca. Periksa bidang yang ditandai.");
-      return;
+      errs.push({ field: "journal-lines", message: "Ada nominal yang tidak terbaca. Periksa bidang yang ditandai." });
     }
     if (filledLines.length < 2) {
-      toast.error("Isi minimal dua baris jurnal.");
-      return;
+      errs.push({ field: "journal-lines", message: "Isi minimal dua baris jurnal berpasangan." });
     }
     if (!totals.balanced) {
-      toast.error(`Debit dan kredit belum sama. Selisih ${formatIDR(totals.difference)}.`);
+      errs.push({ field: "journal-lines", message: `Debit dan kredit belum sama. Selisih ${formatIDR(totals.difference)}.` });
+    }
+    if (errs.length > 0) {
+      setFormErrors(errs);
+      toast.error(errs[0].message);
       return;
     }
+    setFormErrors([]);
     setBusy(true);
     const result = await postManualJournalAction({
       date,
@@ -226,6 +235,7 @@ export function JournalEntryForm({
     });
     setBusy(false);
     if (!result.ok) {
+      setFormErrors([{ message: result.message }]);
       toast.error(result.message);
       return;
     }
@@ -238,18 +248,22 @@ export function JournalEntryForm({
   }
 
   async function saveDraft() {
+    const errs: FormErrorItem[] = [];
     if (invalidAmounts.size > 0) {
-      toast.error("Ada nominal yang tidak terbaca. Periksa bidang yang ditandai.");
-      return;
+      errs.push({ field: "journal-lines", message: "Ada nominal yang tidak terbaca. Periksa bidang yang ditandai." });
     }
     if (filledLines.length < 2) {
-      toast.error("Isi minimal dua baris jurnal.");
-      return;
+      errs.push({ field: "journal-lines", message: "Isi minimal dua baris jurnal berpasangan." });
     }
     if (!totals.balanced) {
-      toast.error(`Debit dan kredit belum sama. Selisih ${formatIDR(totals.difference)}.`);
+      errs.push({ field: "journal-lines", message: `Debit dan kredit belum sama. Selisih ${formatIDR(totals.difference)}.` });
+    }
+    if (errs.length > 0) {
+      setFormErrors(errs);
+      toast.error(errs[0].message);
       return;
     }
+    setFormErrors([]);
     setSavingDraft(true);
     const result = await saveJournalDraftAction({
       date,
@@ -265,6 +279,7 @@ export function JournalEntryForm({
     });
     setSavingDraft(false);
     if (!result.ok) {
+      setFormErrors([{ message: result.message }]);
       toast.error(result.message);
       return;
     }
@@ -395,7 +410,7 @@ export function JournalEntryForm({
       header={
         <>
           <div className="grid gap-2 p-4 sm:grid-cols-[170px_minmax(0,1fr)]">
-          <div className="space-y-1">
+          <div id="journal-date" tabIndex={-1} className="space-y-1 outline-none">
             <label className="space-y-1">
               <span className={labelClass}>Tanggal</span>
               {/* A-25 U2: DateField bersama — tampilan selalu
@@ -428,10 +443,17 @@ export function JournalEntryForm({
       guide={guidePanel}
       actions={actionsBar}
     >
-        {/* A-22 K2 (UX-02): tabel penuh hanya di >=lg — di bawahnya
-            editor menjadi kartu per baris (lihat blok sesudah tabel)
-            agar kolom Debit/Kredit tidak terpotong di layar kecil. */}
-        <div className="hidden w-full max-w-full overflow-x-auto lg:block">
+      <div className="space-y-4">
+        {formErrors.length > 0 ? (
+          <div className="p-4 pb-0">
+            <ErrorSummary errors={formErrors} />
+          </div>
+        ) : null}
+        <div id="journal-lines" tabIndex={-1} className="outline-none">
+          {/* A-22 K2 (UX-02): tabel penuh hanya di >=lg — di bawahnya
+              editor menjadi kartu per baris (lihat blok sesudah tabel)
+              agar kolom Debit/Kredit tidak terpotong di layar kecil. */}
+          <div className="hidden w-full max-w-full overflow-x-auto lg:block">
           <table className="data-table data-table-dense w-full table-fixed">
             {/* Lebar kolom dikunci agar Akun tidak mendominasi dan
                 Debit/Kredit simetris — input memenuhi selnya sendiri. */}
@@ -635,6 +657,8 @@ export function JournalEntryForm({
             </span>
           </div>
         </div>
+        </div>
+      </div>
 
     </DocumentForm>
     </>

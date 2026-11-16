@@ -126,6 +126,14 @@ export async function closeCashSession(
   if (!session) throw new AppError("NOT_FOUND", "Sesi kas tidak ditemukan.");
   if (session.status !== "open") throw new AppError("INVALID_STATE", "Sesi kas sudah ditutup.");
 
+  const heldCount = await countHeldSales(tx, input.companyId);
+  if (heldCount > 0) {
+    throw new AppError(
+      "INVALID_STATE",
+      `Tidak dapat menutup sesi kas: masih terdapat ${heldCount} pesanan tertahan (held). Selesaikan atau batalkan pesanan tertahan sebelum menutup sesi.`,
+    );
+  }
+
   const [movement] = await tx
     .select({ total: sql<string>`coalesce(sum(${cashMovements.amount}), 0)` })
     .from(cashMovements)

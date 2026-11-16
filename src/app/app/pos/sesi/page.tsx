@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { cashSessions } from "@/db/schema";
 import { getCashSessionSummary } from "@/server/reports";
+import { countHeldSales } from "@/server/pos";
 import { getCompanySettingsRow } from "@/server/settings";
 import { requirePermissionPage } from "@/lib/session";
 import { d } from "@/lib/money";
@@ -16,23 +17,27 @@ export default async function SessionPage() {
   const ctx = await requirePermissionPage("pos.session");
 
   const data = await withCompanyReadOnly(ctx.company.id, async (tx) => {
-    const [open] = await tx
-      .select({ id: cashSessions.id })
-      .from(cashSessions)
-      .where(
-        and(
-          eq(cashSessions.companyId, ctx.company.id),
-          eq(cashSessions.userId, ctx.user.id),
-          eq(cashSessions.status, "open"),
-        ),
-      )
-      .limit(1);
+    const [open, heldCount] = await Promise.all([
+      tx
+        .select({ id: cashSessions.id })
+        .from(cashSessions)
+        .where(
+          and(
+            eq(cashSessions.companyId, ctx.company.id),
+            eq(cashSessions.userId, ctx.user.id),
+            eq(cashSessions.status, "open"),
+          ),
+        )
+        .limit(1)
+        .then((rows) => rows[0] ?? null),
+      countHeldSales(tx, ctx.company.id),
+    ]);
     const summary = open ? await getCashSessionSummary(tx, ctx.company.id, open.id) : null;
     // A-28 Tahap 1 (H-POS-02): toleransi selisih untuk petunjuk
     // kewajiban alasan di formulir tutup sesi (penegakan di server).
     const settingsRow = await getCompanySettingsRow(tx, ctx.company.id);
     const differenceTolerance = d(settingsRow?.posSessionDifferenceTolerance ?? "0").toNumber();
-    return { summary, differenceTolerance };
+    return { summary, differenceTolerance, heldCount };
   });
 
   return (
@@ -45,6 +50,7 @@ export default async function SessionPage() {
 
       {data.summary ? (
         <SessionManager
+          heldCount={data.heldCount}
           differenceTolerance={data.differenceTolerance}
           session={{
             id: data.summary.session.id,

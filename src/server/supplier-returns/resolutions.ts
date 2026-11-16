@@ -4,6 +4,7 @@
 
 import {
   and,
+  desc,
   eq,
   inArray,
 } from "drizzle-orm";
@@ -37,6 +38,7 @@ import {
 } from "@/server/serials";
 import { allocateReturnToPayables, getSupplierOpenPayable } from "./payables";
 import { createPurchaseAdvanceFromReturn } from "@/server/purchase-advances";
+import { syncPartyCreditFromReturnResolution } from "@/server/party-credits";
 import { lockSupplierReturn } from "./returns";
 import type { SupplierReturnRow } from "./shared";
 
@@ -159,6 +161,17 @@ function assertResolutionAmount(header: SupplierReturnRow, amount: Decimal, rema
   }
 }
 
+async function syncPartyCreditResolution(
+  tx: Tx,
+  companyId: string,
+  supplierId: string,
+  returnNumber: string,
+  amount: Decimal,
+  mode: "consume" | "settle_all",
+) {
+  await syncPartyCreditFromReturnResolution(tx, { companyId, supplierId, returnNumber, amount, mode });
+}
+
 /**
  * Apply part of the claim against the supplier's open payable — the
  * "potong pembelian berikutnya" settlement. One explicit target document
@@ -242,6 +255,7 @@ export async function applySupplierCredit(
     consumed: amount,
     action: "supplier_return.apply_credit",
   });
+  await syncPartyCreditResolution(tx, input.companyId, header.supplierId, header.number, amount, "consume");
   return { resolutionId, remainingClaim: toDb(remainingClaim) };
 }
 
@@ -293,6 +307,7 @@ export async function convertSupplierCreditToAdvance(
     consumed: amount,
     action: "supplier_return.to_advance",
   });
+  await syncPartyCreditResolution(tx, input.companyId, header.supplierId, header.number, amount, "settle_all");
   return {
     advanceId: advance.id,
     advanceNumber: advance.number,
@@ -365,6 +380,7 @@ export async function refundSupplierReturn(
     consumed: amount,
     action: "supplier_return.refund",
   });
+  await syncPartyCreditResolution(tx, input.companyId, header.supplierId, header.number, amount, "consume");
   return { resolutionId, remainingClaim: toDb(remainingClaim) };
 }
 
@@ -635,6 +651,7 @@ export async function receiveReplacement(
     });
     resolvedBefore = resolvedBefore.plus(prepared[index].value);
   }
+  await syncPartyCreditResolution(tx, input.companyId, header.supplierId, header.number, consumed, "consume");
   return { consumedAmount: toDb(consumed), remainingClaim: toDb(remainingClaim) };
 }
 

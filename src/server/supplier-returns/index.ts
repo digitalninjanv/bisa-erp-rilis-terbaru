@@ -45,5 +45,11 @@ export { SUPPLIER_RETURN_REASON_LABELS, SUPPLIER_RETURN_RESOLUTION_LABELS, POSTE
 export { sumReturnAllocations, getSupplierOpenPayable, refreshReceiptPaymentStatus, refreshOpeningPayableStatus } from "./payables";
 export { createSupplierReturn, deleteSupplierReturn } from "./returns";
 export { postSupplierReturn, voidPostedSupplierReturn } from "./posting";
-export { applySupplierCredit, convertSupplierCreditToAdvance, refundSupplierReturn, receiveReplacement, resolveSupplierReturnOther } from "./resolutions";
+export {
+  applySupplierCredit,
+  convertSupplierCreditToAdvance,
+  refundSupplierReturn,
+  receiveReplacement,
+  resolveSupplierReturnOther,
+} from "./resolutions";
 export { getSupplierReturnDetail, listSupplierReturns, listSupplierReturnsPage, listSupplierReturnWorkQueue, listSupplierOpenPayableDocs, listSupplierOpenPayableDocsForSuppliers, getSupplierReturnPageData, getSupplierReturnPrintData } from "./reads";

@@ -27,6 +27,7 @@ import {
 import type { OperationQueueCard } from "@/server/inventory";
 import { searchInventoryProductsAction } from "@/server/actions/inventory/produk";
 import { formatDate, todayISO } from "@/lib/format";
+import { playScanSuccessTone, playScanErrorTone } from "@/lib/audio-feedback";
 
 /**
  * A-24 T3 (pola G1): papan Mode Operasi. Satu input pindai yang
@@ -90,6 +91,7 @@ export function OperationQueueBoard({
 
     const byNumber = resolveOperationScan(value, scanRefs, null);
     if (byNumber.type === "open") {
+      playScanSuccessTone();
       toast.success(`Membuka ${byNumber.operation.number}…`);
       router.push(byNumber.operation.href);
       return;
@@ -105,6 +107,7 @@ export function OperationQueueBoard({
       if (exact) {
         const byProduct = resolveOperationScan(value, scanRefs, { id: exact.id });
         if (byProduct.type === "open") {
+          playScanSuccessTone();
           toast.success(
             `${exact.name} termuat di ${byProduct.operation.number} — membuka operasinya…`,
           );
@@ -112,6 +115,7 @@ export function OperationQueueBoard({
           return;
         }
         if (byProduct.type === "matches") {
+          playScanSuccessTone();
           setMatchedIds(byProduct.operations.map((operation) => operation.id));
           setMessage(
             `${exact.name} termuat di ${byProduct.operations.length} operasi yang menunggu — pilih kartunya di bawah.`,
@@ -120,6 +124,7 @@ export function OperationQueueBoard({
           focusScan();
           return;
         }
+        playScanErrorTone();
         setMessage(
           `${exact.name} tidak termuat di operasi mana pun yang sedang menunggu.`,
         );
@@ -128,6 +133,7 @@ export function OperationQueueBoard({
         return;
       }
     }
+    playScanErrorTone();
     setMessage(
       `Kode "${value}" tidak dikenal — bukan nomor dokumen yang menunggu, bukan barcode/SKU produk.`,
     );

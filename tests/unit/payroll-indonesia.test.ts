@@ -260,6 +260,16 @@ describe("THR & lembur", () => {
       entries: [{ dayType: "rest_5day", hours: 9 }],
     });
     expect(rest.total.toNumber()).toBe(570_000);
+
+    const fractional = computeOvertimePay({
+      config,
+      monthlyWage: 5_190_000,
+      entries: [{ dayType: "workday", hours: 1.5 }],
+    });
+    // 1.0 jam pertama: 1.0 × 30.000 × 1.5 = 45.000
+    // 0.5 jam kedua:   0.5 × 30.000 × 2.0 = 30.000
+    // Total: 75.000 (tidak dipotong/terpotong menjadi 1 jam)
+    expect(fractional.total.toNumber()).toBe(75_000);
   });
 });
 

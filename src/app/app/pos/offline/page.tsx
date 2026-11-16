@@ -11,7 +11,7 @@ import {
 } from "@/server/pos-offline";
 import { PageHeader } from "@/components/blocks/page-header";
 import { DataList } from "@/components/blocks/data-list";
-import { StatCard } from "@/components/blocks/stat-card";
+import { SummaryStrip } from "@/components/blocks/summary-strip";
 import { EmptyState } from "@/components/blocks/empty-state";
 import { StatusBadge } from "@/components/blocks/status-badge";
 import { OfflineResolveButtons } from "@/components/pos/offline-review-panel";
@@ -45,11 +45,28 @@ export default async function PosOfflinePage() {
           OfflineResolveButtons (aksi supervisor berdialog sendiri). */}
       <DataList
         kpis={
-          <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-3">
-            <StatCard label="Menunggu peninjauan" value={String(queue.length)} hint="Antrean belum tuntas" icon={CloudOff} tone="amber" />
-            <StatCard label="Konflik stok" value={String(conflicts.length)} hint="Stok habis saat sinkron" tone="plum" />
-            <StatCard label="Gagal lain" value={String(failed.length)} hint="Dapat dicoba lagi dari terminal" tone="teal" />
-          </div>
+          <SummaryStrip
+            items={[
+              {
+                label: "Menunggu peninjauan",
+                value: String(queue.length),
+                hint: "Antrean belum tuntas",
+                tone: queue.length > 0 ? "amber" : "default",
+              },
+              {
+                label: "Konflik stok",
+                value: String(conflicts.length),
+                hint: "Stok habis saat sinkron",
+                tone: conflicts.length > 0 ? "red" : "default",
+              },
+              {
+                label: "Gagal lain",
+                value: String(failed.length),
+                hint: "Dapat dicoba lagi dari terminal",
+                tone: failed.length > 0 ? "amber" : "default",
+              },
+            ]}
+          />
         }
         isEmpty={queue.length === 0}
         empty={

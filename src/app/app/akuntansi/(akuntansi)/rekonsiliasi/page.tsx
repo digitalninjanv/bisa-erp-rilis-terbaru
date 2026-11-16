@@ -16,7 +16,7 @@ import { LIST_PAGE_SIZE } from "@/lib/pagination";
 import { formatIDR } from "@/lib/money";
 import { formatDate } from "@/lib/format";
 import { PageHeader } from "@/components/blocks/page-header";
-import { StatCard } from "@/components/blocks/stat-card";
+import { SummaryStrip } from "@/components/blocks/summary-strip";
 import { EmptyState } from "@/components/blocks/empty-state";
 import { labelClass } from "@/components/akuntansi/field-classes";
 import { Pagination } from "@/components/blocks/pagination";
@@ -231,12 +231,15 @@ export default async function RekonsiliasiPage({
         ) : null}
       </div>
 
-      <div className="mb-3 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-        <StatCard size="compact" label="Saldo buku (GL)" value={formatIDR(data.summary.bookBalance)} hint="Semua jurnal terposting s.d. hari ini" />
-        <StatCard size="compact" label="Sudah direkonsiliasi" value={formatIDR(data.summary.reconciledTotal)} hint="Baris jurnal yang tertaut ke mutasi" />
-        <StatCard size="compact" label="Belum direkonsiliasi" value={formatIDR(data.summary.unreconciledTotal)} hint="Baris jurnal tanpa tautan mutasi" />
-        <StatCard size="compact" label="Mutasi belum tertaut" value={formatIDR(data.summary.unmatchedStatementTotal)} hint="Neto mutasi impor tanpa pasangan (debit +)" />
-      </div>
+      <SummaryStrip
+        items={[
+          { label: "Saldo buku (GL)", value: formatIDR(data.summary.bookBalance), hint: "Semua jurnal terposting s.d. hari ini" },
+          { label: "Sudah direkonsiliasi", value: formatIDR(data.summary.reconciledTotal), hint: "Baris jurnal yang tertaut ke mutasi", tone: "green" },
+          { label: "Belum direkonsiliasi", value: formatIDR(data.summary.unreconciledTotal), hint: "Baris jurnal tanpa tautan mutasi", tone: Number(data.summary.unreconciledTotal) > 0 ? "amber" : "default" },
+          { label: "Mutasi belum tertaut", value: formatIDR(data.summary.unmatchedStatementTotal), hint: "Neto mutasi impor tanpa pasangan (debit +)", tone: Number(data.summary.unmatchedStatementTotal) !== 0 ? "amber" : "default" },
+        ]}
+        className="mb-3"
+      />
 
       {/* A-25 U4 (AKT-01): pencocokan BERDAMPINGAN — mutasi bank di
           kiri, buku besar di kanan, dalam satu pandangan (menggantikan

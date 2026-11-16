@@ -309,6 +309,36 @@ export default async function SupplierReturnDetailPage({
                 {formatIDR(data.remaining)}
               </dd>
             </div>
+            {data.partyCredit ? (
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-3 rounded-md border border-primary/20 bg-primary/5 p-3 text-[12px] sm:col-span-2">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-primary">Kredit Pemasok: {data.partyCredit.number}</span>
+                    <span
+                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                        data.partyCredit.status === "settled"
+                          ? "bg-tone-green-soft text-tone-green"
+                          : "bg-tone-blue-soft text-tone-blue"
+                      }`}
+                    >
+                      {data.partyCredit.status === "settled" ? "Lunas Terpakai" : "Tersedia di Piutang & Utang"}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Terpakai {formatIDR(data.partyCredit.usedAmount)} dari total klaim {formatIDR(data.partyCredit.amount)}.
+                    {data.remaining.gt(0)
+                      ? " Saldo tersisa otomatis siap dipotong saat melunasi faktur pembelian berikutnya di menu Piutang & Utang."
+                      : " Seluruh saldo kredit telah selesai digunakan untuk melunasi utang pembelian."}
+                  </p>
+                </div>
+                <Link
+                  href="/app/akuntansi/piutang-utang?tab=utang"
+                  className="inline-flex shrink-0 items-center rounded-md border border-primary/30 bg-card px-2.5 py-1.5 text-[11px] font-medium text-primary shadow-xs hover:bg-muted"
+                >
+                  Buka Menu Utang →
+                </Link>
+              </div>
+            ) : null}
           </dl>
           {data.postingJournal ? (
             <p className="border-t border-border px-4 py-3 text-[11px] text-muted-foreground">
@@ -359,10 +389,10 @@ export default async function SupplierReturnDetailPage({
         </details>
       ) : null}
 
-      {detail.resolutions.length > 0 ? (
+      {detail.resolutions.length > 0 || (data.creditPayments && data.creditPayments.length > 0) ? (
         <section className="mt-3 overflow-hidden rounded-lg border border-border bg-card">
           <div className="border-b border-border px-4 py-3">
-            <h2 className="text-[13px] font-semibold">Riwayat penyelesaian klaim</h2>
+            <h2 className="text-[13px] font-semibold">Riwayat penyelesaian & pemakaian kredit klaim</h2>
           </div>
           <div className="overflow-x-auto">
             <table className="data-table">
@@ -371,8 +401,8 @@ export default async function SupplierReturnDetailPage({
                   <th>Tanggal</th>
                   <th>Jenis</th>
                   <th>Rincian</th>
-                  <th className="text-right">Nominal klaim terpakai</th>
-                  <th>Jurnal</th>
+                  <th className="text-right">Nominal terpakai</th>
+                  <th>Dokumen / Jurnal</th>
                 </tr>
               </thead>
               <tbody>
@@ -407,6 +437,25 @@ export default async function SupplierReturnDetailPage({
                     </tr>
                   );
                 })}
+                {data.creditPayments?.map((payment) => (
+                  <tr key={payment.id}>
+                    <td className="num text-[12px] text-muted-foreground">{formatDate(payment.date)}</td>
+                    <td className="text-[12px] font-medium">Potong tagihan (Piutang & Utang)</td>
+                    <td className="text-[12px] text-muted-foreground">
+                      Pembayaran {payment.number}
+                      {payment.targetDocNumber ? ` · Faktur ${payment.targetDocNumber}` : ""}
+                    </td>
+                    <td className="num text-right font-medium">{formatIDR(payment.amount)}</td>
+                    <td>
+                      <Link
+                        href="/app/akuntansi/piutang-utang?tab=utang"
+                        className="num text-[11px] font-medium text-primary hover:underline"
+                      >
+                        {payment.number}
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

@@ -17,16 +17,16 @@ import {
 import { d, formatIDR, formatQty } from "@/lib/money";
 import { findPurchaseOrderPriceVariances } from "@/lib/purchase-order-price-variance";
 import { labelClass, fieldClass } from "@/components/blocks/field-classes";
-import { DocumentForm } from "@/components/blocks/document-form";
+import { DocumentForm, DocumentFormAdvanced } from "@/components/blocks/document-form";
 import {
   SOURCE_OPTIONS,
   StatRow,
+  linesFromOrder,
+  ReceiptAdvancedFields,
   type OpenPurchaseOrder,
   type SourceChoice,
 } from "@/components/gudang/receipt-form-parts";
 import { DateField } from "@/components/date-field";
-import { PercentInput } from "@/components/percent-input";
-import { ReceiptAdvanceField } from "@/components/gudang/receipt-advance-field";
 import { ReceiptConfirmations } from "@/components/gudang/receipt-confirmations";
 import { requireFilled } from "@/components/use-action-runner";
 
@@ -95,6 +95,7 @@ export function ReceiptForm({
   // Nilai uang muka yang dipakai; field-nya mengurus saldo pemasok.
   const [advanceApplied, setAdvanceApplied] = useState("0");
   const [advanceResetKey, setAdvanceResetKey] = useState(0);
+  const [hasAdvanceAvailable, setHasAdvanceAvailable] = useState(false);
   const [updateCatalogSalePrices, setUpdateCatalogSalePrices] = useState(false);
 
   const isPurchase = sourceChoice === "purchase_credit" || sourceChoice === "purchase_cash";
@@ -197,35 +198,6 @@ export function ReceiptForm({
     // form (prop tautan awal + fungsi murni).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supplierId, isPurchase]);
-
-  function linesFromOrder(order: OpenPurchaseOrder): DocLine[] {
-    // Start the lines from what the PO still owes; the cashier may trim
-    // quantities for a partial delivery, and the server enforces the cap.
-    // S2: baris PO berkemasan diisi awal dalam kemasan & harga per
-    // kemasan yang sama dengan PO-nya (sisa dinyatakan ulang per
-    // kemasan di server); petugas tetap bebas mengganti satuannya.
-    return order.lines.map((line) => ({
-      productId: line.productId,
-      name: line.productName,
-      sku: line.sku,
-      qty: (line.packagingId && line.remainingInputQty
-        ? d(line.remainingInputQty)
-        : d(line.remainingQty)
-      ).toString(),
-      unitCost: (line.packagingId && line.packagingUnitCost
-        ? d(line.packagingUnitCost)
-        : d(line.unitCost)
-      ).toString(),
-      trackBatch: line.trackBatch,
-      batchNumber: "",
-      expiryDate: "",
-      trackSerial: line.trackSerial,
-      serialNumbersText: "",
-      packagings: line.packagings,
-      packagingId: line.packagingId ?? "",
-      baseUnitCost: d(line.unitCost).toString(),
-    }));
-  }
 
   function pickPurchaseOrder(orderId: string) {
     setPurchaseOrderId(orderId);
@@ -389,6 +361,15 @@ export function ReceiptForm({
   // qty × harga sebagaimana dimasukkan (jumlah faktur yang sama).
   const totalQty = lines.reduce((acc, line) => acc.plus(docLineBaseQty(line)), d(0));
   const warehouseName = warehouses.find((row) => row.id === warehouseId)?.name;
+  const isTaxCustom =
+    taxPercent !== (d(taxRate || "0").gt(0) ? String(d(taxRate || "0").toNumber()) : "0");
+  const activeAdvancedCount =
+    (supplierInvoiceNumber.trim() ? 1 : 0) +
+    (supplierInvoiceDate ? 1 : 0) +
+    (dueDate ? 1 : 0) +
+    (d(advanceApplied).gt(0) ? 1 : 0) +
+    (updateCatalogSalePrices ? 1 : 0) +
+    (isTaxCustom ? 1 : 0);
 
   return (
     <div>
@@ -517,15 +498,18 @@ export function ReceiptForm({
 
                 <div className="border-t border-border pt-3">
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    2 · Pemasok &amp; faktur
+                    2 · Pemasok &amp; pesanan
                   </p>
                   <p className="mt-0.5 text-[10px] leading-4 text-muted-foreground">
                     {isPurchase
-                      ? "Pilih pemasok dan pesanan pembelian lebih dulu agar baris serta harga terisi otomatis."
+                      ? isCashPurchase
+                        ? "Pilih pemasok, pesanan pembelian (bila ada), dan akun Kas/Bank untuk pembayaran tunai."
+                        : "Pilih pemasok dan pesanan pembelian lebih dulu agar baris serta harga terisi otomatis."
                       : "Pemasok opsional untuk penerimaan non-pembelian."}
                   </p>
                 </div>
-                <div className="grid gap-2 sm:grid-cols-3">
+
+                <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
                   <label className="space-y-1">
                     <span className={labelClass}>
                       Pemasok {isPurchase ? "" : "(opsional)"}
@@ -536,6 +520,7 @@ export function ReceiptForm({
                         setSupplierId(event.target.value);
                         setPurchaseOrderId("");
                         setAdvanceApplied("0");
+                        setHasAdvanceAvailable(false);
                       }}
                       className={fieldClass}
                     >
@@ -562,93 +547,75 @@ export function ReceiptForm({
                           </option>
                         ))}
                       </select>
-                      <span className="block text-[10px] leading-4 text-muted-foreground">
-                        {visibleOpenOrders.length > 0
-                          ? `${visibleOpenOrders.length} PO terbuka untuk pemasok ini. Baris terisi dari sisa PO dan qty melebihi sisa ditolak server.`
-                          : "Tidak ada PO terbuka untuk pemasok ini."}
-                      </span>
                     </label>
                   ) : null}
 
-                  {isPurchase ? (
-                    <>
-                      <label className="space-y-1">
-                        <span className={labelClass}>No. faktur pemasok (opsional)</span>
-                        <input
-                          value={supplierInvoiceNumber}
-                          onChange={(event) => setSupplierInvoiceNumber(event.target.value)}
-                          className={fieldClass}
-                          placeholder="INV/2026/001"
-                        />
-                        <span className="block text-[10px] leading-4 text-muted-foreground">
-                          Isi jika faktur sudah diterima bersama barang; nomor bisa dicari di riwayat pembelian.
-                        </span>
-                      </label>
-                      <label className="space-y-1">
-                        <span className={labelClass}>Tanggal faktur pemasok</span>
-                        <DateField value={supplierInvoiceDate} onChange={setSupplierInvoiceDate} aria-label="Tanggal faktur pemasok" />
-                      </label>
-                      <label className="space-y-1">
-                        <span className={labelClass}>Jatuh tempo (opsional)</span>
-                        <DateField value={dueDate} onChange={setDueDate} aria-label="Jatuh tempo faktur" />
-                        <span className="block text-[10px] leading-4 text-muted-foreground">
-                          Kosong = tanggal penerimaan + termin pemasok.
-                        </span>
-                      </label>
-                    </>
-                  ) : null}
-
-                  {isPurchase ? (
-                    <label className="space-y-1">
-                      <span className={labelClass}>PPN (%)</span>
-                      <div className="max-w-36">
-                        <PercentInput
-                          value={taxPercent}
-                          onChange={setTaxPercent}
-                          disabled={!taxInputMapped}
-                          aria-label="PPN (%)"
-                        />
-                      </div>
-                      <span className="block text-[10px] text-muted-foreground">
-                        {!taxInputMapped
-                          ? "Akun PPN Masukan belum dipetakan"
-                          : d(taxPercent || "0").gt(0)
-                            ? `PPN ${taxPercent}% = ${formatIDR(taxValue)}`
-                            : "Isi 0 bila tanpa PPN"}
-                      </span>
-                    </label>
-                  ) : null}
-
-                  {isPurchase && canPrice ? (
-                    <div className="flex items-center pt-5">
-                      <label className="inline-flex cursor-pointer items-center gap-2">
-                        <input type="checkbox" checked={updateCatalogSalePrices} onChange={(e) => setUpdateCatalogSalePrices(e.target.checked)} className="size-3.5 rounded border-input" />
-                        <span className="text-[11px] text-muted-foreground">Perbarui harga jual master produk</span>
-                      </label>
-                    </div>
-                  ) : null}
-                </div>
-
-                {isCashPurchase ? (
-                  <div className="grid gap-2 sm:grid-cols-3">
+                  {isCashPurchase ? (
                     <label className="space-y-1">
                       <span className={labelClass}>Dibayar dari akun</span>
-                      <select value={paymentAccountId} onChange={(event) => setPaymentAccountId(event.target.value)} className={fieldClass}>
+                      <select
+                        value={paymentAccountId}
+                        onChange={(event) => setPaymentAccountId(event.target.value)}
+                        className={fieldClass}
+                      >
                         {paymentAccounts.map((row) => (
                           <option key={row.id} value={row.id}>{row.code} — {row.name}</option>
                         ))}
                       </select>
                     </label>
-                  </div>
+                  ) : null}
+                </div>
+
+                {isPurchase && visibleOpenOrders.length > 0 ? (
+                  <p className="text-[10px] leading-4 text-muted-foreground">
+                    {visibleOpenOrders.length} PO terbuka untuk pemasok ini. Baris terisi otomatis dari sisa PO dan qty melebihi sisa ditolak server.
+                  </p>
                 ) : null}
 
-                <ReceiptAdvanceField
-                  key={`${supplierId}:${sourceChoice}:${advanceResetKey}`}
-                  supplierId={supplierId}
-                  isPurchase={isPurchase}
-                  grandTotal={grandTotal.toString()}
-                  onAppliedChange={setAdvanceApplied}
-                />
+                {isPurchase ? (
+                  <DocumentFormAdvanced
+                    title={
+                      <span className="flex items-center gap-2">
+                        <span>Faktur pemasok &amp; opsi lanjutan</span>
+                        {activeAdvancedCount > 0 ? (
+                          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-foreground">
+                            {activeAdvancedCount} aktif
+                          </span>
+                        ) : null}
+                        {hasAdvanceAvailable && d(advanceApplied).lte(0) ? (
+                          <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400">
+                            DP tersedia
+                          </span>
+                        ) : null}
+                      </span>
+                    }
+                    className="mt-2 rounded-lg border border-border/70 bg-muted/20 p-3"
+                  >
+                    <ReceiptAdvancedFields
+                      supplierInvoiceNumber={supplierInvoiceNumber}
+                      setSupplierInvoiceNumber={setSupplierInvoiceNumber}
+                      supplierInvoiceDate={supplierInvoiceDate}
+                      setSupplierInvoiceDate={setSupplierInvoiceDate}
+                      dueDate={dueDate}
+                      setDueDate={setDueDate}
+                      isCashPurchase={isCashPurchase}
+                      taxPercent={taxPercent}
+                      setTaxPercent={setTaxPercent}
+                      taxInputMapped={Boolean(taxInputMapped)}
+                      taxValue={taxValue}
+                      canPrice={Boolean(canPrice)}
+                      updateCatalogSalePrices={updateCatalogSalePrices}
+                      setUpdateCatalogSalePrices={setUpdateCatalogSalePrices}
+                      supplierId={supplierId}
+                      sourceChoice={sourceChoice}
+                      advanceResetKey={advanceResetKey}
+                      isPurchase={isPurchase}
+                      grandTotal={grandTotal.toString()}
+                      setAdvanceApplied={setAdvanceApplied}
+                      setHasAdvanceAvailable={setHasAdvanceAvailable}
+                    />
+                  </DocumentFormAdvanced>
+                ) : null}
                 </div>
               </div>
             }
@@ -728,7 +695,7 @@ export function ReceiptForm({
             }
           >
             <div className="space-y-3 p-4">
-              <div className="flex flex-wrap items-end justify-between gap-2 border-t border-border pt-3">
+              <div className="flex flex-wrap items-end justify-between gap-2">
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     3 · Barang diterima

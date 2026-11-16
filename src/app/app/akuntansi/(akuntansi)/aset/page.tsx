@@ -16,7 +16,7 @@ import {
   listFixedAssetCategories,
 } from "@/server/fixed-assets";
 import { PageHeader } from "@/components/blocks/page-header";
-import { StatCard } from "@/components/blocks/stat-card";
+import { SummaryStrip } from "@/components/blocks/summary-strip";
 import { EmptyState } from "@/components/blocks/empty-state";
 import { DataList, DataListToolbar } from "@/components/blocks/data-list";
 import { FilterChips } from "@/components/blocks/search-form";
@@ -127,15 +127,19 @@ export default async function AsetTetapPage({
         }
       />
 
-      <div className="mb-3 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-        <StatCard size="compact" label="Nilai buku total" value={formatIDR(data.report.totals.bookValue)} hint={`${activeAssets.length} aset aktif`} />
-        <StatCard size="compact" label="Harga perolehan" value={formatIDR(data.report.totals.cost)} hint="Semua aset terdaftar" />
-        <StatCard size="compact" label="Akumulasi penyusutan" value={formatIDR(data.report.totals.accumulated)} hint="Menurut rincian per aset" />
-        <StatCard
-          size="compact"
-          label="Saldo GL akumulasi"
-          value={formatIDR(data.glAccumulated)}
-          hint={glMatches ? "Cocok dengan laporan ✓" : "SELISIH dengan laporan — periksa!"}
+      <div className="mb-3">
+        <SummaryStrip
+          items={[
+            { label: "Nilai buku total", value: formatIDR(data.report.totals.bookValue), hint: `${activeAssets.length} aset aktif` },
+            { label: "Harga perolehan", value: formatIDR(data.report.totals.cost), hint: "Semua aset terdaftar" },
+            { label: "Akumulasi penyusutan", value: formatIDR(data.report.totals.accumulated), hint: "Menurut rincian per aset" },
+            {
+              label: "Saldo GL akumulasi",
+              value: formatIDR(data.glAccumulated),
+              hint: glMatches ? "Cocok dengan laporan ✓" : "SELISIH dengan laporan — periksa!",
+              tone: glMatches ? ("green" as const) : ("red" as const),
+            },
+          ]}
         />
       </div>
 

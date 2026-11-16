@@ -39,8 +39,14 @@ import { buildPalettePages } from "@/lib/palette";
 
 const HR_HREFS = [
   "/app/akuntansi/payroll",
-  "/app/akuntansi/kasbon",
+  "/app/akuntansi/hr/persetujuan",
   "/app/akuntansi/hr/absensi",
+  "/app/akuntansi/hr/cuti",
+  "/app/akuntansi/hr/lembur",
+  "/app/akuntansi/klaim",
+  "/app/akuntansi/kasbon",
+  "/app/akuntansi/pinjaman",
+  "/app/akuntansi/hr/pengaturan",
 ];
 
 describe("definisi modul HR (workflow ringkas)", () => {
@@ -62,15 +68,16 @@ describe("definisi modul HR (workflow ringkas)", () => {
     for (const href of hrefs) expect(href.startsWith("/app/akuntansi/")).toBe(true);
   });
 
-  it("seluruh item nav HR berpagar payroll.view (izin tidak berganti kunci)", () => {
-    for (const item of MODULES.hr.nav) expect(item.permission).toBe("payroll.view");
+  it("seluruh item nav HR berpagar payroll.view atau payroll.manage", () => {
+    for (const item of MODULES.hr.nav) expect(["payroll.view", "payroll.manage"]).toContain(item.permission);
   });
 
   it("nav HR dikelompokkan per pekerjaan", () => {
     const groups = groupNavItems(MODULES.hr.nav);
     expect(groups.map((group) => group.group)).toEqual([
-      "Karyawan & gaji",
-      "Operasi harian",
+      "Operasi tim",
+      "Pengajuan & saldo",
+      "Pengaturan",
     ]);
   });
 });
@@ -94,7 +101,7 @@ describe("sidebar akuntansi kehilangan grup SDM & Payroll", () => {
   it("gabungan href seluruh modul tidak memiliki tujuan duplikat", () => {
     const all = MODULE_LIST.flatMap((m) => m.nav.map((i) => i.href));
     expect(new Set(all).size).toBe(all.length);
-    expect(all).toHaveLength(53);
+    expect(all).toHaveLength(59);
   });
 });
 

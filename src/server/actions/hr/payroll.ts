@@ -2,7 +2,7 @@
 
 "use server";
 
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, isNull, lte, ne, or } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { withCompany } from "@/db/tenant";
@@ -122,10 +122,18 @@ export async function runPayrollAction(input: {
         .limit(1);
       if (existing) throw new AppError("CONFLICT", `Payroll periode ${data.period} sudah pernah diproses.`);
 
+      const periodEnd = periodEndDate(data.period);
       const staff = await tx
         .select()
         .from(employees)
-        .where(and(eq(employees.companyId, ctx.company.id), eq(employees.isActive, true)));
+        .where(
+          and(
+            eq(employees.companyId, ctx.company.id),
+            eq(employees.isActive, true),
+            ne(employees.employmentStatus, "terminated"),
+            or(isNull(employees.joinedAt), lte(employees.joinedAt, periodEnd)),
+          ),
+        );
       if (staff.length === 0) throw new AppError("VALIDATION", "Belum ada karyawan aktif.");
 
       // SIM-2 S2: engine Payroll Indonesia hanya berjalan bila

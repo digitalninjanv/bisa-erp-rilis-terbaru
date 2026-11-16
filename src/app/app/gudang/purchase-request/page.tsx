@@ -14,7 +14,7 @@ import {
 import { listDepartmentOptions, listEmployeeOptions } from "@/server/hr";
 import { LIST_PAGE_SIZE, parsePageParam } from "@/lib/pagination";
 import { PageHeader } from "@/components/blocks/page-header";
-import { StatCard } from "@/components/blocks/stat-card";
+import { SummaryStrip } from "@/components/blocks/summary-strip";
 import { DataList } from "@/components/blocks/data-list";
 import { Pagination } from "@/components/blocks/pagination";
 import { EmptyState } from "@/components/blocks/empty-state";
@@ -76,12 +76,32 @@ export default async function PurchaseRequestPage({
           buat permintaan tetap aksi utama di PageHeader. */}
       <DataList
         kpis={
-          <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-            <StatCard label="Menunggu pengesahan" value={formatNumber(data.statusCounts.submitted ?? 0)} hint="Permintaan berstatus diajukan" icon={ClipboardList} tone="amber" />
-            <StatCard label="Disahkan, belum PO" value={formatNumber(data.statusCounts.approved ?? 0)} hint="Siap dikonversi" tone="teal" />
-            <StatCard label="Total permintaan" value={formatNumber(totalRequests)} hint="Semua status" tone="plum" />
-            <StatCard label="Terkonversi" value={formatNumber(data.statusCounts.converted ?? 0)} hint="Sudah menjadi PO" tone="green" />
-          </div>
+          <SummaryStrip
+            items={[
+              {
+                label: "Menunggu pengesahan",
+                value: formatNumber(data.statusCounts.submitted ?? 0),
+                hint: "Permintaan berstatus diajukan",
+                tone: (data.statusCounts.submitted ?? 0) > 0 ? "amber" : "default",
+              },
+              {
+                label: "Disahkan, belum PO",
+                value: formatNumber(data.statusCounts.approved ?? 0),
+                hint: "Siap dikonversi",
+              },
+              {
+                label: "Total permintaan",
+                value: formatNumber(totalRequests),
+                hint: "Semua status",
+              },
+              {
+                label: "Terkonversi",
+                value: formatNumber(data.statusCounts.converted ?? 0),
+                hint: "Sudah menjadi PO",
+                tone: "green",
+              },
+            ]}
+          />
         }
         isEmpty={data.requestsPage.rows.length === 0}
         empty={

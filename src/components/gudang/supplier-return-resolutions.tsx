@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { ArrowRight, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   applySupplierCreditAction,
@@ -193,43 +195,70 @@ function ApplyCreditForm({
       <div className={sectionHeadClass}>
         <h3 className="text-[13px] font-semibold">Terapkan ke Utang (potong pembelian berikutnya)</h3>
         <p className="mt-0.5 text-[11px] text-muted-foreground">
-          Klaim dipakai melunasi utang pemasok yang masih terbuka — dokumen yang dipilih, atau utang tertua dulu (FIFO) bila dibiarkan otomatis.
+          Klaim otomatis tersedia saat membayar tagihan di menu Piutang & Utang. Anda juga dapat mengalokasikannya langsung ke dokumen utang terbuka di bawah ini:
         </p>
       </div>
-      <div className="space-y-2 p-4">
-        <label className="block space-y-1">
-          <span className={labelClass}>Dokumen utang tujuan</span>
-          <select value={target} onChange={(event) => setTarget(event.target.value)} className={fieldClass}>
-            <option value="">Otomatis — utang tertua dulu (FIFO)</option>
-            {openPayables.map((doc) => (
-              <option key={`${doc.kind}:${doc.id}`} value={`${doc.kind}:${doc.id}`}>
-                {doc.number ?? "(tanpa nomor)"}
-                {doc.kind === "opening" ? " · saldo awal" : ""}
-                {doc.reference ? ` · ref ${doc.reference}` : ""} · {formatDate(doc.date)} · sisa {formatIDR(doc.outstanding)}
-              </option>
-            ))}
-          </select>
-        </label>
+      <div className="space-y-3 p-4">
         {openPayables.length === 0 ? (
-          <p className="text-[11px] text-muted-foreground">
-            Pemasok ini sedang tidak punya utang terbuka — kredit baru bisa diterapkan setelah ada pembelian kredit berikutnya.
-          </p>
-        ) : null}
-        <div className="grid grid-cols-2 gap-2">
-          <label className="block space-y-1">
-            <span className={labelClass}>Nominal (maks {formatIDR(remainingClaim)})</span>
-            <MoneyInput value={amount} onChange={setAmount} className="h-9 px-2.5 text-[12px]" aria-label="Nominal kredit diterapkan" />
-          </label>
-          <label className="block space-y-1">
-            <span className={labelClass}>Tanggal</span>
-            <DateField value={date} onChange={setDate} aria-label="Tanggal" />
-          </label>
-        </div>
-        <div className="flex justify-end">
-          <button type="button" onClick={submit} disabled={busy || openPayables.length === 0} className={submitClass}>
-            {busy ? "Menerapkan…" : "Terapkan kredit"}
-          </button>
-        </div>
+          <div className="rounded-md border border-primary/20 bg-primary/5 p-3.5 text-[12px]">
+            <div className="flex items-center gap-1.5 font-semibold text-primary">
+              <CheckCircle2 className="size-4 shrink-0" />
+              <span>Kredit Retur Siap Digunakan untuk Pembelian Berikutnya</span>
+            </div>
+            <p className="mt-1.5 text-[11px] leading-relaxed text-foreground/80">
+              Pemasok ini saat ini belum memiliki tagihan utang terbuka. Anda <strong>tidak perlu</strong> melakukan tindakan apapun di sini.
+            </p>
+            <p className="mt-1 text-[11px] leading-relaxed text-foreground/80">
+              Ketika Anda mencatat penerimaan/pembelian kredit baru berikutnya untuk pemasok ini, saldo kredit ini ({formatIDR(remainingClaim)}) akan <strong>otomatis muncul sebagai pilihan sumber dana pemotongan</strong> saat membayar tagihan di menu Piutang & Utang.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Link
+                href="/app/akuntansi/piutang-utang?tab=utang"
+                className="inline-flex h-7 items-center gap-1 rounded-md border border-primary/30 bg-card px-2.5 text-[11px] font-medium text-primary shadow-xs hover:bg-muted"
+              >
+                Lihat Menu Piutang & Utang
+                <ArrowRight className="size-3" />
+              </Link>
+              <Link
+                href="/app/gudang/penerimaan/baru"
+                className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-card px-2.5 text-[11px] font-medium text-foreground hover:bg-muted"
+              >
+                Penerimaan Barang Baru
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <>
+            <label className="block space-y-1">
+              <span className={labelClass}>Dokumen utang tujuan</span>
+              <select value={target} onChange={(event) => setTarget(event.target.value)} className={fieldClass}>
+                <option value="">Otomatis — utang tertua dulu (FIFO)</option>
+                {openPayables.map((doc) => (
+                  <option key={`${doc.kind}:${doc.id}`} value={`${doc.kind}:${doc.id}`}>
+                    {doc.number ?? "(tanpa nomor)"}
+                    {doc.kind === "opening" ? " · saldo awal" : ""}
+                    {doc.reference ? ` · ref ${doc.reference}` : ""} · {formatDate(doc.date)} · sisa {formatIDR(doc.outstanding)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="block space-y-1">
+                <span className={labelClass}>Nominal (maks {formatIDR(remainingClaim)})</span>
+                <MoneyInput value={amount} onChange={setAmount} className="h-9 px-2.5 text-[12px]" aria-label="Nominal kredit diterapkan" />
+              </label>
+              <label className="block space-y-1">
+                <span className={labelClass}>Tanggal</span>
+                <DateField value={date} onChange={setDate} aria-label="Tanggal" />
+              </label>
+            </div>
+            <div className="flex justify-end">
+              <button type="button" onClick={submit} disabled={busy} className={submitClass}>
+                {busy ? "Menerapkan…" : "Terapkan kredit sekarang"}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </section>
   );

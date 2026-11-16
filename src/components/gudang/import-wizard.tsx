@@ -101,7 +101,6 @@ type ListData = {
   filterRowNumbers?: number[];
   selectableRowNumbers?: number[];
   problemRowNumbers?: number[];
-  incompleteRowNumbers?: number[];
 };
 
 const ROWS_PAGE_SIZE = 50;
@@ -151,7 +150,6 @@ export function ImportWizard({
   const [filterRowNumbers, setFilterRowNumbers] = useState<number[]>([]);
   const [selectableRowNumbers, setSelectableRowNumbers] = useState<number[]>([]);
   const [problemRowNumbers, setProblemRowNumbers] = useState<number[]>([]);
-  const [incompleteRowNumbers, setIncompleteRowNumbers] = useState<number[]>([]);
   const [savingRow, setSavingRow] = useState<number | null>(null);
   const [updateExisting, setUpdateExisting] = useState(false);
   const [importStock, setImportStock] = useState(true);
@@ -166,7 +164,6 @@ export function ImportWizard({
       setFilterRowNumbers([]);
       setSelectableRowNumbers([]);
       setProblemRowNumbers([]);
-      setIncompleteRowNumbers([]);
     },
     onRowsLoaded: (raw) => {
       const data = raw as unknown as ListData;
@@ -174,7 +171,6 @@ export function ImportWizard({
       setFilterRowNumbers(data.filterRowNumbers ?? []);
       setSelectableRowNumbers(data.selectableRowNumbers ?? []);
       setProblemRowNumbers(data.problemRowNumbers ?? []);
-      setIncompleteRowNumbers(data.incompleteRowNumbers ?? []);
     },
   });
   const {
@@ -227,20 +223,6 @@ export function ImportWizard({
     // analisisnya tetap tercatat sebagai sebab lewatinya.
     if (problemRowNumbers.length > 0) {
       skips.push({ rowNumbers: problemRowNumbers, keepError: true });
-    }
-    // Baris yang belum lengkap (SKU/Nama/Barcode/Satuan/Harga beli/
-    // Harga jual) tidak boleh ikut terimpor diam-diam. Beri alasan
-    // eksplisit agar tampil di riwayat baris.
-    if (incompleteRowNumbers.length > 0) {
-      toast.warning(
-        `${formatNumber(incompleteRowNumbers.length)} baris belum lengkap akan dilewati. Lengkapi dulu bila ingin mengimpor semuanya.`,
-        { duration: 6000 },
-      );
-      skips.push({
-        rowNumbers: incompleteRowNumbers,
-        reason:
-          "Belum lengkap — dilewati; lengkapi SKU/Nama/Barcode/Satuan/Harga beli/Harga jual.",
-      });
     }
     await flow.commit({
       extraSkips: skips,
@@ -377,6 +359,22 @@ export function ImportWizard({
               <div className="flex flex-wrap items-center gap-2 text-[11px]">
                 <button
                   type="button"
+                  disabled={rowsLoading || selectableRowNumbers.length === 0}
+                  onClick={() => setExcluded(new Set())}
+                  className="h-8 rounded-md border border-border px-2.5 hover:bg-muted disabled:opacity-50"
+                >
+                  Pilih semua yang siap
+                </button>
+                <button
+                  type="button"
+                  disabled={rowsLoading || selectedCount === 0}
+                  onClick={() => setExcluded(new Set(selectableRowNumbers))}
+                  className="h-8 rounded-md border border-border px-2.5 hover:bg-muted disabled:opacity-50"
+                >
+                  Kosongkan pilihan
+                </button>
+                <button
+                  type="button"
                   disabled={rowsLoading || filterRowNumbers.length === 0}
                   onClick={() =>
                     setExcluded((current) => {
@@ -387,7 +385,7 @@ export function ImportWizard({
                   }
                   className="h-8 rounded-md border border-border px-2.5 hover:bg-muted disabled:opacity-50"
                 >
-                  Pilih semua yang tampil
+                  Pilih semua hasil filter
                 </button>
                 <button
                   type="button"
@@ -401,10 +399,10 @@ export function ImportWizard({
                   }
                   className="h-8 rounded-md border border-border px-2.5 hover:bg-muted disabled:opacity-50"
                 >
-                  Batalkan pilihan yang tampil
+                  Batalkan pilihan hasil filter
                 </button>
                 <span className="font-medium">
-                  {formatNumber(selectedCount)} dari {formatNumber(counts?.total ?? analysis.summary.totalRows)} baris dipilih
+                  {formatNumber(selectedCount)} dari {formatNumber(selectableRowNumbers.length)} baris siap dipilih
                 </span>
                 {excluded.size > 0 ? (
                   <span className="text-muted-foreground">
@@ -427,15 +425,15 @@ export function ImportWizard({
                       <input
                         type="checkbox"
                         checked={
-                          previewRows.some((row) => row.flags?.lengkap) &&
+                          previewRows.some((row) => row.flags?.siap) &&
                           previewRows
-                            .filter((row) => row.flags?.lengkap)
+                            .filter((row) => row.flags?.siap)
                             .every((row) => !excluded.has(row.rowNumber))
                         }
                         onChange={(event) =>
                           setExcluded((current) => {
                             const next = new Set(current);
-                            for (const row of previewRows.filter((r) => r.flags?.lengkap)) {
+                            for (const row of previewRows.filter((r) => r.flags?.siap)) {
                               if (event.target.checked) next.delete(row.rowNumber);
                               else next.add(row.rowNumber);
                             }
@@ -458,8 +456,8 @@ export function ImportWizard({
                 </thead>
                 <tbody>
                   {previewRows.map((row) => {
-                    const complete = row.flags?.lengkap ?? false;
-                    const included = complete && !excluded.has(row.rowNumber);
+                    const ready = row.flags?.siap ?? false;
+                    const included = ready && !excluded.has(row.rowNumber);
                     const editable = row.status === "pending" && row.cells;
                     const hints = row.flags ? flagHints(row) : null;
                     return (
@@ -468,7 +466,7 @@ export function ImportWizard({
                           <input
                             type="checkbox"
                             checked={included}
-                            disabled={row.status !== "pending" || !complete}
+                            disabled={row.status !== "pending" || !ready}
                             onChange={(event) =>
                               setExcluded((current) => {
                                 const next = new Set(current);
@@ -594,9 +592,9 @@ export function ImportWizard({
 
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-3">
               <p className="text-[11px] text-muted-foreground">
-                Baris yang tidak dicentang akan dilewati saat impor. Baris bermasalah atau belum lengkap
-                (SKU/Nama/Barcode/Satuan/Harga beli/Harga jual) tidak dapat dipilih — perbaiki lewat selnya
-                sampai siap, atau biarkan dilewati.
+                Baris belum lengkap tetap bisa dipilih dan diimpor: SKU kosong dibuat otomatis, barcode/satuan
+                kosong disimpan tanpa nilai, dan harga kosong menjadi 0. Baris bermasalah harus diperbaiki atau
+                dibiarkan tidak dipilih. Baris yang tidak dicentang akan dilewati.
                 {analysis.summary.newCategories.length > 0 ? ` Kategori baru: ${analysis.summary.newCategories.slice(0, 5).join(", ")}.` : ""}
               </p>
               <div className="flex items-center gap-2">

@@ -20,6 +20,7 @@ import type { CustomFieldDefinition } from "@/lib/custom-fields";
 import { sortCategoryTree } from "@/lib/categories";
 import { inputClass } from "@/components/blocks/field-classes";
 import { Field } from "@/components/blocks/field";
+import { ErrorSummary, type FormErrorItem } from "@/components/blocks/error-summary";
 import { ConfirmDialog } from "@/components/blocks/confirm-dialog";
 import {
   Sheet,
@@ -81,6 +82,7 @@ export function ProductForm({
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   // G2 (FRM-05): busy + pemeriksaan hasil kini helper submit bersama.
   const { busy, run } = useActionRunner();
+  const [formErrors, setFormErrors] = useState<FormErrorItem[]>([]);
   const [form, setForm] = useState({
     name: product?.name ?? "",
     sku: product?.sku ?? "",
@@ -139,13 +141,18 @@ export function ProductForm({
   }
 
   async function submit() {
-    // G2 & UI-008: Validasi spesifik per field agar pengguna tidak menebak
-    if (!requireFilled(form.name, "Nama produk wajib diisi.")) return;
-    if (!requireFilled(form.sku, "SKU produk wajib diisi.")) return;
+    const errors: FormErrorItem[] = [];
+    if (!form.name.trim()) errors.push({ field: "product-name", message: "Nama produk wajib diisi." });
+    if (!form.sku.trim()) errors.push({ field: "product-sku", message: "SKU produk wajib diisi." });
     if (Object.values(invalidMoney).some(Boolean)) {
-      toast.error("Harga belum terbaca — periksa kembali nominal harga.");
+      errors.push({ message: "Harga belum terbaca — periksa kembali nominal harga." });
+    }
+    if (errors.length > 0) {
+      setFormErrors(errors);
+      toast.error(errors[0].message);
       return;
     }
+    setFormErrors([]);
     let packagingPayload: PackagingInput[] | undefined;
     if (packagingsManaged) {
       const filled = packagingRows.filter(
@@ -226,10 +233,12 @@ export function ProductForm({
           </SheetHeader>
 
           <div className="min-h-0 flex-1 overflow-y-auto p-5">
+            <ErrorSummary errors={formErrors} className="mb-4" />
             <p className="mb-3 text-[11px] text-muted-foreground">SKU dan barcode harus unik di perusahaan ini.</p>
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Nama produk" className="sm:col-span-2">
                 <input
+                  id="product-name"
                   value={form.name}
                   onChange={(event) => setForm({ ...form, name: event.target.value })}
                   className={inputClass}
@@ -237,7 +246,7 @@ export function ProductForm({
                 />
               </Field>
               <Field label="SKU">
-                <input value={form.sku} onChange={(event) => setForm({ ...form, sku: event.target.value })} className={inputClass} placeholder="SKU-00001" />
+                <input id="product-sku" value={form.sku} onChange={(event) => setForm({ ...form, sku: event.target.value })} className={inputClass} placeholder="SKU-00001" />
               </Field>
               <Field label="Barcode">
                 <input value={form.barcode} onChange={(event) => setForm({ ...form, barcode: event.target.value })} className={inputClass} placeholder="899…" />

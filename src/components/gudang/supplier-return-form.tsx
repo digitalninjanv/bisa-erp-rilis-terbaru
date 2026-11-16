@@ -15,6 +15,7 @@ import {
   type InitialReturnLine,
   type LabelOption,
   type ReturnLine,
+  RESOLUTION_HINTS,
   displayDecimal,
   lineEstimatedValue,
   returnLineBaseQty,
@@ -757,14 +758,9 @@ export function SupplierReturnForm({
               </select>
             </label>
           </div>
-          {resolutionType === "purchase_advance" ? (
-            <p className="rounded-md border border-tone-teal/25 bg-tone-teal-soft px-3 py-2 text-[11px] leading-5 text-tone-teal">
-              Saat diposting, nilai retur memotong utang terbuka pemasok lebih dulu. Sisa kreditnya otomatis
-              menjadi <strong>Uang Muka Pembelian</strong> dan dapat dipotong pada penerimaan berikutnya.
-            </p>
-          ) : resolutionType === "next_purchase_credit" ? (
-            <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-[11px] leading-5 text-muted-foreground">
-              Sisa kredit tetap tercatat sebagai klaim pemasok dan dipotong saat pembelian berikutnya.
+          {RESOLUTION_HINTS[resolutionType] ? (
+            <p className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-[11px] leading-5 text-primary">
+              {RESOLUTION_HINTS[resolutionType]}
             </p>
           ) : null}
           <label className="block space-y-1">

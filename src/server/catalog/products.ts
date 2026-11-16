@@ -532,7 +532,21 @@ export async function searchProducts(
             ),
           ),
         )
-        .orderBy(sql`case when ${products.barcode} = ${q} then 0 when ${products.sku} = ${q} then 1 else 2 end`, asc(products.name))
+        .orderBy(
+          sql`case
+            when ${products.barcode} = ${q} then 0
+            when ${products.sku} = ${q} then 1
+            when exists (
+              select 1 from product_packagings pp
+               where pp.company_id = ${products.companyId}
+                 and pp.product_id = ${products.id}
+                 and pp.barcode = ${q}
+                 and pp.is_active = true
+            ) then 2
+            else 3
+          end`,
+          asc(products.name),
+        )
         .limit(input.limit ?? 20)
         .offset(input.offset ?? 0);
 

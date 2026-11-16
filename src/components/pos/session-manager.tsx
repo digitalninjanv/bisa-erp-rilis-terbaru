@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowDownToLine, ArrowUpFromLine, Lock, Unlock } from "lucide-react";
+import { AlertTriangle, ArrowDownToLine, ArrowUpFromLine, Lock, Unlock } from "lucide-react";
 import { toast } from "sonner";
 import { formatIDR } from "@/lib/money";
 import { MoneyInput } from "@/components/money-input";
@@ -36,12 +37,11 @@ type Summary = {
 export function SessionManager({
   session,
   differenceTolerance = 0,
+  heldCount = 0,
 }: {
   session: Summary | null;
-  // A-28 Tahap 1 (H-POS-02): toleransi selisih perusahaan (Rp) —
-  // hanya untuk petunjuk & kewajiban alasan di formulir; penegakan
-  // sesungguhnya di server (closeCashSession).
   differenceTolerance?: number;
+  heldCount?: number;
 }) {
   const router = useRouter();
   const [openingCash, setOpeningCash] = useState("500000");
@@ -79,6 +79,10 @@ export function SessionManager({
   }
 
   async function close() {
+    if (heldCount > 0) {
+      toast.error(`Masih terdapat ${heldCount} pesanan tertahan. Selesaikan atau batalkan pesanan sebelum menutup sesi.`);
+      return;
+    }
     setBusy("close");
     const result = await closeSessionAction({
       sessionId: session!.id,
@@ -213,6 +217,24 @@ export function SessionManager({
 
           <div className="border-t border-border p-4">
             <h3 className="text-[12px] font-semibold">Tutup sesi</h3>
+            {heldCount > 0 ? (
+              <div className="mt-2.5 rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                    <span className="text-[12px] font-medium">
+                      Terdapat {heldCount} pesanan tertahan (held). Selesaikan atau batalkan pesanan sebelum menutup sesi kas.
+                    </span>
+                  </div>
+                  <Link
+                    href="/app/pos/ditahan"
+                    className="inline-flex h-7 items-center rounded-md bg-amber-600 px-2.5 text-[11px] font-semibold text-white transition-colors hover:bg-amber-700"
+                  >
+                    Buka Pesanan Ditahan →
+                  </Link>
+                </div>
+              </div>
+            ) : null}
             {closeStep === "hitung" ? (
               <div className="mt-2">
                 <p className="max-w-lg text-[11px] leading-4 text-muted-foreground">
@@ -316,7 +338,7 @@ export function SessionManager({
                   <button
                     type="button"
                     onClick={close}
-                    disabled={busy === "close" || (reasonRequired && differenceReason.trim() === "")}
+                    disabled={busy === "close" || (reasonRequired && differenceReason.trim() === "") || heldCount > 0}
                     className="inline-flex h-9 items-center gap-1.5 rounded-md bg-foreground px-4 text-[12px] font-semibold text-background hover:bg-foreground/90 disabled:opacity-50"
                   >
                     <Lock className="size-3.5" /> {busy === "close" ? "Menutup…" : "Tutup sesi"}

@@ -13,7 +13,7 @@ import {
 import { LIST_PAGE_SIZE, parsePageParam } from "@/lib/pagination";
 import { formatIDR, formatQty } from "@/lib/money";
 import { PageHeader } from "@/components/blocks/page-header";
-import { StatCard } from "@/components/blocks/stat-card";
+import { SummaryStrip } from "@/components/blocks/summary-strip";
 import { EmptyState } from "@/components/blocks/empty-state";
 import { StatusBadge } from "@/components/blocks/status-badge";
 import { DataList, DataListToolbar } from "@/components/blocks/data-list";
@@ -79,12 +79,32 @@ export default async function ReservasiPage({
           slot pagination DataList kini terisi. */}
       <DataList
         kpis={
-          <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-            <StatCard size="compact" label="Reservasi aktif" value={String(data.summary.active)} hint={`${formatQty(data.summary.activeQty)} unit tertahan`} icon={Bookmark} tone="amber" />
-            <StatCard size="compact" label="Dalam perjalanan" value={String(data.inTransit.documents)} hint="Transfer dua tahap belum diterima" tone="teal" />
-            <StatCard size="compact" label="Nilai in-transit" value={formatIDR(data.inTransit.totalValue)} hint={`${formatQty(data.inTransit.totalQty)} unit di perjalanan`} tone="plum" />
-            <StatCard size="compact" label="Total reservasi" value={String(data.summary.total)} hint="Semua status" tone="green" />
-          </div>
+          <SummaryStrip
+            items={[
+              {
+                label: "Reservasi aktif",
+                value: String(data.summary.active),
+                hint: `${formatQty(data.summary.activeQty)} unit tertahan`,
+                tone: data.summary.active > 0 ? "amber" : "default",
+              },
+              {
+                label: "Dalam perjalanan",
+                value: String(data.inTransit.documents),
+                hint: "Transfer dua tahap belum diterima",
+              },
+              {
+                label: "Nilai in-transit",
+                value: formatIDR(data.inTransit.totalValue),
+                hint: `${formatQty(data.inTransit.totalQty)} unit di perjalanan`,
+              },
+              {
+                label: "Total reservasi",
+                value: String(data.summary.total),
+                hint: "Semua status",
+                tone: "green",
+              },
+            ]}
+          />
         }
         toolbar={
           <DataListToolbar

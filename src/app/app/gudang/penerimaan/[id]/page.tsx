@@ -45,7 +45,8 @@ export default async function ReceiptDetailPage({
     getReceiptDetail(tx, ctx.company.id, id),
   );
   if (!data) notFound();
-  const { receipt, lines, serialsByProduct, journals } = data;
+  const { receipt, lines, serialsByProduct, journals, payments, linkedReturns, returnStatus, returnedTotalQty } = data;
+  const anyLineReturned = lines.some((line) => d(line.returnedQty).gt(0));
   const hasDiscount = lines.some((line) => d(line.discountAmount).gt(0));
   const isCreditPurchase = receipt.source === "purchase" && !receipt.paymentAccountCode;
   const sourceLabel =
@@ -95,6 +96,44 @@ export default async function ReceiptDetailPage({
         label: "Pembayaran utang",
         value: `Terbayar ${formatIDR(receipt.paidAmount)} dari ${formatIDR(receipt.total)}`,
       });
+      if (payments && payments.length === 1) {
+        const p = payments[0];
+        metaRows.push({
+          label: "Dibayar dari",
+          value: (
+            <span>
+              <span className="font-medium text-foreground">{p.accountCode} — {p.accountName}</span>
+              <span className="block font-mono text-[11px] text-muted-foreground">
+                {p.number} · {formatDate(p.date)}{p.reference ? ` · Ref: ${p.reference}` : ""}
+              </span>
+            </span>
+          ),
+        });
+      } else if (payments && payments.length > 1) {
+        metaRows.push({
+          label: "Dibayar dari",
+          value: (
+            <div className="space-y-1.5">
+              <span className="text-[12px] font-medium text-foreground">
+                {payments.length} termin pembayaran:
+              </span>
+              <ul className="space-y-1 border-t border-border pt-1">
+                {payments.map((p) => (
+                  <li key={p.id} className="text-[11px] leading-tight">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-foreground">{p.accountCode} — {p.accountName}</span>
+                      <span className="num font-semibold text-foreground">{formatIDR(p.amount)}</span>
+                    </div>
+                    <span className="font-mono text-[10px] text-muted-foreground">
+                      {p.number} · {formatDate(p.date)}{p.reference ? ` · Ref: ${p.reference}` : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ),
+        });
+      }
     }
   }
   if (canSeeCost && d(receipt.taxAmount).gt(0)) {
@@ -109,6 +148,35 @@ export default async function ReceiptDetailPage({
   if (canSeeCost) metaRows.push({ label: "Total dokumen", value: formatIDR(receipt.total) });
   if (receipt.notes) {
     metaRows.push({ label: "Catatan", value: receipt.notes });
+  }
+  if (returnStatus !== "none") {
+    metaRows.push({
+      label: "Status retur",
+      value: (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span
+            className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold ${
+              returnStatus === "full"
+                ? "bg-tone-red-soft text-tone-red"
+                : returnStatus === "has_draft"
+                  ? "bg-primary/10 text-primary"
+                  : "bg-tone-amber-soft text-tone-amber"
+            }`}
+          >
+            {returnStatus === "full" ? "Diretur Penuh" : returnStatus === "has_draft" ? "Ada Draf Retur" : "Diretur Sebagian"}
+          </span>
+          {linkedReturns.map((ret) => (
+            <Link
+              key={ret.id}
+              href={`/app/gudang/retur-pembelian/${ret.id}`}
+              className="num text-[11px] font-semibold text-primary underline"
+            >
+              {ret.number}
+            </Link>
+          ))}
+        </div>
+      ),
+    });
   }
 
   return (
@@ -133,17 +201,66 @@ export default async function ReceiptDetailPage({
             Cetak GRN
           </Link>
           {receipt.status === "posted" && receipt.supplierId && can(ctx, "inventory.manage") ? (
-            <Link
-              href={`/app/gudang/retur-pembelian/baru?receiptId=${receipt.id}`}
-              className="inline-flex h-8 items-center rounded-md border border-border bg-card px-3 text-[12px] font-medium transition-colors hover:bg-muted"
-            >
-              Retur ke pemasok
-            </Link>
+            returnStatus === "full" && linkedReturns[0] ? (
+              <Link
+                href={`/app/gudang/retur-pembelian/${linkedReturns[0].id}`}
+                className="inline-flex h-8 items-center gap-1 rounded-md border border-tone-red/30 bg-tone-red-soft px-3 text-[12px] font-medium text-tone-red hover:bg-tone-red-soft/80"
+              >
+                Lihat retur ({linkedReturns[0].number})
+              </Link>
+            ) : returnStatus === "has_draft" && linkedReturns.find((r) => r.status === "draft") ? (
+              <Link
+                href={`/app/gudang/retur-pembelian/${linkedReturns.find((r) => r.status === "draft")!.id}`}
+                className="inline-flex h-8 items-center gap-1 rounded-md border border-primary/30 bg-primary/10 px-3 text-[12px] font-medium text-primary hover:bg-primary/20"
+              >
+                Buka draf retur ({linkedReturns.find((r) => r.status === "draft")!.number})
+              </Link>
+            ) : (
+              <Link
+                href={`/app/gudang/retur-pembelian/baru?receiptId=${receipt.id}`}
+                className="inline-flex h-8 items-center rounded-md border border-border bg-card px-3 text-[12px] font-medium transition-colors hover:bg-muted"
+              >
+                Retur ke pemasok
+              </Link>
+            )
           ) : null}
-          {receipt.status === "posted" && can(ctx, "inventory.manage") ? (
+          {receipt.status === "posted" && can(ctx, "inventory.manage") && returnStatus === "none" ? (
             <ReceiptVoidButton id={receipt.id} number={receipt.number} />
           ) : null}
         </>
+      }
+      banners={
+        linkedReturns.length > 0 ? (
+          <div className="border-t border-border bg-muted/40 px-5 py-2 text-[12px]">
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-semibold ${
+                  returnStatus === "full"
+                    ? "bg-tone-red-soft text-tone-red"
+                    : returnStatus === "has_draft"
+                      ? "bg-primary/10 text-primary"
+                      : "bg-tone-amber-soft text-tone-amber"
+                }`}
+              >
+                {returnStatus === "full" ? "Diretur Penuh" : returnStatus === "has_draft" ? "Ada Draf Retur" : "Diretur Sebagian"}
+              </span>
+              <span className="text-muted-foreground">
+                Penerimaan ini terhubung dengan dokumen retur:
+              </span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {linkedReturns.map((ret) => (
+                  <Link
+                    key={ret.id}
+                    href={`/app/gudang/retur-pembelian/${ret.id}`}
+                    className="num font-semibold text-primary underline"
+                  >
+                    {ret.number}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : null
       }
       meta={<DocumentMetaRows rows={metaRows} />}
       journals={<DocumentJournals journals={journals} />}
@@ -167,7 +284,9 @@ export default async function ReceiptDetailPage({
                 <th>Produk</th>
                 <th>Batch / Kedaluwarsa</th>
                 <th>Nomor seri</th>
-                <th className="text-right">Qty</th>
+                <th className="text-right">{anyLineReturned ? "Qty Masuk" : "Qty"}</th>
+                {anyLineReturned ? <th className="text-right text-tone-red">Qty Diretur</th> : null}
+                {anyLineReturned ? <th className="text-right">Sisa Bersih</th> : null}
                 {canSeeCost ? <th className="text-right">Harga perolehan</th> : null}
                 {canSeeCost && hasDiscount ? <th className="text-right">Diskon</th> : null}
                 {canSeeCost ? <th className="text-right">Subtotal</th> : null}
@@ -210,6 +329,16 @@ export default async function ReceiptDetailPage({
                       {formatQty(line.qty)}
                       {line.unitName ? ` ${line.unitName}` : ""}
                     </td>
+                    {anyLineReturned ? (
+                      <td className="num text-right font-medium text-tone-red">
+                        {d(line.returnedQty).gt(0) ? formatQty(line.returnedQty) : "—"}
+                      </td>
+                    ) : null}
+                    {anyLineReturned ? (
+                      <td className="num text-right font-semibold">
+                        {formatQty(line.remainingQty)}
+                      </td>
+                    ) : null}
                     {canSeeCost ? <td className="num text-right">{formatIDR(line.unitCost)}</td> : null}
                     {canSeeCost && hasDiscount ? (
                       <td className="num text-right text-muted-foreground">

@@ -54,7 +54,12 @@ export type PaymentKind =
 
 /** A-21 (R3-02): dokumen kredit pihak yang masih tersedia untuk
  * pihak pemilik dokumen ini — ditawarkan sebagai sumber dana. */
-export type PartyCreditOption = { id: string; number: string; remaining: number };
+export type PartyCreditOption = {
+  id: string;
+  number: string;
+  remaining: number;
+  originLabel?: string | null;
+};
 
 export function PaymentForm({
   kind,
@@ -415,7 +420,7 @@ export function PaymentForm({
                     <option value="cash">{isReceivable ? "Kas / bank (penerimaan baru)" : "Kas / bank"}</option>
                     {credits.map((credit) => (
                       <option key={credit.id} value={credit.id}>
-                        Kredit {credit.number} — sisa {formatIDR(credit.remaining)}
+                        Kredit {credit.number} {credit.originLabel ? `(${credit.originLabel})` : ""} — sisa {formatIDR(credit.remaining)}
                       </option>
                     ))}
                   </select>

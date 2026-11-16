@@ -19,7 +19,7 @@ import { can } from "@/lib/permissions";
 import { formatNumber } from "@/lib/money";
 import { formatMargin, marginToneClass } from "@/lib/margin";
 import { PageHeader } from "@/components/blocks/page-header";
-import { StatCard } from "@/components/blocks/stat-card";
+import { SummaryStrip } from "@/components/blocks/summary-strip";
 import { Pagination } from "@/components/blocks/pagination";
 import { FilterChips } from "@/components/blocks/search-form";
 import { DataList, DataListToolbar, dataListFilterClass } from "@/components/blocks/data-list";
@@ -166,40 +166,35 @@ export default async function ProductsPage({
           yang diperbarui setiap penerimaan, jadi margin di sini
           mencerminkan biaya terkini — bukan harga beli lama. */}
       {canSeeCost ? (
-      <div className="mb-3 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-        <StatCard
-          label="Margin rata-rata"
-          value={formatMargin(data.marginSummary.average)}
-          hint={`${formatNumber(data.marginSummary.priced)} produk berharga jual`}
-          icon={Percent}
-          tone="teal"
-          valueClassName={marginToneClass(data.marginSummary.average)}
-        />
-        <StatCard
-          label="Margin tertinggi"
-          value={formatMargin(data.marginSummary.highest)}
-          hint="Harga jual vs HPP bergerak"
-          icon={TrendingUp}
-          tone="green"
-          valueClassName={marginToneClass(data.marginSummary.highest)}
-        />
-        <StatCard
-          label="Margin terendah"
-          value={formatMargin(data.marginSummary.lowest)}
-          hint="Periksa produk dengan margin tipis"
-          icon={TrendingDown}
-          tone="amber"
-          valueClassName={marginToneClass(data.marginSummary.lowest)}
-        />
-        <StatCard
-          label="Margin negatif"
-          value={formatNumber(data.marginSummary.negative)}
-          hint={`Dari ${formatNumber(data.marginSummary.total)} produk aktif`}
-          icon={AlertTriangle}
-          tone={data.marginSummary.negative > 0 ? "red" : "neutral"}
-          valueClassName={data.marginSummary.negative > 0 ? "text-destructive" : undefined}
-        />
-      </div>
+        <div className="mb-3">
+          <SummaryStrip
+            items={[
+              {
+                label: "Margin rata-rata",
+                value: formatMargin(data.marginSummary.average),
+                hint: `${formatNumber(data.marginSummary.priced)} produk berharga jual`,
+              },
+              {
+                label: "Margin tertinggi",
+                value: formatMargin(data.marginSummary.highest),
+                hint: "Harga jual vs HPP bergerak",
+                tone: "green",
+              },
+              {
+                label: "Margin terendah",
+                value: formatMargin(data.marginSummary.lowest),
+                hint: "Periksa produk dengan margin tipis",
+                tone: "amber",
+              },
+              {
+                label: "Margin negatif",
+                value: formatNumber(data.marginSummary.negative),
+                hint: `Dari ${formatNumber(data.marginSummary.total)} produk aktif`,
+                tone: data.marginSummary.negative > 0 ? "red" : "default",
+              },
+            ]}
+          />
+        </div>
       ) : null}
 
       {/* A-25 U2: daftar produk memakai DataList bersama — kepala

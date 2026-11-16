@@ -92,16 +92,18 @@ export function DocumentFormAdvanced({
   title = "Opsi lanjutan",
   children,
   className,
+  open,
 }: {
-  title?: string;
+  title?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
+  open?: boolean;
 }) {
   return (
-    <details className={cn("group", className)}>
-      <summary className="flex cursor-pointer list-none items-center gap-1 text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
+    <details className={cn("group", className)} open={open}>
+      <summary className="flex cursor-pointer select-none list-none items-center gap-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
         {title}
-        <ChevronDown className="size-3.5 transition-transform group-open:rotate-180" />
+        <ChevronDown className="size-3.5 shrink-0 transition-transform group-open:rotate-180" />
       </summary>
       <div className="mt-2">{children}</div>
     </details>

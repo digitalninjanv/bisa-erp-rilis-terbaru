@@ -86,17 +86,13 @@ export async function listImportRowsAction(input: {
           pageSize,
           counts,
           filterRowNumbers: matched.map((row) => row.rowNumber),
-          // Hanya baris LENGKAP yang boleh dipilih/diimpor lewat UI.
+          // Semua baris pending tanpa error boleh dipilih. Field opsional/
+          // nilai kosong dipetakan ke default domain saat commit.
           selectableRowNumbers: classifiedRows
-            .filter((row) => row.flags.lengkap)
+            .filter((row) => row.flags.siap)
             .map((row) => row.rowNumber),
           problemRowNumbers: classifiedRows
             .filter((row) => row.status === "pending" && row.flags.bermasalah)
-            .map((row) => row.rowNumber),
-          // Baris tanpa error tetapi field wajibnya belum lengkap —
-          // dilewati saat commit dengan alasan yang jelas.
-          incompleteRowNumbers: classifiedRows
-            .filter((row) => row.status === "pending" && row.flags.belumLengkap)
             .map((row) => row.rowNumber),
         };
       }

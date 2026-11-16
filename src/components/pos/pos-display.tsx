@@ -37,7 +37,7 @@ export const POS_DISPLAY_DEFAULTS: PosDisplayPrefs = {
   view: "grid",
   fontScale: "normal",
   cardShape: "rounded",
-  colorByCategory: true,
+  colorByCategory: false,
   showCategory: false,
   autoFullscreen: false,
 };

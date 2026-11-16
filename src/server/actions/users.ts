@@ -363,12 +363,17 @@ export async function removeCompanyUserAction(userId: string) {
         .delete(member)
         .where(and(eq(member.organizationId, ctx.company.id), eq(member.userId, targetUserId)));
 
+      await tx.delete(session).where(eq(session.userId, targetUserId));
+
       const [remaining] = await tx
         .select({ value: sql<number>`count(*)::int` })
         .from(member)
         .where(eq(member.userId, targetUserId));
       if ((remaining?.value ?? 0) === 0) {
-        await tx.delete(user).where(eq(user.id, targetUserId));
+        await tx
+          .update(user)
+          .set({ banned: true, banReason: "Keanggotaan perusahaan dicabut" })
+          .where(eq(user.id, targetUserId));
       }
 
       await writeAudit(tx, {

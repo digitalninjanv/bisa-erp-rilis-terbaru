@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import {
   CloudOff,
   History,
@@ -32,10 +33,12 @@ export function PosActionMenu({
   sessionOpen,
   heldCount,
   queuedCount,
+  children,
 }: {
   sessionOpen: boolean;
   heldCount: number;
   queuedCount: number;
+  children?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -123,7 +126,7 @@ export function PosActionMenu({
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        aria-label="Menu terminal POS"
+        aria-label="Menu lainnya kasir"
         aria-expanded={open}
         aria-haspopup="menu"
         className={cn(
@@ -134,14 +137,14 @@ export function PosActionMenu({
         )}
       >
         <Menu className="size-3.5" />
-        <span className="hidden sm:inline">Menu</span>
+        <span className="hidden sm:inline">Lainnya</span>
       </button>
 
       {open ? (
         <div
           role="menu"
           aria-label="Menu terminal POS"
-          className="absolute right-0 top-full z-40 mt-1 w-[300px] overflow-hidden rounded-xl border border-border bg-card shadow-lg"
+          className="absolute right-0 top-full z-40 mt-1 w-[320px] rounded-xl border border-border bg-card shadow-lg"
         >
           {groups.map((group) => (
             <div key={group.title} className="border-b border-border last:border-b-0">
@@ -190,6 +193,8 @@ export function PosActionMenu({
               })}
             </div>
           ))}
+
+          {children}
 
           <Link
             href="/app"

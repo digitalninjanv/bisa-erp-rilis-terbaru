@@ -53,6 +53,7 @@ export function CartPanel(props: {
   setDiscount: (key: string, type: "percent" | "nominal" | null, value: number) => void;
   setLinePackaging: (key: string, packagingId: string | null) => void;
   quoteBusy: boolean;
+  allowNegativeStock?: boolean;
 }) {
   const {
     cart,
@@ -72,6 +73,7 @@ export function CartPanel(props: {
     setDiscount,
     setLinePackaging,
     quoteBusy,
+    allowNegativeStock = false,
   } = props;
   const [discountFor, setDiscountFor] = useState<string | null>(null);
   const [confirmClearCart, setConfirmClearCart] = useState(false);
@@ -255,7 +257,7 @@ export function CartPanel(props: {
                           <button
                             type="button"
                             onClick={() => setQty(key, item.qty + 1)}
-                            disabled={tracked && baseQty >= stock}
+                            disabled={!allowNegativeStock && tracked && baseQty >= stock}
                             className="relative grid size-9 place-items-center after:absolute after:-inset-1 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
                             aria-label={`Tambah jumlah ${line?.name ?? cached?.name ?? "item"}`}
                           >
@@ -293,12 +295,21 @@ export function CartPanel(props: {
                           stok tersedia untuk produk terlacak.
                           S4: yang dinilai adalah qty SATUAN DASAR. */}
                       {tracked && baseQty > stock ? (
-                        <p className="mt-1 flex items-center gap-1 text-[11px] text-destructive">
-                          <AlertTriangle className="size-3" />
-                          {stock <= 0
-                            ? `Stok tercatat ${formatQty(stock)}`
-                            : `Melebihi stok tersedia (${formatQty(stock)}) — kurangi jumlah; checkout akan ditolak`}
-                        </p>
+                        allowNegativeStock ? (
+                          <p className="mt-1 flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400">
+                            <AlertTriangle className="size-3" />
+                            {stock <= 0
+                              ? `Stok tercatat ${formatQty(stock)} (penjualan minus diizinkan)`
+                              : `Melebihi stok tercatat (${formatQty(stock)}) — stok akan menjadi minus`}
+                          </p>
+                        ) : (
+                          <p className="mt-1 flex items-center gap-1 text-[11px] text-destructive">
+                            <AlertTriangle className="size-3" />
+                            {stock <= 0
+                              ? `Stok tercatat ${formatQty(stock)}`
+                              : `Melebihi stok tersedia (${formatQty(stock)}) — kurangi jumlah; checkout akan ditolak`}
+                          </p>
+                        )
                       ) : null}
 
                       {(line?.trackSerial ?? cached?.trackSerial) ? (

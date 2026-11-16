@@ -9,7 +9,7 @@ import { can } from "@/lib/permissions";
 import { formatIDR } from "@/lib/money";
 import { accountTypeLabel, todayISO, monthStartISO } from "@/lib/format";
 import { PageHeader } from "@/components/blocks/page-header";
-import { StatCard } from "@/components/blocks/stat-card";
+import { SummaryStrip } from "@/components/blocks/summary-strip";
 import { EmptyState } from "@/components/blocks/empty-state";
 import { DataList } from "@/components/blocks/data-list";
 import { BankTransferForm } from "@/components/akuntansi/bank-transfer-form";
@@ -76,11 +76,15 @@ export default async function BankPage({
         }
       />
 
-      <div className="mb-3 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-        <StatCard size="compact" label="Total kas & bank" value={formatIDR(totalCash)} hint={`${cashAccounts.length} rekening`} />
-        <StatCard size="compact" label="Transfer tercatat" value={String(activeTransfers.length)} hint="60 dokumen terakhir, tanpa yang dibatalkan" />
-        <StatCard size="compact" label="Biaya transfer" value={formatIDR(totalFees)} hint="Akumulasi dokumen" />
-        <StatCard size="compact" label="Rekening aktif" value={String(cashAccounts.filter((row) => row.isActive).length)} hint="Akun postable" />
+      <div className="mb-3">
+        <SummaryStrip
+          items={[
+            { label: "Total kas & bank", value: formatIDR(totalCash), hint: `${cashAccounts.length} rekening` },
+            { label: "Transfer tercatat", value: String(activeTransfers.length), hint: "60 dokumen terakhir" },
+            { label: "Biaya transfer", value: formatIDR(totalFees), hint: "Akumulasi dokumen" },
+            { label: "Rekening aktif", value: String(cashAccounts.filter((row) => row.isActive).length), hint: "Akun postable" },
+          ]}
+        />
       </div>
 
       {can(ctx, "accounting.post") ? (

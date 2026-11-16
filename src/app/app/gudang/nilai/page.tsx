@@ -9,7 +9,7 @@ import { can } from "@/lib/permissions";
 import { requirePermissionPage } from "@/lib/session";
 import { d, formatIDR, formatNumber, formatQty } from "@/lib/money";
 import { PageHeader } from "@/components/blocks/page-header";
-import { StatCard } from "@/components/blocks/stat-card";
+import { SummaryStrip } from "@/components/blocks/summary-strip";
 import { Pagination } from "@/components/blocks/pagination";
 import { DataList, DataListToolbar, dataListFilterClass } from "@/components/blocks/data-list";
 import { EmptyState } from "@/components/blocks/empty-state";
@@ -103,16 +103,21 @@ export default async function InventoryValuePage({
           halaman Produk (GDG-05 / POLA-06). */}
       <DataList density="compact"
         kpis={
-          <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-            {/* UX4-05 (G2): cip ikon dekoratif dinetralkan; Stok
-                menipis PERTAHAN red/green karena warnanya bermakna. */}
-            {canSeeCost ? (
-              <StatCard size="compact" label="Valuasi stok" value={formatIDR(data.valuation.totalValue)} hint="Qty × HPP rata-rata" icon={Boxes} />
-            ) : null}
-            <StatCard size="compact" label="Potensi jual" value={formatIDR(data.valuation.totalPotential)} hint="Pada harga jual" />
-            <StatCard size="compact" label="Total unit" value={formatQty(data.valuation.totalQty)} hint={`${formatNumber(data.valuation.total)} SKU`} />
-            <StatCard size="compact" label="Stok menipis" value={formatNumber(data.valuation.lowStockCount)} hint="Di bawah minimum" tone={data.valuation.lowStockCount ? "red" : "green"} />
-          </div>
+          <SummaryStrip
+            items={[
+              ...(canSeeCost
+                ? [{ label: "Valuasi stok", value: formatIDR(data.valuation.totalValue), hint: "Qty × HPP rata-rata" }]
+                : []),
+              { label: "Potensi jual", value: formatIDR(data.valuation.totalPotential), hint: "Pada harga jual" },
+              { label: "Total unit", value: formatQty(data.valuation.totalQty), hint: `${formatNumber(data.valuation.total)} SKU` },
+              {
+                label: "Stok menipis",
+                value: formatNumber(data.valuation.lowStockCount),
+                hint: "Di bawah minimum",
+                tone: data.valuation.lowStockCount ? ("red" as const) : ("green" as const),
+              },
+            ]}
+          />
         }
         toolbar={
           /* A-22 K1 (UX-01): warehouse TIDAK diteruskan sebagai

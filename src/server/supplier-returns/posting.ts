@@ -5,7 +5,7 @@
 // Perilaku, urutan langkah, & pesan identik dengan fungsi asal di
 // returns.ts sebelum tahap ini.
 
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
 import {
   journalEntries,
@@ -22,23 +22,16 @@ import {
 import { AppError } from "@/lib/errors";
 import { d, toDb, type Decimal } from "@/lib/money";
 
-import {
-  assertPeriodOpen,
-  getAccountId,
-  getAccountMap,
-  postJournal,
-  reverseJournalEntry,
-} from "@/server/accounting";
+import { assertPeriodOpen, getAccountId, getAccountMap, postJournal, reverseJournalEntry } from "@/server/accounting";
+import { createPartyCredit, setPartyCreditJournal, voidPartyCreditForReturn } from "@/server/party-credits";
 import { writeAudit } from "@/server/audit";
-import { applyBatchDelta, creditBatchById } from "@/server/batches";
 import {
   calculateReceiptLinkedClaim,
   planGrossReturnAllocations,
   planReturnAllocations,
   type AllocationPlanItem,
 } from "./allocation-plan";
-import { applyStockMovement, recomputeCostFromLedger } from "@/server/inventory";
-import { pickSerialsOut, restoreSerialsForSale } from "@/server/serials";
+import { recomputeCostFromLedger } from "@/server/inventory";
 import {
   allocateReturnToPayables,
   listOpenPayableDocs,
@@ -50,146 +43,7 @@ import { convertSupplierCreditToAdvance } from "./resolutions";
 import { lockSupplierReturn } from "./returns";
 import { DecimalMin, SUPPLIER_RETURN_REASON_LABELS } from "./shared";
 import type { SupplierReturnRow } from "./shared";
-
-type ReturnLineRow = typeof supplierReturnLines.$inferSelect;
-type ReturnProductRow = Pick<
-  typeof products.$inferSelect,
-  "id" | "name" | "costPrice" | "trackBatch" | "trackSerial"
->;
-type FrozenReturnLine = {
-  line: ReturnLineRow;
-  product: ReturnProductRow;
-  qty: Decimal;
-  unitCost: Decimal;
-  lineTotal: Decimal;
-};
-
-/**
- * Bekukan nilai baris pada AVCO berjalan dan pra-periksa qty batch
- * eksplisit: applyBatchDelta mendebit batch eksplisit lebih dulu
- * tetapi membiarkan luapan jatuh ke FEFO, yang akan diam-diam
- * mengambil barang dari batch yang tidak dipilih pengguna.
- */
-async function freezeReturnLineValues(
-  tx: Tx,
-  input: {
-    companyId: string;
-    lines: ReturnLineRow[];
-    productById: Map<string, ReturnProductRow>;
-  },
-): Promise<{ frozenLines: FrozenReturnLine[]; totalValue: Decimal }> {
-  let totalValue = d(0);
-  const frozenLines: FrozenReturnLine[] = [];
-  for (const line of input.lines) {
-    const product = input.productById.get(line.productId);
-    if (!product) throw new AppError("VALIDATION", "Ada produk retur yang tidak ditemukan.");
-    const qty = d(line.qty);
-    const unitCost = d(product.costPrice);
-    const lineTotal = qty.mul(unitCost);
-    totalValue = totalValue.plus(lineTotal);
-    if (product.trackBatch && line.batchId) {
-      const [batch] = await tx
-        .select({ qty: stockBatches.qty, batchNumber: stockBatches.batchNumber })
-        .from(stockBatches)
-        .where(and(eq(stockBatches.companyId, input.companyId), eq(stockBatches.id, line.batchId)))
-        .limit(1)
-        .for("update");
-      if (!batch || d(batch.qty).lt(qty)) {
-        throw new AppError(
-          "INSUFFICIENT_STOCK",
-          `Stok ${product.name} pada batch ${batch?.batchNumber ?? "terpilih"} tidak cukup. Tersedia ${batch ? d(batch.qty).toFixed(2) : "0"}.`,
-        );
-      }
-    }
-    frozenLines.push({ line, product, qty, unitCost, lineTotal });
-  }
-  return { frozenLines, totalValue };
-}
-
-/** Tulis nilai beku ke baris, keluarkan stok (batch/FEFO/serial) per baris. */
-async function issueReturnStock(
-  tx: Tx,
-  input: {
-    companyId: string;
-    userId: string;
-    header: SupplierReturnRow;
-    frozenLines: FrozenReturnLine[];
-  },
-) {
-  const { header } = input;
-  for (const frozen of input.frozenLines) {
-    await tx
-      .update(supplierReturnLines)
-      .set({ unitCost: toDb(frozen.unitCost), lineTotal: toDb(frozen.lineTotal) })
-      .where(
-        and(
-          eq(supplierReturnLines.companyId, input.companyId),
-          eq(supplierReturnLines.id, frozen.line.id),
-        ),
-      );
-
-    if (frozen.product.trackBatch) {
-      // Correction purpose: returning damaged/expired goods must be able
-      // to draw expired batches too — removing them is the point.
-      const slices = await applyBatchDelta(tx, {
-        companyId: input.companyId,
-        productId: frozen.line.productId,
-        warehouseId: header.warehouseId,
-        delta: frozen.qty.negated(),
-        batchId: frozen.line.batchId ?? undefined,
-        asOfDate: header.date,
-        purpose: "correction",
-      });
-      for (const slice of slices) {
-        await applyStockMovement(tx, {
-          companyId: input.companyId,
-          warehouseId: header.warehouseId,
-          productId: frozen.line.productId,
-          delta: slice.qty.negated(),
-          unitCost: frozen.unitCost,
-          movementType: "purchase_return",
-          referenceType: "supplier_return",
-          referenceId: header.id,
-          referenceNumber: header.number,
-          reason: header.reasonDetail,
-          userId: input.userId,
-          batchId: slice.batchId,
-          date: header.date,
-        });
-      }
-    } else {
-      await applyStockMovement(tx, {
-        companyId: input.companyId,
-        warehouseId: header.warehouseId,
-        productId: frozen.line.productId,
-        delta: frozen.qty.negated(),
-        unitCost: frozen.unitCost,
-        movementType: "purchase_return",
-        referenceType: "supplier_return",
-        referenceId: header.id,
-        referenceNumber: header.number,
-        reason: header.reasonDetail,
-        userId: input.userId,
-        date: header.date,
-      });
-    }
-    if (frozen.product.trackSerial) {
-      // SIM-2 S7B-2 Batch 5: unit serial yang diretur ke pemasok keluar
-      // dari identitas stok (seri tertua lebih dulu).
-      await pickSerialsOut(tx, {
-        companyId: input.companyId,
-        userId: input.userId,
-        productId: frozen.line.productId,
-        productName: frozen.product.name,
-        warehouseId: header.warehouseId,
-        qty: frozen.qty,
-        referenceType: "supplier_return",
-        referenceId: header.id,
-        referenceNumber: header.number,
-      });
-    }
-  }
-}
+import { freezeReturnLineValues, issueReturnStock, restoreReturnedStock } from "./stock";
 
 /** Jurnal posting retur: Dr Utang (bruto) + Dr Kredit Pemasok / Cr Persediaan + Cr reversi PPN. */
 async function postReturnJournal(
@@ -267,7 +121,7 @@ async function postReturnJournal(
         : "Selisih HPP: nilai persediaan AVCO melebihi kredit nota",
     });
   }
-  await postJournal(tx, {
+  return await postJournal(tx, {
     companyId: input.companyId,
     date: header.date,
     description: `Retur pembelian ${header.number} — ${SUPPLIER_RETURN_REASON_LABELS[header.reasonCategory] ?? header.reasonCategory}`,
@@ -453,8 +307,9 @@ export async function postSupplierReturn(
     unallocatedNet = allocation.unallocatedNet;
   }
 
+  let returnJournal: { id: string; number: string } | null = null;
   if (totalValue.gt(0) || invoiceCreditValue.gt(0)) {
-    await postReturnJournal(tx, {
+    returnJournal = await postReturnJournal(tx, {
       companyId: input.companyId,
       userId: input.userId,
       header,
@@ -528,6 +383,20 @@ export async function postSupplierReturn(
       notes: `Otomatis dari retur ${header.number} — uang muka pembelian berikutnya`,
     });
     status = "resolved";
+  } else if (creditAmount.gt(0)) {
+    const partyCredit = await createPartyCredit(tx, {
+      companyId: input.companyId,
+      userId: input.userId,
+      partyType: "supplier",
+      partyId: header.supplierId,
+      date: header.date,
+      amount: creditAmount,
+      originLabel: `Retur ${header.number}`,
+      notes: `Kredit klaim retur ${header.number}`,
+    });
+    if (returnJournal?.id) {
+      await setPartyCreditJournal(tx, input.companyId, partyCredit.id, returnJournal.id);
+    }
   }
 
   await writeAudit(tx, {
@@ -613,73 +482,6 @@ async function reverseReturnPostingJournal(
   });
 }
 
-/** Stok kembali masuk pada irisan gerakan asal persis, batch & seri ikut pulih. */
-async function restoreReturnedStock(
-  tx: Tx,
-  input: { companyId: string; userId: string; header: SupplierReturnRow; date: string; reason: string },
-) {
-  const { header } = input;
-  const movements = await tx
-    .select()
-    .from(stockMovements)
-    .where(
-      and(
-        eq(stockMovements.companyId, input.companyId),
-        eq(stockMovements.referenceType, "supplier_return"),
-        eq(stockMovements.referenceId, header.id),
-      ),
-    )
-    .orderBy(asc(stockMovements.createdAt));
-  for (const movement of movements) {
-    const backQty = d(movement.qty).negated();
-    if (movement.batchId) {
-      await creditBatchById(tx, {
-        companyId: input.companyId,
-        productId: movement.productId,
-        warehouseId: movement.warehouseId,
-        batchId: movement.batchId,
-        qty: backQty,
-      });
-    }
-    await applyStockMovement(tx, {
-      companyId: input.companyId,
-      warehouseId: movement.warehouseId,
-      productId: movement.productId,
-      delta: backQty,
-      unitCost: movement.unitCost,
-      movementType: "reversal",
-      referenceType: "supplier_return_void",
-      referenceId: header.id,
-      referenceNumber: header.number,
-      reason: input.reason,
-      userId: input.userId,
-      batchId: movement.batchId,
-      date: input.date,
-    });
-  }
-
-  // FIX-GDG Tahap 2 (GDG1-03): seri yang dikeluarkan retur ini ikut
-  // dipulihkan — simetris pemulihan batch & stok di atas dan pola
-  // voidSale/voidReceipt. Tanpa ini qty stok kembali tetapi unit
-  // serialnya berstatus out selamanya: stok hantu yang tidak bisa
-  // dipilih kasir dan invariant seri hidup = on-hand patah diam-diam.
-  // Gerakan keluar seri retur ber-referenceId = retur ini (kind "out"
-  // dari pickSerialsOut saat posting), jadi helper pemulihan penjualan
-  // berlaku persis dengan saleId = id retur.
-  for (const productId of [...new Set(movements.map((movement) => movement.productId))]) {
-    await restoreSerialsForSale(tx, {
-      companyId: input.companyId,
-      userId: input.userId,
-      saleId: header.id,
-      productId,
-      warehouseId: header.warehouseId,
-      referenceType: "supplier_return_void",
-      referenceId: header.id,
-      referenceNumber: header.number,
-    });
-  }
-}
-
 /** Lepaskan alokasi utang retur dan segarkan status bayar dokumen sumbernya. */
 async function releaseReturnAllocations(tx: Tx, companyId: string, returnId: string) {
   const allocations = await tx
@@ -731,6 +533,11 @@ export async function voidPostedSupplierReturn(
   }
   await assertReturnHasNoResolutions(tx, header);
 
+  await voidPartyCreditForReturn(tx, {
+    companyId: input.companyId,
+    returnNumber: header.number,
+  });
+
   await assertPeriodOpen(tx, input.companyId, input.date);
 
   await reverseReturnPostingJournal(tx, {
@@ -753,12 +560,7 @@ export async function voidPostedSupplierReturn(
   const returnedProducts = await tx
     .select({ productId: supplierReturnLines.productId })
     .from(supplierReturnLines)
-    .where(
-      and(
-        eq(supplierReturnLines.companyId, input.companyId),
-        eq(supplierReturnLines.returnId, header.id),
-      ),
-    );
+    .where(and(eq(supplierReturnLines.companyId, input.companyId), eq(supplierReturnLines.returnId, header.id)));
   for (const productId of [...new Set(returnedProducts.map((row) => row.productId))]) {
     await recomputeCostFromLedger(tx, input.companyId, productId);
   }

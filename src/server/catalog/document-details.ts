@@ -4,12 +4,13 @@
  * dokumen stok, dan data cetak penerimaan.
  * Badan kueri dipindah apa adanya.
  */
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { d } from "@/lib/money";
+import { d, type Decimal } from "@/lib/money";
 import {
   accounts,
   journalEntries,
+  partyPayments,
   productPackagings,
   products,
   purchaseAdvanceAllocations,
@@ -22,6 +23,8 @@ import {
   stockReceipts,
   stockSerialMovements,
   stockSerials,
+  supplierReturnLines,
+  supplierReturns,
   suppliers,
   units,
   warehouses,
@@ -45,6 +48,18 @@ export type LinkedJournal = {
   status: string;
   sourceType: string;
   reversalOfId: string | null;
+};
+
+export type ReceiptPaymentRow = {
+  id: string;
+  number: string;
+  date: string;
+  amount: string;
+  status: string;
+  accountCode: string;
+  accountName: string;
+  reference: string | null;
+  notes: string | null;
 };
 
 /**
@@ -235,6 +250,28 @@ export async function getReceiptDetail(tx: Tx, companyId: string, id: string) {
   }
 
   const journals = await listLinkedJournals(tx, companyId, id);
+  const payments: ReceiptPaymentRow[] = await tx
+    .select({
+      id: partyPayments.id,
+      number: partyPayments.number,
+      date: partyPayments.date,
+      amount: partyPayments.amount,
+      status: partyPayments.status,
+      accountCode: accounts.code,
+      accountName: accounts.name,
+      reference: partyPayments.reference,
+      notes: partyPayments.notes,
+    })
+    .from(partyPayments)
+    .innerJoin(accounts, eq(partyPayments.accountId, accounts.id))
+    .where(
+      and(
+        eq(partyPayments.companyId, companyId),
+        eq(partyPayments.receiptId, id),
+        ne(partyPayments.status, "void"),
+      ),
+    )
+    .orderBy(asc(partyPayments.date), asc(partyPayments.createdAt));
   const [advanceRow] = await tx
     .select({
       amount: sql<string>`coalesce(sum(${purchaseAdvanceAllocations.amount}), 0)`,
@@ -246,11 +283,92 @@ export async function getReceiptDetail(tx: Tx, companyId: string, id: string) {
         eq(purchaseAdvanceAllocations.receiptId, id),
       ),
     );
+  const lineIds = lines.map((l) => l.id);
+  const returnRows = lineIds.length === 0
+    ? []
+    : await tx
+        .select({
+          id: supplierReturns.id,
+          number: supplierReturns.number,
+          date: supplierReturns.date,
+          status: supplierReturns.status,
+          receiptLineId: supplierReturnLines.receiptLineId,
+          qty: supplierReturnLines.qty,
+        })
+        .from(supplierReturnLines)
+        .innerJoin(supplierReturns, eq(supplierReturnLines.returnId, supplierReturns.id))
+        .where(
+          and(
+            eq(supplierReturnLines.companyId, companyId),
+            inArray(supplierReturnLines.receiptLineId, lineIds),
+            ne(supplierReturns.status, "void"),
+          ),
+        )
+        .orderBy(desc(supplierReturns.date), desc(supplierReturns.createdAt));
+
+  const returnedQtyByLineId = new Map<string, Decimal>();
+  const returnDocMap = new Map<string, { id: string; number: string; date: string; status: string; qty: Decimal }>();
+  let postedReturnedTotal = d(0);
+  let hasDraftReturn = false;
+
+  for (const r of returnRows) {
+    if (r.receiptLineId) {
+      if (r.status !== "draft") {
+        returnedQtyByLineId.set(
+          r.receiptLineId,
+          (returnedQtyByLineId.get(r.receiptLineId) ?? d(0)).plus(d(r.qty)),
+        );
+        postedReturnedTotal = postedReturnedTotal.plus(d(r.qty));
+      } else {
+        hasDraftReturn = true;
+      }
+    }
+    const doc = returnDocMap.get(r.id) ?? {
+      id: r.id,
+      number: r.number,
+      date: r.date,
+      status: r.status,
+      qty: d(0),
+    };
+    doc.qty = doc.qty.plus(d(r.qty));
+    returnDocMap.set(r.id, doc);
+  }
+
+  const linesWithReturn = lines.map((line) => {
+    const retQty = returnedQtyByLineId.get(line.id) ?? d(0);
+    const lineQty = d(line.qty);
+    const remainingQty = lineQty.minus(retQty);
+    return {
+      ...line,
+      returnedQty: retQty.toString(),
+      remainingQty: (remainingQty.gt(0) ? remainingQty : d(0)).toString(),
+    };
+  });
+
+  const totalReceiptQty = lines.reduce((acc, l) => acc.plus(d(l.qty)), d(0));
+  let returnStatus: "none" | "has_draft" | "partial" | "full" = "none";
+  if (totalReceiptQty.gt(0) && postedReturnedTotal.gte(totalReceiptQty)) {
+    returnStatus = "full";
+  } else if (postedReturnedTotal.gt(0)) {
+    returnStatus = "partial";
+  } else if (hasDraftReturn) {
+    returnStatus = "has_draft";
+  }
+
+  const linkedReturns = [...returnDocMap.values()].map((doc) => ({
+    ...doc,
+    qty: doc.qty.toString(),
+  }));
+
   return {
     receipt: { ...receipt, advanceApplied: d(advanceRow?.amount ?? 0).toNumber() },
-    lines,
+    lines: linesWithReturn,
     serialsByProduct,
     journals,
+    payments,
+    linkedReturns,
+    returnStatus,
+    returnedTotalQty: postedReturnedTotal.toString(),
   };
 }
 

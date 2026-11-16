@@ -1,7 +1,9 @@
+import Link from "next/link";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { getSettingsPageData, listCategories, listGroupProductPrices } from "@/server/catalog";
 import { requirePermissionPage } from "@/lib/session";
 import { parsePageParam } from "@/lib/pagination";
+import { buttonVariants } from "@/components/ui/button";
 import { PageHeader } from "@/components/blocks/page-header";
 import {
   BranchForm,
@@ -427,6 +429,36 @@ export default async function SettingsPage({
             initialConfig={sanitizeOpnameCycleConfig(settings.opnameCycle)}
           />
         </div>
+
+        <section className="mt-3 overflow-hidden rounded-lg border border-border bg-card">
+          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-[13px] font-semibold">Kebijakan Stok Minus Gudang</h2>
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                    settings.allowNegativeStock
+                      ? "bg-tone-yellow-soft text-tone-yellow"
+                      : "bg-tone-green-soft text-tone-green"
+                  }`}
+                >
+                  {settings.allowNegativeStock ? "Diizinkan (Fleksibel)" : "Dilarang (Ketat / Standar ERP)"}
+                </span>
+              </div>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                {settings.allowNegativeStock
+                  ? "Transaksi kasir dan pergerakan stok keluar diperbolehkan meski saldo tercatat tidak mencukupi."
+                  : "Sistem menolak mutasi keluar saat saldo persediaan tidak mencukupi untuk menjaga akurasi valuasi AVCO dan integritas buku besar stok."}
+              </p>
+            </div>
+            <Link
+              href="/app/pengaturan?tab=umum#kebijakan-stok"
+              className={buttonVariants({ variant: "outline", size: "sm" })}
+            >
+              Ubah di Tab Umum
+            </Link>
+          </div>
+        </section>
         </>
       ) : null}
 
