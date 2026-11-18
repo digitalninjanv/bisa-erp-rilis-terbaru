@@ -61,7 +61,7 @@ export function CashChips({
           type="button"
           disabled={disabled || total <= 0}
           onClick={() => onChange(total)}
-          className={`${chipClass} border-primary/50 bg-primary-soft/40 text-primary hover:bg-primary-soft`}
+          className={`${chipClass} border-[var(--pos-action)] bg-[var(--pos-action-soft)] text-[var(--pos-action)] hover:opacity-90`}
         >
           Uang Pas
         </button>
@@ -73,7 +73,7 @@ export function CashChips({
             onClick={() => onChange(value)}
             className={cn(
               chipClass,
-              tendered === value && "border-primary bg-primary/5 text-foreground",
+              tendered === value && "border-[var(--pos-action)] bg-[var(--pos-action-soft)] text-[var(--pos-action)]",
             )}
             aria-label={`Isi uang diterima ${formatIDR(value)}`}
           >

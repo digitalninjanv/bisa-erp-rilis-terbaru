@@ -62,7 +62,6 @@ export function CartPanel(props: {
     quote,
     quoteLine,
     total,
-    heldTotal,
     groupId,
     setGroupId,
     groups,
@@ -81,11 +80,11 @@ export function CartPanel(props: {
   return (
         <div className="rounded-lg border border-border bg-card">
           {(!compactHeader || cart.length > 0 || heldCount > 0) ? (
-          <div className={cn("flex min-h-14 items-center justify-between gap-2 border-b border-border px-4 py-3 lg:sticky lg:top-0 lg:z-20 lg:rounded-t-lg lg:bg-card lg:backdrop-blur", compactHeader && "justify-end")}>
+          <div className={cn("flex min-h-14 items-center justify-between gap-2 border-b border-border bg-[var(--pos-action-soft)] px-4 py-3 lg:sticky lg:top-0 lg:z-20 lg:rounded-t-lg lg:bg-[var(--pos-action-soft)] lg:backdrop-blur", compactHeader && "justify-end")}>
             <div className={cn("flex min-w-0 items-center gap-2", compactHeader && "hidden")}>
-              <ShoppingCart className="size-5 text-muted-foreground" />
-              <h2 className="text-base font-semibold">Keranjang</h2>
-              <span className="num rounded-full bg-muted px-2 py-1 text-xs font-medium text-muted-foreground">
+              <ShoppingCart className="size-5 text-[var(--pos-action)]" />
+              <h2 className="text-base font-semibold text-[var(--pos-action)]">Keranjang</h2>
+              <span className="num rounded-full bg-white/70 px-2 py-1 text-xs font-medium text-[var(--pos-action)]">
                 {cart.length} baris
               </span>
             </div>
@@ -331,15 +330,6 @@ export function CartPanel(props: {
           </div>
 
           <div className="space-y-2 border-t border-border px-4 py-3 text-sm">
-            {heldTotal !== null && quote && Math.abs(quote.total - heldTotal) > 0.005 ? (
-              <p className="flex items-start gap-2 rounded-md bg-tone-amber-soft px-3 py-2 text-sm leading-5 text-tone-amber">
-                <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-                <span>
-                  Total berubah sejak pesanan ditahan: {formatIDR(heldTotal)} →{" "}
-                  {formatIDR(quote.total)}. Harga dan diskon terkini yang berlaku.
-                </span>
-              </p>
-            ) : null}
             <Row label="Subtotal" value={formatIDR(quote?.subtotal ?? 0)} />
             {(quote?.discountTotal ?? 0) > 0 ? (
               <Row label="Diskon" value={`−${formatIDR(quote?.discountTotal ?? 0)}`} tone="plum" />
@@ -354,8 +344,8 @@ export function CartPanel(props: {
               />
             ) : null}
             <div className="flex items-center justify-between border-t border-border pt-2">
-              <span className="text-base font-bold">Total</span>
-              <span className="num text-2xl font-bold">{formatIDR(total)}</span>
+              <span className="text-base font-bold text-[var(--pos-action)]">Total</span>
+              <span className="num text-2xl font-bold text-[var(--pos-action)]">{formatIDR(total)}</span>
             </div>
             {/* POS2-01/22: status perhitungan adalah informasi
                 operasional — 11px, dan tampil juga saat quote basi

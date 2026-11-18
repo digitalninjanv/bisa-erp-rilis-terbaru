@@ -5,7 +5,7 @@ import { newUuid } from "@/lib/uuid";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { formatIDR } from "@/lib/money";
-import { useHydrated, usePosDisplayPrefs } from "@/components/pos/pos-display";
+import { POS_ACTION_THEMES, useHydrated, usePosDisplayPrefs } from "@/components/pos/pos-display";
 import { searchProductsAction } from "@/server/actions/pos";
 import { useGlobalBarcodeScan } from "@/components/pos/terminal/use-global-barcode-scan";
 import {
@@ -591,7 +591,7 @@ export function PosTerminal({
   });
 
   const selectedGroup = groups.find((g) => g.id === groupId);
-
+  const actionTheme = POS_ACTION_THEMES[display.actionTheme] ?? POS_ACTION_THEMES.odoo;
   const cartPanelProps = {
     cart,
     cache,
@@ -667,10 +667,14 @@ export function PosTerminal({
   };
 
   useCloseMobileCartOnDesktop(setMobileCartOpen);
-
   return (
     <div
-      style={{ "--pos-cart-w": `${display.cartWidth}px` } as React.CSSProperties}
+      style={{
+        "--pos-cart-w": `${display.cartWidth}px`,
+        "--pos-action": actionTheme.primary,
+        "--pos-action-soft": actionTheme.soft,
+        "--pos-action-fg": actionTheme.foreground,
+      } as React.CSSProperties}
       className={cn(
         "pos-terminal-root grid gap-3 pb-20 lg:grid-cols-[minmax(0,1fr)_var(--pos-cart-w)] lg:pb-0",
         fullscreen &&
@@ -735,7 +739,12 @@ export function PosTerminal({
           side="right"
           overlayClassName="z-[70]"
           showCloseButton={false}
-          style={{ width: "100%" }}
+          style={{
+            width: "100%",
+            "--pos-action": actionTheme.primary,
+            "--pos-action-soft": actionTheme.soft,
+            "--pos-action-fg": actionTheme.foreground,
+          } as React.CSSProperties}
           aria-label="Keranjang dan pembayaran"
           className="z-[71] w-full gap-3 overflow-x-hidden overflow-y-auto px-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-0 sm:w-[520px] sm:max-w-[520px] lg:hidden"
         >

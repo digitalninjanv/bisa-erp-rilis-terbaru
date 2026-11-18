@@ -95,7 +95,6 @@ export function PaymentPanel(props: {
   lastSale: { id: string; number: string } | null;
 }) {
   const {
-    companyName,
     tenderedInputId = "pos-tendered-input",
     mode,
     setMode,
@@ -157,10 +156,9 @@ export function PaymentPanel(props: {
   const activeMethodType = isDebtMethod ? "credit" : (single?.type ?? null);
   return (
         <div className="rounded-lg border border-border bg-card">
-          <div className="flex min-h-16 items-center justify-between gap-3 border-b border-border px-4 py-3">
+          <div className="flex min-h-16 items-center justify-between gap-3 border-b border-border bg-[var(--pos-action-soft)] px-4 py-3">
             <div>
-              <h2 className="text-base font-semibold">Pembayaran</h2>
-              <p className="text-xs text-muted-foreground">{companyName}</p>
+              <h2 className="text-base font-semibold text-[var(--pos-action)]">Pembayaran</h2>
             </div>
             <div role="group" className="flex shrink-0 rounded-md border border-border bg-muted/50 p-1" aria-label="Mode pembayaran">
               <button
@@ -197,7 +195,7 @@ export function PaymentPanel(props: {
                       className={cn(
                         "flex min-h-12 min-w-0 flex-1 items-center justify-between gap-2 rounded-md border px-3 py-2.5 text-sm font-semibold",
                         activeMethodType
-                          ? "border-primary bg-primary/5 text-foreground ring-1 ring-inset ring-primary/60"
+                          ? "border-[var(--pos-action)] bg-[var(--pos-action-soft)] text-foreground ring-1 ring-inset ring-[var(--pos-action)]"
                           : "border-border bg-background text-muted-foreground",
                       )}
                     >
@@ -250,7 +248,7 @@ export function PaymentPanel(props: {
                           className={cn(
                             "flex min-h-12 items-center justify-between gap-2 rounded-md border px-3 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                             singleMethod === method.id
-                              ? "border-primary bg-primary/5 text-foreground ring-1 ring-inset ring-primary/60"
+                              ? "border-[var(--pos-action)] bg-[var(--pos-action-soft)] text-foreground ring-1 ring-inset ring-[var(--pos-action)]"
                               : "border-border bg-background text-muted-foreground hover:bg-muted",
                           )}
                         >
@@ -282,7 +280,7 @@ export function PaymentPanel(props: {
                           className={cn(
                             "flex min-h-12 items-center justify-between gap-2 rounded-md border px-3 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                             singleMethod === debtMethod.id
-                              ? "border-primary bg-primary/5 text-foreground ring-1 ring-inset ring-primary/60"
+                              ? "border-[var(--pos-action)] bg-[var(--pos-action-soft)] text-foreground ring-1 ring-inset ring-[var(--pos-action)]"
                               : "border-border bg-background text-muted-foreground hover:bg-muted",
                           )}
                         >
@@ -547,7 +545,7 @@ export function PaymentPanel(props: {
                 type="button"
                 onClick={checkout}
                 disabled={payDisabled}
-                className="flex h-12 items-center justify-center gap-2 rounded-md bg-tone-teal text-[15px] font-bold text-white transition-colors hover:bg-tone-teal/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex h-12 items-center justify-center gap-2 rounded-md bg-[var(--pos-action)] text-[15px] font-bold text-[var(--pos-action-fg)] transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {payLabel}
               </button>

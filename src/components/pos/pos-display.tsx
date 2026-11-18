@@ -16,6 +16,19 @@ export type PosColumns = "auto" | "4" | "5" | "6";
 export type PosView = "grid" | "list";
 export type PosFontScale = "normal" | "large" | "xl";
 export type PosCardShape = "rounded" | "square";
+export type PosActionTheme = "odoo" | "teal" | "accurate" | "blue" | "amber" | "graphite";
+
+export const POS_ACTION_THEMES: Record<
+  PosActionTheme,
+  { label: string; primary: string; soft: string; foreground: string }
+> = {
+  odoo: { label: "Odoo", primary: "#714b67", soft: "#f3eaf1", foreground: "#ffffff" },
+  teal: { label: "Teal", primary: "#0d6b60", soft: "#e6f4f1", foreground: "#ffffff" },
+  accurate: { label: "Accurate", primary: "#0f6b3f", soft: "#e7f3ea", foreground: "#ffffff" },
+  blue: { label: "Biru", primary: "#175cd3", soft: "#eaf1fe", foreground: "#ffffff" },
+  amber: { label: "Amber", primary: "#8a5a12", soft: "#fbf0dd", foreground: "#ffffff" },
+  graphite: { label: "Grafit", primary: "#3f3a36", soft: "#f1efec", foreground: "#ffffff" },
+};
 
 export type PosDisplayPrefs = {
   density: PosDensity;
@@ -31,6 +44,7 @@ export type PosDisplayPrefs = {
   colorByCategory: boolean;
   showCategory: boolean;
   autoFullscreen: boolean;
+  actionTheme: PosActionTheme;
 };
 
 export const POS_DISPLAY_DEFAULTS: PosDisplayPrefs = {
@@ -47,6 +61,7 @@ export const POS_DISPLAY_DEFAULTS: PosDisplayPrefs = {
   colorByCategory: false,
   showCategory: false,
   autoFullscreen: false,
+  actionTheme: "odoo",
 };
 
 export const POS_CART_WIDTHS = [360, 396, 440, 480] as const;
@@ -95,6 +110,10 @@ function readPrefs(): PosDisplayPrefs {
       showCategory: typeof parsed.showCategory === "boolean" ? parsed.showCategory : false,
       autoFullscreen:
         typeof parsed.autoFullscreen === "boolean" ? parsed.autoFullscreen : false,
+      actionTheme:
+        parsed.actionTheme && parsed.actionTheme in POS_ACTION_THEMES
+          ? parsed.actionTheme
+          : POS_DISPLAY_DEFAULTS.actionTheme,
     };
   } catch {
     return POS_DISPLAY_DEFAULTS;
@@ -242,6 +261,38 @@ export function PosDisplayControls({
                   onClick={() => onChange({ view: "list", density: "comfortable", fontScale: "large" })}
                 />
               </div>
+            </section>
+
+            <section className="space-y-2.5" aria-labelledby="pos-display-theme">
+              <h3 id="pos-display-theme" className="text-sm font-semibold">Warna aksi</h3>
+              <div className="grid grid-cols-3 gap-2">
+                {(Object.entries(POS_ACTION_THEMES) as [PosActionTheme, (typeof POS_ACTION_THEMES)[PosActionTheme]][]).map(
+                  ([key, theme]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => onChange({ actionTheme: key })}
+                      aria-pressed={prefs.actionTheme === key}
+                      className={cn(
+                        "flex min-h-11 items-center gap-2 rounded-md border px-2.5 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        prefs.actionTheme === key
+                          ? "border-foreground/50 bg-muted text-foreground"
+                          : "border-border bg-background text-muted-foreground hover:bg-muted/60",
+                      )}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="size-4 shrink-0 rounded-full border border-black/10"
+                        style={{ backgroundColor: theme.primary }}
+                      />
+                      <span className="truncate">{theme.label}</span>
+                    </button>
+                  ),
+                )}
+              </div>
+              <p className="text-[11px] leading-4 text-muted-foreground">
+                Mewarnai header keranjang, panel pembayaran, kategori aktif, dan tombol Bayar.
+              </p>
             </section>
 
             <section className="space-y-4" aria-labelledby="pos-display-catalog">

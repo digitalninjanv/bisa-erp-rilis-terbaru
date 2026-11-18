@@ -37,7 +37,7 @@ export function MobilePayBar(props: {
           type="button"
           onClick={checkout}
           disabled={payDisabled}
-          className="flex h-12 min-w-28 shrink-0 items-center justify-center rounded-md bg-tone-teal px-5 text-[15px] font-semibold text-white transition-colors hover:bg-tone-teal/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex h-12 min-w-28 shrink-0 items-center justify-center rounded-md bg-[var(--pos-action)] px-5 text-[15px] font-semibold text-[var(--pos-action-fg)] transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {payLabel}
         </button>

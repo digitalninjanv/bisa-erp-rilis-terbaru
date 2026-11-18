@@ -341,7 +341,7 @@ export function ProductCatalog(props: {
                 className={cn(
                   "inline-flex h-11 shrink-0 items-center rounded-full px-4 text-sm font-semibold transition-colors",
                   selectedCategory === ""
-                    ? "bg-foreground text-background"
+                    ? "bg-[var(--pos-action)] text-[var(--pos-action-fg)]"
                     : "border border-border bg-card text-muted-foreground hover:bg-muted",
                 )}
               >
@@ -359,7 +359,7 @@ export function ProductCatalog(props: {
                   className={cn(
                     "inline-flex h-11 shrink-0 items-center rounded-full px-4 text-sm font-semibold transition-colors",
                     selectedCategory === category.id
-                      ? "bg-foreground text-background"
+                      ? "bg-[var(--pos-action)] text-[var(--pos-action-fg)]"
                       : "border border-border bg-card text-muted-foreground hover:bg-muted",
                   )}
                 >
@@ -448,7 +448,7 @@ export function ProductCatalog(props: {
                         </span>
                       </span>
                       {quantity > 0 ? (
-                        <span className={cn("num shrink-0 rounded bg-primary/10 px-1.5 py-0.5 font-semibold text-primary", font.badge)}>
+                        <span className={cn("num shrink-0 rounded bg-[var(--pos-action-soft)] px-1.5 py-0.5 font-semibold text-[var(--pos-action)]", font.badge)}>
                           ×{formatQty(quantity)}
                         </span>
                       ) : null}
@@ -494,7 +494,7 @@ export function ProductCatalog(props: {
                       tone,
                       display.density === "compact" ? "p-2" : "p-2.5",
                       display.density === "compact" ? "min-h-[96px]" : "min-h-[120px]",
-                      quantity > 0 && "border-primary/40 bg-primary/[0.03]",
+                      quantity > 0 && "border-[var(--pos-action)] bg-[var(--pos-action-soft)]",
                       soldOut && "cursor-not-allowed opacity-60 hover:border-border hover:bg-background",
                       highlighted &&
                         "border-primary bg-accent/40 ring-2 ring-ring/40 hover:border-primary",
@@ -534,7 +534,7 @@ export function ProductCatalog(props: {
                       )}
                       <span className="flex shrink-0 items-center gap-1 whitespace-nowrap">
                         {quantity > 0 ? (
-                          <span className={cn("num rounded bg-primary/10 px-1.5 py-0.5 font-semibold text-primary", font.badge)}>
+                          <span className={cn("num rounded bg-[var(--pos-action-soft)] px-1.5 py-0.5 font-semibold text-[var(--pos-action)]", font.badge)}>
                             ×{formatQty(quantity)}
                           </span>
                         ) : null}
