@@ -320,14 +320,7 @@ export function ProductCatalog(props: {
               heldCount={heldCount}
               queuedCount={queuedCount}
             >
-              <div>
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Pintasan kasir
-                </p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <ShortcutHelp />
-                </div>
-              </div>
+              <ShortcutHelp />
             </PosActionMenu>
           </div>
 

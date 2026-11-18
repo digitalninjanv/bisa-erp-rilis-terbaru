@@ -8,6 +8,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Keyboard } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TERMINAL_SHORTCUT_HELP } from "@/lib/pos/terminal-shortcuts";
 
@@ -34,7 +35,7 @@ export function ShortcutHelp() {
   }, [open ]);
 
   return (
-    <div ref={rootRef} className="relative flex items-center">
+    <div ref={rootRef} className="relative w-full">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
@@ -43,13 +44,16 @@ export function ShortcutHelp() {
         aria-expanded={open}
         aria-haspopup="dialog"
         className={cn(
-          "flex h-10 w-10 items-center justify-center rounded-md border text-[13px] font-semibold transition-colors",
+          "flex min-h-11 w-full items-center gap-3 rounded-md px-2.5 text-sm font-medium transition-colors",
           open
-            ? "border-primary bg-primary/5 text-foreground"
-            : "border-border bg-background text-muted-foreground hover:bg-muted",
+            ? "bg-muted text-foreground"
+            : "text-muted-foreground hover:bg-muted hover:text-foreground",
         )}
       >
-        ?
+        <span className="grid size-8 shrink-0 place-items-center rounded-md bg-muted">
+          <Keyboard className="size-4" />
+        </span>
+        Bantuan pintasan
       </button>
 
       {open ? (
