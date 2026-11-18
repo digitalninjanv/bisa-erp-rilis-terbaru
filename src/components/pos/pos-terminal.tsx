@@ -724,7 +724,7 @@ export function PosTerminal({
       <aside
         id="pos-cart"
         className={cn(
-          "hidden min-w-0 lg:block",
+          "hidden min-w-0 lg:block lg:overflow-x-hidden",
           // POS2-04: panel keranjang sticky saat produk menggulir.
           !fullscreen &&
             "lg:sticky lg:top-16 lg:max-h-[calc(100dvh-76px)] lg:self-start lg:overflow-y-auto lg:pr-1",
@@ -741,7 +741,7 @@ export function PosTerminal({
           showCloseButton={false}
           style={{ width: "100%" }}
           aria-label="Keranjang dan pembayaran"
-          className="z-[71] w-full gap-3 overflow-y-auto px-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-0 sm:w-[520px] sm:max-w-[520px] lg:hidden"
+          className="z-[71] w-full gap-3 overflow-x-hidden overflow-y-auto px-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-0 sm:w-[520px] sm:max-w-[520px] lg:hidden"
         >
           <PosCheckoutWorkspace
             cartProps={cartPanelProps}

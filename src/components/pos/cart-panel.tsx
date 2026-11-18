@@ -6,6 +6,7 @@ import {
   PauseCircle,
   Plus,
   ShoppingCart,
+  Trash2,
   UserRound,
   X,
 } from "lucide-react";
@@ -86,30 +87,36 @@ export function CartPanel(props: {
         <div className="rounded-lg border border-border bg-card">
           {(!compactHeader || cart.length > 0 || heldCount > 0) ? (
           <div className={cn("flex min-h-14 items-center justify-between gap-2 border-b border-border px-4 py-3 lg:sticky lg:top-0 lg:z-20 lg:rounded-t-lg lg:bg-card lg:backdrop-blur", compactHeader && "justify-end")}>
-            <div className={cn("flex items-center gap-2", compactHeader && "hidden")}>
+            <div className={cn("flex min-w-0 items-center gap-2", compactHeader && "hidden")}>
               <ShoppingCart className="size-5 text-muted-foreground" />
               <h2 className="text-base font-semibold">Keranjang</h2>
               <span className="num rounded-full bg-muted px-2 py-1 text-xs font-medium text-muted-foreground">
                 {cart.length} baris
               </span>
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex shrink-0 items-center gap-1">
               {heldCount > 0 ? (
                 <a
                   href="/app/pos/ditahan"
                   aria-label={`Lihat ${heldCount} pesanan ditahan`}
-                  className="flex min-h-11 items-center gap-2 rounded-md px-3 text-sm font-medium text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  title={`${heldCount} pesanan ditahan`}
+                  className="flex min-h-11 items-center gap-1 rounded-md px-2 text-sm font-medium text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <PauseCircle className="size-4" /> {heldCount} ditahan
+                  <PauseCircle className="size-4" />
+                  <span className="num rounded-full bg-tone-amber-soft px-1.5 py-0.5 text-xs font-semibold text-tone-amber">
+                    {heldCount}
+                  </span>
                 </a>
               ) : null}
               {cart.length > 0 ? (
                 <button
                   type="button"
                   onClick={() => setConfirmClearCart(true)}
-                  className="min-h-11 rounded-md px-3 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-label="Kosongkan keranjang"
+                  title="Kosongkan keranjang"
+                  className="grid size-11 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  Kosongkan
+                  <Trash2 className="size-4" />
                 </button>
               ) : null}
             </div>
