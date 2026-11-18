@@ -19,13 +19,16 @@ import { ShortcutHelp } from "@/components/pos/terminal/shortcut-help";
 import { PosActionMenu } from "@/components/pos/pos-action-menu";
 import { PrinterStatusButton } from "@/components/pos/printer-modal";
 
+// Odoo 18+ menunjukkan warna kategori sebagai border-bottom pada kartu,
+// bukan sebagai fill penuh. Kartu tetap putih agar teks dan harga paling
+// mudah dibaca; warna hanya menjadi penanda kategori.
 const CATEGORY_TONES = [
-  { border: "border-l-4 border-l-tone-teal", surface: "bg-tone-teal-soft", edge: "border-tone-teal/40" },
-  { border: "border-l-4 border-l-tone-plum", surface: "bg-tone-plum-soft", edge: "border-tone-plum/40" },
-  { border: "border-l-4 border-l-tone-amber", surface: "bg-tone-amber-soft", edge: "border-tone-amber/40" },
-  { border: "border-l-4 border-l-tone-green", surface: "bg-tone-green-soft", edge: "border-tone-green/40" },
-  { border: "border-l-4 border-l-tone-blue", surface: "bg-tone-blue-soft", edge: "border-tone-blue/40" },
-  { border: "border-l-4 border-l-tone-red", surface: "bg-tone-red-soft", edge: "border-tone-red/40" },
+  { accent: "border-b-4 border-b-tone-teal" },
+  { accent: "border-b-4 border-b-tone-plum" },
+  { accent: "border-b-4 border-b-tone-amber" },
+  { accent: "border-b-4 border-b-tone-green" },
+  { accent: "border-b-4 border-b-tone-blue" },
+  { accent: "border-b-4 border-b-tone-red" },
 ] as const;
 
 /** Warna kartu deterministik dari nama kategori (Odoo category colors). */
@@ -406,9 +409,7 @@ export function ProductCatalog(props: {
                         "group flex min-h-12 w-full touch-manipulation items-center gap-3 border text-left transition-colors active:scale-[0.995] hover:border-primary/50 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                         shape,
                         "border-border bg-card shadow-sm",
-                        tone?.border,
-                        tone?.surface,
-                        tone?.edge,
+                        tone?.accent,
                         display.density === "compact" ? "px-2.5 py-1.5" : "px-3 py-2",
                         soldOut && "cursor-not-allowed opacity-60 hover:border-border hover:bg-background",
                         highlighted && "border-primary bg-accent/40 ring-2 ring-ring/40 hover:border-primary",
@@ -488,12 +489,10 @@ export function ProductCatalog(props: {
                       "group flex touch-manipulation flex-col justify-between border text-left transition-colors active:scale-[0.99] hover:border-primary/50 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                       shape,
                       "border-border bg-card shadow-sm",
-                      tone?.border,
-                      tone?.surface,
-                      tone?.edge,
+                      tone?.accent,
                       display.density === "compact" ? "p-2" : "p-2.5",
                       display.density === "compact" ? "min-h-[96px]" : "min-h-[120px]",
-                      quantity > 0 && "border-[var(--pos-action)] bg-[var(--pos-action-soft)]",
+                      quantity > 0 && "ring-2 ring-[var(--pos-action)]/25",
                       soldOut && "cursor-not-allowed opacity-60 hover:border-border hover:bg-background",
                       highlighted &&
                         "border-primary bg-accent/40 ring-2 ring-ring/40 hover:border-primary",

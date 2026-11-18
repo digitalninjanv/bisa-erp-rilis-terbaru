@@ -80,11 +80,11 @@ export function CartPanel(props: {
   return (
         <div className="rounded-lg border border-border bg-card">
           {(!compactHeader || cart.length > 0 || heldCount > 0) ? (
-          <div className={cn("flex min-h-14 items-center justify-between gap-2 border-b border-border bg-[var(--pos-action-soft)] px-4 py-3 lg:sticky lg:top-0 lg:z-20 lg:rounded-t-lg lg:bg-[var(--pos-action-soft)] lg:backdrop-blur", compactHeader && "justify-end")}>
+          <div className={cn("flex min-h-14 items-center justify-between gap-2 border-b border-border bg-card px-4 py-3 lg:sticky lg:top-0 lg:z-20 lg:rounded-t-lg lg:bg-card", compactHeader && "justify-end")}>
             <div className={cn("flex min-w-0 items-center gap-2", compactHeader && "hidden")}>
               <ShoppingCart className="size-5 text-[var(--pos-action)]" />
               <h2 className="text-base font-semibold text-[var(--pos-action)]">Keranjang</h2>
-              <span className="num rounded-full bg-white/70 px-2 py-1 text-xs font-medium text-[var(--pos-action)]">
+              <span className="num rounded-full bg-[var(--pos-action-soft)] px-2 py-1 text-xs font-medium text-[var(--pos-action)]">
                 {cart.length} baris
               </span>
             </div>

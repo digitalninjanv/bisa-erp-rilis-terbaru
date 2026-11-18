@@ -16,17 +16,15 @@ export type PosColumns = "auto" | "4" | "5" | "6";
 export type PosView = "grid" | "list";
 export type PosFontScale = "normal" | "large" | "xl";
 export type PosCardShape = "rounded" | "square";
-export type PosActionTheme = "odoo" | "teal" | "accurate" | "blue" | "amber" | "graphite";
+export type PosActionTheme = "odoo" | "teal" | "accurate" | "graphite";
 
 export const POS_ACTION_THEMES: Record<
   PosActionTheme,
   { label: string; primary: string; soft: string; foreground: string }
 > = {
   odoo: { label: "Odoo", primary: "#714b67", soft: "#f3eaf1", foreground: "#ffffff" },
-  teal: { label: "Teal", primary: "#0d6b60", soft: "#e6f4f1", foreground: "#ffffff" },
+  teal: { label: "Teal", primary: "#017e84", soft: "#e6f4f6", foreground: "#ffffff" },
   accurate: { label: "Accurate", primary: "#0f6b3f", soft: "#e7f3ea", foreground: "#ffffff" },
-  blue: { label: "Biru", primary: "#175cd3", soft: "#eaf1fe", foreground: "#ffffff" },
-  amber: { label: "Amber", primary: "#8a5a12", soft: "#fbf0dd", foreground: "#ffffff" },
   graphite: { label: "Grafit", primary: "#3f3a36", soft: "#f1efec", foreground: "#ffffff" },
 };
 

@@ -676,9 +676,9 @@ export function PosTerminal({
         "--pos-action-fg": actionTheme.foreground,
       } as React.CSSProperties}
       className={cn(
-        "pos-terminal-root grid gap-3 pb-20 lg:grid-cols-[minmax(0,1fr)_var(--pos-cart-w)] lg:pb-0",
+        "pos-terminal-root grid gap-3 bg-[#f0eeee] pb-20 dark:bg-background lg:grid-cols-[minmax(0,1fr)_var(--pos-cart-w)] lg:pb-0",
         fullscreen &&
-          "fixed inset-0 z-[65] h-dvh overflow-y-auto bg-background p-3 lg:overflow-hidden",
+          "fixed inset-0 z-[65] h-dvh overflow-y-auto p-3 lg:overflow-hidden",
       )}
     >
       {/* Products */}
