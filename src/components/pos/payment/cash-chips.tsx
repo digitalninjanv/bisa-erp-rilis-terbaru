@@ -1,16 +1,30 @@
 "use client";
 
 import { formatIDR } from "@/lib/money";
-import { formatMoneyText } from "@/lib/money-input";
+import { cn } from "@/lib/utils";
 import { IDR_CASH_DENOMINATIONS } from "@/lib/pos/denominations";
 
 /**
- * Tombol nominal cepat ala numpad Odoo: setiap tombol MENAMBAH nominal
- * yang sudah diterima, bukan menggantinya. Uang Pas mengisi tepat total;
- * Hapus mengosongkan isian. Nominal kecil (100/500/1.000) ikut tampil
- * untuk toko dengan harga eceran rendah.
+ * Saran uang diterima dihitung dari total transaksi, bukan daftar
+ * denominasi statis. Pola ini mengikuti quick-cash POS modern:
+ * - Exact amount (Uang Pas)
+ * - Pembulatan ke atas berikutnya (1k/5k/10k/20k/50k/100k)
+ * Hanya nominal > total yang ditampilkan, sehingga kasir tidak melihat
+ * saran yang tidak masuk akal. Untuk transaksi kecil, pembulatan 1k/5k
+ * otomatis muncul; untuk transaksi besar, saran 20k/50k/100k.
  */
-const QUICK_DENOMINATIONS = [100, 500, 1_000, 5_000, 10_000, 20_000, 50_000, 100_000];
+function cashSuggestions(total: number): number[] {
+  if (!Number.isFinite(total) || total <= 0) return [1_000, 5_000, 10_000];
+  const values: number[] = [];
+  const add = (value: number) => {
+    const rounded = Math.round(value);
+    if (rounded > total && !values.includes(rounded)) values.push(rounded);
+  };
+  for (const step of [1_000, 5_000, 10_000, 20_000, 50_000, 100_000]) {
+    add(Math.ceil(total / step) * step);
+  }
+  return values.slice(0, 3);
+}
 
 export function CashChips({
   total,
@@ -23,41 +37,50 @@ export function CashChips({
   disabled: boolean;
   onChange: (value: number) => void;
 }) {
+  const suggestions = cashSuggestions(total);
   const chipClass =
     "inline-flex h-11 items-center justify-center rounded-md border border-border/80 bg-background px-1 text-xs font-semibold transition-colors hover:border-border hover:bg-muted active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40";
 
   return (
-    <div className="grid grid-cols-5 gap-1.5 pt-1 pb-1">
-      <button
-        type="button"
-        disabled={disabled || total <= 0}
-        onClick={() => onChange(total)}
-        className={`${chipClass} border-primary/50 bg-primary-soft/40 text-primary hover:bg-primary-soft`}
-      >
-        Uang Pas
-      </button>
-      {QUICK_DENOMINATIONS.map((value) => (
-        <button
-          key={value}
-          type="button"
-          disabled={disabled}
-          onClick={() => onChange(tendered + value)}
-          className={chipClass}
-          aria-label={`Tambah ${formatIDR(value)} ke uang diterima`}
-        >
-          +{formatMoneyText(String(value))}
-        </button>
-      ))}
-      {tendered > 0 ? (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-medium text-muted-foreground">Saran uang diterima</span>
+        {tendered > 0 ? (
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => onChange(0)}
+            className="min-h-8 rounded px-2 text-xs font-semibold text-muted-foreground underline-offset-2 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
+          >
+            Hapus
+          </button>
+        ) : null}
+      </div>
+      <div className="grid grid-cols-4 gap-1.5">
         <button
           type="button"
-          disabled={disabled}
-          onClick={() => onChange(0)}
-          className={`${chipClass} text-muted-foreground`}
+          disabled={disabled || total <= 0}
+          onClick={() => onChange(total)}
+          className={`${chipClass} border-primary/50 bg-primary-soft/40 text-primary hover:bg-primary-soft`}
         >
-          Hapus
+          Uang Pas
         </button>
-      ) : null}
+        {suggestions.map((value) => (
+          <button
+            key={value}
+            type="button"
+            disabled={disabled || total <= 0}
+            onClick={() => onChange(value)}
+            className={cn(
+              chipClass,
+              tendered === value && "border-primary bg-primary/5 text-foreground",
+            )}
+            aria-label={`Isi uang diterima ${formatIDR(value)}`}
+          >
+            {formatIDR(value)}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
