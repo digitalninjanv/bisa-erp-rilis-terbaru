@@ -20,16 +20,18 @@ import { PosActionMenu } from "@/components/pos/pos-action-menu";
 import { PrinterStatusButton } from "@/components/pos/printer-modal";
 
 const CATEGORY_TONES = [
-  "border-l-4 border-l-tone-teal",
-  "border-l-4 border-l-tone-plum",
-  "border-l-4 border-l-tone-amber",
-  "border-l-4 border-l-tone-green",
-  "border-l-4 border-l-tone-blue",
-  "border-l-4 border-l-tone-red",
+  { border: "border-l-4 border-l-tone-teal", surface: "bg-tone-teal-soft", edge: "border-tone-teal/40" },
+  { border: "border-l-4 border-l-tone-plum", surface: "bg-tone-plum-soft", edge: "border-tone-plum/40" },
+  { border: "border-l-4 border-l-tone-amber", surface: "bg-tone-amber-soft", edge: "border-tone-amber/40" },
+  { border: "border-l-4 border-l-tone-green", surface: "bg-tone-green-soft", edge: "border-tone-green/40" },
+  { border: "border-l-4 border-l-tone-blue", surface: "bg-tone-blue-soft", edge: "border-tone-blue/40" },
+  { border: "border-l-4 border-l-tone-red", surface: "bg-tone-red-soft", edge: "border-tone-red/40" },
 ] as const;
 
 /** Warna kartu deterministik dari nama kategori (Odoo category colors). */
-function categoryTone(name: string | null | undefined): string | null {
+function categoryTone(
+  name: string | null | undefined,
+): (typeof CATEGORY_TONES)[number] | null {
   const value = name?.trim();
   if (!value) return null;
   let hash = 0;
@@ -394,7 +396,7 @@ export function ProductCatalog(props: {
                 const quantity = cartQty.get(product.id) ?? 0;
                 const packs = product.packagings ?? [];
                 const visiblePacks = packs.slice(0, display.view === "list" ? 3 : 1);
-                const tone = display.colorByCategory ? categoryTone(product.categoryName) : null;
+                const tone = display.cardTint ? categoryTone(product.categoryName) : null;
               const shape = display.cardShape === "square" ? "rounded-sm" : "rounded-lg";
 
                 if (display.view === "list") {
@@ -410,8 +412,10 @@ export function ProductCatalog(props: {
                       className={cn(
                         "group flex min-h-12 w-full touch-manipulation items-center gap-3 border text-left transition-colors active:scale-[0.995] hover:border-primary/50 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                         shape,
-                        "border-border bg-card",
-                        tone,
+                        "border-border bg-card shadow-sm",
+                        tone?.border,
+                        tone?.surface,
+                        tone?.edge,
                         display.density === "compact" ? "px-2.5 py-1.5" : "px-3 py-2",
                         soldOut && "cursor-not-allowed opacity-60 hover:border-border hover:bg-background",
                         highlighted && "border-primary bg-accent/40 ring-2 ring-ring/40 hover:border-primary",
@@ -490,8 +494,10 @@ export function ProductCatalog(props: {
                     className={cn(
                       "group flex touch-manipulation flex-col justify-between border text-left transition-colors active:scale-[0.99] hover:border-primary/50 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                       shape,
-                      "border-border bg-card",
-                      tone,
+                      "border-border bg-card shadow-sm",
+                      tone?.border,
+                      tone?.surface,
+                      tone?.edge,
                       display.density === "compact" ? "p-2" : "p-2.5",
                       display.density === "compact" ? "min-h-[96px]" : "min-h-[120px]",
                       quantity > 0 && "border-[var(--pos-action)] bg-[var(--pos-action-soft)]",

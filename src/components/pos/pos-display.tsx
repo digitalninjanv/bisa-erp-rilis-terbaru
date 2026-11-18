@@ -41,7 +41,7 @@ export type PosDisplayPrefs = {
   view: PosView;
   fontScale: PosFontScale;
   cardShape: PosCardShape;
-  colorByCategory: boolean;
+  cardTint: boolean;
   showCategory: boolean;
   autoFullscreen: boolean;
   actionTheme: PosActionTheme;
@@ -58,7 +58,7 @@ export const POS_DISPLAY_DEFAULTS: PosDisplayPrefs = {
   view: "grid",
   fontScale: "large",
   cardShape: "rounded",
-  colorByCategory: false,
+  cardTint: true,
   showCategory: false,
   autoFullscreen: false,
   actionTheme: "odoo",
@@ -105,8 +105,7 @@ function readPrefs(): PosDisplayPrefs {
             ? parsed.fontScale
             : POS_DISPLAY_DEFAULTS.fontScale,
       cardShape: parsed.cardShape === "square" ? "square" : "rounded",
-      colorByCategory:
-        typeof parsed.colorByCategory === "boolean" ? parsed.colorByCategory : false,
+      cardTint: typeof parsed.cardTint === "boolean" ? parsed.cardTint : true,
       showCategory: typeof parsed.showCategory === "boolean" ? parsed.showCategory : false,
       autoFullscreen:
         typeof parsed.autoFullscreen === "boolean" ? parsed.autoFullscreen : false,
@@ -332,7 +331,7 @@ export function PosDisplayControls({
               <Toggle label="SKU produk" checked={prefs.showSku} onChange={(showSku) => onChange({ showSku })} />
               <Toggle label="Pilihan kemasan" checked={prefs.showPackaging} onChange={(showPackaging) => onChange({ showPackaging })} />
               <Toggle label="Nama kategori" checked={prefs.showCategory} onChange={(showCategory) => onChange({ showCategory })} />
-              <Toggle label="Aksen warna kategori" checked={prefs.colorByCategory} onChange={(colorByCategory) => onChange({ colorByCategory })} />
+              <Toggle label="Warna kategori pada kartu" checked={prefs.cardTint} onChange={(cardTint) => onChange({ cardTint })} />
             </section>
 
             <section className="space-y-4" aria-labelledby="pos-display-terminal">
