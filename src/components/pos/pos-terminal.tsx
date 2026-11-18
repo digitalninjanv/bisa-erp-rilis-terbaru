@@ -26,7 +26,7 @@ import { defaultDueDate, useTerminalCheckout } from "@/components/pos/terminal/u
 import { ProductCatalog } from "@/components/pos/terminal/product-catalog";
 import { CheckoutSuccessModal, type CompletedSaleInfo } from "@/components/pos/terminal/checkout-success-modal";
 import {
-  addCartLine, changeCartLinePackaging, setCartLineDiscount, setCartLineQty, setCartLineSerial,
+  addCartLine, changeCartLinePackaging, setCartLineQty, setCartLineSerial,
 } from "@/components/pos/terminal/cart-lines";
 import { MobilePayBar } from "@/components/pos/terminal/mobile-pay-bar";
 import { PosCheckoutWorkspace } from "@/components/pos/terminal/pos-checkout-workspace";
@@ -429,9 +429,6 @@ export function PosTerminal({
   const setSerial = (key: string, index: number, value: string) =>
     setCart((current) => setCartLineSerial(current, key, index, value));
 
-  const setDiscount = (key: string, type: "percent" | "nominal" | null, value: number) =>
-    setCart((current) => setCartLineDiscount(current, key, type, value));
-
   const setLinePackaging = (key: string, packagingId: string | null) =>
     setCart((current) => changeCartLinePackaging(current, key, packagingId));
 
@@ -610,7 +607,6 @@ export function PosTerminal({
     setCart,
     setQty,
     setSerial,
-    setDiscount,
     setLinePackaging,
     quoteBusy,
     allowNegativeStock,

@@ -32,9 +32,7 @@ type PriceGroup = {
 };
 
 // FIX-ARS Tahap 5 (ARS2-01): panel keranjang — kartu keranjang beserta
-// pemilih kelompok harga, daftar baris (qty/seri/diskon), dan total;
-// JSX dipindah apa adanya dari PosTerminal. State `discountFor` hanya
-// hidup di panel ini, jadi ikut berpindah ke dalamnya.
+// pemilih kelompok harga, daftar baris (qty/seri), dan total.
 export function CartPanel(props: {
   cart: CartItem[];
   cache: Record<string, ProductOption>;
@@ -51,7 +49,6 @@ export function CartPanel(props: {
   /** S4: penyunting berkunci baris (produk, kemasan) — lihat cartLineKey. */
   setQty: (key: string, qty: number) => void;
   setSerial: (key: string, index: number, value: string) => void;
-  setDiscount: (key: string, type: "percent" | "nominal" | null, value: number) => void;
   setLinePackaging: (key: string, packagingId: string | null) => void;
   quoteBusy: boolean;
   allowNegativeStock?: boolean;
@@ -74,14 +71,12 @@ export function CartPanel(props: {
     setCart,
     setQty,
     setSerial,
-    setDiscount,
     setLinePackaging,
     quoteBusy,
     allowNegativeStock = false,
     scrollMode = "contained",
     compactHeader = false,
   } = props;
-  const [discountFor, setDiscountFor] = useState<string | null>(null);
   const [confirmClearCart, setConfirmClearCart] = useState(false);
   return (
         <div className="rounded-lg border border-border bg-card">
@@ -283,19 +278,7 @@ export function CartPanel(props: {
                             <Plus className="size-4" />
                           </button>
                         </div>
-                        <div className="flex items-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setDiscountFor(discountFor === key ? null : key)}
-                            className={cn(
-                              "min-h-11 rounded-md px-3 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                              line && line.discountAmount > 0
-                                ? "bg-tone-plum-soft text-tone-plum"
-                                : "text-muted-foreground hover:bg-muted",
-                            )}
-                          >
-                            {line && line.discountAmount > 0 ? `Diskon −${formatIDR(line.discountAmount)}` : "Diskon"}
-                          </button>
+                        <div className="flex justify-end">
                           <div className="text-right">
                             <span className="block text-[11px] font-semibold text-muted-foreground">
                               Total
@@ -313,22 +296,13 @@ export function CartPanel(props: {
                           gagal di checkout. Tombol + juga berhenti di
                           stok tersedia untuk produk terlacak.
                           S4: yang dinilai adalah qty SATUAN DASAR. */}
-                      {tracked && baseQty > stock ? (
-                        allowNegativeStock ? (
-                          <p className="mt-2 flex items-center gap-2 text-xs text-amber-700 dark:text-amber-300">
-                            <AlertTriangle className="size-4 shrink-0" />
-                            {stock <= 0
-                              ? `Stok tercatat ${formatQty(stock)} (penjualan minus diizinkan)`
-                              : `Melebihi stok tercatat (${formatQty(stock)}) — stok akan menjadi minus`}
-                          </p>
-                        ) : (
-                          <p className="mt-2 flex items-center gap-2 text-xs text-destructive">
-                            <AlertTriangle className="size-4 shrink-0" />
-                            {stock <= 0
-                              ? `Stok tercatat ${formatQty(stock)}`
-                              : `Melebihi stok tersedia (${formatQty(stock)}) — kurangi jumlah; checkout akan ditolak`}
-                          </p>
-                        )
+                      {tracked && baseQty > stock && !allowNegativeStock ? (
+                        <p className="mt-2 flex items-center gap-2 text-xs text-destructive">
+                          <AlertTriangle className="size-4 shrink-0" />
+                          {stock <= 0
+                            ? `Stok tercatat ${formatQty(stock)}`
+                            : `Melebihi stok tersedia (${formatQty(stock)}) — kurangi jumlah; checkout akan ditolak`}
+                        </p>
                       ) : null}
 
                       {(line?.trackSerial ?? cached?.trackSerial) ? (
@@ -349,51 +323,6 @@ export function CartPanel(props: {
                         </div>
                       ) : null}
 
-                      {discountFor === key ? (
-                        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md bg-muted/60 p-2">
-                          <select
-                            value={item.discountType ?? "percent"}
-                            aria-label={`Jenis diskon ${line?.name ?? cached?.name ?? "produk"}`}
-                            onChange={(event) =>
-                              setDiscount(
-                                key,
-                                event.target.value as "percent" | "nominal",
-                                item.discountValue ?? 0,
-                              )
-                            }
-                            className="h-11 rounded-md border border-input bg-background px-3 text-sm"
-                          >
-                            <option value="percent">%</option>
-                            <option value="nominal">Rp / unit</option>
-                          </select>
-                          <input
-                            value={item.discountValue ?? ""}
-                            aria-label={`Nilai diskon ${line?.name ?? cached?.name ?? "produk"}`}
-                            onChange={(event) =>
-                              setDiscount(
-                                key,
-                                item.discountType ?? "percent",
-                                Number(event.target.value) || 0,
-                              )
-                            }
-                            inputMode="decimal"
-                            placeholder="0"
-                            className="num h-11 min-w-24 flex-1 rounded-md border border-input bg-background px-3 text-right text-sm"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setDiscount(key, null, 0)}
-                            className="min-h-11 rounded-md px-3 text-sm font-medium text-muted-foreground hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          >
-                            Hapus
-                          </button>
-                          {line && line.groupDiscountAmount > 0 ? (
-                            <p className="w-full text-xs text-tone-plum">
-                              Diskon grup: −{formatIDR(line.groupDiscountAmount)}
-                            </p>
-                          ) : null}
-                        </div>
-                      ) : null}
                     </li>
                   );
                 })}
