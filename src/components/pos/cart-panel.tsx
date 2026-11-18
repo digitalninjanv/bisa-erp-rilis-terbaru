@@ -54,6 +54,9 @@ export function CartPanel(props: {
   setLinePackaging: (key: string, packagingId: string | null) => void;
   quoteBusy: boolean;
   allowNegativeStock?: boolean;
+  scrollMode?: "contained" | "page";
+  /** Sheet mobile: judul sudah ada di header sheet, cukup aksi baris. */
+  compactHeader?: boolean;
 }) {
   const {
     cart,
@@ -74,50 +77,54 @@ export function CartPanel(props: {
     setLinePackaging,
     quoteBusy,
     allowNegativeStock = false,
+    scrollMode = "contained",
+    compactHeader = false,
   } = props;
   const [discountFor, setDiscountFor] = useState<string | null>(null);
   const [confirmClearCart, setConfirmClearCart] = useState(false);
   return (
         <div className="rounded-lg border border-border bg-card">
-          <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2.5">
-            <div className="flex items-center gap-2">
-              <ShoppingCart className="size-4 text-muted-foreground" />
-              <h2 className="text-[13px] font-semibold">Keranjang</h2>
-              <span className="num rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+          {(!compactHeader || cart.length > 0 || heldCount > 0) ? (
+          <div className={cn("flex min-h-14 items-center justify-between gap-2 border-b border-border px-4 py-3 lg:sticky lg:top-0 lg:z-20 lg:rounded-t-lg lg:bg-card lg:backdrop-blur", compactHeader && "justify-end")}>
+            <div className={cn("flex items-center gap-2", compactHeader && "hidden")}>
+              <ShoppingCart className="size-5 text-muted-foreground" />
+              <h2 className="text-base font-semibold">Keranjang</h2>
+              <span className="num rounded-full bg-muted px-2 py-1 text-xs font-medium text-muted-foreground">
                 {cart.length} baris
               </span>
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5">
               {heldCount > 0 ? (
                 <a
                   href="/app/pos/ditahan"
                   aria-label={`Lihat ${heldCount} pesanan ditahan`}
-                  className="flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground hover:bg-muted"
+                  className="flex min-h-11 items-center gap-2 rounded-md px-3 text-sm font-medium text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <PauseCircle className="size-3.5" /> {heldCount}
+                  <PauseCircle className="size-4" /> {heldCount} ditahan
                 </a>
               ) : null}
               {cart.length > 0 ? (
                 <button
                   type="button"
                   onClick={() => setConfirmClearCart(true)}
-                  className="rounded px-1.5 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-destructive"
+                  className="min-h-11 rounded-md px-3 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   Kosongkan
                 </button>
               ) : null}
             </div>
           </div>
+          ) : null}
 
-          <div className="border-b border-border px-3 py-2">
+          <div className="border-b border-border px-4 py-3">
             <div className="flex items-center gap-2">
-              <label className="flex shrink-0 items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                <UserRound className="size-3" /> Harga
+              <label className="flex shrink-0 items-center gap-2 text-sm font-semibold text-foreground">
+                <UserRound className="size-4" /> Harga
               </label>
               <select
                 value={groupId}
                 onChange={(event) => setGroupId(event.target.value)}
-                className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-[12px]"
+                className="h-11 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm"
                 aria-label="Kelompok harga"
               >
                 <option value="">Harga normal (tanpa kelompok)</option>
@@ -127,23 +134,28 @@ export function CartPanel(props: {
               </select>
             </div>
             {selectedGroup ? (
-              <p className="mt-1 text-[10px] text-tone-teal">
+              <p className="mt-2 text-xs leading-4 text-tone-teal">
                 Harga kelompok aktif · pembulatan {selectedGroup.roundingStep.toLocaleString("id-ID")}
                 {selectedGroup.roundingDirection === "down"
                   ? " ke bawah"
                   : selectedGroup.roundingDirection === "up"
                     ? " ke atas"
                     : " terdekat"}
-                {selectedGroup.roundCashTotal ? " · total tunai dibulatkan" : ""}
+                {selectedGroup.roundCashTotal ? " · total transaksi dibulatkan" : ""}
               </p>
             ) : null}
           </div>
 
-          <div className="max-h-[42vh] min-h-[120px] overflow-y-auto">
+          <div
+            className={cn(
+              "min-h-[120px]",
+              scrollMode === "page" ? "overflow-visible" : "max-h-[42vh] overflow-y-auto",
+            )}
+          >
             {cart.length === 0 ? (
               <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
-                <ShoppingCart className="size-6 text-muted-foreground/60" />
-                <p className="mt-2 text-[12px] text-muted-foreground">
+                <ShoppingCart className="size-7 text-muted-foreground/60" />
+                <p className="mt-2 text-sm text-muted-foreground">
                   Scan barcode atau pilih produk untuk mulai.
                 </p>
               </div>
@@ -173,11 +185,11 @@ export function CartPanel(props: {
                   const tracked = line?.trackStock ?? cached?.trackStock ?? true;
                   const unitName = pack?.name ?? line?.packagingName ?? cached?.unitCode ?? "PCS";
                   return (
-                    <li key={key} className="px-3 py-2">
+                    <li key={key} className="px-4 py-3">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="truncate text-[13px] font-medium">{line?.name ?? cached?.name ?? "Produk"}</p>
-                          <p className="num text-[11px] text-muted-foreground">
+                          <p className="line-clamp-2 text-sm font-semibold">{line?.name ?? cached?.name ?? "Produk"}</p>
+                          <p className="num mt-0.5 text-xs text-muted-foreground">
                             {line?.sku ?? cached?.sku} · {formatIDR(price)}
                             {pack ? <span> / {pack.name}</span> : null}
                             {line && line.unitPrice > line.groupUnitPrice ? (
@@ -188,10 +200,10 @@ export function CartPanel(props: {
                         <button
                           type="button"
                           onClick={() => setQty(key, 0)}
-                          className="relative rounded p-1 text-muted-foreground after:absolute after:-inset-[11px] hover:bg-destructive/10 hover:text-destructive"
+                          className="grid size-11 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           aria-label={`Hapus ${line?.name ?? cached?.name ?? "item"} dari keranjang`}
                         >
-                          <X className="size-3.5" />
+                          <X className="size-4" />
                         </button>
                       </div>
 
@@ -199,8 +211,8 @@ export function CartPanel(props: {
                           berkemasan; mengganti satuan me-reset qty ke
                           1 satuan baru (ditegakkan di setLinePackaging). */}
                       {(cached?.packagings?.length ?? 0) > 0 ? (
-                        <div className="mt-1.5 flex items-center gap-1.5">
-                          <label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <label className="text-xs font-semibold text-foreground">
                             Satuan
                           </label>
                           <select
@@ -209,7 +221,7 @@ export function CartPanel(props: {
                               setLinePackaging(key, event.target.value || null)
                             }
                             aria-label={`Satuan ${line?.name ?? cached?.name ?? "produk"}`}
-                            className="h-7 rounded border border-input bg-background px-1 text-[11px]"
+                            className="h-11 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm"
                           >
                             <option value="">{cached?.unitCode ?? "PCS"} (satuan dasar)</option>
                             {cached!.packagings!.map((option) => (
@@ -219,25 +231,25 @@ export function CartPanel(props: {
                             ))}
                           </select>
                           {pack ? (
-                            <span className="num text-[10px] text-muted-foreground">
+                            <span className="num text-xs text-muted-foreground">
                               = {formatQty(baseQty)} {cached?.unitCode ?? "PCS"}
                             </span>
                           ) : null}
                         </div>
                       ) : null}
 
-                      <div className="mt-1.5 flex items-center justify-between gap-2">
+                      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                         {/* A-26 Q9 (K-11): stepper qty adalah target sentuh
                             primer kasir — tombol visual 36px dengan area
                             sentuh efektif 44x44px lewat after:-inset-1
                             (pola area sentuh checkbox/switch). Tombol
                             Hapus di atas baris ini juga diperluas area
                             sentuhnya ke 44px tanpa mengubah visualnya. */}
-                        <div className="flex items-center rounded-md border border-border">
+                        <div className="flex shrink-0 items-center rounded-md border border-border">
                           <button
                             type="button"
                             onClick={() => setQty(key, item.qty - 1)}
-                            className="relative grid size-9 place-items-center after:absolute after:-inset-1 hover:bg-muted"
+                            className="grid size-11 place-items-center hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             aria-label={`Kurangi jumlah ${line?.name ?? cached?.name ?? "item"}`}
                           >
                             <Minus className="size-4" />
@@ -251,14 +263,14 @@ export function CartPanel(props: {
                             value={String(item.qty)}
                             onChange={(value) => setQty(key, value === "" ? 0 : Number(value))}
                             aria-label={`Jumlah ${unitName}`}
-                            wrapperClassName="w-10 shrink-0"
-                            className="w-full rounded-none border-x border-y-0 border-border bg-transparent px-0 text-center text-[13px] focus:border-border"
+                            wrapperClassName="h-11 w-12 shrink-0"
+                            className="h-11 w-full rounded-none border-x border-y-0 border-border bg-transparent px-0 text-center text-sm font-semibold focus:border-border"
                           />
                           <button
                             type="button"
                             onClick={() => setQty(key, item.qty + 1)}
                             disabled={!allowNegativeStock && tracked && baseQty >= stock}
-                            className="relative grid size-9 place-items-center after:absolute after:-inset-1 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+                            className="grid size-11 place-items-center hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
                             aria-label={`Tambah jumlah ${line?.name ?? cached?.name ?? "item"}`}
                           >
                             <Plus className="size-4" />
@@ -269,7 +281,7 @@ export function CartPanel(props: {
                             type="button"
                             onClick={() => setDiscountFor(discountFor === key ? null : key)}
                             className={cn(
-                              "rounded px-1.5 py-0.5 text-[10px]",
+                              "min-h-11 rounded-md px-3 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                               line && line.discountAmount > 0
                                 ? "bg-tone-plum-soft text-tone-plum"
                                 : "text-muted-foreground hover:bg-muted",
@@ -278,10 +290,10 @@ export function CartPanel(props: {
                             {line && line.discountAmount > 0 ? `Diskon −${formatIDR(line.discountAmount)}` : "Diskon"}
                           </button>
                           <div className="text-right">
-                            <span className="block text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+                            <span className="block text-[11px] font-semibold text-muted-foreground">
                               Total
                             </span>
-                            <span className="num text-[14px] font-semibold leading-tight">
+                            <span className="num text-base font-bold leading-tight">
                               {/* lineTotal sudah termasuk pajak (POS-RCPT-01) */}
                               {formatIDR(line ? line.lineTotal : price * item.qty)}
                             </span>
@@ -296,15 +308,15 @@ export function CartPanel(props: {
                           S4: yang dinilai adalah qty SATUAN DASAR. */}
                       {tracked && baseQty > stock ? (
                         allowNegativeStock ? (
-                          <p className="mt-1 flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400">
-                            <AlertTriangle className="size-3" />
+                          <p className="mt-2 flex items-center gap-2 text-xs text-amber-700 dark:text-amber-300">
+                            <AlertTriangle className="size-4 shrink-0" />
                             {stock <= 0
                               ? `Stok tercatat ${formatQty(stock)} (penjualan minus diizinkan)`
                               : `Melebihi stok tercatat (${formatQty(stock)}) — stok akan menjadi minus`}
                           </p>
                         ) : (
-                          <p className="mt-1 flex items-center gap-1 text-[11px] text-destructive">
-                            <AlertTriangle className="size-3" />
+                          <p className="mt-2 flex items-center gap-2 text-xs text-destructive">
+                            <AlertTriangle className="size-4 shrink-0" />
                             {stock <= 0
                               ? `Stok tercatat ${formatQty(stock)}`
                               : `Melebihi stok tersedia (${formatQty(stock)}) — kurangi jumlah; checkout akan ditolak`}
@@ -313,7 +325,7 @@ export function CartPanel(props: {
                       ) : null}
 
                       {(line?.trackSerial ?? cached?.trackSerial) ? (
-                        <div className="mt-1.5 space-y-1">
+                        <div className="mt-2 space-y-2">
                           {Array.from({ length: Math.max(0, Math.floor(baseQty)) }, (_, serialIndex) => (
                             <input
                               key={serialIndex}
@@ -321,17 +333,17 @@ export function CartPanel(props: {
                               onChange={(event) => setSerial(key, serialIndex, event.target.value)}
                               placeholder={`Nomor seri unit ${serialIndex + 1} *`}
                               aria-label={`Nomor seri unit ${serialIndex + 1} ${line?.name ?? cached?.name ?? ""}`}
-                              className="num h-6 w-full rounded border border-input bg-background px-1.5 text-[11px]"
+                              className="num h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
                             />
                           ))}
-                          <p className="text-[10px] text-muted-foreground">
+                          <p className="text-xs leading-4 text-muted-foreground">
                             Produk bernomor seri — isi seri yang tersedia untuk setiap unit sebelum membayar.
                           </p>
                         </div>
                       ) : null}
 
                       {discountFor === key ? (
-                        <div className="mt-2 flex items-center gap-1.5 rounded-md bg-muted/60 p-1.5">
+                        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md bg-muted/60 p-2">
                           <select
                             value={item.discountType ?? "percent"}
                             aria-label={`Jenis diskon ${line?.name ?? cached?.name ?? "produk"}`}
@@ -342,7 +354,7 @@ export function CartPanel(props: {
                                 item.discountValue ?? 0,
                               )
                             }
-                            className="h-9 rounded border border-input bg-background px-1 text-[11px]"
+                            className="h-11 rounded-md border border-input bg-background px-3 text-sm"
                           >
                             <option value="percent">%</option>
                             <option value="nominal">Rp / unit</option>
@@ -359,17 +371,17 @@ export function CartPanel(props: {
                             }
                             inputMode="decimal"
                             placeholder="0"
-                            className="num h-9 w-20 rounded border border-input bg-background px-1.5 text-right text-[11px]"
+                            className="num h-11 min-w-24 flex-1 rounded-md border border-input bg-background px-3 text-right text-sm"
                           />
                           <button
                             type="button"
                             onClick={() => setDiscount(key, null, 0)}
-                            className="ml-auto rounded px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-background"
+                            className="min-h-11 rounded-md px-3 text-sm font-medium text-muted-foreground hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           >
                             Hapus
                           </button>
                           {line && line.groupDiscountAmount > 0 ? (
-                            <p className="text-[10px] text-tone-plum">
+                            <p className="w-full text-xs text-tone-plum">
                               Diskon grup: −{formatIDR(line.groupDiscountAmount)}
                             </p>
                           ) : null}
@@ -382,10 +394,10 @@ export function CartPanel(props: {
             )}
           </div>
 
-          <div className="space-y-1.5 border-t border-border px-3 py-2.5 text-[12px]">
+          <div className="space-y-2 border-t border-border px-4 py-3 text-sm">
             {heldTotal !== null && quote && Math.abs(quote.total - heldTotal) > 0.005 ? (
-              <p className="flex items-start gap-1.5 rounded-md bg-tone-amber-soft px-2 py-1.5 text-[11px] leading-4 text-tone-amber">
-                <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+              <p className="flex items-start gap-2 rounded-md bg-tone-amber-soft px-3 py-2 text-sm leading-5 text-tone-amber">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0" />
                 <span>
                   Total berubah sejak pesanan ditahan: {formatIDR(heldTotal)} →{" "}
                   {formatIDR(quote.total)}. Harga dan diskon terkini yang berlaku.
@@ -406,14 +418,14 @@ export function CartPanel(props: {
               />
             ) : null}
             <div className="flex items-center justify-between border-t border-border pt-2">
-              <span className="text-[13px] font-semibold">Total</span>
-              <span className="num text-xl font-semibold">{formatIDR(total)}</span>
+              <span className="text-base font-bold">Total</span>
+              <span className="num text-2xl font-bold">{formatIDR(total)}</span>
             </div>
             {/* POS2-01/22: status perhitungan adalah informasi
                 operasional — 11px, dan tampil juga saat quote basi
                 sedang dihitung ulang (quotePending). */}
             {quoteBusy && cart.length > 0 ? (
-              <p className="text-right text-[11px] text-muted-foreground">Menghitung…</p>
+              <p className="text-right text-xs text-muted-foreground">Menghitung total…</p>
             ) : null}
           </div>
 

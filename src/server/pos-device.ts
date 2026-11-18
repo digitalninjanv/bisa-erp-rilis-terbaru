@@ -1,21 +1,25 @@
-import { and, eq, gt, inArray, sql } from "drizzle-orm";
-import { z } from "zod";
+import { and, desc, eq, gt, gte, inArray, isNull, or, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
 import {
   auditLog,
+  categories,
   customers,
+  customerGroupPrices,
+  customerGroups,
   member,
   organization,
+  posPromotions,
   productPackagings,
   products,
+  saleLines,
+  sales,
   stockOnHand,
+  stockReservations,
   units,
   user,
 } from "@/db/schema";
-import { withCompany, withCompanyReadOnly } from "@/db/tenant";
-import { AppError } from "@/lib/errors";
+import { withCompanyReadOnly } from "@/db/tenant";
 import { toPrintSettings } from "@/components/print/types";
-import type { OfflineSalePayload, OfflineSyncItemResult } from "@/lib/pos-offline";
 import {
   getSettings,
   listPackagingsForProducts,
@@ -25,13 +29,24 @@ import {
   searchProducts,
 } from "@/server/catalog";
 import type { PackagingSnapshot } from "@/lib/packaging";
-import { resolveOriginEntitlement, type OriginEntitlement } from "@/server/member-permissions";
-import { assertOfflineEnabled, processOfflineSaleItem } from "@/server/pos-offline";
+import { buildLoyaltyBalances } from "@/lib/pos/loyalty";
 import {
-  recordTerminalSessionClose,
-  resolvePosTerminalByToken,
-  type TerminalSessionCloseIntent,
-} from "@/server/pos";
+  buildKitchenTickets,
+  type KitchenTicket,
+  type KitchenTicketSource,
+} from "@/lib/pos/kitchen-display";
+import { resolveOriginEntitlement } from "@/server/member-permissions";
+import { resolvePosTerminalByToken } from "@/server/pos";
+import type { PosDeviceIdentity } from "./pos";
+
+export {
+  posSessionIntentSchema,
+  posSyncItemSchema,
+  posSyncRequestSchema,
+  syncPosDeviceItems,
+  syncPosDeviceSessionIntents,
+} from "./pos";
+export type { PosDeviceIdentity, PosSessionIntent, PosSessionIntentResult } from "./pos";
 
 /**
  * POS Native (Tauri) — permukaan hosted `/api/pos/*`
@@ -55,17 +70,6 @@ import {
  * `syncOfflineSalesAction` — skema Zod muatan pun satu definisi
  * bersama (dipakai kedua jalur).
  */
-
-export type PosDeviceIdentity = {
-  companyId: string;
-  userId: string;
-  label: string | null;
-  /** Terminal registry pemilik token (Langkah 6). */
-  terminalId: string;
-  terminalName: string;
-  /** Gudang terminal dari registry; null = gudang bawaan perusahaan. */
-  warehouseId: string | null;
-};
 
 /**
  * Resolusi token perangkat dari header Authorization: Bearer
@@ -99,99 +103,6 @@ export const POS_API_CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Headers": "Authorization, Content-Type",
   "Access-Control-Max-Age": "86400",
 };
-
-// ---------------------------------------------------------------------------
-// Skema muatan sinkronisasi — SATU definisi untuk aksi web & API perangkat.
-// ---------------------------------------------------------------------------
-
-export const posSyncItemSchema = z.object({
-  clientKey: z.string().min(8).max(120),
-  warehouseId: z.string().uuid(),
-  groupId: z.string().uuid().nullish(),
-  customerId: z.string().uuid().nullish(),
-  dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  // FIX-POS Tahap 2: identitas asal & snapshot struk (opsional agar
-  // antrean dari klien lama tetap dapat dikirim).
-  cashierId: z.string().min(1).max(128).nullish(),
-  originSessionId: z.string().uuid().nullish(),
-  deviceId: z.string().max(80).nullish(),
-  expectedTotal: z.number().nonnegative().optional(),
-  lines: z
-    .array(
-      z.object({
-        productId: z.string().uuid(),
-        qty: z.number().positive(),
-        discountType: z.enum(["percent", "nominal"]).nullish(),
-        discountValue: z.number().optional(),
-        serialNumbers: z.array(z.string().min(1).max(80)).max(500).optional(),
-        unitPrice: z.number().nonnegative().optional(),
-        // Program Satuan Kemasan S4: baris berkemasan antrean web —
-        // qty adalah qty INPUT kemasan, unitPrice snapshot adalah
-        // harga PER KEMASAN, isiSnapshot faktor saat transaksi.
-        // Opsional: muatan lama & perangkat desktop (S5) tanpa kolom
-        // ini tetap sah sebagai baris satuan dasar.
-        packagingId: z.string().uuid().nullish(),
-        isiSnapshot: z.number().positive().optional(),
-      }),
-    )
-    .min(1)
-    .max(200),
-  payments: z
-    .array(
-      z.object({
-        methodId: z.string().uuid(),
-        amount: z.number().nonnegative(),
-        tendered: z.number().nonnegative(),
-        reference: z.string().max(80).optional(),
-        // A-21 Tahap R3-A (R3-01): fee final dari panel kasir asal.
-        fee: z.number().nonnegative().optional(),
-      }),
-    )
-    .min(1),
-  queuedAt: z.string().max(40),
-});
-
-/**
- * Intent tutup sesi kas terminal (Langkah 6, menutup sisa Langkah
- * 4): FAKTA lokal yang dicatat server sebagai bahan peninjauan —
- * BUKAN sesi server. Terminal mengirimnya bersama drain outbox;
- * server mencatatnya idempoten per clientKey lewat
- * `recordTerminalSessionClose` (server/pos/terminals.ts) dan TIDAK
- * memposting jurnal/sesi kedua darinya.
- */
-export const posSessionIntentSchema = z.object({
-  clientKey: z.string().min(8).max(120),
-  warehouseId: z.string().uuid(),
-  cashierId: z.string().min(1).max(128).nullish(),
-  localSessionId: z.string().min(1).max(120),
-  openedAt: z.string().max(40).nullish(),
-  closedAt: z.string().max(40),
-  openingCash: z.number(),
-  expectedCash: z.number(),
-  countedCash: z.number(),
-  difference: z.number(),
-  denominations: z
-    .array(
-      z.object({
-        denomination: z.string().max(24),
-        count: z.number().int().nonnegative(),
-      }),
-    )
-    .max(24)
-    .nullish(),
-  differenceReason: z.string().max(200).nullish(),
-});
-
-export const posSyncRequestSchema = z
-  .object({
-    items: z.array(posSyncItemSchema).max(50).default([]),
-    sessionIntents: z.array(posSessionIntentSchema).max(50).optional(),
-  })
-  .refine(
-    (body) => body.items.length > 0 || (body.sessionIntents?.length ?? 0) > 0,
-    { message: "Tidak ada item maupun intent untuk disinkronkan." },
-  );
 
 // ---------------------------------------------------------------------------
 // Snapshot terminal: PENUH (Langkah 1) + DELTA berkursor (Langkah 3,
@@ -248,6 +159,8 @@ export type PosSnapshotProduct = {
   sku: string;
   barcode: string | null;
   name: string;
+  categoryId: string | null;
+  categoryName: string | null;
   salePrice: string;
   stock: number;
   trackStock: boolean;
@@ -297,6 +210,10 @@ export type PosSnapshotReceipt = {
   taxEnabled: boolean;
   /** Tarif PPN persen sebagai string desimal (numeric perusahaan). */
   taxRate: string;
+  /** Pembulatan perusahaan yang dipakai quote POS lokal maupun server. */
+  roundingMode: string;
+  /** Gambar QRIS statis (data URL PNG/JPEG/WebP) untuk layar bayar desktop. */
+  qrisImage: string | null;
 };
 
 /**
@@ -320,7 +237,42 @@ export type PosSnapshotTerminal = {
  */
 export type PosSnapshotNames = {
   cashiers: Array<{ id: string; name: string }>;
-  customers: Array<{ id: string; name: string }>;
+  customers: Array<{ id: string; name: string; groupId: string | null }>;
+};
+
+export type PosSnapshotCustomerGroup = {
+  id: string;
+  name: string;
+  roundingStep: number;
+  roundingDirection: string;
+  roundCashTotal: boolean;
+};
+
+export type PosSnapshotGroupPrice = {
+  groupId: string;
+  productId: string;
+  ruleType: string;
+  value: string;
+};
+
+export type PosSnapshotLoyaltyBalance = { customerId: string; points: number };
+
+export type PosSnapshotPromotion = {
+  id: string;
+  name: string;
+  type: "percent" | "nominal";
+  value: number;
+  minSubtotal: number;
+  productId: string | null;
+};
+
+export type PosSnapshotReservation = {
+  id: string;
+  number: string;
+  productId: string;
+  qty: string;
+  expiresAt: string | null;
+  reason: string | null;
 };
 
 type PosSnapshotEnvelope = {
@@ -331,11 +283,34 @@ type PosSnapshotEnvelope = {
   companyId: string;
   warehouse: { id: string; code: string; name: string } | null;
   warehouses: Array<{ id: string; code: string; name: string; isDefault: boolean }>;
-  paymentMethods: Array<{ id: string; code: string; name: string; type: string }>;
+  /** Reservasi stok aktif gudang terminal — bisa dipilih saat checkout. */
+  reservations: PosSnapshotReservation[];
+  /** Antrian dapur dari penjualan terbaru (kitchen display). */
+  kitchenTickets: KitchenTicket[];
+  /** Promosi aktif yang bisa diterapkan kasir sebagai diskon baris. */
+  promotions: PosSnapshotPromotion[];
+  /** Saldo poin loyalitas pelanggan (dari penjualan 1 tahun terakhir). */
+  loyaltyBalances: PosSnapshotLoyaltyBalance[];
+  paymentMethods: Array<{
+    id: string;
+    code: string;
+    name: string;
+    type: string;
+    feeEnabled: boolean;
+    feeType: string;
+    feeValue: string;
+  }>;
   products: PosSnapshotProduct[];
+  customerGroups: PosSnapshotCustomerGroup[];
+  groupPrices: PosSnapshotGroupPrice[];
+  /** Kelompok yang harga produknya diganti utuh pada delta ini. */
+  replaceGroupPriceGroupIds: string[];
   receipt: PosSnapshotReceipt;
   terminal: PosSnapshotTerminal;
   names: PosSnapshotNames;
+  canDiscount: boolean;
+  /** Saklar perusahaan; terminal desktop wajib tahu bahwa penjualan outbox diizinkan. */
+  posOfflineEnabled: boolean;
 };
 
 export type PosDeviceSnapshot = PosSnapshotEnvelope & { mode: "full" };
@@ -385,10 +360,17 @@ type SnapshotRefs = {
   warehouse: { id: string; code: string; name: string } | null;
   warehouseId: string;
   warehouses: PosSnapshotEnvelope["warehouses"];
+  reservations: PosSnapshotReservation[];
+  kitchenTickets: KitchenTicket[];
+  promotions: PosSnapshotPromotion[];
+  loyaltyBalances: PosSnapshotLoyaltyBalance[];
   paymentMethods: PosSnapshotEnvelope["paymentMethods"];
+  customerGroups: PosSnapshotEnvelope["customerGroups"];
   receipt: PosSnapshotReceipt;
   terminal: PosSnapshotTerminal;
   names: PosSnapshotNames;
+  canDiscount: boolean;
+  posOfflineEnabled: boolean;
 };
 
 /** Batas direktori pelanggan pada snapshot — jauh di atas skala
@@ -400,7 +382,7 @@ async function readSnapshotRefs(
   companyId: string,
   device: PosDeviceIdentity,
 ): Promise<SnapshotRefs> {
-  const [settings, warehouses, methods, org, cashierRows, customerRows] =
+  const [settings, warehouses, methods, org, cashierRows, customerRows, groupRows, entitlement] =
     await Promise.all([
       getSettings(tx, companyId),
       listWarehouses(tx, companyId),
@@ -417,11 +399,23 @@ async function readSnapshotRefs(
         .innerJoin(user, eq(user.id, member.userId))
         .where(eq(member.organizationId, companyId)),
       tx
-        .select({ id: customers.id, name: customers.name })
+        .select({ id: customers.id, name: customers.name, groupId: customers.groupId })
         .from(customers)
         .where(and(eq(customers.companyId, companyId), eq(customers.isActive, true)))
         .orderBy(customers.name)
         .limit(SNAPSHOT_CUSTOMER_LIMIT),
+      tx
+        .select({
+          id: customerGroups.id,
+          name: customerGroups.name,
+          roundingStep: customerGroups.roundingStep,
+          roundingDirection: customerGroups.roundingDirection,
+          roundCashTotal: customerGroups.roundCashTotal,
+        })
+        .from(customerGroups)
+        .where(and(eq(customerGroups.companyId, companyId), eq(customerGroups.isActive, true)))
+        .orderBy(customerGroups.name),
+      resolveOriginEntitlement(companyId, device.userId),
     ]);
   // Gudang terminal dari registry menang atas gudang bawaan
   // perusahaan (Langkah 6): terminal menjual dari gudangnya.
@@ -431,6 +425,105 @@ async function readSnapshotRefs(
       ? device.warehouseId
       : pickDefaultWarehouseId(warehouses, settings?.defaultWarehouseId);
   const warehouse = warehouses.find((w) => w.id === warehouseId) ?? null;
+  const now = new Date();
+  const reservationRows = warehouseId
+    ? await tx
+        .select({
+          id: stockReservations.id,
+          number: stockReservations.number,
+          productId: stockReservations.productId,
+          qty: stockReservations.qty,
+          expiresAt: stockReservations.expiresAt,
+          reason: stockReservations.reason,
+        })
+        .from(stockReservations)
+        .where(
+          and(
+            eq(stockReservations.companyId, companyId),
+            eq(stockReservations.warehouseId, warehouseId),
+            eq(stockReservations.status, "active"),
+            or(isNull(stockReservations.expiresAt), gt(stockReservations.expiresAt, now)),
+          ),
+        )
+        .orderBy(stockReservations.number)
+        .limit(500)
+    : [];
+  const reservations: PosSnapshotReservation[] = reservationRows.map((row) => ({
+    id: row.id,
+    number: row.number,
+    productId: row.productId,
+    qty: String(row.qty),
+    expiresAt: row.expiresAt?.toISOString() ?? null,
+    reason: row.reason,
+  }));
+  const sinceKitchen = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const kitchenSales = await tx
+    .select({
+      id: sales.id,
+      number: sales.number,
+      createdAt: sales.createdAt,
+      productName: saleLines.productName,
+      qty: saleLines.qty,
+    })
+    .from(sales)
+    .innerJoin(saleLines, and(eq(saleLines.companyId, companyId), eq(saleLines.saleId, sales.id)))
+    .where(
+      and(
+        eq(sales.companyId, companyId),
+        eq(sales.status, "completed"),
+        gte(sales.createdAt, sinceKitchen),
+      ),
+    )
+    .orderBy(desc(sales.createdAt))
+    .limit(200);
+  const kitchenBySale = new Map<string, KitchenTicketSource>();
+  for (const row of kitchenSales) {
+    const source = kitchenBySale.get(row.id) ?? {
+      id: row.id,
+      number: row.number,
+      createdAt: row.createdAt,
+      lines: [],
+    };
+    source.lines.push({ productName: row.productName, qty: row.qty });
+    kitchenBySale.set(row.id, source);
+  }
+  const kitchenTickets = buildKitchenTickets([...kitchenBySale.values()]).slice(0, 50);
+  const promotionRows = await tx
+    .select({
+      id: posPromotions.id,
+      name: posPromotions.name,
+      type: posPromotions.type,
+      value: posPromotions.value,
+      minSubtotal: posPromotions.minSubtotal,
+      productId: posPromotions.productId,
+    })
+    .from(posPromotions)
+    .where(and(eq(posPromotions.companyId, companyId), eq(posPromotions.active, true)))
+    .orderBy(posPromotions.name)
+    .limit(200);
+  const promotions: PosSnapshotPromotion[] = promotionRows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    type: row.type === "nominal" ? "nominal" : "percent",
+    value: Number(row.value),
+    minSubtotal: Number(row.minSubtotal),
+    productId: row.productId,
+  }));
+  const sinceLoyalty = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+  const loyaltySales = await tx
+    .select({ customerId: sales.customerId, total: sales.total })
+    .from(sales)
+    .where(
+      and(
+        eq(sales.companyId, companyId),
+        eq(sales.status, "completed"),
+        gte(sales.createdAt, sinceLoyalty),
+      ),
+    )
+    .limit(20_000);
+  const loyaltyBalances: PosSnapshotLoyaltyBalance[] = [
+    ...buildLoyaltyBalances(loyaltySales).entries(),
+  ].map(([customerId, points]) => ({ customerId, points }));
   // Blok cetak dari baris pengaturan yang sama (lihat
   // PosSnapshotReceipt): nama tampilan struk mengikuti halaman nota
   // web — legalName perusahaan, jatuh ke nama bawaan yang sama.
@@ -446,7 +539,20 @@ async function readSnapshotRefs(
       name: w.name,
       isDefault: w.isDefault,
     })),
-    paymentMethods: methods.map((m) => ({ id: m.id, code: m.code, name: m.name, type: m.type })),
+    reservations,
+    kitchenTickets,
+    promotions,
+    loyaltyBalances,
+    paymentMethods: methods.map((m) => ({
+      id: m.id,
+      code: m.code,
+      name: m.name,
+      type: m.type,
+      feeEnabled: m.feeEnabled,
+      feeType: m.feeType,
+      feeValue: String(m.feeValue),
+    })),
+    customerGroups: groupRows,
     receipt: {
       companyName: settings?.legalName || "Bisa Minimarket",
       address: settings?.address ?? null,
@@ -462,6 +568,8 @@ async function readSnapshotRefs(
       receiptPaper: print.receiptPaper,
       taxEnabled: settings?.taxEnabled ?? true,
       taxRate: String(settings?.taxRate ?? "0"),
+      roundingMode: settings?.roundingMode ?? "none",
+      qrisImage: settings?.qrisImage ?? null,
     },
     terminal: {
       id: device.terminalId,
@@ -473,9 +581,29 @@ async function readSnapshotRefs(
     },
     names: {
       cashiers: cashierRows.map((row) => ({ id: row.id, name: row.name })),
-      customers: customerRows.map((row) => ({ id: row.id, name: row.name })),
+      customers: customerRows.map((row) => ({ id: row.id, name: row.name, groupId: row.groupId })),
     },
+    canDiscount: entitlement?.canDiscount ?? false,
+    posOfflineEnabled: settings?.posOfflineEnabled ?? false,
   };
+}
+
+async function readGroupPrices(
+  tx: Tx,
+  companyId: string,
+  groupIds: string[],
+): Promise<PosSnapshotGroupPrice[]> {
+  if (groupIds.length === 0) return [];
+  const rows = await tx
+    .select({
+      groupId: customerGroupPrices.groupId,
+      productId: customerGroupPrices.productId,
+      ruleType: customerGroupPrices.ruleType,
+      value: customerGroupPrices.value,
+    })
+    .from(customerGroupPrices)
+    .where(and(eq(customerGroupPrices.companyId, companyId), inArray(customerGroupPrices.groupId, groupIds)));
+  return rows.map((row) => ({ ...row, value: String(row.value) }));
 }
 
 export async function getPosDeviceSnapshot(
@@ -485,6 +613,8 @@ export async function getPosDeviceSnapshot(
 ): Promise<PosDeviceSnapshot> {
   const companyId = device.companyId;
   const refs = await readSnapshotRefs(tx, companyId, device);
+  const replaceGroupPriceGroupIds = refs.customerGroups.map((group) => group.id);
+  const groupPrices = await readGroupPrices(tx, companyId, replaceGroupPriceGroupIds);
   const products: PosSnapshotProduct[] = [];
   if (refs.warehouseId) {
     for (let offset = 0; offset < SNAPSHOT_MAX_PRODUCTS; offset += SNAPSHOT_PAGE) {
@@ -506,6 +636,8 @@ export async function getPosDeviceSnapshot(
           sku: row.sku,
           barcode: row.barcode,
           name: row.name,
+          categoryId: row.categoryId ?? null,
+          categoryName: row.categoryName ?? null,
           salePrice: String(row.salePrice),
           stock: Number(row.stock),
           trackStock: row.trackStock,
@@ -527,11 +659,20 @@ export async function getPosDeviceSnapshot(
     companyId,
     warehouse: refs.warehouse,
     warehouses: refs.warehouses,
+    reservations: refs.reservations,
+    kitchenTickets: refs.kitchenTickets,
+    promotions: refs.promotions,
+    loyaltyBalances: refs.loyaltyBalances,
     paymentMethods: refs.paymentMethods,
     products,
+    customerGroups: refs.customerGroups,
+    groupPrices,
+    replaceGroupPriceGroupIds,
     receipt: refs.receipt,
     terminal: refs.terminal,
     names: refs.names,
+    canDiscount: refs.canDiscount,
+    posOfflineEnabled: refs.posOfflineEnabled,
   };
 }
 
@@ -557,6 +698,8 @@ async function fetchSnapshotProductRows(
       sku: products.sku,
       barcode: products.barcode,
       name: products.name,
+      categoryId: products.categoryId,
+      categoryName: categories.name,
       salePrice: products.salePrice,
       trackStock: products.trackStock,
       trackSerial: products.trackSerial,
@@ -566,6 +709,7 @@ async function fetchSnapshotProductRows(
     })
     .from(products)
     .leftJoin(units, eq(products.unitId, units.id))
+    .leftJoin(categories, eq(products.categoryId, categories.id))
     .where(and(eq(products.companyId, companyId), inArray(products.id, ids)));
   const packMap = await listPackagingsForProducts(tx, companyId, ids);
   return rows.map((row) => ({
@@ -573,6 +717,8 @@ async function fetchSnapshotProductRows(
     sku: row.sku,
     barcode: row.barcode,
     name: row.name,
+    categoryId: row.categoryId ?? null,
+    categoryName: row.categoryName ?? null,
     salePrice: String(row.salePrice),
     stock: Number(row.stock),
     trackStock: row.trackStock,
@@ -597,6 +743,19 @@ export async function getPosDeviceSnapshotDelta(
   const companyId = device.companyId;
   const refs = await readSnapshotRefs(tx, companyId, device);
   const since = new Date(cursorAt.getTime() - SNAPSHOT_CURSOR_OVERLAP_MS);
+
+  const changedGroupRows = await tx
+    .select({ id: customerGroups.id })
+    .from(customerGroups)
+    .where(
+      and(
+        eq(customerGroups.companyId, companyId),
+        eq(customerGroups.isActive, true),
+        gt(customerGroups.updatedAt, since),
+      ),
+    );
+  const replaceGroupPriceGroupIds = changedGroupRows.map((group) => group.id);
+  const groupPrices = await readGroupPrices(tx, companyId, replaceGroupPriceGroupIds);
 
   const [masterChanged, stockChanged, hardDeleted, packagingChanged] = await Promise.all([
     tx
@@ -680,12 +839,21 @@ export async function getPosDeviceSnapshotDelta(
     companyId,
     warehouse: refs.warehouse,
     warehouses: refs.warehouses,
+    reservations: refs.reservations,
+    kitchenTickets: refs.kitchenTickets,
+    promotions: refs.promotions,
+    loyaltyBalances: refs.loyaltyBalances,
     paymentMethods: refs.paymentMethods,
     products: changedProducts,
+    customerGroups: refs.customerGroups,
+    groupPrices,
+    replaceGroupPriceGroupIds,
     removedProductIds: [...removedProductIds],
     receipt: refs.receipt,
     terminal: refs.terminal,
     names: refs.names,
+    canDiscount: refs.canDiscount,
+    posOfflineEnabled: refs.posOfflineEnabled,
   };
 }
 
@@ -710,87 +878,4 @@ export async function readPosDeviceSnapshot(
     }
     return getPosDeviceSnapshot(tx, device, issuedAt);
   });
-}
-
-// ---------------------------------------------------------------------------
-// Sinkronisasi perangkat — orkestrasi yang sama dengan
-// `syncOfflineSalesAction`: saklar offline dinilai, hak kasir asal
-// diresolusi per item dari keanggotaan, dan setiap item diproses dalam
-// transaksinya sendiri lewat domain `processOfflineSaleItem`.
-// ---------------------------------------------------------------------------
-
-async function resolveEntitlements(
-  companyId: string,
-  cashierIds: Array<string | null | undefined>,
-): Promise<Record<string, OriginEntitlement | null>> {
-  const unique = [...new Set(cashierIds.filter((id): id is string => Boolean(id)))];
-  const result: Record<string, OriginEntitlement | null> = {};
-  for (const cashierId of unique) {
-    result[cashierId] = await resolveOriginEntitlement(companyId, cashierId);
-  }
-  return result;
-}
-
-export async function syncPosDeviceItems(
-  device: PosDeviceIdentity,
-  items: OfflineSalePayload[],
-): Promise<OfflineSyncItemResult[]> {
-  await withCompany(device.companyId, (tx) =>
-    assertOfflineEnabled(tx, device.companyId),
-  );
-  const originEntitlements = await resolveEntitlements(
-    device.companyId,
-    items.map((item) => item.cashierId),
-  );
-  const actorEntitlement = await resolveOriginEntitlement(device.companyId, device.userId);
-  if (!actorEntitlement?.canSell) {
-    throw new AppError(
-      "FORBIDDEN",
-      "Perangkat POS tidak memiliki izin penjualan (pos.sell). Hubungi administrator.",
-    );
-  }
-  const results: OfflineSyncItemResult[] = [];
-  for (const item of items) {
-    const result = await withCompany(device.companyId, (tx) =>
-      processOfflineSaleItem(tx, {
-        companyId: device.companyId,
-        userId: device.userId,
-        canDiscount: actorEntitlement?.canDiscount ?? false,
-        originEntitlements,
-        item,
-      }),
-    );
-    results.push(result);
-  }
-  return results;
-}
-
-export type PosSessionIntentResult = {
-  clientKey: string;
-  status: "recorded" | "duplicate";
-};
-
-/**
- * Catat intent tutup sesi terminal sebagai bahan peninjauan
- * (Langkah 6). Setiap intent dicatat dalam transaksinya sendiri
- * lewat domain registry; idempotensi per clientKey membuat
- * pengiriman ulang aman. TIDAK ada jurnal/sesi server yang dibuat
- * di sini — lihat `posSessionIntentSchema`.
- */
-export async function syncPosDeviceSessionIntents(
-  device: PosDeviceIdentity,
-  intents: TerminalSessionCloseIntent[],
-): Promise<PosSessionIntentResult[]> {
-  const results: PosSessionIntentResult[] = [];
-  for (const intent of intents) {
-    const status = await withCompany(device.companyId, (tx) =>
-      recordTerminalSessionClose(tx, {
-        companyId: device.companyId,
-        terminalId: device.terminalId,
-        intent,
-      }),
-    );
-    results.push({ clientKey: intent.clientKey, status });
-  }
-  return results;
 }

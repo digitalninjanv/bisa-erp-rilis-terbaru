@@ -1,6 +1,7 @@
 import { AppError, type AppErrorCode } from "@/lib/errors";
 import { log } from "@/lib/log";
 import type { OfflineSalePayload } from "@/lib/pos-offline";
+import { orderPosSyncEvents, type PosSyncEvent } from "@/lib/pos/sync-timeline";
 import {
   POS_API_CORS_HEADERS,
   posSyncRequestSchema,
@@ -72,13 +73,87 @@ export async function POST(request: Request) {
     );
   }
   try {
-    const results = await syncPosDeviceItems(
-      device,
-      parsed.data.items as OfflineSalePayload[],
-    );
-    const intentResults = parsed.data.sessionIntents?.length
-      ? await syncPosDeviceSessionIntents(device, parsed.data.sessionIntents)
-      : [];
+    const sessionIntents = parsed.data.sessionIntents ?? [];
+    type SyncEventValue =
+      | { type: "sale"; item: OfflineSalePayload }
+      | { type: "session"; intent: (typeof sessionIntents)[number] };
+    const events: PosSyncEvent<SyncEventValue>[] = [];
+    let order = 0;
+    for (const intent of sessionIntents) {
+      const occurredAt =
+        intent.action === "open"
+          ? intent.openedAt
+          : intent.action === "movement"
+            ? intent.createdAt
+            : intent.closedAt;
+      events.push({
+        kind: intent.action,
+        occurredAt,
+        order: order++,
+        value: { type: "session", intent },
+      });
+    }
+    for (const item of parsed.data.items as OfflineSalePayload[]) {
+      events.push({
+        kind: "sale",
+        occurredAt: item.queuedAt,
+        order: order++,
+        value: { type: "sale", item },
+      });
+    }
+
+    // Process the device's real timeline. Opening a later offline shift
+    // before closing the earlier one would violate the one-open-session
+    // guard; processing all sales before a cash deposit could also falsify
+    // the drawer-balance check. Keep session movements and sales ordered by
+    // their local creation timestamps, and close only after prior activity.
+    const results = [];
+    const intentResults = [];
+    const sessionsNeedingReview = new Set<string>();
+    const timeline = orderPosSyncEvents(events);
+    for (let index = 0; index < timeline.length;) {
+      const event = timeline[index];
+      if (event.value.type === "sale") {
+        const batch: OfflineSalePayload[] = [];
+        while (index < timeline.length && timeline[index].value.type === "sale") {
+          const next = timeline[index++];
+          if (next.value.type === "sale") batch.push(next.value.item);
+        }
+        const batchResults = await syncPosDeviceItems(device, batch);
+        results.push(...batchResults);
+        for (const result of batchResults) {
+          const item = batch.find((candidate) => candidate.clientKey === result.clientKey);
+          if (
+            item?.originSessionId &&
+            result.status !== "synced" &&
+            result.status !== "duplicate"
+          ) {
+            sessionsNeedingReview.add(item.originSessionId);
+          }
+        }
+        continue;
+      }
+      if (
+        event.value.intent.action === "close" &&
+        sessionsNeedingReview.has(event.value.intent.localSessionId)
+      ) {
+        intentResults.push({
+          clientKey: event.value.intent.clientKey,
+          status: "needsReview",
+          message: "Sesi belum ditutup karena ada penjualan atau mutasi kas yang belum tersinkron. Selesaikan peninjauan lalu sinkronkan kembali.",
+        });
+        index++;
+        continue;
+      }
+      const [result] = await syncPosDeviceSessionIntents(device, [event.value.intent]);
+      if (result) intentResults.push(result);
+      if (
+        result && result.status !== "recorded" && result.status !== "duplicate"
+      ) {
+        sessionsNeedingReview.add(event.value.intent.localSessionId);
+      }
+      index++;
+    }
     return Response.json(
       { ok: true, data: results, intentResults },
       { headers: POS_API_CORS_HEADERS },

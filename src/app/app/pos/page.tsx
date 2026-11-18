@@ -1,7 +1,14 @@
 import { withCompany } from "@/db/tenant";
 import { PosTerminal } from "@/components/pos/pos-terminal";
 import { PosServiceWorker } from "@/components/pwa/pos-service-worker";
-import { getSettings, listCustomerGroups, listPaymentMethods, listWarehouses, searchProducts } from "@/server/catalog";
+import {
+  getSettings,
+  listCategories,
+  listCustomerGroups,
+  listPaymentMethods,
+  listWarehouses,
+  searchProducts,
+} from "@/server/catalog";
 import { countHeldSales, getOpenCashSession } from "@/server/pos";
 import { listReservations } from "@/server/reservations";
 import { requirePermissionPage } from "@/lib/session";
@@ -22,6 +29,7 @@ export default async function PosPage({
   const data = await withCompany(ctx.company.id, async (tx) => {
     const settings = await getSettings(tx, ctx.company.id);
     const warehouses = await listWarehouses(tx, ctx.company.id);
+    const categories = await listCategories(tx, ctx.company.id);
     const methods = await listPaymentMethods(tx, ctx.company.id);
     // POS-GRP-01: kasir hanya ditawari kelompok aktif — kelompok nonaktif
     // ditolak quoteCart sehingga menampilkannya hanya membuat error.
@@ -63,6 +71,7 @@ export default async function PosPage({
     return {
       settings,
       warehouses,
+      categories,
       // D-12: metode customer_credit juga disembunyikan dari daftar
       // metode biasa — ia dipakai lewat alur "Pakai Kredit Retur" dan
       // diteruskan terpisah sebagai creditMethod.
@@ -96,6 +105,15 @@ export default async function PosPage({
   return (
     <>
       <h1 className="sr-only">Kasir</h1>
+      {/* Ctrl+P di terminal bukan jalur cetak nota: tanpa ini browser
+          mencetak grid produk POS. Nota dicetak dari dialog transaksi. */}
+      <div className="pos-print-hint hidden">
+        <h2 className="text-lg font-semibold">Cetak nota</h2>
+        <p className="mt-1 text-sm">
+          Gunakan tombol <strong>Cetak nota</strong> pada dialog transaksi berhasil,
+          atau buka nota dari <strong>Riwayat transaksi</strong>.
+        </p>
+      </div>
       {params.forbidden ? (
         <div className="px-4 pt-3">
           <ForbiddenBanner permission={params.forbidden} />
@@ -111,6 +129,7 @@ export default async function PosPage({
       companyName={data.settings?.legalName ?? ctx.company.name}
       warehouseId={data.warehouseId}
       warehouses={data.warehouses}
+      categories={data.categories.map((row) => ({ id: row.id, name: row.name }))}
       methods={data.methods.map((m) => ({
         id: m.id,
         code: m.code,

@@ -20,6 +20,7 @@ tauri = { version = "2", features = [] }
 # tauri.conf.json (plugins.updater.pubkey), kunci privat di CI /
 # brankas pemilik — TIDAK PERNAH di repo.
 tauri-plugin-updater = "2"
+argon2 = "0.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # RENCANA-TAURI D3: lapisan DB lokal dimiliki Rust (bukan plugin-sql

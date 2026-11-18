@@ -50,6 +50,8 @@ export interface ReceiptData {
   payments: ReceiptPaymentItem[];
   change: number;
   paperWidth?: PaperWidth;
+  /** Salinan nota yang dicetak ulang (0/kosong = cetakan biasa). */
+  copyIndex?: number;
   showTax?: boolean;
   showCashier?: boolean;
   showCustomer?: boolean;

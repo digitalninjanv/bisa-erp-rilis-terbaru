@@ -17,28 +17,80 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
-use serde::Serialize;
+use argon2::password_hash::{phc::PasswordHash, PasswordHasher, PasswordVerifier};
+use argon2::Argon2;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_updater::UpdaterExt;
 
-use crate::device::{self, DeviceConfig, PrinterConfig, TokenStorage};
+use crate::device::{self, DeviceConfig, PrinterConfig, PrinterTransportType, TokenStorage};
 use crate::displaymap::{self, DisplayInput, DisplayPayload};
 use crate::keychain::SecretStore;
 use crate::posdb;
-use crate::printing::{self, PrintEvent, PrintSummary, PrintTransport, TcpPrintTransport};
+use crate::printing::{
+    self, CupsPrintTransport, FileDevicePrintTransport, PrintEvent, PrintSummary, PrintTransport,
+    TcpPrintTransport,
+};
 use crate::syncengine::{self, DrainSummary, EngineEvent, RefreshSummary};
-use crate::transport::{self, HttpTransport};
+use crate::transport::{self, DesktopCashier, DesktopCompany, DesktopLoginStep, HttpTransport};
 use crate::updater::{self, InstallDecision, UpdateStatusView, UpdateTracker};
 
 pub struct DbState(pub Mutex<Connection>);
 
 pub struct DeviceState {
     pub dir: PathBuf,
+    pub installation_id: String,
     pub config: Mutex<Option<DeviceConfig>>,
     /// Vault rahasia OS (keychain) — token TIDAK di berkas kecuali
     /// fallback terlihat-UI (Langkah 6, D5).
     pub store: Arc<dyn SecretStore>,
     pub storage: Mutex<TokenStorage>,
+    pub pending_login: Mutex<Option<PendingDesktopLogin>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PendingDesktopLogin {
+    pub server_url: String,
+    pub cookies: Vec<String>,
+    pub cashier: Option<DesktopCashier>,
+    pub companies: Vec<DesktopCompany>,
+    /// PHC password verifier derived after successful server authentication;
+    /// never the raw password, and retained only until terminal enrollment.
+    password_hash: String,
+    requires_two_factor: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OfflineCashierCredential {
+    server_url: String,
+    email: String,
+    password_hash: String,
+    cashier: DesktopCashier,
+    company: DesktopCompany,
+    authorized_at: i64,
+    /// Password-only local login must not downgrade an account that was
+    /// authenticated with a second factor online. Older credentials default
+    /// to false so they require a fresh online authorization.
+    #[serde(default)]
+    offline_login_allowed: bool,
+}
+
+const OFFLINE_CASHIER_MAX_AGE_SECS: i64 = 7 * 24 * 60 * 60;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "step", rename_all = "camelCase")]
+pub enum CashierLoginView {
+    TwoFactor { methods: Vec<String> },
+    Authenticated {
+        cashier: DesktopCashier,
+        companies: Vec<DesktopCompany>,
+        selected_company_id: Option<String>,
+    },
+    OfflineAuthenticated {
+        cashier: DesktopCashier,
+        company: DesktopCompany,
+    },
 }
 
 pub struct SyncState {
@@ -71,6 +123,10 @@ pub struct DeviceRuntimeStatus {
     pub terminal_name: Option<String>,
     pub company_name: Option<String>,
     pub warehouse_name: Option<String>,
+    pub terminal_id: Option<String>,
+    pub cashier_id: Option<String>,
+    pub cashier_name: Option<String>,
+    pub offline_login_ready: bool,
     pub auth_failed: Option<String>,
     pub pending_count: i64,
     pub syncing: bool,
@@ -115,6 +171,12 @@ pub fn device_status(app: &AppHandle) -> DeviceRuntimeStatus {
         terminal_name: view.terminal_name,
         company_name: view.company_name,
         warehouse_name: view.warehouse_name,
+        terminal_id: view.terminal_id,
+        cashier_id: view.cashier_id,
+        cashier_name: view.cashier_name,
+        offline_login_ready: config
+            .as_ref()
+            .is_some_and(|config| offline_credential_is_ready(&device_state, config)),
         auth_failed: sync_state
             .auth_error
             .lock()
@@ -143,6 +205,10 @@ pub fn pair_device(app: &AppHandle, server_url: &str, code: &str) -> Result<Devi
     let config = DeviceConfig {
         server_url,
         device_token: outcome.token,
+        terminal_id: Some(outcome.terminal.id.clone()),
+        cashier_id: outcome.terminal.user_id.clone(),
+        cashier_name: None,
+        company_id: Some(outcome.terminal.company_id.clone()),
     };
     let storage = device::save_config(&device_state.dir, device_state.store.as_ref(), &config)?;
     {
@@ -164,12 +230,285 @@ pub fn pair_device(app: &AppHandle, server_url: &str, code: &str) -> Result<Devi
     Ok(device_status(app))
 }
 
+fn login_view_and_store(
+    app: &AppHandle,
+    server_url: &str,
+    step: DesktopLoginStep,
+    password_hash: String,
+    two_factor_verified: bool,
+) -> Result<CashierLoginView, String> {
+    let state = app.state::<DeviceState>();
+    let (view, pending) = match step {
+        DesktopLoginStep::TwoFactor { methods, cookies } => (
+            CashierLoginView::TwoFactor { methods },
+            PendingDesktopLogin {
+                server_url: server_url.to_string(),
+                cookies,
+                cashier: None,
+                companies: Vec::new(),
+                password_hash: password_hash.clone(),
+                requires_two_factor: true,
+            },
+        ),
+        DesktopLoginStep::Authenticated {
+            cashier,
+            companies,
+            selected_company_id,
+            cookies,
+        } => (
+            CashierLoginView::Authenticated {
+                cashier: cashier.clone(),
+                companies: companies.clone(),
+                selected_company_id,
+            },
+            PendingDesktopLogin {
+                server_url: server_url.to_string(),
+                cookies,
+                cashier: Some(cashier),
+                companies,
+                password_hash,
+                requires_two_factor: two_factor_verified,
+            },
+        ),
+    };
+    *state
+        .pending_login
+        .lock()
+        .map_err(|_| "Keadaan login kasir rusak (poisoned).".to_string())? = Some(pending);
+    Ok(view)
+}
+
+pub fn begin_cashier_login(
+    app: &AppHandle,
+    server_url: &str,
+    email: &str,
+    password: &str,
+) -> Result<CashierLoginView, String> {
+    let server_url = server_url.trim().trim_end_matches('/');
+    if server_url.is_empty() {
+        return Err("URL server ERP wajib diisi.".to_string());
+    }
+    let step = match transport::desktop_login_request(
+        server_url,
+        Some(email),
+        Some(password),
+        None,
+        None,
+        &[],
+    ) {
+        Ok(step) => step,
+        Err(error @ (syncengine::TransportError::Network(_) | syncengine::TransportError::Http(500..=599, _))) => {
+            return offline_cashier_login(app, server_url, email, password).ok_or_else(|| {
+                format!("Server tidak terjangkau. Login offline tidak tersedia atau email/kata sandi tidak cocok dengan akses kasir terminal ini. ({error})")
+            });
+        }
+        Err(error) => return Err(error.to_string()),
+    };
+    let password_hash = Argon2::default()
+        .hash_password(password.as_bytes())
+        .map_err(|error| format!("Verifikasi lokal tidak dapat disiapkan: {error}"))?
+        .to_string();
+    login_view_and_store(app, server_url, step, password_hash, false)
+}
+
+fn offline_credential_account(device_state: &DeviceState) -> String {
+    format!("offline-cashier:{}", device_state.installation_id)
+}
+
+fn current_offline_credential(
+    device_state: &DeviceState,
+    config: &DeviceConfig,
+) -> Option<OfflineCashierCredential> {
+    let raw = device_state
+        .store
+        .get(crate::keychain::KEYRING_SERVICE, &offline_credential_account(device_state))
+        .ok()??;
+    let credential: OfflineCashierCredential = serde_json::from_str(&raw).ok()?;
+    let now = now_unix();
+    let age = now.saturating_sub(credential.authorized_at);
+    let valid_age = credential.authorized_at <= now.saturating_add(60)
+        && (0..=OFFLINE_CASHIER_MAX_AGE_SECS).contains(&age);
+    let same_terminal_identity = config.company_id.as_deref() == Some(credential.company.id.as_str())
+        && config.cashier_id.as_deref() == Some(credential.cashier.id.as_str())
+        && config.server_url.trim_end_matches('/') == credential.server_url.trim_end_matches('/');
+    (valid_age && same_terminal_identity && credential.offline_login_allowed).then_some(credential)
+}
+
+fn offline_credential_is_ready(device_state: &DeviceState, config: &DeviceConfig) -> bool {
+    current_offline_credential(device_state, config).is_some()
+}
+
+fn offline_cashier_login(
+    app: &AppHandle,
+    server_url: &str,
+    email: &str,
+    password: &str,
+) -> Option<CashierLoginView> {
+    let device_state = app.state::<DeviceState>();
+    let config = current_config(app)?;
+    if config.server_url.trim_end_matches('/') != server_url.trim_end_matches('/') {
+        return None;
+    }
+    let credential = current_offline_credential(&device_state, &config)?;
+    if !credential.email.trim().eq_ignore_ascii_case(email.trim()) {
+        return None;
+    }
+    let parsed = PasswordHash::new(&credential.password_hash).ok()?;
+    Argon2::default()
+        .verify_password(password.as_bytes(), &parsed)
+        .ok()?;
+    Some(CashierLoginView::OfflineAuthenticated {
+        cashier: credential.cashier,
+        company: credential.company,
+    })
+}
+
+pub fn continue_cashier_login(
+    app: &AppHandle,
+    two_factor_code: &str,
+) -> Result<CashierLoginView, String> {
+    let pending = app
+        .state::<DeviceState>()
+        .pending_login
+        .lock()
+        .map_err(|_| "Keadaan login kasir rusak (poisoned).".to_string())?
+        .clone()
+        .ok_or_else(|| "Proses masuk sudah berakhir. Masukkan email dan kata sandi lagi.".to_string())?;
+    if pending.cashier.is_some() || pending.cookies.is_empty() {
+        return Err("Tidak ada verifikasi dua langkah yang sedang menunggu.".to_string());
+    }
+    let step = transport::desktop_login_request(
+        &pending.server_url,
+        None,
+        None,
+        Some(two_factor_code),
+        None,
+        &pending.cookies,
+    )
+    .map_err(|error| error.to_string())?;
+    let two_factor_verified = matches!(&step, DesktopLoginStep::Authenticated { .. });
+    login_view_and_store(app, &pending.server_url, step, pending.password_hash, two_factor_verified)
+}
+
+pub fn enroll_cashier(
+    app: &AppHandle,
+    company_id: &str,
+) -> Result<DeviceRuntimeStatus, String> {
+    let device_state = app.state::<DeviceState>();
+    let pending = device_state
+        .pending_login
+        .lock()
+        .map_err(|_| "Keadaan login kasir rusak (poisoned).".to_string())?
+        .clone()
+        .ok_or_else(|| "Sesi masuk kasir sudah berakhir. Masuk kembali.".to_string())?;
+    let cashier = pending
+        .cashier
+        .clone()
+        .ok_or_else(|| "Verifikasi dua langkah harus diselesaikan terlebih dahulu.".to_string())?;
+    if !pending.companies.iter().any(|company| company.id == company_id) {
+        return Err("Perusahaan tidak tersedia untuk akun kasir ini.".to_string());
+    }
+    let company = pending
+        .companies
+        .iter()
+        .find(|company| company.id == company_id)
+        .cloned()
+        .ok_or_else(|| "Perusahaan tidak tersedia untuk akun kasir ini.".to_string())?;
+
+    let current = current_config(app);
+    if let Some(config) = current.as_ref() {
+        if config.company_id.as_deref().is_some_and(|current_company| current_company != company_id) {
+            return Err("Terminal desktop hanya dapat terikat ke satu perusahaan. Hubungi supervisor untuk mengganti perusahaan.".to_string());
+        }
+        if config.cashier_id.as_deref().is_some_and(|current_cashier| current_cashier != cashier.id) {
+            let db_state = app.state::<DbState>();
+            let conn = db_state.0.lock().map_err(|_| "Kunci database lokal rusak (poisoned).".to_string())?;
+            let has_pending = ["pending", "inflight", "held"]
+                .iter()
+                .any(|status| posdb::count_outbox(&conn, status).unwrap_or(0) > 0);
+            let has_open_session = posdb::list_cash_sessions(&conn)
+                .map(|sessions| sessions.iter().any(|session| session.status == "open"))
+                .unwrap_or(true);
+            if has_pending || has_open_session {
+                return Err("Kasir berbeda tidak dapat masuk saat sesi kas masih terbuka atau transaksi belum tersinkron. Tutup sesi dan sinkronkan antrean terlebih dahulu.".to_string());
+            }
+        }
+    }
+
+    let prior_token = current.as_ref().and_then(|config| {
+        (config.server_url == pending.server_url).then_some(config.device_token.as_str())
+    });
+    let enrollment = transport::desktop_enroll_request(
+        &pending.server_url,
+        &pending.cookies,
+        prior_token,
+        company_id,
+        &device_state.installation_id,
+    )
+    .map_err(|error| error.to_string())?;
+    let config = DeviceConfig {
+        server_url: pending.server_url.clone(),
+        device_token: enrollment.token,
+        terminal_id: Some(enrollment.terminal.id.clone()),
+        cashier_id: Some(enrollment.cashier.id.clone()),
+        cashier_name: Some(enrollment.cashier.name.clone()),
+        company_id: Some(enrollment.terminal.company_id.clone()),
+    };
+    let storage = device::save_config(&device_state.dir, device_state.store.as_ref(), &config)?;
+    {
+        let mut guard = device_state
+            .config
+            .lock()
+            .map_err(|_| "Kunci konfigurasi perangkat rusak (poisoned).".to_string())?;
+        *guard = Some(config);
+    }
+    if let Ok(mut guard) = device_state.storage.lock() {
+        *guard = storage;
+    }
+    if let Ok(conn) = app.state::<DbState>().0.lock() {
+        let _ = posdb::store_terminal_identity(
+            &conn,
+            &enrollment.terminal.id,
+            &enrollment.terminal.name,
+        );
+    }
+    let credential = OfflineCashierCredential {
+        server_url: pending.server_url.clone(),
+        email: cashier.email.trim().to_lowercase(),
+        password_hash: pending.password_hash,
+        cashier,
+        company,
+        authorized_at: now_unix(),
+        offline_login_allowed: !pending.requires_two_factor,
+    };
+    if let Ok(serialized) = serde_json::to_string(&credential) {
+        let _ = device_state.store.set(
+            crate::keychain::KEYRING_SERVICE,
+            &offline_credential_account(&device_state),
+            &serialized,
+        );
+    }
+    if let Ok(mut guard) = device_state.pending_login.lock() {
+        *guard = None;
+    }
+    set_auth_error(app, None);
+    // The sale screen can open immediately from the local snapshot; the
+    // snapshot refresh and outbox drain happen on Rust's background path.
+    let _ = run_snapshot_refresh(app);
+    kick_sync(app);
+    Ok(device_status(app))
+}
+
 /// Lepas pasangan terminal ini: token dihapus dari vault & berkas;
 /// penjualan lokal yang belum tersinkron TIDAK ikut terhapus
 /// (mereka tetap menunggu pasangan berikutnya).
 pub fn unpair_device(app: &AppHandle) -> DeviceRuntimeStatus {
     let device_state = app.state::<DeviceState>();
     device::clear_config(&device_state.dir, device_state.store.as_ref());
+    let _ = device_state.store.delete(
+        crate::keychain::KEYRING_SERVICE,
+        &offline_credential_account(&device_state),
+    );
     if let Ok(mut guard) = device_state.config.lock() {
         *guard = None;
     }
@@ -196,6 +535,114 @@ fn current_config(app: &AppHandle) -> Option<DeviceConfig> {
         .lock()
         .ok()
         .and_then(|guard| guard.clone())
+}
+
+pub fn fetch_pos_transactions(
+    app: &AppHandle,
+    page: u32,
+    query: &str,
+    status: Option<&str>,
+    from: Option<&str>,
+    to: Option<&str>,
+    sale_id: Option<&str>,
+) -> Result<serde_json::Value, String> {
+    let config = current_config(app).ok_or_else(|| "Terminal belum terdaftar.".to_string())?;
+    match HttpTransport::new().get_pos_transactions(&config, page, query, status, from, to, sale_id) {
+        Ok(data) => Ok(data),
+        Err(crate::syncengine::TransportError::Unauthorized(message)) => {
+            set_auth_error(app, Some(message.clone()));
+            Err(message)
+        }
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+pub fn fetch_pos_cash_session_summary(
+    app: &AppHandle,
+    session_id: &str,
+) -> Result<serde_json::Value, String> {
+    let config = current_config(app).ok_or_else(|| "Terminal belum terdaftar.".to_string())?;
+    match HttpTransport::new().get_pos_cash_session_summary(&config, session_id) {
+        Ok(data) => Ok(data),
+        Err(crate::syncengine::TransportError::Unauthorized(message)) => {
+            set_auth_error(app, Some(message.clone()));
+            Err(message)
+        }
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+/// Tarik nota server hanya saat online, simpan byte ESC/POS ke antrean
+/// terminal, lalu cetak melalui pekerja tunggal yang juga mengirim
+/// struk lokal. Token dan byte nota tidak pernah diteruskan ke webview.
+pub fn print_server_receipt(
+    app: &AppHandle,
+    sale_id: &str,
+) -> Result<posdb::ServerReceiptPrintJob, String> {
+    if sale_id.len() > 64 {
+        return Err("ID transaksi terlalu panjang.".to_string());
+    }
+    let outcome = (|| -> Result<posdb::ServerReceiptPrintJob, String> {
+        let device_config = current_config(app)
+            .ok_or_else(|| "Terminal belum terdaftar.".to_string())?;
+        let printer_config = current_printer_config(app)
+            .ok_or_else(|| "Printer belum diatur.".to_string())?;
+        let receipt = match HttpTransport::new().get_pos_receipt_bytes(
+            &device_config,
+            sale_id,
+            printer_config.paper_width_mm,
+        ) {
+            Ok(bytes) => bytes,
+            Err(crate::syncengine::TransportError::Unauthorized(message)) => {
+                set_auth_error(app, Some(message.clone()));
+                return Err(message);
+            }
+            Err(error) => return Err(error.to_string()),
+        };
+        let job = {
+            let db_state = app.state::<DbState>();
+            let conn = db_state
+                .0
+                .lock()
+                .map_err(|_| "Kunci database lokal rusak (poisoned).".to_string())?;
+            posdb::enqueue_server_receipt_print_job(&conn, sale_id, &receipt, &posdb::now_iso())?
+        };
+        Ok(job)
+    })();
+
+    if let Ok(conn) = app.state::<DbState>().0.lock() {
+        let payload = serde_json::json!({
+            "saleId": sale_id,
+            "jobId": outcome.as_ref().ok().map(|job| job.id.as_str()),
+            "queued": outcome.is_ok(),
+            "error": outcome.as_ref().err(),
+        });
+        let _ = posdb::record_local_event(
+            &conn,
+            "server_receipt_print",
+            &payload,
+            &posdb::now_iso(),
+        );
+    }
+    if outcome.is_ok() {
+        kick_print(app);
+    }
+    outcome
+}
+
+pub fn post_pos_transaction(
+    app: &AppHandle,
+    payload: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let config = current_config(app).ok_or_else(|| "Terminal belum terdaftar.".to_string())?;
+    match HttpTransport::new().post_pos_transaction(&config, payload) {
+        Ok(data) => Ok(data),
+        Err(crate::syncengine::TransportError::Unauthorized(message)) => {
+            set_auth_error(app, Some(message.clone()));
+            Err(message)
+        }
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 /// Satu putaran drain sekarang. Mengembalikan None bila perangkat
@@ -325,6 +772,7 @@ impl PrintState {
 #[serde(rename_all = "camelCase")]
 pub struct PrinterRuntimeStatus {
     pub configured: bool,
+    pub transport: PrinterTransportType,
     pub host: String,
     pub port: u16,
     pub paper_width_mm: u16,
@@ -352,9 +800,19 @@ pub fn printer_status(app: &AppHandle) -> PrinterRuntimeStatus {
                 }
             }
         }
+        if let Ok(jobs) = posdb::list_server_receipt_print_jobs(&conn, None) {
+            for job in &jobs {
+                match job.status.as_str() {
+                    "pending" | "printing" => pending_count += 1,
+                    "failed" => failed_count += 1,
+                    _ => {}
+                }
+            }
+        }
     }
     PrinterRuntimeStatus {
         configured: view.configured,
+        transport: view.transport,
         host: view.host.unwrap_or_default(),
         port: view.port.unwrap_or(9100),
         paper_width_mm: view.paper_width_mm.unwrap_or(80),
@@ -376,6 +834,14 @@ pub fn current_printer_config(app: &AppHandle) -> Option<PrinterConfig> {
         .and_then(|guard| guard.clone())
 }
 
+fn configured_print_transport(config: &PrinterConfig) -> Box<dyn PrintTransport> {
+    match config.transport {
+        PrinterTransportType::Tcp => Box::new(TcpPrintTransport::new(config.host.clone(), config.port)),
+        PrinterTransportType::Cups => Box::new(CupsPrintTransport::new(config.host.clone())),
+        PrinterTransportType::Device => Box::new(FileDevicePrintTransport::new(config.host.clone().into())),
+    }
+}
+
 /// Satu putaran antrean cetak sekarang. Mengembalikan None bila
 /// printer belum diatur atau putaran lain sedang berjalan.
 /// Kegagalan printer tercatat per tugas (status failed) — tidak
@@ -390,11 +856,11 @@ pub fn run_print_pass(app: &AppHandle) -> Option<PrintSummary> {
         let db_state = app.state::<DbState>();
         let mut conn = db_state.0.lock().ok()?;
         let now = posdb::now_iso();
-        let transport = TcpPrintTransport::new(config.host.clone(), config.port);
+        let transport = configured_print_transport(&config);
         let handle = app.clone();
         Some(printing::run_print_pass(
             &mut conn,
-            &transport,
+            transport.as_ref(),
             config.columns(),
             &now,
             &mut |event| emit_print(&handle, event),
@@ -427,7 +893,7 @@ pub fn send_test_print(app: &AppHandle) -> Result<(), String> {
         config.columns(),
         &posdb::now_iso(),
     );
-    TcpPrintTransport::new(config.host.clone(), config.port).send(&bytes)
+    configured_print_transport(&config).send(&bytes)
 }
 
 /// Buka laci tanpa penjualan (command terpisah beralasan):
@@ -444,7 +910,7 @@ pub fn open_drawer(app: &AppHandle, reason: &str) -> Result<(), String> {
             .ok_or_else(|| "Printer belum diatur — isi host printer dulu.".to_string())?;
         let mut bytes = vec![0x1B, 0x40];
         bytes.extend_from_slice(&printing::drawer_kick_bytes());
-        TcpPrintTransport::new(config.host.clone(), config.port).send(&bytes)
+        configured_print_transport(&config).send(&bytes)
     })();
     if let Ok(conn) = app.state::<DbState>().0.lock() {
         let payload = serde_json::json!({

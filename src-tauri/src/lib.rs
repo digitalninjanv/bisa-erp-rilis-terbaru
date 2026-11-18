@@ -43,12 +43,14 @@ pub fn run() {
             // Pemulihan cetak: tugas `printing` dari proses yang
             // mati di tengah kirim kembali ke `pending`.
             let _ = posdb::reset_printing(&conn, &posdb::now_iso());
+            let _ = posdb::reset_server_receipt_printing(&conn, &posdb::now_iso());
             // Langkah 6 (D5): token dimuat dari keychain OS;
             // token warisan berkas 0600 bermigrasi otomatis di
             // dalam load_config (fallback berkas terlihat di UI
             // bila vault OS tidak tersedia).
             let store = Arc::new(keychain::KeyringStore);
             let (config, storage) = device::load_config(&data_dir, store.as_ref());
+            let installation_id = device::installation_id(&data_dir)?;
             let printer_config = device::load_printer(&data_dir);
             app.manage(runtime::DbState(Mutex::new(conn)));
             app.manage(runtime::PrinterState {
@@ -57,9 +59,11 @@ pub fn run() {
             });
             app.manage(runtime::DeviceState {
                 dir: data_dir,
+                installation_id,
                 config: Mutex::new(config),
                 store,
                 storage: Mutex::new(storage),
+                pending_login: Mutex::new(None),
             });
             app.manage(runtime::SyncState::new());
             app.manage(runtime::PrintState::new());
@@ -78,13 +82,28 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::snapshot_info,
             commands::list_snapshot_products_page,
+            commands::list_snapshot_categories,
             commands::find_snapshot_product_by_code,
+            commands::get_snapshot_products_by_ids,
             commands::list_snapshot_payment_methods,
+            commands::list_snapshot_names,
+            commands::snapshot_group_pricing,
+            commands::list_local_held_sales,
+            commands::save_local_held_sale,
+            commands::delete_local_held_sale,
             commands::record_local_sale,
             commands::list_outbox,
             commands::list_outbox_page,
+            commands::list_local_sales_page,
             commands::get_device_status,
+            commands::fetch_server_pos_transactions,
+            commands::fetch_server_pos_cash_session_summary,
+            commands::print_server_receipt,
+            commands::post_server_pos_transaction,
             commands::pair_device,
+            commands::cashier_login,
+            commands::cashier_login_continue,
+            commands::cashier_enroll,
             commands::unpair_device,
             commands::refresh_snapshot,
             commands::sync_now,
@@ -93,14 +112,33 @@ pub fn run() {
             commands::install_update_now,
             commands::open_cash_session,
             commands::close_cash_session,
+            commands::preview_cash_session,
+            commands::get_cash_session_sync_status,
+            commands::record_cash_session_movement,
             commands::current_cash_session,
             commands::list_cash_sessions,
             commands::count_cash_sessions,
+            commands::list_session_sales_counts,
+            commands::list_session_payment_totals,
+            commands::list_payment_totals_in_range,
+            commands::get_qris_image,
+            commands::list_snapshot_warehouses,
+            commands::list_snapshot_reservations,
+            commands::list_snapshot_kitchen_tickets,
+            commands::list_snapshot_promotions,
+            commands::list_snapshot_loyalty_balances,
             commands::list_local_intents,
+            commands::retry_cash_session_close,
+            commands::retry_cash_session_open,
+            commands::retry_cash_session_movement,
             commands::get_printer_status,
+            commands::list_cups_printers,
             commands::set_printer_config,
             commands::list_print_jobs,
+            commands::list_server_receipt_print_jobs,
             commands::print_receipt,
+            commands::retry_print_job,
+            commands::retry_server_receipt_print_job,
             commands::test_print,
             commands::open_drawer,
             commands::update_customer_display,

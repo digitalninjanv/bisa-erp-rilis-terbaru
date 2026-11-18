@@ -21,23 +21,23 @@ export function MobilePayBar(props: {
 }) {
   const { cart, total, payDisabled, payLabel, checkout, onOpenCart } = props;
   return (
-      <div className="no-print fixed inset-x-0 bottom-0 z-20 flex items-center justify-between gap-3 border-t border-border bg-card px-3 py-2 shadow-lg lg:hidden">
+      <div className="no-print fixed inset-x-0 bottom-0 z-20 flex items-center justify-between gap-3 border-t border-border bg-card px-3 pt-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] shadow-[0_-8px_24px_-16px_rgba(15,23,42,0.35)] lg:hidden">
         <button
           type="button"
           onClick={onOpenCart}
           className="min-w-0 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-muted"
-          aria-label={`Buka keranjang, ${cart.length} item`}
+          aria-label={`Buka keranjang, ${cart.length} baris`}
         >
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Keranjang · {cart.length} item
+          <p className="text-xs font-semibold text-muted-foreground">
+            Keranjang · {cart.length} baris
           </p>
-          <p className="num truncate text-[15px] font-semibold">{formatIDR(total)}</p>
+          <p className="num truncate text-base font-bold text-foreground">{formatIDR(total)}</p>
         </button>
         <button
           type="button"
           onClick={checkout}
           disabled={payDisabled}
-          className="flex h-11 shrink-0 items-center justify-center rounded-md bg-tone-teal px-5 text-sm font-semibold text-white transition-colors hover:bg-tone-teal/90 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex h-12 min-w-28 shrink-0 items-center justify-center rounded-md bg-tone-teal px-5 text-[15px] font-semibold text-white transition-colors hover:bg-tone-teal/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {payLabel}
         </button>
@@ -56,17 +56,17 @@ export function MobileCartHeader({
   onClose: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between gap-2 lg:hidden">
+    <div className="sticky top-0 z-10 -mx-3 flex items-center justify-between gap-2 border-b border-border bg-card px-4 py-3 backdrop-blur lg:hidden">
       <div>
-        <p className="text-[13px] font-semibold">Keranjang &amp; pembayaran</p>
-        <p className="text-[11px] text-muted-foreground">
-          {count} item · {formatIDR(total)}
+      <h2 className="text-base font-semibold">Keranjang &amp; pembayaran</h2>
+      <p className="text-sm text-muted-foreground">
+          {count} baris · {formatIDR(total)}
         </p>
       </div>
       <button
         type="button"
         onClick={onClose}
-        className="inline-flex h-9 items-center rounded-md border border-border bg-card px-3 text-[12px] font-medium"
+        className="inline-flex h-11 items-center rounded-md border border-border bg-card px-4 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         aria-label="Tutup keranjang"
       >
         Tutup

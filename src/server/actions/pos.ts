@@ -18,6 +18,7 @@ import {
   closeCashSession,
   createSale,
   createSaleReturn,
+  deleteHeldSale,
   getOpenCashSession,
   getReturnCredit,
   holdSale,
@@ -71,8 +72,9 @@ export async function searchProductsAction(
   q: string,
   warehouseId?: string,
   // POS-1: halaman kisi produk terminal (24 per halaman, 1-based dari
-  // klien sebagai offset baris).
+  // klien sebagai offset baris). categoryId = chip kategori aktif.
   offset?: number,
+  categoryId?: string,
 ): Promise<ActionResult<Awaited<ReturnType<typeof searchProducts>>>> {
   return guard(async () => {
     const ctx = await requirePermission("pos.sell");
@@ -90,6 +92,7 @@ export async function searchProductsAction(
         q,
         limit: 24,
         offset: safeOffset,
+        categoryId: categoryId || undefined,
         // POS3-10: harga pokok hanya ikut bila pemanggil memegang
         // inventory.cost; kasir tidak pernah menerimanya di payload.
         includeCost: can(ctx, "inventory.cost"),
@@ -345,7 +348,12 @@ export async function checkoutAction(input: z.input<typeof checkoutSchema>) {
 const holdSchema = cartSchema.extend({
   idempotencyKey: z.string().min(10),
   notes: z.string().max(500).optional(),
-  label: z.string().min(1).max(80),
+  customerId: z.string().uuid().nullish(),
+  dueDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Format tanggal jatuh tempo harus YYYY-MM-DD.")
+    .nullish(),
+  label: z.string().trim().max(80).optional(),
 });
 
 export async function holdAction(input: z.input<typeof holdSchema>) {
@@ -357,6 +365,8 @@ export async function holdAction(input: z.input<typeof holdSchema>) {
         companyId: ctx.company.id,
         userId: ctx.user.id,
         warehouseId: data.warehouseId,
+        customerId: data.customerId ?? null,
+        dueDate: data.dueDate ?? null,
         groupId: data.groupId,
         date: todayISO(),
         label: data.label,
@@ -389,9 +399,24 @@ export async function resumeHeldSaleAction(id: string) {
         select product_id, qty, qty_input, packaging_id, unit_price, discount_type, discount_value
           from sale_lines where sale_id = ${id} order by line_no
       `);
+      const [customer] = sale.customerId
+        ? await tx
+            .select({
+              id: customers.id,
+              code: customers.code,
+              name: customers.name,
+              phone: customers.phone,
+              creditLimit: customers.creditLimit,
+            })
+            .from(customers)
+            .where(and(eq(customers.companyId, ctx.company.id), eq(customers.id, sale.customerId)))
+            .limit(1)
+        : [];
       return {
         warehouseId: sale.warehouseId,
         customerId: sale.customerId,
+        customer: customer ? { ...customer, creditLimit: d(customer.creditLimit).toNumber() } : null,
+        dueDate: sale.dueDate,
         // POS-HOLD-01: kelompok harga dipulihkan ke keranjang.
         customerGroupId: sale.customerGroupId,
         // Snapshot total saat ditahan; terminal membandingkannya dengan
@@ -422,38 +447,14 @@ export async function resumeHeldSaleAction(id: string) {
 export async function deleteHeldSaleAction(id: string) {
   return guard(async () => {
     const ctx = await requirePermissionInModule("pos.sell", "pos");
-    await withCompany(ctx.company.id, async (tx) => {
-      const [sale] = await tx
-        .select({
-          status: sales.status,
-          cashierId: sales.cashierId,
-          number: sales.number,
-          heldLabel: sales.heldLabel,
-        })
-        .from(sales)
-        .where(and(eq(sales.companyId, ctx.company.id), eq(sales.id, id)))
-        .limit(1);
-      if (!sale || sale.status !== "held") throw new Error("Hanya pesanan ditahan yang bisa dihapus.");
-      // POS3-13: penghapusan adalah hard-delete — hanya pemilik
-      // tahanan atau supervisor (pos.void) yang boleh, dan selalu
-      // teraudit. Resume tetap terbuka untuk semua kasir (baca-saja).
-      if (sale.cashierId !== ctx.user.id && !can(ctx, "pos.void")) {
-        throw new AppError(
-          "FORBIDDEN",
-          "Pesanan ditahan hanya dapat dihapus oleh kasir yang menahannya atau supervisor.",
-        );
-      }
-      await tx.execute(sql`delete from sale_lines where sale_id = ${id}`);
-      await tx.execute(sql`delete from sales where id = ${id}`);
-      await writeAudit(tx, {
+    await withCompany(ctx.company.id, (tx) =>
+      deleteHeldSale(tx, {
         companyId: ctx.company.id,
         userId: ctx.user.id,
-        action: "pos.held.delete",
-        entityType: "sale",
-        entityId: id,
-        after: { number: sale.number, heldLabel: sale.heldLabel, cashierId: sale.cashierId },
-      });
-    });
+        saleId: id,
+        canDeleteAny: can(ctx, "pos.void"),
+      }),
+    );
     revalidatePath("/app/pos/ditahan");
     return { id };
   });

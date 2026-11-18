@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import type { ReactNode } from "react";
 import {
   CloudOff,
@@ -14,6 +14,14 @@ import {
   Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 
 type MenuItem = {
   href: string;
@@ -41,25 +49,6 @@ export function PosActionMenu({
   children?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function onPointer(event: MouseEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
-    }
-    function onKey(event: KeyboardEvent) {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      setOpen(false);
-    }
-    document.addEventListener("mousedown", onPointer);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onPointer);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
 
   const groups: { title: string; items: MenuItem[] }[] = [
     {
@@ -122,55 +111,57 @@ export function PosActionMenu({
   ];
 
   return (
-    <div ref={rootRef} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-label="Menu lainnya kasir"
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger
+        aria-label="Menu POS lainnya"
         aria-expanded={open}
-        aria-haspopup="menu"
         className={cn(
-          "flex h-10 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium transition-colors",
+          "flex h-11 items-center gap-2 rounded-md border px-3 text-[13px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           open
             ? "border-primary bg-primary/5 text-foreground"
             : "border-border bg-background text-muted-foreground hover:bg-muted",
         )}
       >
-        <Menu className="size-3.5" />
+        <Menu className="size-4" />
         <span className="hidden sm:inline">Lainnya</span>
-      </button>
+      </SheetTrigger>
 
-      {open ? (
-        <div
-          role="menu"
-          aria-label="Menu terminal POS"
-          className="absolute right-0 top-full z-40 mt-1 w-[320px] rounded-xl border border-border bg-card shadow-lg"
-        >
+      <SheetContent
+        side="right"
+        overlayClassName="z-[70]"
+        aria-label="Menu terminal POS"
+        className="z-[71] w-[min(92vw,420px)] gap-0 overflow-y-auto p-0 sm:w-[420px] sm:max-w-[420px]"
+      >
+        <SheetHeader className="border-b border-border px-5 py-5 pr-14">
+          <SheetTitle className="text-lg">Menu kasir</SheetTitle>
+          <SheetDescription>Akses sesi, pelanggan, dan transaksi tambahan.</SheetDescription>
+        </SheetHeader>
+
+        <nav aria-label="Menu terminal POS" className="space-y-1 p-3">
           {groups.map((group) => (
-            <div key={group.title} className="border-b border-border last:border-b-0">
-              <p className="px-3 pt-2.5 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <section key={group.title} className="space-y-1.5 border-b border-border py-3 last:border-b-0">
+              <h3 className="px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 {group.title}
-              </p>
+              </h3>
               {group.items.map((item) => {
                 const Icon = item.icon;
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
-                    role="menuitem"
                     onClick={() => setOpen(false)}
-                    className="flex items-start gap-2.5 px-3 py-2 transition-colors hover:bg-muted/70 focus-visible:bg-muted/70 focus-visible:outline-none"
+                    className="flex min-h-14 items-center gap-3 rounded-md px-3 py-2 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
-                    <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground">
-                      <Icon className="size-3.5" />
+                    <span className="grid size-10 shrink-0 place-items-center rounded-md bg-muted text-foreground">
+                      <Icon className="size-5" />
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center justify-between gap-2">
-                        <span className="text-[12px] font-medium">{item.label}</span>
+                        <span className="text-sm font-semibold text-foreground">{item.label}</span>
                         {item.badge !== undefined ? (
                           <span
                             className={cn(
-                              "num shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
+                              "num shrink-0 rounded-full px-2 py-1 text-xs font-semibold",
                               item.tone === "green"
                                 ? "bg-tone-green-soft text-tone-green"
                                 : item.tone === "amber"
@@ -184,29 +175,30 @@ export function PosActionMenu({
                           </span>
                         ) : null}
                       </span>
-                      <span className="mt-0.5 block text-[11px] leading-4 text-muted-foreground">
+                      <span className="mt-0.5 block text-xs leading-4 text-muted-foreground">
                         {item.description}
                       </span>
                     </span>
                   </Link>
                 );
               })}
-            </div>
+            </section>
           ))}
+        </nav>
 
-          {children}
+        {children ? <div className="border-t border-border p-3">{children}</div> : null}
 
+        <div className="mt-auto border-t border-border p-3">
           <Link
             href="/app"
-            role="menuitem"
             onClick={() => setOpen(false)}
-            className="flex items-center gap-2.5 px-3 py-2.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground focus-visible:bg-muted/70 focus-visible:outline-none"
+            className="flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <LayoutDashboard className="size-3.5" />
+            <LayoutDashboard className="size-5" />
             Kembali ke dashboard
           </Link>
         </div>
-      ) : null}
-    </div>
+      </SheetContent>
+    </Sheet>
   );
 }

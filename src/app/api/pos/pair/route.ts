@@ -86,6 +86,7 @@ export async function POST(request: Request) {
             name: result.terminal.terminalName,
             companyId: result.terminal.companyId,
             warehouseId: result.terminal.warehouseId,
+            userId: result.terminal.userId,
           },
         },
       },

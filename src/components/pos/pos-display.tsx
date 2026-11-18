@@ -1,8 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useState, useSyncExternalStore } from "react";
 import { Maximize2, Minimize2, RotateCcw, SlidersHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 
 export type PosDensity = "comfortable" | "compact";
 export type PosColumns = "auto" | "4" | "5" | "6";
@@ -35,7 +42,7 @@ export const POS_DISPLAY_DEFAULTS: PosDisplayPrefs = {
   showPackaging: true,
   showPrice: true,
   view: "grid",
-  fontScale: "normal",
+  fontScale: "large",
   cardShape: "rounded",
   colorByCategory: false,
   showCategory: false,
@@ -77,10 +84,14 @@ function readPrefs(): PosDisplayPrefs {
       showPrice: typeof parsed.showPrice === "boolean" ? parsed.showPrice : true,
       view: parsed.view === "list" ? "list" : "grid",
       fontScale:
-        parsed.fontScale === "large" || parsed.fontScale === "xl" ? parsed.fontScale : "normal",
+        parsed.fontScale === "large" || parsed.fontScale === "xl"
+          ? parsed.fontScale
+          : parsed.fontScale === "normal"
+            ? parsed.fontScale
+            : POS_DISPLAY_DEFAULTS.fontScale,
       cardShape: parsed.cardShape === "square" ? "square" : "rounded",
       colorByCategory:
-        typeof parsed.colorByCategory === "boolean" ? parsed.colorByCategory : true,
+        typeof parsed.colorByCategory === "boolean" ? parsed.colorByCategory : false,
       showCategory: typeof parsed.showCategory === "boolean" ? parsed.showCategory : false,
       autoFullscreen:
         typeof parsed.autoFullscreen === "boolean" ? parsed.autoFullscreen : false,
@@ -159,28 +170,9 @@ export function PosDisplayControls({
   onToggleFullscreen: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function onPointer(event: MouseEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
-    }
-    function onKey(event: KeyboardEvent) {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      setOpen(false);
-    }
-    document.addEventListener("mousedown", onPointer);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onPointer);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
 
   return (
-    <div ref={rootRef} className="relative flex items-center gap-1.5">
+    <div className="flex items-center gap-1.5">
       <button
         type="button"
         onClick={onToggleFullscreen}
@@ -188,7 +180,7 @@ export function PosDisplayControls({
         aria-label={fullscreen ? "Keluar layar penuh" : "Layar penuh"}
         aria-pressed={fullscreen}
         className={cn(
-          "flex h-10 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium transition-colors",
+          "flex h-11 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium transition-colors",
           fullscreen
             ? "border-primary bg-primary/5 text-foreground"
             : "border-border bg-background text-muted-foreground hover:bg-muted",
@@ -198,200 +190,133 @@ export function PosDisplayControls({
         <span className="hidden sm:inline">{fullscreen ? "Keluar" : "Layar penuh"}</span>
       </button>
 
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        title="Atur tampilan POS"
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        className={cn(
-          "flex h-10 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] font-medium transition-colors",
-          open ? "bg-muted text-foreground" : "bg-background text-muted-foreground hover:bg-muted",
-        )}
-      >
-        <SlidersHorizontal className="size-3.5" />
-        <span className="hidden sm:inline">Tampilan</span>
-      </button>
-
-      {open ? (
-        <div
-          role="dialog"
-          aria-label="Pengaturan tampilan POS"
-          className="absolute right-0 top-full z-20 mt-1 w-64 space-y-3 rounded-lg border border-border bg-card p-3 text-[11px] shadow-lg"
+      <Sheet open={open} onOpenChange={setOpen}>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          title="Atur tampilan POS"
+          aria-expanded={open}
+          aria-haspopup="dialog"
+          className={cn(
+            "flex h-11 items-center gap-2 rounded-md border border-border bg-background px-3 text-[13px] font-semibold text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            open && "bg-muted",
+          )}
         >
-          <Field label="Kerapatan">
-            <Segment
-              active={prefs.density === "comfortable"}
-              onClick={() => onChange({ density: "comfortable" })}
+          <SlidersHorizontal className="size-4" />
+          <span>Tampilan</span>
+        </button>
+
+        <SheetContent
+          side="right"
+          overlayClassName="z-[70]"
+          aria-label="Pengaturan tampilan POS"
+          className="z-[71] w-full gap-0 overflow-y-auto p-0 sm:w-[420px] sm:max-w-[420px]"
+        >
+          <SheetHeader className="border-b border-border px-5 py-5 pr-14">
+            <SheetTitle className="text-lg">Tampilan kasir</SheetTitle>
+            <SheetDescription>
+              Sesuaikan katalog untuk ukuran layar, jarak pandang, dan cara kerja kasir.
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="space-y-6 p-5">
+            <section className="space-y-2.5" aria-labelledby="pos-display-presets">
+              <h3 id="pos-display-presets" className="text-sm font-semibold">Preset kasir</h3>
+              <div className="grid grid-cols-3 gap-2">
+                <Preset
+                  label="Seimbang"
+                  description="Katalog umum"
+                  active={prefs.view === "grid" && prefs.fontScale === "large" && prefs.density === "comfortable"}
+                  onClick={() => onChange({ view: "grid", density: "comfortable", columns: "auto", fontScale: "large" })}
+                />
+                <Preset
+                  label="Sentuh besar"
+                  description="Jarak jauh"
+                  active={prefs.view === "grid" && prefs.fontScale === "xl" && prefs.columns === "4"}
+                  onClick={() => onChange({ view: "grid", density: "comfortable", columns: "4", fontScale: "xl" })}
+                />
+                <Preset
+                  label="Daftar"
+                  description="Nama panjang"
+                  active={prefs.view === "list"}
+                  onClick={() => onChange({ view: "list", density: "comfortable", fontScale: "large" })}
+                />
+              </div>
+            </section>
+
+            <section className="space-y-4" aria-labelledby="pos-display-catalog">
+              <h3 id="pos-display-catalog" className="text-sm font-semibold">Katalog produk</h3>
+              <Field label="Susunan">
+                <Segment active={prefs.view === "grid"} onClick={() => onChange({ view: "grid" })}>Kotak</Segment>
+                <Segment active={prefs.view === "list"} onClick={() => onChange({ view: "list" })}>Daftar</Segment>
+              </Field>
+              <Field label="Jumlah kolom">
+                {(["auto", "4", "5", "6"] as const).map((value) => (
+                  <Segment key={value} active={prefs.columns === value} onClick={() => onChange({ columns: value })}>
+                    {value === "auto" ? "Otomatis" : value}
+                  </Segment>
+                ))}
+              </Field>
+              <Field label="Kerapatan kartu">
+                <Segment active={prefs.density === "comfortable"} onClick={() => onChange({ density: "comfortable" })}>Nyaman</Segment>
+                <Segment active={prefs.density === "compact"} onClick={() => onChange({ density: "compact" })}>Padat</Segment>
+              </Field>
+              <Field label="Ukuran teks">
+                {(["normal", "large", "xl"] as const).map((value) => (
+                  <Segment key={value} active={prefs.fontScale === value} onClick={() => onChange({ fontScale: value })}>
+                    {value === "normal" ? "Standar" : value === "large" ? "Besar" : "Sangat besar"}
+                  </Segment>
+                ))}
+              </Field>
+            </section>
+
+            <section className="space-y-4" aria-labelledby="pos-display-cards">
+              <h3 id="pos-display-cards" className="text-sm font-semibold">Informasi kartu</h3>
+              <Field label="Bentuk kartu">
+                <Segment active={prefs.cardShape === "rounded"} onClick={() => onChange({ cardShape: "rounded" })}>Sudut lembut</Segment>
+                <Segment active={prefs.cardShape === "square"} onClick={() => onChange({ cardShape: "square" })}>Kotak</Segment>
+              </Field>
+              <Toggle label="Harga jual" checked={prefs.showPrice} onChange={(showPrice) => onChange({ showPrice })} />
+              <Toggle label="Informasi stok" checked={prefs.showStock} onChange={(showStock) => onChange({ showStock })} />
+              <Toggle label="SKU produk" checked={prefs.showSku} onChange={(showSku) => onChange({ showSku })} />
+              <Toggle label="Pilihan kemasan" checked={prefs.showPackaging} onChange={(showPackaging) => onChange({ showPackaging })} />
+              <Toggle label="Nama kategori" checked={prefs.showCategory} onChange={(showCategory) => onChange({ showCategory })} />
+              <Toggle label="Aksen warna kategori" checked={prefs.colorByCategory} onChange={(colorByCategory) => onChange({ colorByCategory })} />
+            </section>
+
+            <section className="space-y-4" aria-labelledby="pos-display-terminal">
+              <h3 id="pos-display-terminal" className="text-sm font-semibold">Layar terminal</h3>
+              <Field label="Lebar keranjang (desktop)">
+                {POS_CART_WIDTHS.map((width) => (
+                  <Segment key={width} active={prefs.cartWidth === width} onClick={() => onChange({ cartWidth: width })}>
+                    {width === 360 ? "S" : width === 396 ? "M" : width === 440 ? "L" : "XL"}
+                  </Segment>
+                ))}
+              </Field>
+              <Toggle label="Masuk layar penuh otomatis" checked={prefs.autoFullscreen} onChange={(autoFullscreen) => onChange({ autoFullscreen })} />
+            </section>
+
+            <button
+              type="button"
+              onClick={onReset}
+              className="flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              Nyaman
-            </Segment>
-            <Segment
-              active={prefs.density === "compact"}
-              onClick={() => onChange({ density: "compact" })}
-            >
-              Padat
-            </Segment>
-          </Field>
-
-          <Field label="Kolom produk">
-            {(["auto", "4", "5", "6"] as const).map((value) => (
-              <Segment
-                key={value}
-                active={prefs.columns === value}
-                onClick={() => onChange({ columns: value })}
-              >
-                {value === "auto" ? "Auto" : value}
-              </Segment>
-            ))}
-          </Field>
-
-          <Field label="Tampilan produk">
-            <Segment active={prefs.view === "grid"} onClick={() => onChange({ view: "grid" })}>
-              Grid
-            </Segment>
-            <Segment active={prefs.view === "list"} onClick={() => onChange({ view: "list" })}>
-              List
-            </Segment>
-          </Field>
-
-          <Field label="Ukuran teks">
-            {(["normal", "large", "xl"] as const).map((value) => (
-              <Segment
-                key={value}
-                active={prefs.fontScale === value}
-                onClick={() => onChange({ fontScale: value })}
-              >
-                {value === "normal" ? "Normal" : value === "large" ? "Besar" : "XL"}
-              </Segment>
-            ))}
-          </Field>
-
-          <Field label="Bentuk kartu">
-            <Segment
-              active={prefs.cardShape === "rounded"}
-              onClick={() => onChange({ cardShape: "rounded" })}
-            >
-              Rounded
-            </Segment>
-            <Segment
-              active={prefs.cardShape === "square"}
-              onClick={() => onChange({ cardShape: "square" })}
-            >
-              Kotak
-            </Segment>
-          </Field>
-
-          <label className="flex items-center justify-between gap-2">
-            <span className="text-muted-foreground">Warna per kategori</span>
-            <input
-              type="checkbox"
-              checked={prefs.colorByCategory}
-              onChange={(event) => onChange({ colorByCategory: event.target.checked })}
-              className="size-3.5 accent-primary"
-            />
-          </label>
-
-          <label className="flex items-center justify-between gap-2">
-            <span className="text-muted-foreground">Tampilkan kategori</span>
-            <input
-              type="checkbox"
-              checked={prefs.showCategory}
-              onChange={(event) => onChange({ showCategory: event.target.checked })}
-              className="size-3.5 accent-primary"
-            />
-          </label>
-
-          <label className="flex items-center justify-between gap-2">
-            <span className="text-muted-foreground">Tampilkan SKU</span>
-            <input
-              type="checkbox"
-              checked={prefs.showSku}
-              onChange={(event) => onChange({ showSku: event.target.checked })}
-              className="size-3.5 accent-primary"
-            />
-          </label>
-
-          <label className="flex items-center justify-between gap-2">
-            <span className="text-muted-foreground">Tampilkan kemasan</span>
-            <input
-              type="checkbox"
-              checked={prefs.showPackaging}
-              onChange={(event) => onChange({ showPackaging: event.target.checked })}
-              className="size-3.5 accent-primary"
-            />
-          </label>
-
-          <label className="flex items-center justify-between gap-2">
-            <span className="text-muted-foreground">Tampilkan harga</span>
-            <input
-              type="checkbox"
-              checked={prefs.showPrice}
-              onChange={(event) => onChange({ showPrice: event.target.checked })}
-              className="size-3.5 accent-primary"
-            />
-          </label>
-
-          <Field label="Lebar keranjang">
-            {POS_CART_WIDTHS.map((width) => (
-              <Segment
-                key={width}
-                active={prefs.cartWidth === width}
-                onClick={() => onChange({ cartWidth: width })}
-              >
-                {width === 360 ? "S" : width === 396 ? "M" : width === 440 ? "L" : "XL"}
-              </Segment>
-            ))}
-          </Field>
-
-          <label className="flex items-center justify-between gap-2">
-            <span className="text-muted-foreground">Badge stok produk</span>
-            <input
-              type="checkbox"
-              checked={prefs.showStock}
-              onChange={(event) => onChange({ showStock: event.target.checked })}
-              className="size-3.5 accent-primary"
-            />
-          </label>
-
-          <label className="flex items-center justify-between gap-2">
-            <span className="text-muted-foreground">Layar penuh otomatis</span>
-            <input
-              type="checkbox"
-              checked={prefs.autoFullscreen}
-              onChange={(event) => onChange({ autoFullscreen: event.target.checked })}
-              className="size-3.5 accent-primary"
-            />
-          </label>
-
-          <button
-            type="button"
-            onClick={onReset}
-            className="flex w-full items-center justify-center gap-1.5 rounded-md border border-border px-2 py-1.5 text-[11px] text-muted-foreground hover:bg-muted"
-          >
-            <RotateCcw className="size-3" /> Kembalikan bawaan
-          </button>
-        </div>
-      ) : null}
+              <RotateCcw className="size-4" /> Kembalikan bawaan
+            </button>
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
 
-/**
- * G1 (FRM-04): komponen lokal ini SENGAJA bukan salinan Field bersama
- * blocks/field — ia membungkus kelompok tombol segmen (grup berlabel
- * dengan anak mengalir `flex flex-wrap`), bukan satu kontrol form di
- * dalam <label>. Memaksakannya ke Field bersama akan mengubah
- * semantik & tata letaknya; pola grup-berlabel popover tampilan POS
- * tetap lokal di sini.
- */
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="space-y-1">
-      <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+    <div className="space-y-2">
+      <span className="block text-xs font-semibold text-foreground">
         {label}
       </span>
-      <div className="flex flex-wrap gap-1">{children}</div>
+      <div className="flex flex-wrap gap-2">{children}</div>
     </div>
   );
 }
@@ -411,13 +336,62 @@ function Segment({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "rounded px-2 py-1 text-[10px] font-medium transition-colors",
+        "min-h-11 min-w-12 rounded-md border px-3 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         active
-          ? "bg-primary text-primary-foreground"
-          : "text-muted-foreground hover:bg-muted hover:text-foreground",
+          ? "border-primary bg-primary text-primary-foreground"
+          : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground",
       )}
     >
       {children}
     </button>
+  );
+}
+
+function Preset({
+  label,
+  description,
+  active,
+  onClick,
+}: {
+  label: string;
+  description: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "flex min-h-[72px] flex-col items-start justify-center rounded-md border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        active ? "border-primary bg-primary/5 text-foreground" : "border-border bg-background hover:bg-muted",
+      )}
+    >
+      <span className="text-[13px] font-semibold">{label}</span>
+      <span className="text-[11px] leading-4 text-muted-foreground">{description}</span>
+    </button>
+  );
+}
+
+function Toggle({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="flex min-h-11 cursor-pointer items-center justify-between gap-4 rounded-md border border-border px-3 py-2 text-sm transition-colors hover:bg-muted/60">
+      <span className="text-foreground">{label}</span>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="size-5 shrink-0 accent-primary"
+      />
+    </label>
   );
 }

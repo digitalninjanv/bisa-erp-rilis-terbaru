@@ -360,6 +360,7 @@ export async function listSales(tx: Tx, input: {
   companyId: string;
   q?: string;
   status?: string;
+  warehouseId?: string;
   from?: string;
   to?: string;
   page?: number;
@@ -369,6 +370,7 @@ export async function listSales(tx: Tx, input: {
   const pageSize = Math.min(100, Math.max(1, input.pageSize ?? 25));
   const conditions = [eq(sales.companyId, input.companyId)];
   if (input.status) conditions.push(eq(sales.status, input.status));
+  if (input.warehouseId) conditions.push(eq(sales.warehouseId, input.warehouseId));
   if (input.from) conditions.push(gte(sales.date, input.from));
   if (input.to) conditions.push(lte(sales.date, input.to));
   if (input.q?.trim()) {
@@ -387,6 +389,8 @@ export async function listSales(tx: Tx, input: {
     .select({
       id: sales.id,
       number: sales.number,
+      cashierId: sales.cashierId,
+      heldLabel: sales.heldLabel,
       date: sales.date,
       createdAt: sales.createdAt,
       status: sales.status,

@@ -80,7 +80,14 @@ export default async function SalesInvoicePage({
           >
             Riwayat
           </Link>
-          <ReceiptPrint auto={query.autoprint === "1"} returnTo={query.autoprint === "1" ? "/app/pos" : undefined} />
+          <ReceiptPrint
+            auto={query.autoprint === "1"}
+            // Hanya alur checkout (tanpa salinan) yang kembali ke kasir.
+            // Cetak ulang dari riwayat membiarkan tab faktur tetap terbuka.
+            returnTo={
+              query.autoprint === "1" && query.salinan !== "1" ? "/app/pos" : undefined
+            }
+          />
         </div>
       </div>
 

@@ -33,6 +33,44 @@ export async function claimIdempotencyKey(
   return Boolean(claim);
 }
 
+/** Read the stored replay result through the platform idempotency owner. */
+export async function readIdempotencyResultRef(
+  tx: Tx,
+  input: { companyId: string; key: string; scope: string },
+): Promise<string | null> {
+  const [row] = await tx
+    .select({ resultRef: idempotencyKeys.resultRef })
+    .from(idempotencyKeys)
+    .where(
+      and(
+        eq(idempotencyKeys.companyId, input.companyId),
+        eq(idempotencyKeys.scope, input.scope),
+        eq(idempotencyKeys.key, input.key),
+      ),
+    )
+    .limit(1);
+  return row?.resultRef ?? null;
+}
+
+/** Persist replay data for a key claimed in the same transaction. */
+export async function writeIdempotencyResultRef(
+  tx: Tx,
+  input: { companyId: string; key: string; scope: string; resultRef: string },
+): Promise<void> {
+  const [row] = await tx
+    .update(idempotencyKeys)
+    .set({ resultRef: input.resultRef })
+    .where(
+      and(
+        eq(idempotencyKeys.companyId, input.companyId),
+        eq(idempotencyKeys.scope, input.scope),
+        eq(idempotencyKeys.key, input.key),
+      ),
+    )
+    .returning({ id: idempotencyKeys.id });
+  if (!row) throw new AppError("CONFLICT", "Kunci idempotensi tidak tersedia untuk menyimpan hasil transaksi.");
+}
+
 const PAYMENT_IDEMPOTENCY_SCOPE = "accounting.payment";
 const PAYMENT_RESULT_TYPE = "accounting-payment-result";
 

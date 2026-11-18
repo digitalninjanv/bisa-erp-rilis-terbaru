@@ -383,11 +383,9 @@ export function paperSpec(paper: PrintPaper): PaperSpec {
   switch (paper) {
     case "thermal58":
       // Thermal rolls (CT-02, D-18): Chromium rejects `size: 58mm auto`,
-      // so the roll is declared at the standard 297mm roll length and
-      // the driver/printer cuts the continuous paper. The PDF MediaBox
-      // width is the roll width (164.4pt). widthMm is the PRINTABLE
-      // content width: 58mm roll − 2×2mm page margin = 54mm, so the
-      // on-screen preview and the printed slip share the same width.
+      // so the static fallback is the standard 297mm roll length.
+      // ReceiptPrint menimpa tinggi ini dengan tinggi hasil ukur isi
+      // nota sebelum dialog cetak dibuka.
       return { pageSize: "58mm 297mm", pageMargin: "2mm", widthMm: 54, qrMm: 14, paged: false };
     case "thermal80":
       // Same as thermal58; MediaBox width 226.8pt. 80mm roll − 2×2mm

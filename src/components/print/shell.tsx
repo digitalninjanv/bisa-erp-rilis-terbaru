@@ -31,6 +31,7 @@ export function PrintShell({
     <div
       className={`print-doc print-doc--${settings.template} ${templateClasses(settings)}${spec.paged ? " paged-print" : ""}`}
       data-template={settings.template}
+      data-paper={paper}
       style={style}
     >
       {pageStyle ? <style>{pageRule}</style> : null}

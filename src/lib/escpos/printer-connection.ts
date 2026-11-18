@@ -3,6 +3,17 @@
 import type { PrinterPreferences } from "./types";
 import { DEFAULT_PRINTER_PREFERENCES } from "./types";
 import { EscPosEncoder } from "./encoder";
+import {
+  errorMessage,
+  isNotFoundError,
+  printerNavigator,
+  type BluetoothCharacteristicLike,
+  type BluetoothDeviceLike,
+  type SerialPortLike,
+  type UsbDeviceLike,
+  type UsbEndpointLike,
+  type UsbInterfaceLike,
+} from "./web-printer-types";
 
 const STORAGE_KEY = "bisa_pos_printer_prefs";
 
@@ -15,40 +26,13 @@ const BLUETOOTH_PRINTER_SERVICES = [
   "0000fee7-0000-1000-8000-00805f9b34fb",
 ];
 
-interface BluetoothCharacteristicLike {
-  properties: { write?: boolean; writeWithoutResponse?: boolean };
-  writeValue?: (value: BufferSource) => Promise<void>;
-  writeValueWithoutResponse?: (value: BufferSource) => Promise<void>;
-}
-
-interface BluetoothServiceLike {
-  getCharacteristics(): Promise<BluetoothCharacteristicLike[]>;
-}
-
-interface BluetoothServerLike {
-  getPrimaryService(uuid: string): Promise<BluetoothServiceLike>;
-  getPrimaryServices(): Promise<BluetoothServiceLike[]>;
-}
-
-interface BluetoothDeviceLike {
-  id: string;
-  name?: string;
-  gatt?: {
-    connected: boolean;
-    connect(): Promise<BluetoothServerLike>;
-    disconnect(): void;
-  };
-  addEventListener(type: string, listener: () => void): void;
-  removeEventListener(type: string, listener: () => void): void;
-}
-
 // Singletons untuk menyimpan koneksi aktif saat sesi kasir berjalan
 let activeBluetoothDevice: BluetoothDeviceLike | null = null;
 let activeBluetoothCharacteristic: BluetoothCharacteristicLike | null = null;
 let activeBluetoothDisconnectHandler: (() => void) | null = null;
-let activeSerialPort: any = null;
-let activeUsbDevice: any = null;
-let activeUsbEndpoint: any = null;
+let activeSerialPort: SerialPortLike | null = null;
+let activeUsbDevice: UsbDeviceLike | null = null;
+let activeUsbEndpoint: UsbEndpointLike | null = null;
 
 // Event listeners subscriber untuk UI
 type ConnectionListener = (connected: boolean, name?: string) => void;
@@ -115,17 +99,17 @@ function getInsecureOriginMessage(feature: string): string {
 
 /** Cek apakah browser mendukung Web Bluetooth. */
 export function isBluetoothSupported(): boolean {
-  return typeof navigator !== "undefined" && Boolean((navigator as any).bluetooth);
+  return Boolean(printerNavigator()?.bluetooth);
 }
 
 /** Cek apakah browser mendukung WebUSB. */
 export function isUsbSupported(): boolean {
-  return typeof navigator !== "undefined" && Boolean((navigator as any).usb);
+  return Boolean(printerNavigator()?.usb);
 }
 
 /** Cek apakah browser mendukung Web Serial. */
 export function isSerialSupported(): boolean {
-  return typeof navigator !== "undefined" && Boolean((navigator as any).serial);
+  return Boolean(printerNavigator()?.serial);
 }
 
 /** Cek apakah printer saat ini aktif terhubung dan siap cetak. */
@@ -155,22 +139,25 @@ export async function connectBluetoothPrinter(): Promise<{
   }
 
   try {
-    const nav = navigator as any;
+    const bluetooth = printerNavigator()?.bluetooth;
+    if (!bluetooth) {
+      return { ok: false, message: getInsecureOriginMessage("Web Bluetooth") };
+    }
     let device: BluetoothDeviceLike;
     try {
       // acceptAllDevices: true memungkinkan menemukan perangkat Bluetooth thermal tanpa terhalang filter UUID broadcast
-      device = await nav.bluetooth.requestDevice({
+      device = await bluetooth.requestDevice({
         acceptAllDevices: true,
         optionalServices: BLUETOOTH_PRINTER_SERVICES,
-      }) as BluetoothDeviceLike;
-    } catch (e: any) {
-      if (e.name === "NotFoundError") {
+      });
+    } catch (error) {
+      if (isNotFoundError(error)) {
         return { ok: false, message: "Tidak ada printer Bluetooth BLE yang dipilih atau ditemukan." };
       }
-      device = await nav.bluetooth.requestDevice({
-        filters: BLUETOOTH_PRINTER_SERVICES.map((s) => ({ services: [s] })),
+      device = await bluetooth.requestDevice({
+        filters: BLUETOOTH_PRINTER_SERVICES.map((service) => ({ services: [service] })),
         optionalServices: BLUETOOTH_PRINTER_SERVICES,
-      }) as BluetoothDeviceLike;
+      });
     }
 
     if (!device) {
@@ -252,18 +239,18 @@ export async function connectBluetoothPrinter(): Promise<{
 
     notifyStatusChange();
     return { ok: true, name: deviceName };
-  } catch (err: any) {
-    if (err.name === "NotFoundError") {
+  } catch (error) {
+    if (isNotFoundError(error)) {
       return { ok: false, message: "Printer Bluetooth BLE tidak ditemukan. Pastikan printer menyala dan mendukung BLE." };
     }
-    return { ok: false, message: err.message || "Gagal menghubungkan Bluetooth printer." };
+    return { ok: false, message: errorMessage(error, "Gagal menghubungkan Bluetooth printer.") };
   }
 }
 
 /** Helper untuk membuka dan klaim antarmuka USB printer. */
-async function openAndClaimUsbDevice(device: any): Promise<{
+async function openAndClaimUsbDevice(device: UsbDeviceLike): Promise<{
   ok: boolean;
-  endpoint?: any;
+  endpoint?: UsbEndpointLike;
   message?: string;
 }> {
   try {
@@ -273,14 +260,14 @@ async function openAndClaimUsbDevice(device: any): Promise<{
     }
 
     const interfaces = device.configuration?.interfaces || [];
-    let targetIface: any = null;
-    let targetEndpoint: any = null;
+    let targetIface: UsbInterfaceLike | null = null;
+    let targetEndpoint: UsbEndpointLike | null = null;
 
     // Scan semua antarmuka untuk mencari endpoint OUT
     for (const iface of interfaces) {
       const alternates = iface.alternates || (iface.alternate ? [iface.alternate] : []);
       for (const alt of alternates) {
-        const outEp = alt?.endpoints?.find((e: any) => e.direction === "out");
+        const outEp = alt?.endpoints?.find((endpoint) => endpoint.direction === "out");
         if (outEp) {
           targetIface = iface;
           targetEndpoint = outEp;
@@ -293,7 +280,7 @@ async function openAndClaimUsbDevice(device: any): Promise<{
     if (!targetIface || !targetEndpoint) {
       targetIface = interfaces[0];
       const alt = targetIface?.alternate || targetIface?.alternates?.[0];
-      targetEndpoint = alt?.endpoints?.find((e: any) => e.direction === "out");
+      targetEndpoint = alt?.endpoints?.find((endpoint) => endpoint.direction === "out") ?? null;
     }
 
     if (!targetIface) {
@@ -317,8 +304,8 @@ async function openAndClaimUsbDevice(device: any): Promise<{
     }
 
     return { ok: true, endpoint: targetEndpoint };
-  } catch (err: any) {
-    return { ok: false, message: err.message || "Gagal menghubungkan perangkat USB." };
+  } catch (error) {
+    return { ok: false, message: errorMessage(error, "Gagal menghubungkan perangkat USB.") };
   }
 }
 
@@ -333,7 +320,7 @@ export async function connectDirectUsbPrinter(): Promise<{
   if (!isBrowserSecureContext()) {
     return { ok: false, message: getInsecureOriginMessage("WebUSB") };
   }
-  const nav = typeof navigator !== "undefined" ? (navigator as any) : null;
+  const nav = printerNavigator();
   if (!nav?.usb) {
     return {
       ok: false,
@@ -342,12 +329,12 @@ export async function connectDirectUsbPrinter(): Promise<{
   }
 
   try {
-    let device: any;
+    let device: UsbDeviceLike;
     try {
       // filters: [] mengizinkan pengguna memilih sembarang printer USB yang terpasang
       device = await nav.usb.requestDevice({ filters: [] });
-    } catch (e: any) {
-      if (e.name === "NotFoundError") {
+    } catch (error) {
+      if (isNotFoundError(error)) {
         return { ok: false, message: "Pemilihan printer USB dibatalkan." };
       }
       device = await nav.usb.requestDevice({
@@ -375,7 +362,7 @@ export async function connectDirectUsbPrinter(): Promise<{
     }
 
     activeUsbDevice = device;
-    activeUsbEndpoint = res.endpoint;
+    activeUsbEndpoint = res.endpoint ?? null;
 
     const deviceName = device.productName || "USB Thermal Printer";
     savePrinterPreferences({
@@ -385,11 +372,11 @@ export async function connectDirectUsbPrinter(): Promise<{
 
     notifyStatusChange();
     return { ok: true, name: deviceName };
-  } catch (err: any) {
-    if (err.name === "NotFoundError") {
+  } catch (error) {
+    if (isNotFoundError(error)) {
       return { ok: false, message: "Pemilihan printer USB dibatalkan." };
     }
-    return { ok: false, message: err.message || "Gagal menghubungkan printer USB." };
+    return { ok: false, message: errorMessage(error, "Gagal menghubungkan printer USB.") };
   }
 }
 
@@ -404,7 +391,7 @@ export async function connectSerialPrinter(): Promise<{
   if (!isBrowserSecureContext()) {
     return { ok: false, message: getInsecureOriginMessage("Web Serial") };
   }
-  const nav = typeof navigator !== "undefined" ? (navigator as any) : null;
+  const nav = printerNavigator();
   if (!nav?.serial) {
     return {
       ok: false,
@@ -431,11 +418,11 @@ export async function connectSerialPrinter(): Promise<{
 
     notifyStatusChange();
     return { ok: true, name: portName };
-  } catch (err: any) {
-    if (err.name === "NotFoundError") {
+  } catch (error) {
+    if (isNotFoundError(error)) {
       return { ok: false, message: "Pemilihan port serial dibatalkan." };
     }
-    return { ok: false, message: err.message || "Gagal menghubungkan port serial printer." };
+    return { ok: false, message: errorMessage(error, "Gagal menghubungkan port serial printer.") };
   }
 }
 
@@ -463,21 +450,22 @@ export async function tryAutoReconnect(): Promise<{ ok: boolean; name?: string }
     return { ok: false };
   }
 
-  const nav = navigator as any;
+  const nav = printerNavigator();
+  if (!nav) return { ok: false };
 
   // BLE permissions survive reloads, but the GATT connection does not.
   // Reconnect only to a device already granted by the user; never open a
   // device chooser during checkout/automatic printing.
   if (prefs.type === "bluetooth" && nav.bluetooth?.getDevices) {
-    let reconnectingDevice: any = null;
+    let reconnectingDevice: BluetoothDeviceLike | null = null;
     try {
-      const devices = await nav.bluetooth.getDevices() as BluetoothDeviceLike[];
+      const devices = await nav.bluetooth.getDevices();
       const matchingDevice = prefs.bluetoothDeviceId
         ? devices.find((candidate) => candidate.id === prefs.bluetoothDeviceId)
         : undefined;
       const matchingNames = devices.filter((candidate) => candidate.name === prefs.name);
       const device = matchingDevice ?? (matchingNames.length === 1 ? matchingNames[0] : undefined);
-      reconnectingDevice = device;
+      reconnectingDevice = device ?? null;
       if (!device) return { ok: false };
       const server = await device?.gatt?.connect();
       if (server) {
@@ -575,7 +563,8 @@ export function initPrinterAutoReconnect(): () => void {
 
   void tryAutoReconnect();
 
-  const nav = navigator as any;
+  const nav = printerNavigator();
+  if (!nav) return () => {};
   const handleConnect = () => {
     void tryAutoReconnect();
   };
@@ -633,7 +622,7 @@ export async function sendEscPosToPrinter(
         await new Promise((r) => setTimeout(r, 15));
       }
       return { ok: true };
-    } catch (err: any) {
+    } catch (error) {
       if (activeBluetoothDevice && activeBluetoothDisconnectHandler) {
         activeBluetoothDevice.removeEventListener?.("gattserverdisconnected", activeBluetoothDisconnectHandler);
       }
@@ -641,7 +630,10 @@ export async function sendEscPosToPrinter(
       activeBluetoothCharacteristic = null;
       activeBluetoothDisconnectHandler = null;
       notifyStatusChange();
-      return { ok: false, message: `Gagal mengirim ke Bluetooth printer: ${err.message}` };
+      return {
+        ok: false,
+        message: `Gagal mengirim ke Bluetooth printer: ${errorMessage(error, "tanpa keterangan")}`,
+      };
     }
   }
 
@@ -659,10 +651,13 @@ export async function sendEscPosToPrinter(
       await writer.write(data);
       writer.releaseLock();
       return { ok: true };
-    } catch (err: any) {
+    } catch (error) {
       activeSerialPort = null;
       notifyStatusChange();
-      return { ok: false, message: `Gagal menulis ke Serial printer: ${err.message}` };
+      return {
+        ok: false,
+        message: `Gagal menulis ke Serial printer: ${errorMessage(error, "tanpa keterangan")}`,
+      };
     }
   }
 
@@ -678,11 +673,11 @@ export async function sendEscPosToPrinter(
     try {
       await activeUsbDevice.transferOut(activeUsbEndpoint.endpointNumber, data);
       return { ok: true };
-    } catch (err: any) {
+    } catch (error) {
       activeUsbDevice = null;
       activeUsbEndpoint = null;
       notifyStatusChange();
-      return { ok: false, message: `Gagal menulis ke USB printer: ${err.message}` };
+      return { ok: false, message: `Gagal menulis ke USB printer: ${errorMessage(error, "tanpa keterangan")}` };
     }
   }
 

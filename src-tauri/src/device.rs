@@ -29,12 +29,17 @@ use serde::{Deserialize, Serialize};
 use crate::keychain::{SecretStore, KEYRING_ACCOUNT, KEYRING_SERVICE};
 
 pub const DEVICE_CONFIG_FILE: &str = "device.json";
+const INSTALLATION_ID_FILE: &str = "installation-id";
 
 /// Konfigurasi efektif di memori (token dari vault atau fallback).
 #[derive(Debug, Clone)]
 pub struct DeviceConfig {
     pub server_url: String,
     pub device_token: String,
+    pub terminal_id: Option<String>,
+    pub cashier_id: Option<String>,
+    pub cashier_name: Option<String>,
+    pub company_id: Option<String>,
 }
 
 /// Bentuk `device.json` di disk. `device_token` hanya terisi pada
@@ -45,6 +50,14 @@ struct DeviceFile {
     server_url: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     device_token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    terminal_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cashier_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cashier_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    company_id: Option<String>,
 }
 
 /// Di mana token perangkat saat ini tersimpan — tampil di UI agar
@@ -78,6 +91,25 @@ pub struct DeviceStatusView {
     pub terminal_name: Option<String>,
     pub company_name: Option<String>,
     pub warehouse_name: Option<String>,
+    pub terminal_id: Option<String>,
+    pub cashier_id: Option<String>,
+    pub cashier_name: Option<String>,
+}
+
+/// Stable, non-secret installation identity used only to find the
+/// server-side terminal row. It survives logout/unpair and is never
+/// used as an authentication credential.
+pub fn installation_id(dir: &Path) -> Result<String, String> {
+    let path = dir.join(INSTALLATION_ID_FILE);
+    if let Ok(value) = std::fs::read_to_string(&path) {
+        let value = value.trim();
+        if uuid::Uuid::parse_str(value).is_ok() {
+            return Ok(value.to_string());
+        }
+    }
+    let value = uuid::Uuid::new_v4().to_string();
+    write_atomic(dir, INSTALLATION_ID_FILE, &value)?;
+    Ok(value)
 }
 
 pub fn config_path(dir: &Path) -> PathBuf {
@@ -123,6 +155,10 @@ pub fn load_config(
                     &DeviceFile {
                         server_url: file.server_url.clone(),
                         device_token: None,
+                        terminal_id: file.terminal_id.clone(),
+                        cashier_id: file.cashier_id.clone(),
+                        cashier_name: file.cashier_name.clone(),
+                        company_id: file.company_id.clone(),
                     },
                 );
             }
@@ -130,6 +166,10 @@ pub fn load_config(
                 Some(DeviceConfig {
                     server_url: file.server_url,
                     device_token: vault_token,
+                    terminal_id: file.terminal_id,
+                    cashier_id: file.cashier_id,
+                    cashier_name: file.cashier_name,
+                    company_id: file.company_id,
                 }),
                 TokenStorage::Keychain,
             )
@@ -143,12 +183,20 @@ pub fn load_config(
                         &DeviceFile {
                             server_url: file.server_url.clone(),
                             device_token: None,
+                            terminal_id: file.terminal_id.clone(),
+                            cashier_id: file.cashier_id.clone(),
+                            cashier_name: file.cashier_name.clone(),
+                            company_id: file.company_id.clone(),
                         },
                     );
                     (
                         Some(DeviceConfig {
                             server_url: file.server_url,
                             device_token: token,
+                            terminal_id: file.terminal_id,
+                            cashier_id: file.cashier_id,
+                            cashier_name: file.cashier_name,
+                            company_id: file.company_id,
                         }),
                         TokenStorage::Keychain,
                     )
@@ -157,6 +205,10 @@ pub fn load_config(
                     Some(DeviceConfig {
                         server_url: file.server_url,
                         device_token: token,
+                        terminal_id: file.terminal_id,
+                        cashier_id: file.cashier_id,
+                        cashier_name: file.cashier_name,
+                        company_id: file.company_id,
                     }),
                     TokenStorage::File,
                 ),
@@ -169,6 +221,10 @@ pub fn load_config(
                 Some(DeviceConfig {
                     server_url: file.server_url,
                     device_token: token,
+                    terminal_id: file.terminal_id,
+                    cashier_id: file.cashier_id,
+                    cashier_name: file.cashier_name,
+                    company_id: file.company_id,
                 }),
                 TokenStorage::File,
             ),
@@ -192,6 +248,10 @@ pub fn save_config(
                 &DeviceFile {
                     server_url: config.server_url.clone(),
                     device_token: None,
+                    terminal_id: config.terminal_id.clone(),
+                    cashier_id: config.cashier_id.clone(),
+                    cashier_name: config.cashier_name.clone(),
+                    company_id: config.company_id.clone(),
                 },
             )?;
             Ok(TokenStorage::Keychain)
@@ -202,6 +262,10 @@ pub fn save_config(
                 &DeviceFile {
                     server_url: config.server_url.clone(),
                     device_token: Some(config.device_token.clone()),
+                    terminal_id: config.terminal_id.clone(),
+                    cashier_id: config.cashier_id.clone(),
+                    cashier_name: config.cashier_name.clone(),
+                    company_id: config.company_id.clone(),
                 },
             )?;
             Ok(TokenStorage::File)
@@ -252,6 +316,9 @@ pub fn status(
         terminal_name: identity.map(|view| view.terminal_name.clone()),
         company_name: identity.map(|view| view.company_name.clone()),
         warehouse_name: identity.and_then(|view| view.warehouse_name.clone()),
+        terminal_id: config.as_ref().and_then(|config| config.terminal_id.clone()),
+        cashier_id: config.as_ref().and_then(|config| config.cashier_id.clone()),
+        cashier_name: config.as_ref().and_then(|config| config.cashier_name.clone()),
     }
 }
 
@@ -266,9 +333,22 @@ pub fn status(
 pub const PRINTER_CONFIG_FILE: &str = "printer.json";
 pub const DEFAULT_PRINTER_PORT: u16 = 9100;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PrinterTransportType {
+    #[default]
+    Tcp,
+    Cups,
+    /// Node perangkat karakter OS untuk USB/Bluetooth (mis. /dev/usb/lp0).
+    Device,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PrinterConfig {
+    #[serde(default)]
+    pub transport: PrinterTransportType,
+    /// TCP host, atau nama antrean CUPS jika transport = cups.
     pub host: String,
     pub port: u16,
     /// Lebar kertas terminal: 58 atau 80 (mm).
@@ -291,6 +371,7 @@ impl PrinterConfig {
 #[serde(rename_all = "camelCase")]
 pub struct PrinterStatusView {
     pub configured: bool,
+    pub transport: PrinterTransportType,
     pub host: Option<String>,
     pub port: Option<u16>,
     pub paper_width_mm: Option<u16>,
@@ -301,9 +382,20 @@ pub fn printer_path(dir: &Path) -> PathBuf {
 }
 
 fn valid_printer(config: &PrinterConfig) -> bool {
-    !config.host.trim().is_empty()
-        && config.port > 0
-        && (config.paper_width_mm == 58 || config.paper_width_mm == 80)
+    let target_valid = match config.transport {
+        PrinterTransportType::Tcp => !config.host.trim().is_empty() && config.port > 0,
+        PrinterTransportType::Cups => valid_cups_queue_name(&config.host),
+        PrinterTransportType::Device => !config.host.trim().is_empty(),
+    };
+    target_valid && (config.paper_width_mm == 58 || config.paper_width_mm == 80)
+}
+
+pub fn valid_cups_queue_name(queue: &str) -> bool {
+    !queue.is_empty()
+        && queue.len() <= 128
+        && queue
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
 }
 
 pub fn load_printer(dir: &Path) -> Option<PrinterConfig> {
@@ -316,10 +408,16 @@ pub fn load_printer(dir: &Path) -> Option<PrinterConfig> {
 }
 
 pub fn save_printer(dir: &Path, config: &PrinterConfig) -> Result<(), String> {
-    if config.host.trim().is_empty() {
+    if config.transport == PrinterTransportType::Tcp && config.host.trim().is_empty() {
         return Err("Host printer belum diisi.".to_string());
     }
-    if config.port == 0 {
+    if config.transport == PrinterTransportType::Cups && !valid_cups_queue_name(&config.host) {
+        return Err("Nama antrean CUPS tidak valid.".to_string());
+    }
+    if config.transport == PrinterTransportType::Device && config.host.trim().is_empty() {
+        return Err("Path perangkat printer (USB/Bluetooth) belum diisi.".to_string());
+    }
+    if config.transport == PrinterTransportType::Tcp && config.port == 0 {
         return Err("Port printer tidak valid.".to_string());
     }
     if config.paper_width_mm != 58 && config.paper_width_mm != 80 {
@@ -333,12 +431,14 @@ pub fn printer_status(config: &Option<PrinterConfig>) -> PrinterStatusView {
     match config {
         Some(config) => PrinterStatusView {
             configured: true,
+            transport: config.transport,
             host: Some(config.host.clone()),
             port: Some(config.port),
             paper_width_mm: Some(config.paper_width_mm),
         },
         None => PrinterStatusView {
             configured: false,
+            transport: PrinterTransportType::Tcp,
             host: None,
             port: None,
             paper_width_mm: None,
@@ -351,10 +451,41 @@ mod tests {
     use super::*;
     use crate::keychain::MemoryStore;
 
+    #[test]
+    fn device_transport_requires_a_path() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config = PrinterConfig {
+            transport: PrinterTransportType::Device,
+            host: "  ".to_string(),
+            port: 9100,
+            paper_width_mm: 80,
+        };
+        assert!(save_printer(dir.path(), &config).is_err());
+    }
+
+    #[test]
+    fn device_transport_roundtrips_through_printer_json() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config = PrinterConfig {
+            transport: PrinterTransportType::Device,
+            host: "/dev/usb/lp0".to_string(),
+            port: 9100,
+            paper_width_mm: 58,
+        };
+        save_printer(dir.path(), &config).expect("save");
+        let loaded = load_printer(dir.path()).expect("some");
+        assert_eq!(loaded.transport, PrinterTransportType::Device);
+        assert_eq!(loaded.host, "/dev/usb/lp0");
+    }
+
     fn sample() -> DeviceConfig {
         DeviceConfig {
             server_url: "http://localhost:3000".to_string(),
             device_token: "token-rahasia-123456".to_string(),
+            terminal_id: Some("terminal-1".to_string()),
+            cashier_id: Some("cashier-1".to_string()),
+            cashier_name: Some("Kasir Uji".to_string()),
+            company_id: Some("company-1".to_string()),
         }
     }
 
@@ -481,6 +612,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         assert!(load_printer(dir.path()).is_none());
         let config = PrinterConfig {
+            transport: PrinterTransportType::Tcp,
             host: "192.168.1.50".to_string(),
             port: 9100,
             paper_width_mm: 58,
@@ -494,6 +626,7 @@ mod tests {
         assert_eq!(view.paper_width_mm, Some(58));
         // Lebar kertas di luar 58/80 ditolak saat simpan…
         let bad = PrinterConfig {
+            transport: PrinterTransportType::Tcp,
             host: "192.168.1.50".to_string(),
             port: 9100,
             paper_width_mm: 76,

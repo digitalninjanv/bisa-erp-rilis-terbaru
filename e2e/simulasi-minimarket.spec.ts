@@ -43,7 +43,7 @@ test("simulasi minimarket: terima tunai 100, jual 1 di POS, stok berkurang tepat
   await expect(page.getByText("Penerimaan barang tersimpan dan stok diperbarui.")).toBeVisible();
   // Dokumen lahir lunas tanpa utang di riwayat.
   await page.goto("/app/gudang/penerimaan/riwayat");
-  await expect(page.getByRole("table").first().locator("tbody tr").first()).toContainText("Lunas (tunai)");
+  await expect(page.getByRole("table").first().locator("tbody tr").first()).toContainText("Lunas");
 
   // 3) Stok bertambah tepat 100.
   const stockAfterReceipt = await readProductStock(page, "Aqua", PRODUCT);
@@ -74,8 +74,13 @@ test("simulasi minimarket: terima tunai 100, jual 1 di POS, stok berkurang tepat
   await expect(payButton).toHaveText(/Bayar Rp\s?4\.000/);
   await payButton.click();
 
-  // 6) Nota penjualan tampil sebagai bukti transaksi selesai.
-  await expect(page).toHaveURL(/\/app\/pos\/nota\//);
+  // 6) Modal sukses menandai transaksi selesai; nota dibuka dari tautannya.
+  await expect(page.getByText("Transaksi berhasil")).toBeVisible();
+  const notaHref = await page
+    .getByRole("link", { name: /Buka detail nota/ })
+    .getAttribute("href");
+  expect(notaHref).toMatch(/\/app\/pos\/nota\//);
+  await page.goto(notaHref!);
   await expect(page.getByText(PRODUCT)).toBeVisible();
   await expect(page.getByText(/Rp\s?4\.000/).first()).toBeVisible();
 

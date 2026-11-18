@@ -171,8 +171,9 @@ describe("A-10/D-21: filter kategori, edit di tempat, dan commit selektif impor 
     });
     expect(all.data.problemRowNumbers).toEqual([3, 4]);
     expect(all.data.incompleteRowNumbers).toEqual([1, 2]);
-    // Hanya baris 5 yang lengkap (SKU, Nama, Barcode, Satuan, harga > 0).
-    expect(all.data.selectableRowNumbers).toEqual([5]);
+    // Baris 1, 2, dan 5 tidak bermasalah sehingga boleh dipilih; field
+    // yang belum lengkap dipetakan ke default domain saat commit.
+    expect(all.data.selectableRowNumbers).toEqual([1, 2, 5]);
 
     const byFilter = async (
       filter:

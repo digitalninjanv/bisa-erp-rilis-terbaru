@@ -26,3 +26,28 @@ test("daftar POS memakai kartu di mobile tanpa overflow", async ({ page }) => {
     await expect(page.locator("table.data-table").first()).toBeHidden();
   }
 });
+
+test("kategori produk menyaring katalog dan bisa dikembalikan ke semua", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/app/pos");
+  const semua = page.getByRole("button", { name: "Semua", exact: true });
+  const minuman = page.getByRole("button", { name: "Minuman", exact: true });
+  const baterai = page.getByRole("button", { name: /Baterai ABC AA 4pcs/ });
+  // Ultra Milk ada di kategori Minuman tetapi di luar 24 produk pertama
+  // "Semua" — hanya muncul setelah filter benar-benar diterapkan.
+  const ultraMilk = page.getByRole("button", { name: /Ultra Milk Coklat 250ml/ });
+  await expect(semua).toHaveAttribute("aria-pressed", "true");
+  await expect(baterai).toBeVisible();
+  await expect(ultraMilk).toHaveCount(0);
+  await expect(minuman).toBeVisible();
+  await minuman.click();
+  await expect(minuman).toHaveAttribute("aria-pressed", "true");
+  await expect(semua).toHaveAttribute("aria-pressed", "false");
+  // Filter benar-benar memuat ulang katalog: Baterai keluar, Ultra Milk masuk.
+  await expect(ultraMilk).toBeVisible();
+  await expect(baterai).toHaveCount(0);
+  await semua.click();
+  await expect(semua).toHaveAttribute("aria-pressed", "true");
+  await expect(baterai).toBeVisible();
+  await expect(ultraMilk).toHaveCount(0);
+});

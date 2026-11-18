@@ -36,6 +36,13 @@ pub struct DisplayCartLine {
     /// Harga satuan sebagai string desimal — persis representasi
     /// snapshot (`LocalProduct.salePrice`), tanpa lewat float.
     pub unit_price: String,
+    /// Total baris dari quote kasir sesudah diskon. `None` menjaga
+    /// kompatibilitas dengan payload lama dan pemanggil pratinjau.
+    #[serde(default)]
+    pub line_total: Option<String>,
+    /// Diskon total pada baris (harga kelompok + diskon manual).
+    #[serde(default)]
+    pub discount_amount: Option<String>,
 }
 
 /// Fase yang dilaporkan jendela utama: keranjang sedang dirakit
@@ -53,6 +60,9 @@ pub struct DisplayInput {
     pub store_name: Option<String>,
     pub phase: DisplayPhase,
     pub lines: Vec<DisplayCartLine>,
+    /// Total quote kasir termasuk pajak dan pembulatan.
+    #[serde(default)]
+    pub cart_total: Option<String>,
     /// Total terbayar (string desimal) — hanya dipakai fase Paid.
     pub paid_total: Option<String>,
 }
@@ -79,6 +89,7 @@ pub struct DisplayLineView {
     pub qty_text: String,
     pub unit_price_text: String,
     pub line_total_text: String,
+    pub discount_text: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -162,18 +173,35 @@ pub fn map_display(input: &DisplayInput) -> DisplayPayload {
     let mut views: Vec<DisplayLineView> = Vec::new();
     for line in &effective {
         let unit_scaled = parse_scaled(&line.unit_price);
-        let line_total = mul_div_round(unit_scaled * f64_scaled(line.qty), 1, SCALE);
+        let line_total = line
+            .line_total
+            .as_deref()
+            .map(parse_scaled)
+            .unwrap_or_else(|| mul_div_round(unit_scaled * f64_scaled(line.qty), 1, SCALE));
         total_scaled += line_total;
         total_qty += line.qty;
         if views.len() < MAX_DISPLAY_LINES {
+            let discount_scaled = line
+                .discount_amount
+                .as_deref()
+                .map(parse_scaled)
+                .unwrap_or(0);
             views.push(DisplayLineView {
                 name: line.name.trim().to_string(),
                 qty_text: format_qty(line.qty),
                 unit_price_text: format_rp(unit_scaled),
                 line_total_text: format_rp(line_total),
+                discount_text: (discount_scaled > 0)
+                    .then(|| format!("Diskon {}", format_rp(discount_scaled))),
             });
         }
     }
+
+    let display_total = input
+        .cart_total
+        .as_deref()
+        .map(parse_scaled)
+        .unwrap_or(total_scaled);
 
     DisplayPayload {
         mode: DisplayMode::Cart,
@@ -182,7 +210,7 @@ pub fn map_display(input: &DisplayInput) -> DisplayPayload {
         more_lines: effective.len() - views.len(),
         lines: views,
         total_qty_text: format_qty(total_qty),
-        total_text: format_rp(total_scaled),
+        total_text: format_rp(display_total),
     }
 }
 
@@ -210,6 +238,8 @@ mod tests {
             name: name.to_string(),
             qty,
             unit_price: unit_price.to_string(),
+            line_total: None,
+            discount_amount: None,
         }
     }
 
@@ -218,6 +248,7 @@ mod tests {
             store_name: Some("Bisa Minimarket".to_string()),
             phase: DisplayPhase::Cart,
             lines,
+            cart_total: None,
             paid_total: None,
         }
     }

@@ -712,3 +712,19 @@
     padding: 0 !important;
   }
 }
+
+
+/* Terminal POS bukan dokumen cetak. Ctrl+P di /app/pos tidak boleh
+   mencetak grid produk; nota selalu lewat dialog transaksi/popup.
+   Ditaruh sebagai blok @media print tersendiri agar tidak digabung
+   optimizer dengan aturan cetak lain. */
+@media print {
+  .pos-terminal-root,
+  [data-slot="dialog-overlay"],
+  [data-slot="dialog-content"] {
+    display: none !important;
+  }
+  .pos-print-hint {
+    display: block !important;
+  }
+}

@@ -332,3 +332,20 @@ export const outbox = pgTable(
   },
   (t) => [index("outbox_pending_idx").on(t.processedAt, t.createdAt)],
 );
+
+/** Promosi POS sederhana untuk terminal desktop (diskon baris). */
+export const posPromotions = pgTable(
+  "pos_promotions",
+  {
+    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    companyId: text("company_id").notNull(),
+    name: text("name").notNull(),
+    type: text("type").notNull().default("percent"),
+    value: numeric("value", { precision: 19, scale: 4 }).notNull().default("0"),
+    minSubtotal: numeric("min_subtotal", { precision: 19, scale: 4 }).notNull().default("0"),
+    productId: uuid("product_id"),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("pos_promotions_company_active_idx").on(t.companyId, t.active)],
+);

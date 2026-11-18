@@ -33,11 +33,23 @@ export function SummaryStrip({
   className?: string;
   columns?: 4 | 5;
 }) {
+  // Isi lebar strip dengan jumlah item yang benar-benar ada. Sebelumnya
+  // strip 3 item selalu menyisakan satu sel kosong di desktop.
+  const desktopColumns =
+    items.length >= columns
+      ? columns === 5
+        ? "lg:grid-cols-5"
+        : "lg:grid-cols-4"
+      : items.length === 3
+        ? "lg:grid-cols-3"
+        : items.length === 2
+          ? "lg:grid-cols-2"
+          : "lg:grid-cols-1";
   return (
     <div
       className={cn(
         "grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border",
-        columns === 5 ? "lg:grid-cols-5" : "lg:grid-cols-4",
+        desktopColumns,
         className,
       )}
     >
@@ -61,7 +73,7 @@ export function SummaryStrip({
           </>
         );
         const spanClass =
-          columns === 5 && index === items.length - 1 ? "max-lg:col-span-2" : null;
+          items.length % 2 === 1 && index === items.length - 1 ? "max-lg:col-span-2" : null;
         return item.href ? (
           <Link
             key={item.label}

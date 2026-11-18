@@ -312,7 +312,6 @@ export function useTerminalCheckout(params: {
       }
 
       setLastSale({ id: result.data.id, number: result.data.number });
-      toast.success(`Transaksi ${result.data.number} tersimpan.`);
       // D-10: checkout sukses — snapshot keranjang lokal dibersihkan
       // agar transaksi yang sudah terbayar tidak bangkit lagi.
       clearStoredCart(storageKey);
@@ -340,6 +339,7 @@ export function useTerminalCheckout(params: {
           change: result.data.change,
         });
       } else {
+        toast.success(`Transaksi ${result.data.number} tersimpan.`);
         router.push(`/app/pos/nota/${result.data.id}?autoprint=1`);
       }
     } catch {

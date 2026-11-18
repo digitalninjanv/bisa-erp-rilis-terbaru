@@ -34,7 +34,7 @@ export async function voidSale(tx: Tx, input: VoidSaleInput) {
 
   const { reversedArTotal, reversedArCount } = await reverseVoidedSaleReceivables(tx, input, sale);
 
-  const { cashTotal, refundSessionId, refundSessionSource } = await recordVoidCashRefund(tx, input, sale);
+  const { refundSessionId, refundSessionSource } = await recordVoidCashRefund(tx, input, sale);
 
   await restoreVoidedSaleCredit(tx, input, sale);
 
@@ -80,17 +80,10 @@ export async function voidSale(tx: Tx, input: VoidSaleInput) {
       // FIX-P1 (AK3-01): penerimaan piutang yang ikut dibatalkan.
       reversedReceivablePayments: reversedArCount,
       reversedReceivableTotal: toDb(reversedArTotal),
-      // T3R-2: sesi tujuan refund tunai selalu tercatat; bila tidak ada
-      // sesi yang sah, refundSessionNote menjelaskan ketiadaannya agar
-      // selisih laci dapat ditelusur dari audit, bukan hilang senyap.
+      // T3R-2: setiap refund tunai yang berhasil di-void sudah tercatat
+      // pada sesi kas terbuka; bila tidak ada sesi yang sah, void gagal.
       refundSessionId,
       refundSessionSource,
-      ...(cashTotal.gt(0) && !refundSessionId
-        ? {
-            refundSessionNote:
-              "Refund tunai tidak dicatat ke sesi kas: sesi asal sudah ditutup dan pemroses void tidak memiliki sesi terbuka.",
-          }
-        : {}),
     },
   });
 }
@@ -304,8 +297,8 @@ async function reverseVoidedSaleReceivables(tx: Tx, input: VoidSaleInput, sale: 
 /**
  * FIX-ARS Tahap 4: fase dari voidSale — badan dipindah apa adanya;
  * catat refund tunai ke sesi yang sah (T3R-2): sesi asal bila
- * masih terbuka, else sesi terbuka pemroses, else tanpa mutasi
- * sesi (dicatat di audit orkestrator).
+ * masih terbuka, atau sesi terbuka pemroses. Jika keduanya tidak
+ * tersedia, gagalkan void agar tidak ada refund laci yang hilang.
  */
 
 
@@ -315,9 +308,9 @@ async function recordVoidCashRefund(tx: Tx, input: VoidSaleInput, sale: SaleRow)
   // yang terlambat mengubah sesi final secara retroaktif dan merusak
   // kecocokan dengan jurnal selisihnya. Ikuti pola D-8 pada retur:
   // sesi asal hanya dipakai bila masih terbuka; bila sudah ditutup,
-  // refund dicatat ke sesi terbuka milik pemroses void; bila pemroses
-  // pun tidak punya sesi terbuka, void tetap berjalan TANPA mutasi
-  // sesi dan audit di bawah mencatat keterangan itu.
+  // refund dicatat ke sesi terbuka milik pemroses void. Jika pemroses
+  // pun tidak punya sesi terbuka, gagalkan transaksi: semua perubahan
+  // sebelumnya pada tx ikut dibatalkan oleh batas transaksi pemanggil.
   const cashPaid = await tx
     .select({ amount: salePayments.amount, methodType: paymentMethods.type })
     .from(salePayments)
@@ -360,18 +353,22 @@ async function recordVoidCashRefund(tx: Tx, input: VoidSaleInput, sale: SaleRow)
         refundSessionSource = "processor";
       }
     }
-    if (refundSessionId) {
-      await tx.insert(cashMovements).values({
-        companyId: input.companyId,
-        sessionId: refundSessionId,
-        type: "refund",
-        amount: toDb(cashTotal.neg()),
-        referenceType: "sale_void",
-        referenceId: sale.id,
-        notes: input.reason,
-        createdBy: input.userId,
-      });
+    if (!refundSessionId) {
+      throw new AppError(
+        "INVALID_STATE",
+        "Void ditolak: refund tunai memerlukan sesi kas terbuka. Sesi asal tidak tersedia atau sudah ditutup, dan Anda belum memiliki sesi terbuka. Buka sesi kas Anda lalu ulangi void; penjualan belum dibatalkan.",
+      );
     }
+    await tx.insert(cashMovements).values({
+      companyId: input.companyId,
+      sessionId: refundSessionId,
+      type: "refund",
+      amount: toDb(cashTotal.neg()),
+      referenceType: "sale_void",
+      referenceId: sale.id,
+      notes: input.reason,
+      createdBy: input.userId,
+    });
   }
   return { cashTotal, refundSessionId, refundSessionSource };
 }

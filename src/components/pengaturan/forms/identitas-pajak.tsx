@@ -287,7 +287,7 @@ export function SettingsForm({
           </span>
         </label>
         <label className="space-y-1">
-          <span className={labelClass}>Pembulatan total kasir</span>
+          <span className={labelClass}>Pembulatan total transaksi</span>
           <select value={form.roundingMode} onChange={(event) => setForm({ ...form, roundingMode: event.target.value })} className={fieldClass}>
             <option value="none">Tidak ada</option>
             <option value="nearest_100">Terdekat Rp100</option>

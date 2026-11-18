@@ -163,7 +163,7 @@ export function CustomerGroupManager({
                   {group.roundingStep > 0
                     ? ` ${group.roundingDirection === "down" ? "ke bawah" : group.roundingDirection === "up" ? "ke atas" : "terdekat"}`
                     : ""}
-                  {group.roundCashTotal ? " · total tunai dibulatkan" : ""}
+                  {group.roundCashTotal ? " · total transaksi dibulatkan" : ""}
                 </p>
               </div>
               <div className="flex items-center gap-1.5">
@@ -269,7 +269,7 @@ export function CustomerGroupManager({
                   checked={form.roundCashTotal}
                   onChange={(event) => setForm({ ...form, roundCashTotal: event.target.checked })}
                 />
-                Bulatkan total tunai
+                Bulatkan total transaksi
               </label>
             </div>
         </Modal>

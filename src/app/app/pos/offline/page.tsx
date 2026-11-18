@@ -1,4 +1,3 @@
-import { CloudOff } from "lucide-react";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { requirePermissionPage } from "@/lib/session";
 import { can } from "@/lib/permissions";

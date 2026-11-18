@@ -54,7 +54,7 @@ Setiap query bisnis harus lewat `withCompany(companyId, fn)` atau `withCompanyRe
 - POS memakai data pelanggan hanya untuk penjualan utang (opsi **Utang**): pelanggan dan jatuh tempo wajib, dan sisa limit kredit diperiksa. Penjualan lunas tidak memilih pelanggan.
 - Setiap produk dalam kelompok dapat memakai aturan: **normal**, **diskon persen**, atau **harga tetap**.
 - Harga kelompok dibulatkan memakai pengaturan kelompok: kelipatan (0/100/500/1.000) dan arah (ke bawah, ke atas, terdekat). Jadi harga seperti Rp 61.750 bisa menjadi Rp 61.500.
-- Opsi **Bulatkan total tunai** membulatkan total akhir transaksi; jika tidak dicentang, total memakai nilai apa adanya.
+- Opsi **Bulatkan total transaksi** membulatkan total akhir transaksi; jika tidak dicentang, total memakai nilai apa adanya.
 - Selisih harga normal dan harga kelompok dicatat sebagai diskon penjualan. Akun diskon dapat diatur per kelompok, atau mengikuti pemetaan akun global.
 - Kelola di **Pengaturan → Kelompok harga** (`/app/pengaturan?tab=grup`). Kasir memilih kelompok di layar POS; ringkasan kelompok ada di **POS → Kelompok harga**.
 

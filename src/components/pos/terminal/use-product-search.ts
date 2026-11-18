@@ -17,9 +17,10 @@ const PRODUCT_PAGE_SIZE = 24;
 export function useProductSearch(params: {
   initialProducts: ProductOption[];
   selectedWarehouse: string;
+  selectedCategory: string;
   setCache: Dispatch<SetStateAction<Record<string, ProductOption>>>;
 }) {
-  const { initialProducts, selectedWarehouse, setCache } = params;
+  const { initialProducts, selectedWarehouse, selectedCategory, setCache } = params;
   const [results, setResults] = useState<ProductOption[]>(initialProducts);
   const [search, setSearch] = useState("");
   // POS-1: kisi produk berpaginasi — `results` selalu berisi halaman
@@ -38,12 +39,13 @@ export function useProductSearch(params: {
   // yang kembali menggantikan halaman aktif dan menandai apakah masih
   // ada halaman berikutnya (halaman penuh = mungkin masih ada).
   const runSearch = useCallback(
-    async (term: string, pageNum: number): Promise<ProductOption[]> => {
+    async (term: string, pageNum: number, categoryId = selectedCategory): Promise<ProductOption[]> => {
       const seq = ++searchSeq.current;
       const result = await searchProductsAction(
         term,
         selectedWarehouse,
         (pageNum - 1) * PRODUCT_PAGE_SIZE,
+        categoryId,
       );
       if (!result.ok) {
         toast.error(result.message);
@@ -77,7 +79,7 @@ export function useProductSearch(params: {
       }
       return mapped;
     },
-    [selectedWarehouse, setCache],
+    [selectedWarehouse, selectedCategory, setCache],
   );
 
   // POS-ERR-01: kegagalan jaringan tidak boleh membiarkan indikator
@@ -107,7 +109,9 @@ export function useProductSearch(params: {
     async (code: string): Promise<ProductOption | null> => {
       setSearching(true);
       try {
-        const fresh = await runSearch(code, 1);
+        // Pindai barcode selalu lintas kategori — filter chip tidak
+        // boleh membuat barang yang dipindai tidak ditemukan.
+        const fresh = await runSearch(code, 1, "");
         return (
           fresh.find((p) => p.barcode === code) ??
           fresh.find((p) => p.matchedPackagingId) ??

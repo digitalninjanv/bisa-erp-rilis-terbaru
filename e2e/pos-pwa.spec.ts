@@ -173,7 +173,7 @@ test("T6B: reload saat jaringan mati membuka terminal dari cache; penjualan meng
   await expect(page.getByText("Sesi kas terbuka")).toBeVisible();
   await addProduct(page, "Aqua Air Mineral 600ml", 1);
   await (await expectPayTotal(page, "4\\.000")).click();
-  await expect(page).toHaveURL(/\/app\/pos\/nota\//);
+  await expect(page.getByText("Transaksi berhasil")).toBeVisible();
   await page.goto("/app/pos");
   await expect(page.getByText("Sesi kas terbuka")).toBeVisible();
   const stockBefore = await stockOfAqua();

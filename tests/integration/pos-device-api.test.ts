@@ -39,6 +39,7 @@ import {
 import { GET as snapshotGET } from "@/app/api/pos/snapshot/route";
 import { POST as syncPOST } from "@/app/api/pos/sync/route";
 import { POST as pairPOST } from "@/app/api/pos/pair/route";
+import { POST as transactionsPOST } from "@/app/api/pos/desktop/transactions/route";
 import { GET as updateGET } from "@/app/api/pos/update/[target]/[arch]/[version]/route";
 import { GET as updateDownloadGET } from "@/app/api/pos/update/download/[target]/[arch]/route";
 import { wipeCompanyFixture } from "../helpers/wipe-company";
@@ -513,6 +514,104 @@ describe("API perangkat POS /api/pos/*", () => {
       .where(eq(journalEntries.companyId, ORG));
     expect(sessionsAfter).toHaveLength(sessionsBefore.length);
     expect(journalsAfter).toHaveLength(journalsBefore.length);
+  });
+});
+
+describe("aksi void perangkat POS", () => {
+  it("mengulang void dengan kunci sama tanpa mengulang posting dan menolak rincian berbeda", async () => {
+    const [voidProduct] = await adminDb
+      .insert(products)
+      .values({
+        companyId: ORG,
+        sku: `API-VOID-${crypto.randomUUID()}`,
+        name: "Produk uji void idempoten",
+        salePrice: "15000",
+        costPrice: "10000",
+        trackStock: false,
+      })
+      .returning();
+    const clientKey = `api-void-${crypto.randomUUID()}`;
+    const saleResponse = await syncPOST(request("/api/pos/sync", {
+      token: TOKEN,
+      body: {
+        items: [{
+          clientKey,
+          warehouseId: whId,
+          date: todayISO(),
+          lines: [{ productId: voidProduct.id, qty: 1 }],
+          payments: [{ methodId, amount: 15000, tendered: 15000 }],
+          queuedAt: new Date().toISOString(),
+        }],
+      },
+    }));
+    expect(saleResponse.status).toBe(200);
+    const saleBody = await saleResponse.json();
+    expect(saleBody.data[0].status).toBe("synced");
+    const saleId = saleBody.data[0].saleId as string;
+    const idempotencyKey = crypto.randomUUID();
+    const payload = {
+      action: "void",
+      saleId,
+      idempotencyKey,
+      reason: "Salah input kasir",
+    };
+
+    const first = await transactionsPOST(request("/api/pos/desktop/transactions", { token: TOKEN, body: payload }));
+    expect(first.status).toBe(200);
+    expect((await first.json()).data.status).toBe("void");
+
+    const retry = await transactionsPOST(request("/api/pos/desktop/transactions", { token: TOKEN, body: payload }));
+    expect(retry.status).toBe(200);
+    expect((await retry.json()).data.status).toBe("void");
+
+    const changedRequest = await transactionsPOST(request("/api/pos/desktop/transactions", {
+      token: TOKEN,
+      body: { ...payload, reason: "Alasan berbeda" },
+    }));
+    expect(changedRequest.status).toBe(409);
+
+    const [sale] = await adminDb
+      .select({ status: sales.status })
+      .from(sales)
+      .where(and(eq(sales.companyId, ORG), eq(sales.id, saleId)));
+    expect(sale.status).toBe("void");
+    const voidAudits = await adminDb
+      .select()
+      .from(auditLog)
+      .where(and(
+        eq(auditLog.companyId, ORG),
+        eq(auditLog.entityId, saleId),
+        eq(auditLog.action, "pos.void"),
+      ));
+    expect(voidAudits).toHaveLength(1);
+
+    // Older installed desktop builds do not yet send an idempotency key.
+    // Keep that request shape accepted during rollout of the new client.
+    const legacyClientKey = `api-void-legacy-${crypto.randomUUID()}`;
+    const legacySaleResponse = await syncPOST(request("/api/pos/sync", {
+      token: TOKEN,
+      body: {
+        items: [{
+          clientKey: legacyClientKey,
+          warehouseId: whId,
+          date: todayISO(),
+          lines: [{ productId: voidProduct.id, qty: 1 }],
+          payments: [{ methodId, amount: 15000, tendered: 15000 }],
+          queuedAt: new Date().toISOString(),
+        }],
+      },
+    }));
+    const legacySaleBody = await legacySaleResponse.json();
+    expect(legacySaleBody.data[0].status).toBe("synced");
+    const legacyVoid = await transactionsPOST(request("/api/pos/desktop/transactions", {
+      token: TOKEN,
+      body: {
+        action: "void",
+        saleId: legacySaleBody.data[0].saleId,
+        reason: "Koreksi sebelum update desktop",
+      },
+    }));
+    expect(legacyVoid.status).toBe(200);
   });
 });
 

@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, ArrowDownToLine, ArrowUpFromLine, Lock, Unlock } from "lucide-react";
 import { toast } from "sonner";
 import { formatIDR } from "@/lib/money";
+import { newUuid } from "@/lib/uuid";
 import { MoneyInput } from "@/components/money-input";
 import { IDR_CASH_DENOMINATIONS, denominationTotal } from "@/lib/pos/denominations";
 import {
@@ -61,6 +62,9 @@ export function SessionManager({
   // yang dikirim ke aksi sama seperti angka mentah sebelumnya.
   const [openingValid, setOpeningValid] = useState(true);
   const [moveValid, setMoveValid] = useState(true);
+  // Satu kunci per niat mutasi; dipertahankan sampai sukses agar retry
+  // setelah respons hilang tidak menggandakan setoran/penarikan.
+  const moveKeyRef = useRef<string | null>(null);
 
   async function open() {
     if (!openingValid) {
@@ -68,39 +72,45 @@ export function SessionManager({
       return;
     }
     setBusy("open");
-    const result = await openSessionAction({ openingCash });
-    setBusy(null);
-    if (!result.ok) {
-      toast.error(result.message);
-      return;
+    try {
+      const result = await openSessionAction({ openingCash });
+      if (!result.ok) {
+        toast.error(result.message);
+        return;
+      }
+      toast.success("Sesi kas dibuka.");
+      router.refresh();
+    } catch {
+      toast.error("Koneksi gagal. Periksa jaringan lalu coba lagi.");
+    } finally {
+      setBusy(null);
     }
-    toast.success("Sesi kas dibuka.");
-    router.refresh();
   }
 
   async function close() {
-    if (heldCount > 0) {
-      toast.error(`Masih terdapat ${heldCount} pesanan tertahan. Selesaikan atau batalkan pesanan sebelum menutup sesi.`);
-      return;
-    }
     setBusy("close");
-    const result = await closeSessionAction({
-      sessionId: session!.id,
-      countedCash: String(denominationTotal(denomCounts)),
-      notes: notes || undefined,
-      differenceReason: differenceReason.trim() || undefined,
-    });
-    setBusy(null);
-    if (!result.ok) {
-      toast.error(result.message);
-      return;
+    try {
+      const result = await closeSessionAction({
+        sessionId: session!.id,
+        countedCash: String(denominationTotal(denomCounts)),
+        notes: notes || undefined,
+        differenceReason: differenceReason.trim() || undefined,
+      });
+      if (!result.ok) {
+        toast.error(result.message);
+        return;
+      }
+      toast.success("Sesi kas ditutup.");
+      setDenomCounts({});
+      setDifferenceReason("");
+      setNotes("");
+      setCloseStep("hitung");
+      router.refresh();
+    } catch {
+      toast.error("Koneksi gagal. Sesi belum ditutup; periksa jaringan lalu coba lagi.");
+    } finally {
+      setBusy(null);
     }
-    toast.success("Sesi kas ditutup.");
-    setDenomCounts({});
-    setDifferenceReason("");
-    setNotes("");
-    setCloseStep("hitung");
-    router.refresh();
   }
 
   async function move(type: "deposit" | "withdrawal") {
@@ -113,22 +123,31 @@ export function SessionManager({
       toast.error("Nominal harus lebih dari nol.");
       return;
     }
+    const idempotencyKey = moveKeyRef.current ?? newUuid();
+    moveKeyRef.current = idempotencyKey;
     setBusy(type);
-    const result = await cashMovementAction({
-      sessionId: session!.id,
-      type,
-      amount,
-      notes: moveNotes || undefined,
-    });
-    setBusy(null);
-    if (!result.ok) {
-      toast.error(result.message);
-      return;
+    try {
+      const result = await cashMovementAction({
+        sessionId: session!.id,
+        type,
+        amount,
+        notes: moveNotes || undefined,
+        idempotencyKey,
+      });
+      if (!result.ok) {
+        toast.error(result.message);
+        return;
+      }
+      moveKeyRef.current = null;
+      toast.success(type === "deposit" ? "Setoran ke bank dicatat." : "Penarikan dari bank dicatat.");
+      setMoveAmount("");
+      setMoveNotes("");
+      router.refresh();
+    } catch {
+      toast.error("Koneksi gagal. Mutasi belum tentu tercatat — periksa mutasi kas sebelum mengulang.");
+    } finally {
+      setBusy(null);
     }
-    toast.success(type === "deposit" ? "Setoran ke bank dicatat." : "Penarikan dari bank dicatat.");
-    setMoveAmount("");
-    setMoveNotes("");
-    router.refresh();
   }
 
   if (!session) {
@@ -223,7 +242,7 @@ export function SessionManager({
                   <div className="flex items-center gap-2">
                     <AlertTriangle className="size-4 shrink-0 text-amber-600 dark:text-amber-400" />
                     <span className="text-[12px] font-medium">
-                      Terdapat {heldCount} pesanan tertahan (held). Selesaikan atau batalkan pesanan sebelum menutup sesi kas.
+                      Ada {heldCount} pesanan tertahan di seluruh perusahaan. Pesanan kasir lain tidak menghalangi sesi ini; jika Anda memiliki pesanan tertahan, server akan memberi jumlah dan instruksi untuk menyelesaikannya.
                     </span>
                   </div>
                   <Link
@@ -338,7 +357,7 @@ export function SessionManager({
                   <button
                     type="button"
                     onClick={close}
-                    disabled={busy === "close" || (reasonRequired && differenceReason.trim() === "") || heldCount > 0}
+                    disabled={busy === "close" || (reasonRequired && differenceReason.trim() === "")}
                     className="inline-flex h-9 items-center gap-1.5 rounded-md bg-foreground px-4 text-[12px] font-semibold text-background hover:bg-foreground/90 disabled:opacity-50"
                   >
                     <Lock className="size-3.5" /> {busy === "close" ? "Menutup…" : "Tutup sesi"}

@@ -465,6 +465,8 @@ export async function searchProducts(
     limit?: number;
     offset?: number;
     includeCost?: boolean;
+    /** Filter kategori untuk navigasi cepat terminal (opsional). */
+    categoryId?: string;
   },
 ) {
   const q = input.q.trim();
@@ -502,7 +504,13 @@ export async function searchProducts(
         .from(products)
         .leftJoin(units, eq(products.unitId, units.id))
         .leftJoin(categories, eq(products.categoryId, categories.id))
-        .where(and(eq(products.companyId, input.companyId), eq(products.isActive, true)))
+        .where(
+          and(
+            eq(products.companyId, input.companyId),
+            eq(products.isActive, true),
+            input.categoryId ? eq(products.categoryId, input.categoryId) : undefined,
+          ),
+        )
         .orderBy(asc(products.name))
         .limit(input.limit ?? 20)
         .offset(input.offset ?? 0)
@@ -515,6 +523,7 @@ export async function searchProducts(
           and(
             eq(products.companyId, input.companyId),
             eq(products.isActive, true),
+            input.categoryId ? eq(products.categoryId, input.categoryId) : undefined,
             or(
               eq(products.barcode, q),
               ilike(products.sku, `%${q}%`),

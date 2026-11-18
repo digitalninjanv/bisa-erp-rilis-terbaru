@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { ReceiptText } from "lucide-react";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { listSales, getSalesSummary } from "@/server/reports";
 import { requirePermissionPage } from "@/lib/session";

@@ -50,9 +50,14 @@ export type OfflineSalePayment = {
 export type OfflineSalePayload = {
   clientKey: string;
   warehouseId: string;
+  /** Pesanan server yang sedang dilanjutkan. Dihapus hanya setelah
+   *  penjualan offline yang merujuknya berhasil diposting di server. */
+  heldSaleId?: string | null;
   groupId?: string | null;
   customerId?: string | null;
   dueDate?: string | null;
+  /** Reservasi stok yang dipenuhi transaksi ini (POS desktop). */
+  reservationId?: string | null;
   date: string;
   lines: OfflineSaleLine[];
   payments: OfflineSalePayment[];
@@ -434,6 +439,8 @@ export function computeLocalOfflineQuote(input: {
     roundingDirection: RoundDirection;
     roundCashTotal: boolean;
   } | null;
+  /** Harga produk kelompok yang ikut snapshot lokal, keyed by product id. */
+  priceRules?: Record<string, { type: "percent" | "fixed"; value: string | number }>;
   /** Tarif pajak efektif perusahaan (0 bila saklar pajak mati). */
   taxRate: number;
   companyRoundingMode: RoundingMode | string;
@@ -464,9 +471,24 @@ export function computeLocalOfflineQuote(input: {
         : d(product.salePrice)
       : d(product.salePrice);
     const gross = qty.mul(unitPrice);
-    // Harga kelompok per produk tidak diketahui klien (lihat kepala
-    // fungsi): groupUnitPrice = harga master, groupDiscount = 0.
-    const groupUnitPrice = unitPrice;
+    let groupUnitPrice = unitPrice;
+    let appliedDiscountType: DiscountType | null = line.discountType ?? null;
+    let appliedDiscountValue = line.discountValue ?? 0;
+    let groupDiscount = d(0);
+    const rule = input.group && !pack ? input.priceRules?.[line.productId] : undefined;
+    if (rule && d(rule.value).gte(0)) {
+      const candidate = rule.type === "percent"
+        ? unitPrice.mul(d(100).minus(rule.value)).div(100)
+        : d(rule.value);
+      const bounded = D.min(D.max(candidate, 0), unitPrice);
+      groupUnitPrice = D.min(
+        D.max(roundTo(bounded, input.group!.roundingStep, input.group!.roundingDirection), 0),
+        unitPrice,
+      );
+      groupDiscount = unitPrice.minus(groupUnitPrice).mul(qty);
+      appliedDiscountType = rule.type === "percent" ? "percent" : "nominal";
+      appliedDiscountValue = Number(rule.value);
+    }
     let manualDiscount = d(0);
     if (line.discountType && d(line.discountValue ?? 0).gt(0)) {
       manualDiscount = lineDiscount({
@@ -475,8 +497,10 @@ export function computeLocalOfflineQuote(input: {
         type: line.discountType,
         value: line.discountValue,
       });
+      appliedDiscountType = line.discountType;
+      appliedDiscountValue = line.discountValue ?? 0;
     }
-    const discount = D.min(D.max(manualDiscount, 0), gross);
+    const discount = D.min(D.max(groupDiscount.plus(manualDiscount), 0), gross);
     const net = gross.minus(discount);
     const tax = lineTax({ net, rate: taxRate, inclusive: true });
     subtotal = subtotal.plus(gross);
@@ -494,11 +518,11 @@ export function computeLocalOfflineQuote(input: {
       unitPrice: unitPrice.toNumber(),
       groupUnitPrice: groupUnitPrice.toNumber(),
       gross: gross.toNumber(),
-      discountType: line.discountType ?? null,
-      discountValue: line.discountValue ?? 0,
+      discountType: appliedDiscountType,
+      discountValue: appliedDiscountValue,
       discountAmount: discount.toNumber(),
-      groupDiscountAmount: 0,
-      manualDiscountAmount: discount.toNumber(),
+      groupDiscountAmount: groupDiscount.toNumber(),
+      manualDiscountAmount: manualDiscount.toNumber(),
       taxRate: taxRate.toNumber(),
       taxAmount: tax.toNumber(),
       lineTotal: net.toNumber(),
@@ -518,9 +542,10 @@ export function computeLocalOfflineQuote(input: {
   const companyMode = input.companyRoundingMode as RoundingMode;
   const cashRounding = groupCashRounding ?? cashRoundingForMode(companyMode);
   const preRounding = subtotal.minus(discountTotal);
-  const rounded = groupCashRounding
+  const roundedRaw = groupCashRounding
     ? roundTo(preRounding, groupCashRounding.step, groupCashRounding.direction)
     : roundTotal(preRounding, companyMode).rounded;
+  const rounded = preRounding.gt(0) && roundedRaw.lte(0) ? preRounding : roundedRaw;
   const adjustment = rounded.minus(preRounding);
 
   return {

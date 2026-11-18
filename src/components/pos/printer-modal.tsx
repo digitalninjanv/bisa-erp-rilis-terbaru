@@ -69,7 +69,7 @@ export function PrinterStatusButton({ compact = false }: { compact?: boolean }) 
         aria-label={connected ? `Printer siap: ${prefs.name} (${prefs.paperWidth})` : prefs.type === "kiosk" ? "Mode cetak sistem aktif" : "Hubungkan printer kasir"}
         className={cn(
           compact
-            ? "grid size-10 place-items-center rounded-md border transition-colors"
+            ? "grid size-11 place-items-center rounded-md border transition-colors"
             : "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[11px] font-medium transition-colors",
           connected
             ? "border-tone-teal/40 bg-tone-teal-soft/40 text-tone-teal hover:bg-tone-teal-soft/60"
@@ -102,18 +102,15 @@ export function PrinterConfigModal({ onClose }: { onClose: () => void }) {
   const [connecting, setConnecting] = useState(false);
   const [testing, setTesting] = useState(false);
   const [tab, setTab] = useState<"thermal" | "kiosk">("thermal");
-  const [isSecure, setIsSecure] = useState(true);
+  // Nilai awal dihitung sekali saat mount; tidak ada setState di efek.
+  const [isSecure] = useState(
+    () => typeof window === "undefined" || Boolean(window.isSecureContext),
+  );
   const [connected, setConnected] = useState(isPrinterConnected());
 
   const bluetoothOk = isBluetoothSupported();
   const usbOk = isUsbSupported();
   const serialOk = isSerialSupported();
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      setIsSecure(window.isSecureContext ?? false);
-    }
-  }, []);
 
   useEffect(() => {
     return subscribePrinterStatus((status) => {

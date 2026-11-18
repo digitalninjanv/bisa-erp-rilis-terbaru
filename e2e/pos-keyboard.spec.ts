@@ -90,5 +90,10 @@ test("campuran: Bayar nonaktif selama sisa > 0, tender tampil terformat, F9 meny
   await expect(payButton).toBeEnabled();
   await expect(payButton).toHaveText(/Bayar Rp\s?4\.000/);
   await page.keyboard.press("F9");
-  await expect(page).toHaveURL(/\/app\/pos\/nota\//);
+  // Pola native 2026: terminal tidak ditinggalkan — modal sukses tampil
+  // dan kasir memilih Transaksi Baru atau membuka detail nota.
+  await expect(page.getByText("Transaksi berhasil")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Cetak nota" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Tutup dialog transaksi berhasil" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Transaksi baru/ })).toBeVisible();
 });

@@ -39,10 +39,11 @@
 use std::collections::HashMap;
 use std::io::Write;
 use std::net::{TcpStream, ToSocketAddrs};
+use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use rusqlite::Connection;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::posdb::{
     self, PrintJob, ReceiptSettings, SaleInput,
@@ -351,7 +352,7 @@ pub fn drawer_kick_bytes() -> Vec<u8> {
 // Konteks & perhitungan struk
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ReceiptContext {
     pub settings: ReceiptSettings,
     /// product_id → (nama, harga jual string snapshot, kode satuan dasar)
@@ -795,6 +796,73 @@ pub struct TcpPrintTransport {
     pub write_timeout: Duration,
 }
 
+/// Kirim ESC/POS melalui antrean lokal CUPS yang telah dikonfigurasi
+/// oleh sistem (umumnya printer USB). Gunakan CUPS 2.x dengan antrean
+/// raw; dukungan antrean raw di CUPS 3 telah dihapus.
+pub struct CupsPrintTransport {
+    pub queue: String,
+}
+
+/// Transport perangkat karakter (USB/Bluetooth) yang diekspos Sistem
+/// Operasi sebagai node `/dev/usb/lp0`, `/dev/rfcomm0`, COM7, dll.
+/// Byte ESC/POS ditulis apa adanya tanpa driver atau CUPS.
+pub struct FileDevicePrintTransport {
+    pub path: std::path::PathBuf,
+}
+
+impl FileDevicePrintTransport {
+    pub fn new(path: std::path::PathBuf) -> Self {
+        Self { path }
+    }
+}
+
+impl PrintTransport for FileDevicePrintTransport {
+    fn send(&self, bytes: &[u8]) -> Result<(), String> {
+        let raw = self.path.to_string_lossy().trim().to_string();
+        if raw.is_empty() {
+            return Err("Path perangkat printer kosong.".to_string());
+        }
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(&self.path)
+            .map_err(|error| format!("Gagal membuka perangkat printer {raw}: {error}"))?;
+        file.write_all(bytes)
+            .map_err(|error| format!("Gagal menulis ke perangkat printer {raw}: {error}"))?;
+        file.flush()
+            .map_err(|error| format!("Gagal menyiram perangkat printer {raw}: {error}"))
+    }
+}
+
+impl CupsPrintTransport {
+    pub fn new(queue: String) -> Self {
+        CupsPrintTransport { queue }
+    }
+}
+
+pub fn list_cups_printers() -> Result<Vec<String>, String> {
+    let output = Command::new("lpstat")
+        .args(["-p"])
+        .output()
+        .map_err(|error| format!("CUPS belum tersedia (lpstat): {error}"))?;
+    if !output.status.success() {
+        let message = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if message.is_empty() {
+            "CUPS tidak dapat membaca daftar antrean printer.".to_string()
+        } else {
+            message
+        });
+    }
+    let printers = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| line.strip_prefix("printer "))
+        .filter_map(|rest| rest.split_whitespace().next())
+        .filter(|name| crate::device::valid_cups_queue_name(name))
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    Ok(printers)
+}
+
 impl TcpPrintTransport {
     pub fn new(host: String, port: u16) -> Self {
         TcpPrintTransport {
@@ -831,6 +899,46 @@ impl PrintTransport for TcpPrintTransport {
     }
 }
 
+impl PrintTransport for CupsPrintTransport {
+    fn send(&self, bytes: &[u8]) -> Result<(), String> {
+        if !crate::device::valid_cups_queue_name(&self.queue) {
+            return Err("Nama antrean CUPS tidak valid.".to_string());
+        }
+        let mut child = Command::new("lp")
+            .arg("-d")
+            .arg(&self.queue)
+            .args(["-o", "raw", "-"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| format!("Perintah CUPS lp tidak tersedia: {error}"))?;
+        let write_result = child
+            .stdin
+            .take()
+            .ok_or_else(|| "Input antrean CUPS tidak tersedia.".to_string())?
+            .write_all(bytes);
+        if let Err(error) = write_result {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!("Gagal mengirim struk ke antrean CUPS: {error}"));
+        }
+        let output = child
+            .wait_with_output()
+            .map_err(|error| format!("Gagal menunggu antrean CUPS: {error}"))?;
+        if output.status.success() {
+            Ok(())
+        } else {
+            let message = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            Err(if message.is_empty() {
+                format!("CUPS gagal menerima job untuk antrean {}.", self.queue)
+            } else {
+                format!("CUPS menolak job pada antrean {}: {message}", self.queue)
+            })
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Pekerja antrean cetak (pola syncengine: logika murni + event)
 // ---------------------------------------------------------------------------
@@ -846,6 +954,15 @@ pub enum PrintEvent {
     JobFailed {
         job_id: String,
         client_key: String,
+        message: String,
+    },
+    ServerJobPrinted {
+        job_id: String,
+        sale_id: String,
+    },
+    ServerJobFailed {
+        job_id: String,
+        sale_id: String,
         message: String,
     },
     PassFinished {
@@ -879,18 +996,55 @@ pub fn run_print_pass(
 ) -> PrintSummary {
     let mut summary = PrintSummary::default();
     let _ = posdb::reset_printing(conn, now_iso);
-    let ctx = match load_receipt_context(conn) {
-        Ok(ctx) => ctx,
-        Err(message) => {
-            summary.error = Some(message);
-            return summary;
-        }
-    };
+    let _ = posdb::reset_server_receipt_printing(conn, now_iso);
+
+    // Struk lokal perlu konteks snapshot. Nota server sudah berupa byte
+    // ESC/POS otoritatif, jadi antreannya tetap bisa dicetak walau
+    // snapshot lokal belum tersedia atau rusak.
+    match load_receipt_context(conn) {
+        Ok(ctx) => loop {
+            let claimed = match posdb::claim_print_jobs(conn, PRINT_BATCH, now_iso) {
+                Ok(jobs) => jobs,
+                Err(message) => {
+                    summary.error = Some(message);
+                    break;
+                }
+            };
+            if claimed.is_empty() {
+                break;
+            }
+            for job in &claimed {
+                match process_job(conn, &ctx, transport, columns, job, now_iso) {
+                    Ok(()) => {
+                        summary.printed += 1;
+                        events(PrintEvent::JobPrinted {
+                            job_id: job.id.clone(),
+                            client_key: job.client_key.clone(),
+                            copy_index: job.copy_index,
+                        });
+                    }
+                    Err(message) => {
+                        summary.failed += 1;
+                        events(PrintEvent::JobFailed {
+                            job_id: job.id.clone(),
+                            client_key: job.client_key.clone(),
+                            message,
+                        });
+                    }
+                }
+            }
+            if claimed.len() < PRINT_BATCH {
+                break;
+            }
+        },
+        Err(message) => summary.error = Some(message),
+    }
+
     loop {
-        let claimed = match posdb::claim_print_jobs(conn, PRINT_BATCH, now_iso) {
+        let claimed = match posdb::claim_server_receipt_print_jobs(conn, PRINT_BATCH, now_iso) {
             Ok(jobs) => jobs,
             Err(message) => {
-                summary.error = Some(message);
+                summary.error.get_or_insert(message);
                 break;
             }
         };
@@ -898,20 +1052,29 @@ pub fn run_print_pass(
             break;
         }
         for job in &claimed {
-            match process_job(conn, &ctx, transport, columns, job, now_iso) {
+            match transport.send(&job.receipt_bytes) {
                 Ok(()) => {
+                    if let Err(message) = posdb::mark_server_receipt_printed(conn, &job.id, now_iso) {
+                        summary.error.get_or_insert(message);
+                        summary.failed += 1;
+                        continue;
+                    }
                     summary.printed += 1;
-                    events(PrintEvent::JobPrinted {
+                    events(PrintEvent::ServerJobPrinted {
                         job_id: job.id.clone(),
-                        client_key: job.client_key.clone(),
-                        copy_index: job.copy_index,
+                        sale_id: job.sale_id.clone(),
                     });
                 }
                 Err(message) => {
+                    if let Err(mark_error) =
+                        posdb::mark_server_receipt_failed(conn, &job.id, &message, now_iso)
+                    {
+                        summary.error.get_or_insert(mark_error);
+                    }
                     summary.failed += 1;
-                    events(PrintEvent::JobFailed {
+                    events(PrintEvent::ServerJobFailed {
                         job_id: job.id.clone(),
-                        client_key: job.client_key.clone(),
+                        sale_id: job.sale_id.clone(),
                         message,
                     });
                 }
@@ -921,9 +1084,26 @@ pub fn run_print_pass(
             break;
         }
     }
-    summary.pending = posdb::list_print_jobs(conn, Some("pending"))
-        .map(|jobs| jobs.len() as i64)
+
+    let local_pending = posdb::list_print_jobs(conn, None)
+        .map(|jobs| {
+            jobs.iter()
+                .filter(|job| job.status == "pending" || job.status == "printing")
+                .count() as i64
+        })
         .unwrap_or(-1);
+    let server_pending = posdb::list_server_receipt_print_jobs(conn, None)
+        .map(|jobs| {
+            jobs.iter()
+                .filter(|job| job.status == "pending" || job.status == "printing")
+                .count() as i64
+        })
+        .unwrap_or(-1);
+    summary.pending = if local_pending < 0 || server_pending < 0 {
+        -1
+    } else {
+        local_pending + server_pending
+    };
     events(PrintEvent::PassFinished {
         printed: summary.printed as i64,
         failed: summary.failed as i64,
@@ -950,7 +1130,8 @@ fn process_job(
             return Err(message);
         }
     };
-    let bytes = build_receipt_bytes(&record.sale, ctx, job.copy_index, columns);
+    let receipt_context = record.receipt_context.as_ref().unwrap_or(ctx);
+    let bytes = build_receipt_bytes(&record.sale, receipt_context, job.copy_index, columns);
     match transport.send(&bytes) {
         Ok(()) => {
             posdb::mark_print_job_printed(conn, &job.id, now_iso)?;
@@ -974,6 +1155,22 @@ mod tests {
     use std::net::TcpListener;
     use std::sync::mpsc;
 
+    #[test]
+    fn file_device_transport_writes_raw_bytes_for_usb_or_bluetooth_node() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("lp0");
+        FileDevicePrintTransport::new(path.clone()).send(&[0x1b, 0x40, 0x0a]).expect("send");
+        let mut written = Vec::new();
+        std::fs::File::open(&path).expect("open").read_to_end(&mut written).expect("read");
+        assert_eq!(written, vec![0x1b, 0x40, 0x0a]);
+    }
+
+    #[test]
+    fn device_path_transport_rejects_empty_path() {
+        let err = FileDevicePrintTransport::new(std::path::PathBuf::from("  ")).send(&[1]).unwrap_err();
+        assert!(err.to_lowercase().contains("perangkat"));
+    }
+
     fn settings() -> ReceiptSettings {
         ReceiptSettings {
             company_name: "Bisa Minimarket".to_string(),
@@ -990,6 +1187,8 @@ mod tests {
             receipt_paper: "thermal80".to_string(),
             tax_enabled: true,
             tax_rate: "11.0000".to_string(),
+            rounding_mode: "none".to_string(),
+            qris_image: None,
         }
     }
 
@@ -1030,6 +1229,7 @@ mod tests {
         SaleInput {
             client_key: "12345678-1234-1234-1234-1234567890ab".to_string(),
             warehouse_id: "wh-1".to_string(),
+            held_sale_id: None,
             group_id: None,
             customer_id: None,
             due_date: None,
@@ -1037,6 +1237,7 @@ mod tests {
             cashier_id: Some("kasir-1".to_string()),
             origin_session_id: Some("abcdef12-3456-7890-abcd-ef1234567890".to_string()),
             device_id: Some("tauri-desktop".to_string()),
+            reservation_id: None,
             expected_total: Some(8000.0),
             lines: vec![posdb::SaleLineInput {
                 product_id: "prod-1".to_string(),
@@ -1322,6 +1523,11 @@ mod tests {
 
     fn snapshot_with_receipt() -> SnapshotInput {
         SnapshotInput {
+        loyalty_balances: vec![],
+        promotions: vec![],
+        kitchen_tickets: vec![],
+        reservations: vec![],
+            warehouses: vec![],
             version: "v1".to_string(),
             cursor: None,
             generated_at: "2026-11-07T00:00:00.000Z".to_string(),
@@ -1329,6 +1535,7 @@ mod tests {
                 id: "wh-1".to_string(),
                 code: "GDG".to_string(),
                 name: "Gudang Utama".to_string(),
+            is_default: true,
             }),
             payment_methods: vec![
                 SnapshotMethodInput {
@@ -1336,12 +1543,18 @@ mod tests {
                     code: "CASH".to_string(),
                     name: "Tunai".to_string(),
                     method_type: "cash".to_string(),
+                    fee_enabled: false,
+                    fee_type: "none".to_string(),
+                    fee_value: "0".to_string(),
                 },
                 SnapshotMethodInput {
                     id: "pm-2".to_string(),
                     code: "QRIS".to_string(),
                     name: "QRIS".to_string(),
                     method_type: "qris".to_string(),
+                    fee_enabled: false,
+                    fee_type: "none".to_string(),
+                    fee_value: "0".to_string(),
                 },
             ],
             products: vec![SnapshotProductInput {
@@ -1349,6 +1562,8 @@ mod tests {
                 sku: "SKU-1".to_string(),
                 barcode: None,
                 name: "Aqua Air Mineral 600ml".to_string(),
+                category_id: None,
+                category_name: None,
                 sale_price: "4000.0000".to_string(),
                 stock: 10.0,
                 track_stock: true,
@@ -1356,9 +1571,14 @@ mod tests {
                 unit_code: None,
                 packagings: vec![],
             }],
+            customer_groups: vec![],
+            group_prices: vec![],
+            replace_group_price_group_ids: vec![],
             receipt: Some(settings()),
             terminal: None,
             names: None,
+            can_discount: false,
+            pos_offline_enabled: true,
         }
     }
 
@@ -1382,10 +1602,12 @@ mod tests {
             cashiers: vec![posdb::NameEntryInput {
                 id: "kasir-1".to_string(),
                 name: "Sari Kasir".to_string(),
+                group_id: None,
             }],
             customers: vec![posdb::NameEntryInput {
                 id: "cust-1".to_string(),
                 name: "Budi Pelanggan".to_string(),
+                group_id: None,
             }],
         });
         posdb::apply_snapshot(&mut conn, &snapshot).expect("snapshot");

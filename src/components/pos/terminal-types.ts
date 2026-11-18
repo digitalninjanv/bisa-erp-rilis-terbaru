@@ -120,6 +120,7 @@ export type PosTerminalProps = {
   companyName: string;
   warehouseId: string;
   warehouses: { id: string; name: string; code: string }[];
+  categories: { id: string; name: string }[];
   methods: Method[];
   creditMethod: { id: string; name: string } | null;
   debtMethod: { id: string; name: string } | null;

@@ -121,7 +121,7 @@ export function CommandPalette({ pages }: { pages: PalettePage[] }) {
         aria-label="Buka pencarian cepat (Ctrl K)"
       >
         <Search className="size-3.5" />
-        <span className="min-w-0 flex-1 truncate text-left">Cari produk, nota, halaman…</span>
+        <span className="min-w-0 flex-1 truncate text-left">Cari apa saja…</span>
         <kbd className="rounded border border-border bg-muted px-1 text-[10px]">Ctrl K</kbd>
       </button>
 

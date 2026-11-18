@@ -25,6 +25,9 @@ const EXTRA_DEV_ORIGINS = (process.env.ALLOWED_DEV_ORIGINS ?? "")
   .filter(Boolean);
 
 const nextConfig: NextConfig = {
+  // Badge dev Next.js menutupi kontrol bawah-layar POS (bar bayar mobile
+  // dan menu pengguna). Error kompilasi/runtime tetap tampil normal.
+  devIndicators: false,
   // Keep disposable verification builds separate from a running local app.
   distDir: process.env.BISA_TEST_BUILD === "1" ? ".next-remediation" : ".next",
   // Dev-only: browser bisa membuka aplikasi lewat localhost, 127.0.0.1,

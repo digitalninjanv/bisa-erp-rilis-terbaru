@@ -10,7 +10,7 @@ import { d, toDb } from "@/lib/money";
 import { getAccountMap, postJournal } from "@/server/accounting";
 import { getCompanySettingsRow } from "@/server/settings";
 import { writeAudit } from "@/server/audit";
-import { claimIdempotencyKey } from "@/server/idempotency";
+import { claimIdempotencyKey, readIdempotencyResultRef, writeIdempotencyResultRef } from "@/server/idempotency";
 import { todayISO } from "@/lib/format";
 
 function uniqueViolationConstraint(error: unknown): string | null {
@@ -28,7 +28,14 @@ function uniqueViolationConstraint(error: unknown): string | null {
 
 export async function openCashSession(
   tx: Tx,
-  input: { companyId: string; userId: string; branchId?: string | null; openingCash: string | number },
+  input: {
+    companyId: string;
+    userId: string;
+    branchId?: string | null;
+    openingCash: string | number;
+    sessionId?: string;
+    openedAt?: string;
+  },
 ) {
   // MD-006: validasi cabang milik perusahaan yang aktif
   if (input.branchId) {
@@ -39,6 +46,24 @@ export async function openCashSession(
       .limit(1);
     if (!branch) {
       throw new AppError("VALIDATION", "Cabang tidak ditemukan di perusahaan ini.");
+    }
+  }
+
+  // Terminal POS dapat membuka sesi saat offline dan mengirim intent
+  // kemudian. ID lokal dipakai sebagai ID server agar penjualan antrean
+  // tetap menunjuk sesi asal yang sama. Retry identik harus aman.
+  if (input.sessionId) {
+    const [sameSession] = await tx
+      .select({ id: cashSessions.id, userId: cashSessions.userId, status: cashSessions.status })
+      .from(cashSessions)
+      .where(and(eq(cashSessions.companyId, input.companyId), eq(cashSessions.id, input.sessionId)))
+      .limit(1)
+      .for("update");
+    if (sameSession) {
+      if (sameSession.userId !== input.userId) {
+        throw new AppError("CONFLICT", "ID sesi kas terminal sudah digunakan oleh kasir lain.");
+      }
+      return { id: sameSession.id };
     }
   }
 
@@ -64,6 +89,8 @@ export async function openCashSession(
     const [row] = await tx
       .insert(cashSessions)
       .values({
+        id: input.sessionId,
+        openedAt: input.openedAt ? new Date(input.openedAt) : undefined,
         companyId: input.companyId,
         userId: input.userId,
         branchId: input.branchId ?? null,
@@ -126,11 +153,13 @@ export async function closeCashSession(
   if (!session) throw new AppError("NOT_FOUND", "Sesi kas tidak ditemukan.");
   if (session.status !== "open") throw new AppError("INVALID_STATE", "Sesi kas sudah ditutup.");
 
-  const heldCount = await countHeldSales(tx, input.companyId);
+  // Pesanan ditahan dimiliki oleh kasir pembuatnya (`sales.cashier_id`).
+  // Sesi kasir ini hanya boleh tertahan oleh pesanan milik kasir yang sama.
+  const heldCount = await countHeldSales(tx, input.companyId, input.userId);
   if (heldCount > 0) {
     throw new AppError(
       "INVALID_STATE",
-      `Tidak dapat menutup sesi kas: masih terdapat ${heldCount} pesanan tertahan (held). Selesaikan atau batalkan pesanan tertahan sebelum menutup sesi.`,
+      `Tidak dapat menutup sesi kas: Anda masih memiliki ${heldCount} pesanan tertahan. Buka Pesanan Ditahan (/app/pos/ditahan), lanjutkan atau batalkan pesanan milik Anda, lalu tutup kembali sesi.`,
     );
   }
 
@@ -226,6 +255,16 @@ export async function cashDrawerMovement(
   },
 ) {
   if (input.idempotencyKey) {
+    // Retry setelah respons hilang: mutasi yang sudah commit tidak
+    // diulang. Hasil disimpan di idempotency_keys pada transaksi yang
+    // sama, jadi klaim yang ada tanpa hasil berarti kegagalan lama
+    // (transaksi rollback) dan kunci boleh dipakai lagi.
+    const replayed = await readIdempotencyResultRef(tx, {
+      companyId: input.companyId,
+      key: input.idempotencyKey,
+      scope: "pos.cash_movement",
+    });
+    if (replayed) return;
     const claimed = await claimIdempotencyKey(tx, {
       companyId: input.companyId,
       key: input.idempotencyKey,
@@ -280,14 +319,14 @@ export async function cashDrawerMovement(
   }
   const signed = input.type === "deposit" ? amount.neg() : amount;
 
-  await tx.insert(cashMovements).values({
+  const [movement] = await tx.insert(cashMovements).values({
     companyId: input.companyId,
     sessionId: session.id,
     type: input.type,
     amount: toDb(signed),
     notes: input.notes,
     createdBy: input.userId,
-  });
+  }).returning({ id: cashMovements.id });
 
   const map = await getAccountMap(tx, input.companyId);
   await postJournal(tx, {
@@ -318,6 +357,15 @@ export async function cashDrawerMovement(
     entityId: session.id,
     after: { amount: toDb(amount) },
   });
+
+  if (input.idempotencyKey) {
+    await writeIdempotencyResultRef(tx, {
+      companyId: input.companyId,
+      key: input.idempotencyKey,
+      scope: "pos.cash_movement",
+      resultRef: movement.id,
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -346,10 +394,11 @@ export async function getOpenCashSession(tx: Tx, companyId: string, userId: stri
   return row ?? null;
 }
 
-export async function countHeldSales(tx: Tx, companyId: string) {
+export async function countHeldSales(tx: Tx, companyId: string, cashierId?: string) {
+  const cashierFilter = cashierId ? sql`and cashier_id = ${cashierId}` : sql``;
   const rows = (await tx.execute(sql`
     select count(*)::int as value from sales
-    where company_id = ${companyId} and status = 'held'
+    where company_id = ${companyId} and status = 'held' ${cashierFilter}
   `)) as unknown as { value: number }[];
   return rows[0]?.value ?? 0;
 }

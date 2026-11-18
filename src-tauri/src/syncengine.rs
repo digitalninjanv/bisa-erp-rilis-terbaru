@@ -22,6 +22,7 @@
 
 use rusqlite::Connection;
 use serde::Serialize;
+use std::collections::HashSet;
 
 use crate::device::DeviceConfig;
 use crate::posdb;
@@ -79,18 +80,12 @@ pub trait SyncTransport {
     ) -> Result<SyncOutcome, TransportError>;
 }
 
-/// Bentuk kawat intent tutup sesi dari fakta lokal (Langkah 6):
-/// angka lokal tersimpan sebagai string uang di payload intent —
-/// di sini diubah ke angka JSON kontrak server, dan identitas
-/// terminal dicap (cap fakta saat tutup menang; identitas kini
-/// menjadi cadangan). None untuk kind selain cash_session_close.
+/// Bentuk kawat intent siklus sesi dari fakta lokal: angka uang lokal
+/// dikirim sebagai angka JSON dan identitas terminal dicap saat kejadian.
 pub fn session_intent_wire(
     intent: &posdb::LocalIntent,
     identity: Option<&posdb::TerminalIdentity>,
 ) -> Option<serde_json::Value> {
-    if intent.kind != "cash_session_close" {
-        return None;
-    }
     let fact = &intent.payload;
     let number = |key: &str| -> f64 {
         match fact.get(key) {
@@ -100,23 +95,54 @@ pub fn session_intent_wire(
         }
     };
     let text = |key: &str| fact.get(key).and_then(|value| value.as_str());
-    Some(serde_json::json!({
-        "clientKey": intent.id,
-        "warehouseId": text("warehouseId")?,
-        "cashierId": text("openedBy"),
-        "localSessionId": text("sessionId")?,
-        "openedAt": text("openedAt"),
-        "closedAt": text("closedAt")?,
-        "openingCash": number("openingCash"),
-        "expectedCash": number("expectedTotal"),
-        "countedCash": number("countedTotal"),
-        "difference": number("differenceTotal"),
-        "denominations": fact.get("denominations").cloned().unwrap_or(serde_json::Value::Array(vec![])),
-        "terminalId": text("terminalId").map(str::to_string)
-            .or_else(|| identity.map(|view| view.terminal_id.clone())),
-        "terminalName": text("terminalName").map(str::to_string)
-            .or_else(|| identity.map(|view| view.name.clone())),
-    }))
+    let terminal_id = text("terminalId").map(str::to_string)
+        .or_else(|| identity.map(|view| view.terminal_id.clone()));
+    let terminal_name = text("terminalName").map(str::to_string)
+        .or_else(|| identity.map(|view| view.name.clone()));
+    match intent.kind.as_str() {
+        "cash_session_open" => Some(serde_json::json!({
+            "action": "open",
+            "clientKey": intent.id,
+            "warehouseId": text("warehouseId")?,
+            "cashierId": text("openedBy")?,
+            "localSessionId": text("sessionId")?,
+            "openedAt": text("openedAt")?,
+            "openingCash": number("openingCash"),
+            "terminalId": terminal_id,
+            "terminalName": terminal_name,
+        })),
+        "cash_session_close" => Some(serde_json::json!({
+            "action": "close",
+            "clientKey": intent.id,
+            "warehouseId": text("warehouseId")?,
+            "cashierId": text("openedBy"),
+            "localSessionId": text("sessionId")?,
+            "openedAt": text("openedAt"),
+            "closedAt": text("closedAt")?,
+            "openingCash": number("openingCash"),
+            "expectedCash": number("expectedTotal"),
+            "countedCash": number("countedTotal"),
+            "difference": number("differenceTotal"),
+            "denominations": fact.get("denominations").cloned().unwrap_or(serde_json::Value::Array(vec![])),
+            "differenceReason": text("differenceReason"),
+            "terminalId": terminal_id,
+            "terminalName": terminal_name,
+        })),
+        "cash_session_movement" => Some(serde_json::json!({
+            "action": "movement",
+            "clientKey": intent.id,
+            "warehouseId": text("warehouseId")?,
+            "cashierId": text("openedBy")?,
+            "localSessionId": text("sessionId")?,
+            "movementType": text("movementType")?,
+            "amount": number("amount"),
+            "notes": text("notes")?,
+            "createdAt": text("createdAt")?,
+            "terminalId": terminal_id,
+            "terminalName": terminal_name,
+        })),
+        _ => None,
+    }
 }
 
 /// Peristiwa mesin untuk UI (dipancarkan runtime lewat event Tauri).
@@ -159,18 +185,23 @@ pub fn drain_outbox<T: SyncTransport>(
     // drain kebal terhadap klaim yatim dari proses sebelumnya.
     let _ = posdb::reset_inflight(conn, now_iso);
 
-    // Intent sesi pending ikut batch PERTAMA putaran ini (Langkah
-    // 6) — termasuk putaran tanpa penjualan sama sekali, agar
-    // tutup sesi tetap terkirim saat tidak ada antrean jualan.
     let identity = posdb::terminal_identity(conn).ok().flatten();
-    let intent_batch: Vec<serde_json::Value> = posdb::pending_intents(conn, 50)
-        .unwrap_or_default()
-        .iter()
-        .filter_map(|intent| session_intent_wire(intent, identity.as_ref()))
-        .collect();
-    let mut intents_pending_send = !intent_batch.is_empty();
+    let mut attempted_intents = HashSet::new();
 
     loop {
+        // Hitung ulang setelah setiap batch transaksi. Ini memungkinkan
+        // intent tutup sesi yang sebelumnya menunggu penjualan pending
+        // dikirim segera setelah seluruh penjualan sesi tersinkron.
+        let mut intent_batch = Vec::new();
+        for intent in posdb::pending_intents(conn, 50).unwrap_or_default() {
+            if attempted_intents.contains(&intent.id) {
+                continue;
+            }
+            if let Some(wire) = session_intent_wire(&intent, identity.as_ref()) {
+                attempted_intents.insert(intent.id);
+                intent_batch.push(wire);
+            }
+        }
         let claimed = match posdb::claim_pending(conn, DRAIN_BATCH, now_iso) {
             Ok(items) => items,
             Err(message) => {
@@ -178,21 +209,15 @@ pub fn drain_outbox<T: SyncTransport>(
                 break;
             }
         };
-        let intents: &[serde_json::Value] = if intents_pending_send {
-            &intent_batch
-        } else {
-            &[]
-        };
-        if claimed.is_empty() && intents.is_empty() {
+        if claimed.is_empty() && intent_batch.is_empty() {
             break;
         }
         let keys: Vec<String> = claimed.iter().map(|item| item.client_key.clone()).collect();
         let payloads: Vec<serde_json::Value> =
             claimed.iter().map(|item| item.payload.clone()).collect();
         summary.attempted += claimed.len();
-        match transport.post_sync(config, &payloads, intents) {
+        match transport.post_sync(config, &payloads, &intent_batch) {
             Ok(outcome) => {
-                intents_pending_send = false;
                 if !outcome.intent_results.is_empty() {
                     let done: Vec<String> = outcome
                         .intent_results
@@ -203,6 +228,13 @@ pub fn drain_outbox<T: SyncTransport>(
                         .map(|result| result.client_key.clone())
                         .collect();
                     let _ = posdb::mark_intents_synced(conn, &done);
+                    let needs_review: Vec<posdb::IntentResultInput> = outcome
+                        .intent_results
+                        .iter()
+                        .filter(|result| result.status == "needsReview")
+                        .cloned()
+                        .collect();
+                    let _ = posdb::mark_intents_held(conn, &needs_review);
                 }
                 let results = outcome.results;
                 if let Err(message) = posdb::apply_sync_results(conn, &results, now_iso) {
@@ -219,9 +251,6 @@ pub fn drain_outbox<T: SyncTransport>(
                         client_key: result.client_key.clone(),
                         status: result.status.clone(),
                     });
-                }
-                if claimed.len() < DRAIN_BATCH {
-                    break;
                 }
             }
             Err(TransportError::Unauthorized(message)) => {
@@ -365,11 +394,20 @@ mod tests {
         DeviceConfig {
             server_url: "http://localhost:3000".to_string(),
             device_token: "token-uji".to_string(),
+            terminal_id: None,
+            cashier_id: None,
+            cashier_name: None,
+            company_id: None,
         }
     }
 
     fn snapshot_fixture() -> SnapshotInput {
         SnapshotInput {
+        loyalty_balances: vec![],
+        promotions: vec![],
+        kitchen_tickets: vec![],
+        reservations: vec![],
+            warehouses: vec![],
             version: "v1".to_string(),
             cursor: Some("2026-11-07T00:00:00.000Z".to_string()),
             generated_at: "2026-11-07T00:00:00.000Z".to_string(),
@@ -377,18 +415,24 @@ mod tests {
                 id: "wh-1".to_string(),
                 code: "GDG".to_string(),
                 name: "Gudang".to_string(),
+            is_default: true,
             }),
             payment_methods: vec![SnapshotMethodInput {
                 id: "pm-1".to_string(),
                 code: "CASH".to_string(),
                 name: "Tunai".to_string(),
                 method_type: "cash".to_string(),
+                fee_enabled: false,
+                fee_type: "none".to_string(),
+                fee_value: "0".to_string(),
             }],
             products: vec![SnapshotProductInput {
                 id: "prod-1".to_string(),
                 sku: "SKU-1".to_string(),
                 barcode: None,
                 name: "Aqua".to_string(),
+                category_id: None,
+                category_name: None,
                 sale_price: "4000.0000".to_string(),
                 stock: 10.0,
                 track_stock: true,
@@ -396,9 +440,14 @@ mod tests {
                 unit_code: None,
                 packagings: vec![],
             }],
+            customer_groups: vec![],
+            group_prices: vec![],
+            replace_group_price_group_ids: vec![],
             receipt: None,
             terminal: None,
             names: None,
+            can_discount: false,
+            pos_offline_enabled: true,
         }
     }
 
@@ -407,6 +456,7 @@ mod tests {
         let sale = posdb::SaleInput {
             client_key: key.to_string(),
             warehouse_id: "wh-1".to_string(),
+            held_sale_id: None,
             group_id: None,
             customer_id: None,
             due_date: None,
@@ -414,6 +464,7 @@ mod tests {
             cashier_id: None,
             origin_session_id: None,
             device_id: None,
+            reservation_id: None,
             expected_total: Some(4000.0),
             lines: vec![posdb::SaleLineInput {
                 product_id: "prod-1".to_string(),
@@ -571,6 +622,11 @@ mod tests {
         let transport = FakeTransport::new();
         *transport.snapshot.borrow_mut() = Some(Ok(SnapshotWire::Delta(
             posdb::SnapshotDeltaInput {
+        loyalty_balances: vec![],
+        promotions: vec![],
+        kitchen_tickets: vec![],
+        reservations: vec![],
+            warehouses: vec![],
                 version: "2026-11-07T01:00:00.000Z".to_string(),
                 cursor: "2026-11-07T01:00:00.000Z".to_string(),
                 base_cursor: "2026-11-07T00:00:00.000Z".to_string(),
@@ -579,13 +635,19 @@ mod tests {
                     id: "wh-1".to_string(),
                     code: "GDG".to_string(),
                     name: "Gudang".to_string(),
+            is_default: true,
                 }),
                 payment_methods: vec![],
                 products: vec![],
                 removed_product_ids: vec!["prod-1".to_string()],
+                customer_groups: vec![],
+                group_prices: vec![],
+                replace_group_price_group_ids: vec![],
                 receipt: None,
                 terminal: None,
                 names: None,
+                can_discount: false,
+                pos_offline_enabled: false,
             },
         )));
         let summary = refresh_snapshot(&mut conn, &config(), &transport, &mut |_| {})
@@ -615,18 +677,41 @@ mod tests {
             },
         )
         .expect("open");
-        posdb::close_cash_session(&mut conn, &session.id, &[], NOW).expect("close");
+        posdb::close_cash_session_with_reason(
+            &mut conn,
+            &session.id,
+            &[],
+            NOW,
+            Some("kasir menutup shift setelah hitung kas"),
+        )
+        .expect("close");
         let pending = posdb::pending_intents(&conn, 10).expect("pending");
-        assert_eq!(pending.len(), 1);
-        let intent_id = pending[0].id.clone();
+        assert_eq!(pending.len(), 2, "open dan close dikirim dalam satu rangkaian");
+        let open_intent = pending
+            .iter()
+            .find(|intent| intent.kind == "cash_session_open")
+            .expect("open intent");
+        let close_intent = pending
+            .iter()
+            .find(|intent| intent.kind == "cash_session_close")
+            .expect("close intent");
+        let intent_id = close_intent.id.clone();
 
         let transport = FakeTransport::new();
         transport.sync_behavior.borrow_mut().push(Ok(SyncOutcome {
             results: vec![],
-            intent_results: vec![posdb::IntentResultInput {
-                client_key: intent_id.clone(),
-                status: "recorded".to_string(),
-            }],
+            intent_results: vec![
+                posdb::IntentResultInput {
+                    client_key: open_intent.id.clone(),
+                    status: "recorded".to_string(),
+                    message: None,
+                },
+                posdb::IntentResultInput {
+                    client_key: intent_id.clone(),
+                    status: "recorded".to_string(),
+                    message: None,
+                },
+            ],
         }));
         let summary = drain_outbox(&mut conn, &config(), &transport, NOW, &mut |_| {});
         assert_eq!(summary.remaining, 0);
@@ -635,7 +720,16 @@ mod tests {
         // Bentuk kawat: angka menjadi number, identitas terminal tercap.
         let sent = transport.seen_intents.borrow();
         assert_eq!(sent.len(), 1);
-        let wire = &sent[0][0];
+        assert_eq!(sent[0].len(), 2);
+        let open_wire = sent[0]
+            .iter()
+            .find(|wire| wire["action"] == "open")
+            .expect("open wire");
+        assert_eq!(open_wire["clientKey"], open_intent.id);
+        let wire = sent[0]
+            .iter()
+            .find(|wire| wire["action"] == "close")
+            .expect("close wire");
         assert_eq!(wire["clientKey"], intent_id);
         assert_eq!(wire["openingCash"], 50000.0);
         assert_eq!(wire["expectedCash"], 50000.0);
@@ -647,7 +741,8 @@ mod tests {
         // Intent selesai lokal — putaran berikutnya tidak mengirim ulang.
         assert!(posdb::pending_intents(&conn, 10).expect("pending2").is_empty());
         let intents = posdb::list_local_intents(&conn).expect("intents");
-        assert_eq!(intents[0].status, "synced");
+        assert_eq!(intents.len(), 2);
+        assert!(intents.iter().all(|intent| intent.status == "synced"));
     }
 
     #[test]
@@ -666,7 +761,44 @@ mod tests {
             },
         )
         .expect("open");
-        let closed = posdb::close_cash_session(&mut conn, &session.id, &[], NOW).expect("close");
+        let closed = posdb::close_cash_session(
+            &mut conn,
+            &session.id,
+            &[posdb::DenominationInput {
+                denomination: "50000".to_string(),
+                count: 1,
+            }],
+            NOW,
+        )
+        .expect("close");
         assert_eq!(closed.expected_total.as_deref(), Some("50000"));
+    }
+
+    #[test]
+    fn cash_session_movement_wire_keeps_idempotency_and_cashier_context() {
+        let intent = posdb::LocalIntent {
+            id: "01900000-0000-7000-8000-000000000001".to_string(),
+            kind: "cash_session_movement".to_string(),
+            payload: serde_json::json!({
+                "sessionId": "01900000-0000-7000-8000-000000000002",
+                "warehouseId": "01900000-0000-7000-8000-000000000003",
+                "openedBy": "cashier-1",
+                "movementType": "deposit",
+                "amount": "40000",
+                "notes": "Setoran pagi ke bank",
+                "createdAt": "2026-11-17T03:00:00.000Z",
+            }),
+            status: "pending".to_string(),
+            created_at: "2026-11-17T03:00:00.000Z".to_string(),
+        };
+        let wire = session_intent_wire(&intent, None).expect("movement wire");
+        assert_eq!(wire["action"], "movement");
+        assert_eq!(wire["clientKey"], intent.id);
+        assert_eq!(wire["localSessionId"], intent.payload["sessionId"]);
+        assert_eq!(wire["warehouseId"], intent.payload["warehouseId"]);
+        assert_eq!(wire["cashierId"], "cashier-1");
+        assert_eq!(wire["movementType"], "deposit");
+        assert_eq!(wire["amount"], 40000.0);
+        assert_eq!(wire["notes"], "Setoran pagi ke bank");
     }
 }

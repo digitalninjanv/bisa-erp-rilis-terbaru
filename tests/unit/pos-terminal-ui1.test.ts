@@ -174,8 +174,11 @@ describe("ProductCatalog — placeholder jujur & bantuan pintasan (UX-B01/B03)",
       scanBarcode: async () => null,
       addProduct: () => undefined,
       warehouses: [{ id: "g1", name: "Gudang Utama" }],
+      categories: [{ id: "c1", name: "Minuman" }],
       selectedWarehouse: "g1",
       setSelectedWarehouse: () => undefined,
+      selectedCategory: "",
+      setSelectedCategory: () => undefined,
       setReservationId: () => undefined,
       reservations: [],
       reservationId: null,
@@ -196,11 +199,15 @@ describe("ProductCatalog — placeholder jujur & bantuan pintasan (UX-B01/B03)",
   );
 
   it("placeholder menjanjikan F2 yang kini nyata dan tidak terpotong", () => {
-    expect(html).toContain("Scan barcode / cari produk… (F2)");
+    // Teks dipendekkan agar tidak terpotong di kolom cari desktop;
+    // janji pintasan F2 tetap ada.
+    expect(html).toContain("Pindai barcode / cari produk (F2)");
   });
 
-  it("tombol bantuan pintasan tersedia di terminal", () => {
-    expect(html).toContain("Bantuan pintasan keyboard");
+  it("bantuan pintasan tersedia lewat menu terminal", () => {
+    // Sejak terminal dirapikan, bantuan pindah ke menu agar toolbar
+    // tidak penuh; pemicunya tetap punya nama aksesibel.
+    expect(html).toContain('aria-label="Menu POS lainnya"');
   });
 
   it("menampilkan umur transaksi tertua pada antrean offline", () => {

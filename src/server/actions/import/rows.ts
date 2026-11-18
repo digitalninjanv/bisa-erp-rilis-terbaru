@@ -86,6 +86,9 @@ export async function listImportRowsAction(input: {
           pageSize,
           counts,
           filterRowNumbers: matched.map((row) => row.rowNumber),
+          incompleteRowNumbers: classifiedRows
+            .filter((row) => row.flags.belumLengkap)
+            .map((row) => row.rowNumber),
           // Semua baris pending tanpa error boleh dipilih. Field opsional/
           // nilai kosong dipetakan ke default domain saat commit.
           selectableRowNumbers: classifiedRows

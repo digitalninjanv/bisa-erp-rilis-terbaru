@@ -31,8 +31,8 @@ export function MixedEntries(props: {
               <div className="space-y-1.5">
                 {methods.map((method) => (
                   <div key={method.id} className="space-y-1">
-                  <div className="grid grid-cols-[1fr_86px_74px] items-center gap-1.5">
-                    <span className="truncate text-[11px]">{method.name}</span>
+                  <div className="grid grid-cols-2 items-center gap-2">
+                    <span className="col-span-2 truncate text-sm font-semibold">{method.name}</span>
                     {/* A-28 UI-1 (UX-B04): nominal campuran memakai
                         MoneyInput bersama (terformat id-ID saat ketik).
                         Nilai tersimpan = string kanonik; semua pembaca
@@ -54,7 +54,7 @@ export function MixedEntries(props: {
                         }))
                       }
                       placeholder="0"
-                      className="h-9 px-1.5 text-[11px]"
+                      className="h-11 min-w-0 px-2 text-sm"
                     />
                     {method.type === "cash" ? (
                       <MoneyInput
@@ -71,10 +71,10 @@ export function MixedEntries(props: {
                           }))
                         }
                         placeholder="Diterima"
-                        className="h-9 px-1.5 text-[10px]"
+                        className="h-11 min-w-0 px-2 text-sm"
                       />
                     ) : (
-                      <span className="text-right text-[10px] text-muted-foreground">—</span>
+                      <span className="flex h-11 items-center justify-center rounded-md bg-muted text-xs text-muted-foreground">Tanpa kembalian</span>
                     )}
                   </div>
                   {/* POS-1: chip uang diterima cepat untuk baris tunai
@@ -118,7 +118,7 @@ export function MixedEntries(props: {
                       }
                       placeholder={`Referensi ${method.name} (opsional)`}
                       aria-label={`Referensi pembayaran ${method.name}`}
-                      className="num h-9 w-full rounded border border-input bg-background px-2 text-[11px]"
+                      className="num h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
                     />
                   ) : null}
                   {/* A-21 Tahap R3-A (R3-01): fee per baris metode campuran. */}
@@ -143,8 +143,8 @@ export function MixedEntries(props: {
                 {/* POS-1 (D-19): baris Utang campuran — nominal utang
                     adalah sisa tagihan; tombol Sisa mengisinya otomatis. */}
                 {debtMethod ? (
-                  <div className="grid grid-cols-[1fr_86px_74px] items-center gap-1.5">
-                    <span className="truncate text-[11px]">
+                  <div className="grid grid-cols-2 items-center gap-2">
+                    <span className="col-span-2 truncate text-sm font-semibold">
                       Utang <span className="text-muted-foreground">({debtMethod.name})</span>
                     </span>
                     <MoneyInput
@@ -161,31 +161,31 @@ export function MixedEntries(props: {
                         }))
                       }
                       placeholder="0"
-                      className="h-9 px-1.5 text-[11px]"
+                      className="h-11 min-w-0 px-2 text-sm"
                     />
                     <button
                       type="button"
                       onClick={fillDebtRemainder}
-                      className="h-8 rounded-md border border-border px-1 text-[10px] font-medium hover:bg-muted"
+                      className="h-11 rounded-md border border-border px-3 text-sm font-semibold hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       Sisa tagihan
                     </button>
                   </div>
                 ) : null}
-                <div className="flex items-center justify-between border-t border-border pt-1.5 text-[11px]">
+                <div className="flex items-center justify-between border-t border-border pt-2 text-sm">
                   <span className="text-muted-foreground">Sisa</span>
                   <span className={cn("num font-semibold", outstanding > 0 ? "text-destructive" : "text-tone-teal")}>
                     {formatIDR(outstanding)}
                   </span>
                 </div>
-                <div className="flex items-center justify-between text-[11px]">
+                <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Kembalian</span>
                   <span className="num font-semibold">{formatIDR(change)}</span>
                 </div>
                 {mixedPlan.overpaid.map((name) => (
                   <p
                     key={name}
-                    className="flex items-start gap-1.5 rounded-md bg-tone-amber-soft px-2 py-1.5 text-[11px] leading-4 text-tone-amber"
+                    className="flex items-start gap-2 rounded-md bg-tone-amber-soft px-3 py-2 text-sm leading-5 text-tone-amber"
                   >
                     <AlertTriangle className="mt-0.5 size-3 shrink-0" />
                     <span>

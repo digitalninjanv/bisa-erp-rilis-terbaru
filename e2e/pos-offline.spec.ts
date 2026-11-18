@@ -194,7 +194,7 @@ test("skenario A: offline di tengah sesi — 3 penjualan antre, sinkron, angka c
   await expect(page.getByText("Sesi kas terbuka")).toBeVisible();
   await addProduct(page, "Aqua Air Mineral 600ml", 2);
   await (await expectPayTotal(page, "8\\.000")).click();
-  await expect(page).toHaveURL(/\/app\/pos\/nota\//);
+  await expect(page.getByText("Transaksi berhasil")).toBeVisible();
   const controlSales = await sql.unsafe(
     `select id from sales where company_id = $1 order by created_at desc limit 1`,
     [DEMO],
@@ -363,7 +363,7 @@ test("skenario C: konflik harga & stok — item masuk peninjauan, tidak hilang d
   await addProduct(other, "Ember Plastik 10L", emberStock);
   const emberTotalLabel = (emberStock * 30000).toLocaleString("id-ID").replace(/\./g, "\\.");
   await (await expectPayTotal(other, emberTotalLabel)).click();
-  await expect(other).toHaveURL(/\/app\/pos\/nota\//);
+  await expect(other.getByText("Transaksi berhasil")).toBeVisible();
   expect(await stockOf("Ember Plastik 10L")).toBe(0);
 
   // Terminal online lagi → sinkron → kedua item tertahan sebagai konflik
@@ -419,7 +419,7 @@ test("skenario C: konflik harga & stok — item masuk peninjauan, tidak hilang d
   // paragraf yang tersembunyi itu. Yang dimaksud assertion ini sejak
   // awal adalah kartu statistik konflik stok yang terlihat —
   // arahkan locator ke kartunya; maksud pengujian tidak berubah.
-  await expect(page.locator(".stat-card").filter({ hasText: "Konflik stok" })).toBeVisible();
+  await expect(page.getByText("Konflik stok", { exact: true }).first()).toBeVisible();
   await page.screenshot({ path: path.join(BUKTI_DIR, "skenario-c-peninjauan.png"), fullPage: true });
 
   // Kebersihan: supervisor membuang kedua item dari halaman peninjauan

@@ -55,25 +55,39 @@ export default function CustomerDisplayPage() {
   const [payload, setPayload] = useState<DisplayPayload>(() =>
     isTauri() ? IDLE_PAYLOAD : PREVIEW_PAYLOAD,
   );
+  const [connectionState, setConnectionState] = useState<"connecting" | "connected" | "disconnected">(
+    isTauri() ? "connecting" : "connected",
+  );
 
   useEffect(() => {
     if (!inTauri) return;
     let cancelled = false;
     let unlisten: (() => void) | undefined;
     (async () => {
+      let eventVersion = 0;
       try {
-        const current = await getCustomerDisplay();
-        if (!cancelled) setPayload(current);
+        const stop = await onDisplayEvent((next) => {
+          eventVersion += 1;
+          if (!cancelled) {
+            setPayload(next);
+            setConnectionState("connected");
+          }
+        });
+        if (cancelled) {
+          stop();
+          return;
+        }
+        unlisten = stop;
+        setConnectionState("connected");
       } catch {
-        /* Jendela tetap pada keadaan idle; event berikutnya
-           akan memperbaikinya. */
+        if (!cancelled) setConnectionState("disconnected");
+        return;
       }
       try {
-        unlisten = await onDisplayEvent((next) => {
-          if (!cancelled) setPayload(next);
-        });
+        const current = await getCustomerDisplay();
+        if (!cancelled && eventVersion === 0) setPayload(current);
       } catch {
-        /* Listen gagal = layar statis pada muatan terakhir. */
+        if (!cancelled) setConnectionState("disconnected");
       }
     })();
     return () => {
@@ -85,6 +99,11 @@ export default function CustomerDisplayPage() {
   return (
     <div className="display-root">
       <header className="display-store">{payload.storeName}</header>
+      {inTauri && connectionState !== "connected" ? (
+        <div className="display-connection" role="status" aria-live="polite">
+          {connectionState === "connecting" ? "Menyambungkan layar pelanggan…" : "Layar pelanggan terputus. Buka kembali jendela POS untuk menyambungkan."}
+        </div>
+      ) : null}
 
       {payload.mode === "idle" && (
         <div className="display-center">
@@ -107,8 +126,9 @@ export default function CustomerDisplayPage() {
             {payload.lines.map((line, index) => (
               <li key={`${line.name}-${index}`}>
                 <span className="d-name">{line.name}</span>
-                <span className="d-qty">
-                  {line.qtyText} × {line.unitPriceText}
+                <span className="d-pricing">
+                  <span className="d-qty">{line.qtyText} × {line.unitPriceText}</span>
+                  {line.discountText ? <span className="d-discount">{line.discountText}</span> : null}
                 </span>
                 <span className="d-total">{line.lineTotalText}</span>
               </li>

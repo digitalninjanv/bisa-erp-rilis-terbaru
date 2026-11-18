@@ -32,6 +32,11 @@ const THRESHOLD = 800;
 
 /** Kunci: jalur relatif terhadap src/ (posix). Nilai: plafon baris. */
 const CEILINGS: Record<string, number> = {
+  // Snapshot perangkat POS kini memuat blok reservasi, kitchen display,
+  // promosi, QRIS, dan gudang — semua dibaca dari satu kontrak snapshot
+  // yang sama. Plafon sementara sampai blok ekstra dipecah ke modul
+  // src/server/pos/snapshot-extras.ts.
+  "server/pos-device.ts": 900,
   // "db/schema.ts" DIHAPUS di A-26 Q2: sudah terpecah per domain ke
   // src/db/schema/*.ts (semua ≤800 baris); schema.ts kini barrel murni.
   // "components/pengaturan/settings-forms.tsx" DIHAPUS di A-26 Q3: sudah

@@ -33,6 +33,12 @@ export function formatReceiptToEscPos(data: ReceiptData): Uint8Array {
 
   encoder.divider("=");
 
+  if ((data.copyIndex ?? 0) > 0) {
+    encoder.align("center").bold(true).line("SALINAN").bold(false);
+    encoder.line("- BUKAN NOTA ASLI -");
+    encoder.align("left").divider("-");
+  }
+
   // 3. Metadata Transaksi
   encoder.align("left");
   encoder.row("No. Nota:", data.saleNumber);

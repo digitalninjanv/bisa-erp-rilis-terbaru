@@ -1,9 +1,11 @@
 import { createHash, randomBytes } from "node:crypto";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { db, type Tx } from "@/db";
+import { withCompany } from "@/db/tenant";
 import {
   companyRoles,
   member,
+  organization,
   posPairingCodes,
   posTerminalSessionReviews,
   posTerminals,
@@ -12,6 +14,9 @@ import {
 } from "@/db/schema";
 import { AppError } from "@/lib/errors";
 import { permissionsFor, sanitizePermissions, type Permission } from "@/lib/permissions";
+import { writeAudit } from "@/server/audit";
+import { getSettings, listWarehouses, pickDefaultWarehouseId } from "@/server/catalog";
+import { resolveOriginEntitlement } from "@/server/member-permissions";
 
 /**
  * Registry terminal POS desktop (POS Native Langkah 6, RENCANA-TAURI
@@ -97,6 +102,17 @@ export type TerminalSessionCloseIntent = {
   differenceReason?: string | null;
 };
 
+export type TerminalSessionOpenIntent = {
+  clientKey: string;
+  warehouseId: string;
+  cashierId: string;
+  localSessionId: string;
+  openedAt: string;
+  openingCash: number;
+  terminalId?: string | null;
+  terminalName?: string | null;
+};
+
 const PAIRING_CODE_TTL_MS = 15 * 60 * 1000;
 /** Sentuhan last_seen_at paling sering sekali per jendela ini. */
 const LAST_SEEN_TOUCH_MS = 5 * 60 * 1000;
@@ -158,6 +174,157 @@ export async function createPosTerminal(
     })
     .returning({ id: posTerminals.id });
   return { id: row.id };
+}
+
+export type PosDesktopEnrollment = {
+  token: string;
+  terminal: {
+    id: string;
+    name: string;
+    companyId: string;
+    companyName: string;
+    warehouseId: string;
+    warehouseName: string;
+  };
+  cashier: { id: string; name: string; email: string };
+};
+
+/**
+ * Enrol a Tauri POS installation after the cashier has authenticated
+ * through Better Auth. This is the no-manual-code path; it keeps the
+ * same revocable, tenant-scoped device token as regular pairing.
+ */
+export async function enrollPosDesktopTerminal(input: {
+  companyId: string;
+  userId: string;
+  installationId: string;
+  currentTerminalId?: string | null;
+}): Promise<PosDesktopEnrollment> {
+  const entitlement = await resolveOriginEntitlement(input.companyId, input.userId);
+  if (!entitlement?.canSell) {
+    throw new AppError("FORBIDDEN", "Akun ini tidak memiliki akses kasir POS di perusahaan tersebut.");
+  }
+
+  const token = generateDeviceToken();
+  const terminalName = `Bisa POS ${input.installationId.slice(0, 8).toUpperCase()}`;
+  return withCompany(input.companyId, async (tx) => {
+    // Serialize concurrent first-login requests for the same installation.
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${`${input.companyId}:${input.installationId}`}, 0))`,
+    );
+
+    const [memberRow] = await tx
+      .select({ userId: member.userId })
+      .from(member)
+      .where(and(eq(member.organizationId, input.companyId), eq(member.userId, input.userId)))
+      .limit(1);
+    if (!memberRow) throw new AppError("FORBIDDEN", "Akun tidak lagi menjadi anggota perusahaan.");
+
+    const [company] = await tx
+      .select({ id: organization.id, name: organization.name })
+      .from(organization)
+      .where(eq(organization.id, input.companyId))
+      .limit(1);
+    const [cashier] = await tx
+      .select({ id: user.id, name: user.name, email: user.email })
+      .from(user)
+      .where(eq(user.id, input.userId))
+      .limit(1);
+    if (!company || !cashier) throw new AppError("NOT_FOUND", "Perusahaan atau akun kasir tidak ditemukan.");
+
+    const [warehouseRows, settings] = await Promise.all([
+      listWarehouses(tx, input.companyId),
+      getSettings(tx, input.companyId),
+    ]);
+    const warehouseId = pickDefaultWarehouseId(warehouseRows, settings?.defaultWarehouseId);
+    const warehouse = warehouseRows.find((row) => row.id === warehouseId);
+    if (!warehouse) throw new AppError("INVALID_STATE", "Perusahaan belum memiliki gudang aktif untuk POS.");
+
+    let terminalId = input.currentTerminalId ?? null;
+    let existing:
+      | { id: string; status: string; tokenDigest: string | null; userId: string }
+      | undefined;
+    if (terminalId) {
+      [existing] = await tx
+        .select({
+          id: posTerminals.id,
+          status: posTerminals.status,
+          tokenDigest: posTerminals.tokenDigest,
+          userId: posTerminals.userId,
+        })
+        .from(posTerminals)
+        .where(and(eq(posTerminals.companyId, input.companyId), eq(posTerminals.id, terminalId)))
+        .limit(1);
+      if (!existing || existing.status !== "active") {
+        throw new AppError("FORBIDDEN", "Terminal tidak aktif. Hubungi supervisor untuk mengaktifkannya.");
+      }
+    } else {
+      [existing] = await tx
+        .select({
+          id: posTerminals.id,
+          status: posTerminals.status,
+          tokenDigest: posTerminals.tokenDigest,
+          userId: posTerminals.userId,
+        })
+        .from(posTerminals)
+        .where(and(eq(posTerminals.companyId, input.companyId), eq(posTerminals.name, terminalName)))
+        .limit(1);
+      if (existing?.status === "revoked") {
+        throw new AppError("FORBIDDEN", "Terminal ini sudah dicabut. Minta supervisor membuat terminal baru.");
+      }
+      if (existing?.tokenDigest) {
+        throw new AppError("CONFLICT", "Terminal sudah terdaftar. Masuk dari instalasi yang terdaftar atau minta bantuan supervisor.");
+      }
+      terminalId = existing?.id ?? null;
+    }
+
+    if (!terminalId) {
+      const created = await createPosTerminal(tx, {
+        companyId: input.companyId,
+        name: terminalName,
+        warehouseId,
+        userId: input.userId,
+        createdBy: input.userId,
+      });
+      terminalId = created.id;
+    }
+
+    const now = new Date();
+    await tx
+      .update(posTerminals)
+      .set({
+        name: terminalName,
+        warehouseId,
+        userId: input.userId,
+        tokenDigest: digestSecret(token),
+        pairedAt: now,
+        lastSeenAt: now,
+        updatedAt: now,
+      })
+      .where(and(eq(posTerminals.companyId, input.companyId), eq(posTerminals.id, terminalId)));
+
+    await writeAudit(tx, {
+      companyId: input.companyId,
+      userId: input.userId,
+      action: "pos_terminal.auto_enroll",
+      entityType: "pos_terminal",
+      entityId: terminalId,
+      after: { name: terminalName, warehouseId, userId: input.userId },
+    });
+
+    return {
+      token,
+      terminal: {
+        id: terminalId,
+        name: terminalName,
+        companyId: company.id,
+        companyName: company.name,
+        warehouseId,
+        warehouseName: warehouse.name,
+      },
+      cashier: { id: cashier.id, name: cashier.name, email: cashier.email },
+    };
+  });
 }
 
 export async function listPosTerminals(

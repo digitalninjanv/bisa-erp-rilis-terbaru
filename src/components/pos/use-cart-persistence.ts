@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import type { CartItem } from "@/components/pos/terminal-types";
+import type { CartItem, CustomerOption } from "@/components/pos/terminal-types";
 
 // D-10 butir 3 — persistensi keranjang ke localStorage.
 //
@@ -28,6 +28,9 @@ export type StoredCart = {
   warehouseId: string;
   heldSaleId: string | null;
   heldTotal: number | null;
+  reservationId?: string | null;
+  customer?: CustomerOption | null;
+  dueDate?: string | null;
 };
 
 function readStoredCart(storageKey: string): StoredCart | null {
@@ -57,12 +60,38 @@ function readStoredCart(storageKey: string): StoredCart | null {
       });
     }
     if (cart.length === 0) return null;
+    const parsedCustomer = parsed.customer;
+    const customer =
+      parsedCustomer &&
+      typeof parsedCustomer.id === "string" &&
+      typeof parsedCustomer.code === "string" &&
+      typeof parsedCustomer.name === "string" &&
+      parsedCustomer.name.trim().length > 0
+        ? {
+            id: parsedCustomer.id,
+            code: parsedCustomer.code,
+            name: parsedCustomer.name,
+            phone: typeof parsedCustomer.phone === "string" ? parsedCustomer.phone : null,
+            creditLimit:
+              typeof parsedCustomer.creditLimit === "number" &&
+              Number.isFinite(parsedCustomer.creditLimit) &&
+              parsedCustomer.creditLimit >= 0
+                ? parsedCustomer.creditLimit
+                : 0,
+          }
+        : null;
     return {
       cart,
       groupId: typeof parsed.groupId === "string" ? parsed.groupId : "",
       warehouseId: typeof parsed.warehouseId === "string" ? parsed.warehouseId : "",
       heldSaleId: typeof parsed.heldSaleId === "string" ? parsed.heldSaleId : null,
       heldTotal: typeof parsed.heldTotal === "number" ? parsed.heldTotal : null,
+      reservationId: typeof parsed.reservationId === "string" ? parsed.reservationId : null,
+      customer,
+      dueDate:
+        typeof parsed.dueDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(parsed.dueDate)
+          ? parsed.dueDate
+          : null,
     };
   } catch {
     // JSON rusak atau localStorage tidak tersedia — mulai dari kosong.
@@ -92,11 +121,17 @@ export function useCartPersistence(params: {
   selectedWarehouse: string;
   heldSaleId: string | null;
   heldTotal: number | null;
+  reservationId?: string | null;
+  customer?: CustomerOption | null;
+  dueDate?: string;
   setCart: Dispatch<SetStateAction<CartItem[]>>;
   setGroupId: Dispatch<SetStateAction<string>>;
   setSelectedWarehouse: Dispatch<SetStateAction<string>>;
   setHeldSaleId: Dispatch<SetStateAction<string | null>>;
   setHeldTotal: Dispatch<SetStateAction<number | null>>;
+  setReservationId?: Dispatch<SetStateAction<string | null>>;
+  setCustomer?: Dispatch<SetStateAction<CustomerOption | null>>;
+  setDueDate?: Dispatch<SetStateAction<string>>;
 }) {
   const {
     storageKey,
@@ -108,11 +143,17 @@ export function useCartPersistence(params: {
     selectedWarehouse,
     heldSaleId,
     heldTotal,
+    reservationId,
+    customer,
+    dueDate,
     setCart,
     setGroupId,
     setSelectedWarehouse,
     setHeldSaleId,
     setHeldTotal,
+    setReservationId,
+    setCustomer,
+    setDueDate,
   } = params;
   const resumeGuardRef = useRef(Boolean(resumeId));
   const storedActiveRef = useRef<StoredCart | null>(null);
@@ -154,6 +195,9 @@ export function useCartPersistence(params: {
             );
             setHeldSaleId(stored.heldSaleId);
             setHeldTotal(stored.heldTotal);
+            setReservationId?.(stored.reservationId ?? null);
+            setCustomer?.(stored.customer ?? null);
+            if (stored.dueDate) setDueDate?.(stored.dueDate);
           }
         } else {
           clearStoredCart(storageKey);
@@ -171,7 +215,10 @@ export function useCartPersistence(params: {
     setGroupId,
     setHeldSaleId,
     setHeldTotal,
+    setReservationId,
     setSelectedWarehouse,
+    setCustomer,
+    setDueDate,
   ]);
 
   // D-10: simpan keranjang pada setiap perubahan. Keranjang kosong
@@ -195,13 +242,16 @@ export function useCartPersistence(params: {
         warehouseId: selectedWarehouse,
         heldSaleId,
         heldTotal,
+        reservationId: reservationId ?? null,
+        customer: customer ?? null,
+        dueDate: dueDate ?? null,
       };
       window.localStorage.setItem(storageKey, JSON.stringify(snapshot));
     } catch {
       // localStorage tidak tersedia (mode privat); keranjang tetap
       // berfungsi dari memori selama halaman terbuka.
     }
-  }, [cartLoaded, cart, groupId, selectedWarehouse, heldSaleId, heldTotal, storageKey]);
+  }, [cartLoaded, cart, groupId, selectedWarehouse, heldSaleId, heldTotal, reservationId, customer, dueDate, storageKey]);
 
   return { cartLoaded, resumeGuardRef, storedActiveRef };
 }

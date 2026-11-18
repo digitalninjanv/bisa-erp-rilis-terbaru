@@ -1,4 +1,4 @@
-import { useEffect, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import { formatIDR } from "@/lib/money";
 import type { StoredCart } from "@/components/pos/use-cart-persistence";
 import type { ResumeData } from "@/components/pos/use-held-sales";
@@ -13,22 +13,33 @@ export function HoldDialog(props: {
   hold: () => Promise<void>;
 }) {
   const { holdLabel, setHoldLabel, setHoldOpen, hold } = props;
+  const [busy, setBusy] = useState(false);
+
+  async function submitHold() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await hold();
+    } finally {
+      setBusy(false);
+    }
+  }
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && !busy) {
         setHoldOpen(false);
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [setHoldOpen]);
+  }, [busy, setHoldOpen]);
 
   return (
     <div
       className="fixed inset-0 z-[70] grid place-items-center bg-black/40 p-4"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) setHoldOpen(false);
+        if (e.target === e.currentTarget && !busy) setHoldOpen(false);
       }}
     >
       <div
@@ -45,7 +56,8 @@ export function HoldDialog(props: {
           autoFocus
           value={holdLabel}
           onChange={(event) => setHoldLabel(event.target.value)}
-          placeholder="Contoh: Pesanan Bu Ani — antar sore"
+          disabled={busy}
+          placeholder="Nama pesanan (opsional)"
           aria-label="Label pesanan ditahan"
           className="mt-3 h-9 w-full rounded-md border border-input bg-background px-2.5 text-[13px] outline-none focus:border-ring"
         />
@@ -53,16 +65,18 @@ export function HoldDialog(props: {
           <button
             type="button"
             onClick={() => setHoldOpen(false)}
+            disabled={busy}
             className="h-8 rounded-md border border-border px-3 text-[12px] hover:bg-muted"
           >
             Batal
           </button>
           <button
             type="button"
-            onClick={hold}
-            className="h-8 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground"
+            onClick={() => void submitHold()}
+            disabled={busy}
+            className="h-8 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground disabled:cursor-wait disabled:opacity-60"
           >
-            Simpan pesanan
+            {busy ? "Menyimpan…" : "Simpan pesanan"}
           </button>
         </div>
       </div>

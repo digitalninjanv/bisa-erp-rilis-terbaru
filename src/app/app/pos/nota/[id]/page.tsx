@@ -30,7 +30,7 @@ export default async function ReceiptPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ autoprint?: string; salinan?: string }>;
+  searchParams: Promise<{ autoprint?: string; salinan?: string; popup?: string }>;
 }) {
   const { id } = await params;
   const query = await searchParams;
@@ -100,7 +100,15 @@ export default async function ReceiptPage({
           >
             Kasir
           </Link>
-          <ReceiptPrint auto={query.autoprint === "1"} returnTo={query.autoprint === "1" ? "/app/pos" : undefined} />
+          <ReceiptPrint
+            auto={query.autoprint === "1"}
+            closeAfterPrint={query.popup === "1"}
+            // Hanya alur checkout (tanpa salinan) yang kembali ke kasir.
+            // Cetak ulang dari riwayat membiarkan tab nota tetap terbuka.
+            returnTo={
+              query.autoprint === "1" && query.salinan !== "1" ? "/app/pos" : undefined
+            }
+          />
         </div>
       </div>
 
@@ -342,7 +350,7 @@ export default async function ReceiptPage({
           Template {PRINT_TEMPLATE_LABELS[printSettings.template as PrintTemplate]} · Kertas{" "}
           {PRINT_RECEIPT_PAPER_LABELS[printSettings.receiptPaper as PrintReceiptPaper]} · Template, kertas,
           kop, kaki, logo &amp; elemen nota diatur satu pintu di{" "}
-          <Link href="/app/pengaturan?tab=cetak" className="underline">Pengaturan → Cetak</Link>.
+          <Link href="/app/pengaturan?tab=cetak" className="whitespace-nowrap underline">Pengaturan → Cetak</Link>.
         </p>
       </div>
     </div>

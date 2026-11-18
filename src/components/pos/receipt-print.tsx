@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Printer } from "lucide-react";
 import { toast } from "sonner";
 
@@ -13,7 +13,43 @@ import { toast } from "sonner";
  * di globals.css adalah jaring kedua untuk jalur cetak di luar
  * tombol ini (mis. Ctrl+P).
  */
+/**
+ * POS-NOTA-02: tinggi kertas thermal mengikuti isi nota. `@page` statis
+ * 80mm × 297mm memotong nota panjang dan menyisakan kertas kosong pada
+ * nota pendek; Chrome menghormati ukuran eksplisit, jadi ukur elemen
+ * cetak lalu timpa aturan @page sebelum dialog cetak dibuka.
+ */
+function prepareThermalPageSize() {
+  const doc = document.querySelector<HTMLElement>(".print-doc[data-paper]");
+  const paper = doc?.dataset.paper;
+  if (!doc || (paper !== "thermal58" && paper !== "thermal80")) return;
+
+  const widthMm = paper === "thermal58" ? 58 : 80;
+  const contentMm = (doc.getBoundingClientRect().height * 25.4) / 96;
+  // 2 × 2mm margin + sedikit cadangan agar baris terakhir tidak terpotong.
+  const heightMm = Math.max(60, Math.ceil(contentMm + 6));
+
+  const rule = `@page { size: ${widthMm}mm ${heightMm}mm; margin: 2mm; }`;
+  // PrintShell menaruh aturan @page di dalam .print-doc. Ganti aturan
+  // itu langsung; menambah <style> baru sebelum elemennya membuat
+  // aturan statis 297mm tetap menang dalam cascade.
+  const shellStyle = doc.querySelector<HTMLStyleElement>(":scope > style");
+  if (shellStyle) {
+    shellStyle.textContent = rule;
+    return;
+  }
+
+  let style = document.getElementById("bisa-print-page-size") as HTMLStyleElement | null;
+  if (!style) {
+    style = document.createElement("style");
+    style.id = "bisa-print-page-size";
+    document.body.appendChild(style);
+  }
+  style.textContent = rule;
+}
+
 function printClean() {
+  prepareThermalPageSize();
   toast.dismiss();
   window.print();
 }
@@ -21,6 +57,7 @@ function printClean() {
 export function ReceiptPrint({
   auto = false,
   returnTo,
+  closeAfterPrint = false,
 }: {
   auto?: boolean;
   /**
@@ -29,7 +66,25 @@ export function ReceiptPrint({
    * tertahan di halaman nota.
    */
   returnTo?: string;
+  /** Popup cetak: tutup jendela setelah dialog cetak selesai. */
+  closeAfterPrint?: boolean;
 }) {
+  // Tombol Cetak manual membatalkan auto-print yang belum sempat jalan,
+  // supaya satu kunjungan halaman tidak membuka dua dialog cetak.
+  const manualPrintRef = useRef(false);
+  const printManually = () => {
+    manualPrintRef.current = true;
+    printClean();
+  };
+
+  // Ctrl+P / menu browser juga harus memakai tinggi kertas dinamis,
+  // bukan hanya tombol Cetak.
+  useEffect(() => {
+    const onBeforePrint = () => prepareThermalPageSize();
+    window.addEventListener("beforeprint", onBeforePrint);
+    return () => window.removeEventListener("beforeprint", onBeforePrint);
+  }, []);
+
   useEffect(() => {
     if (!auto) return;
     // Sengaja TANPA ref penjaga: React Strict Mode (next dev)
@@ -39,7 +94,12 @@ export function ReceiptPrint({
     // Cleanup di bawah membatalkan timer run pertama dengan benar.
     let cancelled = false;
     const onAfterPrint = () => {
-      if (!cancelled && returnTo) window.location.assign(returnTo);
+      if (cancelled) return;
+      if (closeAfterPrint) {
+        window.close();
+        return;
+      }
+      if (returnTo) window.location.assign(returnTo);
     };
     window.addEventListener("afterprint", onAfterPrint);
 
@@ -52,7 +112,7 @@ export function ReceiptPrint({
         // Font API tidak tersedia di browser lama; lanjut.
       }
       await new Promise((resolve) => window.setTimeout(resolve, 650));
-      if (cancelled) return;
+      if (cancelled || manualPrintRef.current) return;
       printClean();
     };
     void run();
@@ -61,12 +121,12 @@ export function ReceiptPrint({
       cancelled = true;
       window.removeEventListener("afterprint", onAfterPrint);
     };
-  }, [auto, returnTo]);
+  }, [auto, returnTo, closeAfterPrint]);
 
   return (
     <button
       type="button"
-      onClick={printClean}
+      onClick={printManually}
       className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/90"
     >
       <Printer className="size-3.5" /> Cetak

@@ -158,6 +158,14 @@ export async function saveGroupProductPriceAction(input: z.input<typeof groupPri
         .limit(1);
       if (!group) throw new AppError("NOT_FOUND", "Kelompok tidak ditemukan.");
 
+      // Snapshot POS desktop memakai updatedAt kelompok sebagai penanda
+      // delta bagi seluruh aturan harga di kelompok ini, termasuk saat
+      // aturan produk dihapus atau dinormalkan.
+      await tx
+        .update(customerGroups)
+        .set({ updatedAt: new Date() })
+        .where(and(eq(customerGroups.companyId, ctx.company.id), eq(customerGroups.id, data.groupId)));
+
       const [product] = await tx
         .select({ id: products.id })
         .from(products)
@@ -232,6 +240,10 @@ export async function clearGroupProductPricesAction(groupId: string) {
             eq(customerGroupPrices.groupId, id),
           ),
         );
+      await tx
+        .update(customerGroups)
+        .set({ updatedAt: new Date() })
+        .where(and(eq(customerGroups.companyId, ctx.company.id), eq(customerGroups.id, id)));
     });
     revalidatePath("/app/pengaturan");
     revalidatePath("/app/pos");
