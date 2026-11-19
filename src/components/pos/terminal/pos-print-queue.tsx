@@ -18,6 +18,7 @@ function isDirectPrinter() {
 }
 
 async function handleJob(job: PrintJob): Promise<PrintHandlerResult> {
+  const startedAt = performance.now();
   const prefs = getPrinterPreferences();
   if (prefs.type !== "bluetooth" && prefs.type !== "usb" && prefs.type !== "serial") {
     return { ok: false, message: "Printer thermal belum terhubung." };
@@ -25,7 +26,7 @@ async function handleJob(job: PrintJob): Promise<PrintHandlerResult> {
 
   let receipt = job.receiptData;
   if (!receipt) {
-    const result = await getSaleReceiptDataAction(job.saleId);
+    const result = await getSaleReceiptDataAction(job.saleId, job.copyIndex);
     if (!result.ok) {
       recordPosTelemetry("print.fail", { saleId: job.saleId, reason: "receipt_fetch" });
       return { ok: false, message: result.message };
@@ -36,7 +37,7 @@ async function handleJob(job: PrintJob): Promise<PrintHandlerResult> {
   const bytes = formatReceiptToEscPos({
     ...receipt,
     paperWidth: prefs.paperWidth,
-    openCashDrawer: prefs.openCashDrawer,
+    openCashDrawer: prefs.openCashDrawer && job.copyIndex === 0 && job.attempts === 1,
     cutPaper: prefs.cutPaper,
     copyIndex: job.copyIndex,
   });
@@ -45,16 +46,17 @@ async function handleJob(job: PrintJob): Promise<PrintHandlerResult> {
     saleId: job.saleId,
     kind: job.kind,
     copyIndex: job.copyIndex,
+    durationMs: Math.round(performance.now() - startedAt),
     reason: sent.ok ? null : (sent.message ?? "unknown"),
   });
-  return { ok: sent.ok, message: sent.message };
+  return sent;
 }
 
 /**
  * Worker tunggal antrean cetak. Dipasang sekali di terminal POS; job
  * tetap tersimpan bila tab ditutup dan dilanjutkan saat terminal dibuka.
  */
-export function PosPrintQueue() {
+export function PosPrintQueue({ companyId }: { companyId: string }) {
   const running = useRef(false);
 
   useEffect(() => {
@@ -64,12 +66,14 @@ export function PosPrintQueue() {
       if (cancelled || running.current || !isDirectPrinter()) return;
       running.current = true;
       try {
-        const drain = () => drainPrintQueue(handleJob);
+        const drain = () => drainPrintQueue(handleJob, companyId);
         if (typeof navigator !== "undefined" && navigator.locks) {
           await navigator.locks.request("bisa-pos-print", drain);
         } else {
           await drain();
         }
+      } catch {
+        recordPosTelemetry("print.queue_error");
       } finally {
         running.current = false;
       }
@@ -98,7 +102,7 @@ export function PosPrintQueue() {
       window.removeEventListener("error", onError);
       window.removeEventListener("unhandledrejection", onRejection);
     };
-  }, []);
+  }, [companyId]);
 
   return null;
 }

@@ -33,7 +33,7 @@ import { can } from "@/lib/permissions";
 import { AppError, guard, type ActionResult } from "@/lib/errors";
 import { parseInput } from "@/lib/action-validation";
 import { d, toDb } from "@/lib/money";
-import { paymentRequestFingerprint } from "@/server/idempotency";
+import { lockPosSaleAttempt, paymentRequestFingerprint } from "@/server/idempotency";
 import { todayISO } from "@/lib/format";
 import { log } from "@/lib/log";
 
@@ -76,6 +76,7 @@ export async function searchProductsAction(
   // klien sebagai offset baris). categoryId = chip kategori aktif.
   offset?: number,
   categoryId?: string,
+  exactCode = false,
 ): Promise<ActionResult<Awaited<ReturnType<typeof searchProducts>>>> {
   return guard(async () => {
     const ctx = await requirePermission("pos.sell");
@@ -91,8 +92,9 @@ export async function searchProductsAction(
         companyId: ctx.company.id,
         warehouseId: resolvedWarehouseId,
         q,
-        limit: 24,
-        offset: safeOffset,
+        limit: exactCode ? 1 : 24,
+        offset: exactCode ? 0 : safeOffset,
+        exactCode,
         categoryId: categoryId || undefined,
         // POS3-10: harga pokok hanya ikut bila pemanggil memegang
         // inventory.cost; kasir tidak pernah menerimanya di payload.
@@ -256,6 +258,7 @@ export async function checkoutAction(input: z.input<typeof checkoutSchema>) {
     const data = parseInput(checkoutSchema, input);
     const startedAt = performance.now();
     const result = await withCompany(ctx.company.id, async (tx) => {
+      await lockPosSaleAttempt(tx, ctx.company.id, data.idempotencyKey);
       const saleInput = {
         companyId: ctx.company.id,
         userId: ctx.user.id,
@@ -339,16 +342,23 @@ export async function checkoutAction(input: z.input<typeof checkoutSchema>) {
       }
       return sale;
     });
+    const committedAt = performance.now();
+    try {
+      revalidatePath("/app/pos");
+      revalidatePath("/app/pos/riwayat");
+      revalidatePath("/app/pos/sesi");
+      if (data.heldSaleId) revalidatePath("/app/pos/ditahan");
+    } catch (error) {
+      log.warn("pos.checkout.revalidation_failed", { companyId: ctx.company.id, saleNumber: result.number }, error);
+    }
     log.info("pos.checkout.completed", {
       companyId: ctx.company.id,
       userId: ctx.user.id,
       saleNumber: result.number,
       durationMs: Math.round(performance.now() - startedAt),
+      commitMs: Math.round(committedAt - startedAt),
+      revalidationMs: Math.round(performance.now() - committedAt),
     });
-    revalidatePath("/app/pos");
-    revalidatePath("/app/pos/riwayat");
-    revalidatePath("/app/pos/sesi");
-    revalidatePath("/app/pos/ditahan");
     return result;
   });
 }

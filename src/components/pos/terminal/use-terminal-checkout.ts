@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { checkoutAction } from "@/server/actions/pos";
 import { formatIDR } from "@/lib/money";
 import { formatDate, todayISO } from "@/lib/format";
-import { enqueuePrintJob } from "@/lib/pos/print-queue";
+import type { CompletedSaleInfo } from "./checkout-success-modal";
 import type { ReceiptData } from "@/lib/escpos/types";
 import {
   enqueueOfflineSale,
@@ -95,16 +95,17 @@ export function useTerminalCheckout(params: {
   setOldestQueuedAt: Dispatch<SetStateAction<string | null>>;
   idempotencyKeyRef: RefObject<string>;
   checkoutAttemptedRef: RefObject<boolean>;
+  inFlightRef: RefObject<boolean>;
   /** A-28 UI-1 (UX-B01): dipanggil sesudah penjualan terantre offline
    *  (terminal tidak berpindah halaman) agar induk mengembalikan
    *  fokus ke kotak cari. */
   onSaleQueued?: () => void;
-  /** Callback saat penjualan online sukses agar kasir tetap berada di terminal (tanpa redirect halaman). */
-  onCheckoutSuccess?: (sale: { id: string; number: string; total: number; change: number }) => void;
+  /** Callback setelah penjualan tersimpan di server atau di antrean lokal agar kasir tetap berada di terminal (tanpa redirect halaman). */
+  onCheckoutSuccess?: (sale: CompletedSaleInfo) => void;
 }) {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
-  const { cart, sessionOpen, mode, singleMethod, single, cashTendered, entries, methodById, outstanding, debtActive, customer, dueDate, total, quote, cache, posOfflineEnabled, reservationId, selectedWarehouse, groupId, storageKey, sessionId, userId, companyId, receiptProfile, receivableDefaultTermDays, appliedCredit, setCart, setEntries, setCustomer, setCustomerQuery, setCustomerResults, setDueDate, resetCredit, setQuoteResult, heldSaleId, setHeldSaleId, setHeldTotal, setLastSale, setReservationId, setQueuedCount, setOldestQueuedAt, idempotencyKeyRef, checkoutAttemptedRef, onSaleQueued, onCheckoutSuccess } = params;
+  const { cart, sessionOpen, mode, singleMethod, single, cashTendered, entries, methodById, outstanding, debtActive, customer, dueDate, total, quote, cache, posOfflineEnabled, reservationId, selectedWarehouse, groupId, storageKey, sessionId, userId, companyId, receiptProfile, receivableDefaultTermDays, appliedCredit, setCart, setEntries, setCustomer, setCustomerQuery, setCustomerResults, setDueDate, resetCredit, setQuoteResult, heldSaleId, setHeldSaleId, setHeldTotal, setLastSale, setReservationId, setQueuedCount, setOldestQueuedAt, idempotencyKeyRef, checkoutAttemptedRef, inFlightRef, onSaleQueued, onCheckoutSuccess } = params;
 
   // A-24 T6 (T6-01/T6-02): antrekan penjualan ini ke antrean offline
   // lokal. Dipakai oleh DUA pemicu dengan semantik yang sama persis:
@@ -130,6 +131,7 @@ export function useTerminalCheckout(params: {
       clientKey,
       companyId,
       warehouseId: selectedWarehouse,
+      heldSaleId,
       groupId: groupId || null,
       customerId: debtActive ? (customer?.id ?? null) : null,
       dueDate: debtActive ? dueDate : null,
@@ -243,21 +245,12 @@ export function useTerminalCheckout(params: {
         terminalId: payload.deviceId,
       });
       await enqueueOfflineSale(storage, payload);
-      const summary = await getOfflineQueueSummary(storage);
-      setQueuedCount(summary.count);
-      setOldestQueuedAt(summary.oldestQueuedAt);
-      try {
-        await enqueuePrintJob({
-          saleId: clientKey,
-          saleNumber: offlineSaleNumber,
-          companyId,
-          terminalId: payload.deviceId ?? getOrCreateDeviceId(),
-          kind: "offline-receipt",
-          receiptData,
-        });
-      } catch {
-        toast.error("Penjualan tersimpan, tetapi antrean cetak offline gagal dibuat.");
-      }
+      void getOfflineQueueSummary(storage)
+        .then((summary) => {
+          setQueuedCount(summary.count);
+          setOldestQueuedAt(summary.oldestQueuedAt);
+        })
+        .catch(() => toast.error("Transaksi tersimpan, tetapi ringkasan antrean belum bisa dimuat."));
     } catch {
       toast.error("Antrean offline tidak dapat disimpan di browser ini. Transaksi dibatalkan.");
       return;
@@ -275,10 +268,22 @@ export function useTerminalCheckout(params: {
     setHeldSaleId(null);
     setHeldTotal(null);
     idempotencyKeyRef.current = newUuid();
-    onSaleQueued?.();
+    checkoutAttemptedRef.current = false;
+    if (onCheckoutSuccess) {
+      onCheckoutSuccess({
+        id: clientKey,
+        number: offlineSaleNumber,
+        total: receiptData.total,
+        change: receiptData.change,
+        offlineReceipt: receiptData,
+      });
+    } else {
+      onSaleQueued?.();
+    }
   }
 
   async function checkout() {
+    if (inFlightRef.current) return;
     if (cart.length === 0) {
       toast.error("Keranjang masih kosong.");
       return;
@@ -345,24 +350,15 @@ export function useTerminalCheckout(params: {
               fee: entry.fee ? Number(entry.fee) : undefined,
             }));
 
-    // SIM-2 S7B-2 Batch 6: browser offline + saklar aktif → penjualan
-    // diantrekan lokal (IndexedDB) dengan kunci idempotensi yang sama
-    // yang akan dipakai server saat sinkronisasi; keranjang dibersihkan
-    // persis seperti checkout sukses, TANPA nomor nota (belum tercatat).
-    if (posOfflineEnabled && !navigator.onLine) {
-      await queueSaleOffline(payments, idempotencyKeyRef.current);
-      return;
-    }
-
-    // POS-ERR-01: tombol Bayar tidak boleh macet nonaktif saat server
-    // action melempar — state sibuk dipulihkan di finally.
-    // A-24 T6: kunci percobaan ini dibekukan agar jalur tangkap
-    // (antrean offline) selalu memakai kunci yang sama dengan yang
-    // dikirim ke server, walau jalur sukses sempat merotasinya.
     const attemptKey = idempotencyKeyRef.current;
+    inFlightRef.current = true;
     setSubmitting(true);
-    checkoutAttemptedRef.current = true;
     try {
+      if (posOfflineEnabled && !navigator.onLine) {
+        await queueSaleOffline(payments, attemptKey);
+        return;
+      }
+      checkoutAttemptedRef.current = true;
       const result = await checkoutAction({
         warehouseId: selectedWarehouse,
         groupId: groupId || null,
@@ -372,7 +368,7 @@ export function useTerminalCheckout(params: {
         // penjualan mengandung utang; penjualan tunai tetap anonim.
         customerId: debtActive ? (customer?.id ?? undefined) : undefined,
         dueDate: debtActive ? dueDate : undefined,
-        idempotencyKey: idempotencyKeyRef.current,
+        idempotencyKey: attemptKey,
         lines: cart.map((line) => ({
           productId: line.productId,
           // S4: satuan baris (qty = qty input kemasan terpilih).
@@ -383,7 +379,13 @@ export function useTerminalCheckout(params: {
           serialNumbers: line.serialNumbers?.filter((value) => value.trim()),
         })),
         payments,
-      });
+      }).catch(() => null);
+
+      if (!result) {
+        if (posOfflineEnabled) await queueSaleOffline(payments, attemptKey);
+        else toast.error("Checkout gagal. Periksa koneksi lalu coba lagi.");
+        return;
+      }
 
       if (!result.ok) {
         toast.error(result.message);
@@ -419,24 +421,10 @@ export function useTerminalCheckout(params: {
         });
       } else {
         toast.success(`Transaksi ${result.data.number} tersimpan.`);
-        router.push(`/app/pos/nota/${result.data.id}?autoprint=1`);
+        router.push(`/app/pos/nota/${result.data.id}`);
       }
-    } catch {
-      // A-24 T6 (temuan T6-02): panggilan checkout melempar berarti
-      // server tidak terjangkau (transportasi gagal total) — BUKAN
-      // putusan domain, yang selalu kembali sebagai { ok: false }.
-      // Bila mode offline perusahaan aktif, penjualan diantrekan
-      // persis seperti jalur browser-offline; kunci idempotensi yang
-      // sama menjaga pengiriman ulang tetap terdedup di server.
-      // Terbukti di skenario B: server lokal mati membuat peramban
-      // tetap merasa "online", jadi tanpa jalur ini terminal yang
-      // sudah termuat tidak dapat menjual sama sekali.
-      if (posOfflineEnabled) {
-        await queueSaleOffline(payments, attemptKey);
-        return;
-      }
-      toast.error("Checkout gagal. Periksa koneksi lalu coba lagi.");
     } finally {
+      inFlightRef.current = false;
       setSubmitting(false);
     }
   }

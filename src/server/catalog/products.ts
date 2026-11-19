@@ -463,6 +463,7 @@ export async function searchProducts(
     warehouseId: string;
     q: string;
     limit?: number;
+    exactCode?: boolean;
     offset?: number;
     includeCost?: boolean;
     /** Filter kategori untuk navigasi cepat terminal (opsional). */
@@ -470,6 +471,7 @@ export async function searchProducts(
   },
 ) {
   const q = input.q.trim();
+  if (input.exactCode && !q) return [];
 
   // POS-SRCH-01: both branches project the stock of the requested
   // warehouse — the empty-query branch used to omit the column, so the
@@ -526,8 +528,8 @@ export async function searchProducts(
             input.categoryId ? eq(products.categoryId, input.categoryId) : undefined,
             or(
               eq(products.barcode, q),
-              ilike(products.sku, `%${q}%`),
-              ilike(products.name, `%${q}%`),
+              input.exactCode ? eq(products.sku, q) : ilike(products.sku, `%${q}%`),
+              input.exactCode ? undefined : ilike(products.name, `%${q}%`),
               // S4: barcode KEMASAN aktif juga menemukan produknya —
               // pindai dus di terminal harus sampai ke produk ini
               // (kemasan yang cocok ditandai lewat matchedPackagingId).
@@ -544,14 +546,14 @@ export async function searchProducts(
         .orderBy(
           sql`case
             when ${products.barcode} = ${q} then 0
-            when ${products.sku} = ${q} then 1
+            when ${products.sku} = ${q} then ${input.exactCode ? 2 : 1}
             when exists (
               select 1 from product_packagings pp
                where pp.company_id = ${products.companyId}
                  and pp.product_id = ${products.id}
                  and pp.barcode = ${q}
                  and pp.is_active = true
-            ) then 2
+            ) then ${input.exactCode ? 1 : 2}
             else 3
           end`,
           asc(products.name),

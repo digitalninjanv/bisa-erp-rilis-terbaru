@@ -422,7 +422,8 @@ export async function restoreReservationForVoidSale(
   return true;
 }
 
-export async function listReservations(tx: Tx, companyId: string) {
+export async function listReservations(tx: Tx, companyId: string, activeOnly = false) {
+  const now = new Date();
   const rows = await tx
     .select({
       reservation: stockReservations,
@@ -433,9 +434,12 @@ export async function listReservations(tx: Tx, companyId: string) {
     .from(stockReservations)
     .innerJoin(products, eq(stockReservations.productId, products.id))
     .innerJoin(warehouses, eq(stockReservations.warehouseId, warehouses.id))
-    .where(eq(stockReservations.companyId, companyId))
+    .where(and(
+      eq(stockReservations.companyId, companyId),
+      activeOnly ? eq(stockReservations.status, "active") : undefined,
+      activeOnly ? or(isNull(stockReservations.expiresAt), gt(stockReservations.expiresAt, now)) : undefined,
+    ))
     .orderBy(asc(stockReservations.date));
-  const now = new Date();
   return rows.map((row) => ({
     ...row.reservation,
     productName: row.productName,

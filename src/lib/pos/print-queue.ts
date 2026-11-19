@@ -192,8 +192,10 @@ export class PrintQueue {
       .sort((a, b) => b.copyIndex - a.copyIndex || b.createdAt.localeCompare(a.createdAt))[0];
   }
 
-  async claimNext(): Promise<PrintJob | undefined> {
-    const next = (await this.storage.list()).filter((job) => job.status === "pending").sort(byCreatedAt)[0];
+  async claimNext(companyId?: string): Promise<PrintJob | undefined> {
+    const next = (await this.storage.list())
+      .filter((job) => job.status === "pending" && (companyId === undefined || job.companyId === companyId))
+      .sort(byCreatedAt)[0];
     if (!next) return undefined;
     const claimed: PrintJob = {
       ...next,
@@ -258,8 +260,8 @@ export class PrintQueue {
       if (new Date(job.updatedAt).getTime() > cutoff) continue;
       await this.storage.put({
         ...job,
-        status: "pending",
-        lastError: "Job cetak sebelumnya terhenti; dicoba ulang.",
+        status: "uncertain",
+        lastError: "Pengiriman sebelumnya terhenti. Periksa struk sebelum mengirim ulang.",
         updatedAt: now(),
       });
       reset += 1;
@@ -323,6 +325,7 @@ export async function latestPrintJob(saleId: string): Promise<PrintJob | undefin
 export type PrintHandlerResult = { ok: boolean; message?: string; uncertain?: boolean };
 
 let draining = false;
+let lastCleanup = 0;
 
 /**
  * Proses antrean sampai kosong. Pemanggil harus membungkusnya dengan
@@ -330,15 +333,19 @@ let draining = false;
  */
 export async function drainPrintQueue(
   handler: (job: PrintJob) => Promise<PrintHandlerResult>,
+  companyId?: string,
 ): Promise<void> {
   if (draining) return;
   draining = true;
   try {
     const queue = getBrowserPrintQueue();
-    await queue.resetStuck(2 * 60 * 1000);
-    await queue.cleanup();
+    if (await queue.resetStuck(2 * 60 * 1000)) notifyPrintQueueChanged();
+    if (Date.now() - lastCleanup >= 60 * 60 * 1000) {
+      await queue.cleanup();
+      lastCleanup = Date.now();
+    }
     for (let index = 0; index < 25; index += 1) {
-      const job = await queue.claimNext();
+      const job = await queue.claimNext(companyId);
       if (!job) break;
       try {
         const result = await handler(job);

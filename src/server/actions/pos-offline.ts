@@ -77,6 +77,7 @@ export async function syncOfflineSalesAction(input: z.input<typeof syncSchema>) 
           allowCrossCashier: can(ctx, "pos.void"),
           originEntitlements,
           item: item as OfflineSalePayload,
+          reconcileWebCheckout: true,
         }),
       );
       results.push(result);

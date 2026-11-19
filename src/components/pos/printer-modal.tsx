@@ -175,7 +175,7 @@ export function PrinterConfigModal({ onClose }: { onClose: () => void }) {
   function handleTestKioskPrint() {
     const win = window.open("", "_blank", "width=350,height=500");
     if (!win) {
-      window.print();
+      toast.error("Jendela cetak diblokir. Izinkan pop-up untuk situs ini lalu uji lagi.");
       return;
     }
     win.document.write(`
@@ -195,7 +195,7 @@ export function PrinterConfigModal({ onClose }: { onClose: () => void }) {
           <div>UJI COBA CETAK KIOSK</div>
           <div class="line"></div>
           <div style="text-align: left;">
-            <div>Status : Mode Kiosk Aktif</div>
+            <div>Mode : Cetak melalui driver OS</div>
             <div>Waktu  : ${new Date().toLocaleTimeString("id-ID")}</div>
             <div>Driver : Windows / OS Default</div>
           </div>
@@ -225,11 +225,6 @@ export function PrinterConfigModal({ onClose }: { onClose: () => void }) {
 
   function toggleAutoCut() {
     const updated = savePrinterPreferences({ cutPaper: !prefs.cutPaper });
-    setPrefs(updated);
-  }
-
-  function toggleAutoPrint() {
-    const updated = savePrinterPreferences({ autoPrintOnCheckout: !prefs.autoPrintOnCheckout });
     setPrefs(updated);
   }
 
@@ -494,18 +489,6 @@ export function PrinterConfigModal({ onClose }: { onClose: () => void }) {
                   />
                 </label>
 
-                {/* Auto Print saat Checkout */}
-                <label className="flex items-center justify-between text-[12px] cursor-pointer">
-                  <span className="flex items-center gap-1.5 text-muted-foreground">
-                    <Printer className="size-3.5" /> Cetak Otomatis saat Klik Bayar
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={prefs.autoPrintOnCheckout}
-                    onChange={toggleAutoPrint}
-                    className="size-4 rounded border-input"
-                  />
-                </label>
               </div>
 
               {/* Uji Coba Cetak */}
@@ -546,7 +529,7 @@ export function PrinterConfigModal({ onClose }: { onClose: () => void }) {
                       </p>
                       <p className="text-[11px] text-muted-foreground">
                         {prefs.type === "kiosk"
-                          ? "Struk dicetak otomatis melalui driver OS (Windows / Linux CUPS)."
+                          ? "Setelah pembayaran, klik Cetak struk untuk menggunakan driver OS."
                           : "Gunakan mode ini jika printer sudah terinstal driver-nya di komputer kasir."}
                       </p>
                     </div>
@@ -569,7 +552,7 @@ export function PrinterConfigModal({ onClose }: { onClose: () => void }) {
                           name: "Printer Bawaan OS (Kiosk)",
                         });
                         setPrefs(updated);
-                        toast.success("Mode Kiosk aktif! Struk akan dikirim ke printer default sistem.");
+                        toast.success("Driver OS dipilih. Jalankan cetak uji untuk memeriksa printer.");
                       }}
                       className="rounded bg-primary px-3 py-1.5 text-[11px] font-medium text-primary-foreground hover:bg-primary/90"
                     >
@@ -593,10 +576,10 @@ export function PrinterConfigModal({ onClose }: { onClose: () => void }) {
               <div className="rounded-lg border border-border bg-muted/20 p-3.5 space-y-2">
                 <div className="flex items-center gap-2 font-semibold text-foreground">
                   <HelpCircle className="size-4 text-primary" />
-                  <span>Kelebihan Mode Kiosk (Sangat Cocok untuk Akses Jaringan LAN):</span>
+                  <span>Cetak lewat driver OS</span>
                 </div>
                 <p className="text-muted-foreground leading-relaxed">
-                  Bekerja 100% normal pada akses IP lokal (<code>http://192.168.x.x</code>) tanpa perlu pengaturan izin browser khusus. Cukup jadikan printer thermal sebagai <strong>Default Printer</strong> di Windows, dan buka browser dengan flag <strong>--kiosk-printing</strong> agar struk keluar seketika tanpa dialog.
+                  Tambahkan printer USB atau LAN di pengaturan sistem, lalu cetak halaman uji dari sistem operasi. Saat memilih Cetak struk, gunakan dialog untuk memilih printer dan ukuran kertas yang sesuai.
                 </p>
               </div>
 
@@ -616,7 +599,7 @@ export function PrinterConfigModal({ onClose }: { onClose: () => void }) {
                       --kiosk-printing
                     </code>
                   </li>
-                  <li>Buka browser melalui shortcut tersebut dan kasir siap mencetak seketika tanpa dialog.</li>
+                  <li>Buka browser melalui shortcut tersebut, lalu uji Cetak struk untuk memastikan hasilnya dikirim ke printer yang benar.</li>
                 </ol>
               </div>
 

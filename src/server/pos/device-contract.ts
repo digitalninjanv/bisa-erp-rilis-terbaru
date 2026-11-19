@@ -47,7 +47,7 @@ export const posSyncItemSchema = z.object({
         methodId: z.string().uuid(),
         amount: z.number().nonnegative(),
         tendered: z.number().nonnegative(),
-        reference: z.string().max(80).optional(),
+        reference: z.string().max(120).optional(),
         fee: z.number().nonnegative().optional(),
       }),
     )

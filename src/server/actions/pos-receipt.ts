@@ -1,23 +1,29 @@
 "use server";
 
-import { withCompanyReadOnly } from "@/db/tenant";
+import { withCompany, withCompanyReadOnly } from "@/db/tenant";
 import { requirePermission } from "@/lib/session";
-import { guard } from "@/lib/errors";
+import { AppError, guard } from "@/lib/errors";
 import { getSaleDetail } from "@/server/reports";
 import { getSettings } from "@/server/catalog";
 import { toPrintSettings } from "@/components/print/types";
 import { formatDate } from "@/lib/format";
+import { writeAudit } from "@/server/audit";
 import type { ReceiptData } from "@/lib/escpos/types";
 
 /**
  * Mengambil data terstruktur nota penjualan untuk dicetak langsung
  * ke printer thermal via ESC/POS tanpa dialog browser.
  */
-export async function getSaleReceiptDataAction(saleId: string) {
+export async function getSaleReceiptDataAction(saleId: string, copyIndex = 0) {
   return guard(async () => {
     const ctx = await requirePermission("pos.sell");
+    if (!Number.isSafeInteger(copyIndex) || copyIndex < 0) {
+      throw new AppError("VALIDATION", "Nomor salinan tidak valid.");
+    }
+    if (copyIndex > 0) await requirePermission("pos.receipt.reprint");
+    const withTenant = copyIndex > 0 ? withCompany : withCompanyReadOnly;
 
-    const result = await withCompanyReadOnly(ctx.company.id, async (tx) => {
+    const result = await withTenant(ctx.company.id, async (tx) => {
       const [detail, settings] = await Promise.all([
         getSaleDetail(tx, ctx.company.id, saleId),
         getSettings(tx, ctx.company.id),
@@ -66,6 +72,16 @@ export async function getSaleReceiptDataAction(saleId: string) {
         showQr: printSettings.showQr,
       };
 
+      if (copyIndex > 0) {
+        await writeAudit(tx, {
+          companyId: ctx.company.id,
+          userId: ctx.user.id,
+          action: "pos.receipt.reprint",
+          entityType: "sale",
+          entityId: saleId,
+          after: { number: detail.sale.number, copyIndex, transport: "thermal" },
+        });
+      }
       return receiptData;
     });
 

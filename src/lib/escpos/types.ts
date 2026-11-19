@@ -68,7 +68,7 @@ export interface PrinterPreferences {
   paperWidth: PaperWidth;
   openCashDrawer: boolean;
   cutPaper: boolean;
-  autoPrintOnCheckout: boolean;
+  usbSerialNumber?: string | null;
 }
 
 export const DEFAULT_PRINTER_PREFERENCES: PrinterPreferences = {
@@ -78,5 +78,5 @@ export const DEFAULT_PRINTER_PREFERENCES: PrinterPreferences = {
   paperWidth: "58mm",
   openCashDrawer: true,
   cutPaper: true,
-  autoPrintOnCheckout: true,
+  usbSerialNumber: null,
 };

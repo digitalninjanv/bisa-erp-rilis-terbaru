@@ -35,6 +35,8 @@ import {
   resolveOfflineOutboxAction,
   syncOfflineSalesAction,
 } from "@/server/actions/pos-offline";
+import { checkoutAction, holdAction } from "@/server/actions/pos";
+import { getSaleReceiptDataAction } from "@/server/actions/pos-receipt";
 import type { OfflineSalePayload } from "@/lib/pos-offline";
 import { wipeCompanyFixture } from "../helpers/wipe-company";
 
@@ -889,5 +891,56 @@ describe("POS3-06 gerbang supervisor untuk penyelesaian peninjauan", () => {
         ),
       );
     expect(audits).toHaveLength(1);
+  });
+});
+
+describe("Rekonsiliasi checkout browser dan pesanan tahan offline", () => {
+  it("mengakui percobaan online yang sudah tersimpan dan menahan payload berbeda", async () => {
+    const productId = await makeProduct("1000", "500", 10);
+    setActor(OWNER, MANAGER_PERMS);
+    const clientKey = crypto.randomUUID();
+    const lines = [{ productId, qty: 1, packagingId: null, discountType: null, discountValue: 0 }];
+    const payments = [{ methodId: cashMethodId, amount: 1000, tendered: 1000 }];
+    const posted = await checkoutAction({ warehouseId: whId, groupId: null, idempotencyKey: clientKey, lines, payments });
+    expect(posted.ok).toBe(true);
+    if (!posted.ok) return;
+    const offline = {
+      clientKey, warehouseId: whId, groupId: null, customerId: null, dueDate: null,
+      cashierId: OWNER, date: TODAY, expectedTotal: 1000, queuedAt: new Date().toISOString(),
+      lines: lines.map((line) => ({ ...line, unitPrice: 1000 })),
+      payments,
+    };
+    const replayed = await syncOfflineSalesAction({ items: [offline] });
+    expect(replayed).toMatchObject({ ok: true, data: [{ status: "duplicate", saleId: posted.data.id }] });
+    const conflict = await syncOfflineSalesAction({ items: [{ ...offline, payments: [{ ...payments[0], tendered: 2000 }] }] });
+    expect(conflict).toMatchObject({ ok: true, data: [{ status: "conflict", saleId: posted.data.id }] });
+
+    await expect(getSaleReceiptDataAction(posted.data.id, 1)).resolves.toMatchObject({ ok: false, code: "FORBIDDEN" });
+    setActor(OWNER, [...MANAGER_PERMS, "pos.receipt.reprint"]);
+    await expect(getSaleReceiptDataAction(posted.data.id, 1)).resolves.toMatchObject({ ok: true });
+    const [reprintAudit] = await adminDb.select({ id: auditLog.id }).from(auditLog).where(and(
+      eq(auditLog.companyId, ORG), eq(auditLog.entityId, posted.data.id), eq(auditLog.action, "pos.receipt.reprint"),
+    ));
+    expect(reprintAudit).toBeDefined();
+  });
+
+  it("menghabiskan satu pesanan tahan ketika penjualan offline diposting", async () => {
+    const productId = await makeProduct("1000", "500", 10);
+    setActor(OWNER, MANAGER_PERMS);
+    const lines = [{ productId, qty: 1 }];
+    const held = await holdAction({ warehouseId: whId, lines, idempotencyKey: crypto.randomUUID() });
+    expect(held.ok).toBe(true);
+    if (!held.ok) return;
+    const offline = {
+      clientKey: crypto.randomUUID(), warehouseId: whId, heldSaleId: held.data.id,
+      cashierId: OWNER, date: TODAY, expectedTotal: 1000, queuedAt: new Date().toISOString(),
+      lines, payments: [{ methodId: cashMethodId, amount: 1000, tendered: 1000 }],
+    };
+    const result = await syncOfflineSalesAction({ items: [offline] });
+    expect(result).toMatchObject({ ok: true, data: [{ status: "synced" }] });
+    const [remaining] = await adminDb.select({ id: sales.id }).from(sales).where(eq(sales.id, held.data.id));
+    expect(remaining).toBeUndefined();
+    const replayed = await syncOfflineSalesAction({ items: [offline] });
+    expect(replayed).toMatchObject({ ok: true, data: [{ status: "duplicate" }] });
   });
 });

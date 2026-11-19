@@ -26,6 +26,22 @@ describe("printer write lock", () => {
     await expect(withPrinterWriteLock(async () => "ok")).resolves.toBe("ok");
   });
 
+  it("menunggu pengiriman yang sudah dimulai meski UI mengalami timeout", async () => {
+    let finish!: () => void;
+    const first = withPrinterWriteLock(() => new Promise<void>((resolve) => {
+      finish = resolve;
+    }), 5);
+    await expect(first).rejects.toThrow(/tidak merespons/);
+
+    const second = withPrinterWriteLock(async () => "ok");
+    let finished = false;
+    void second.then(() => { finished = true; });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(finished).toBe(false);
+    finish();
+    await expect(second).resolves.toBe("ok");
+  });
+
   it("menolak tugas yang melewati timeout", async () => {
     await expect(
       withPrinterWriteLock(

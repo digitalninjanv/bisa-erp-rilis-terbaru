@@ -13,7 +13,6 @@ import {
   type SerialPortLike,
   type UsbDeviceLike,
   type UsbEndpointLike,
-  type UsbInterfaceLike,
 } from "./web-printer-types";
 
 const STORAGE_KEY = "bisa_pos_printer_prefs";
@@ -260,52 +259,36 @@ async function openAndClaimUsbDevice(device: UsbDeviceLike): Promise<{
       await device.selectConfiguration(1);
     }
 
-    const interfaces = device.configuration?.interfaces || [];
-    let targetIface: UsbInterfaceLike | null = null;
-    let targetEndpoint: UsbEndpointLike | null = null;
-
-    // Scan semua antarmuka untuk mencari endpoint OUT
-    for (const iface of interfaces) {
-      const alternates = iface.alternates || (iface.alternate ? [iface.alternate] : []);
-      for (const alt of alternates) {
-        const outEp = alt?.endpoints?.find((endpoint) => endpoint.direction === "out");
-        if (outEp) {
-          targetIface = iface;
-          targetEndpoint = outEp;
-          break;
-        }
-      }
-      if (targetEndpoint) break;
+    const interfaces = device.configuration?.interfaces ?? [];
+    const candidates = interfaces.flatMap((iface) =>
+      (iface.alternates ?? (iface.alternate ? [iface.alternate] : [])).flatMap((alternate) => {
+        const endpoint = alternate.endpoints?.find((candidate) => candidate.direction === "out");
+        return endpoint ? [{ iface, alternate, endpoint }] : [];
+      }),
+    );
+    const target = candidates.find(({ alternate }) => alternate.interfaceClass === 7) ?? candidates[0];
+    if (!target) {
+      await device.close().catch(() => undefined);
+      return { ok: false, message: "Antarmuka USB dengan endpoint OUT tidak ditemukan." };
     }
 
-    if (!targetIface || !targetEndpoint) {
-      targetIface = interfaces[0];
-      const alt = targetIface?.alternate || targetIface?.alternates?.[0];
-      targetEndpoint = alt?.endpoints?.find((endpoint) => endpoint.direction === "out") ?? null;
-    }
-
-    if (!targetIface) {
-      return { ok: false, message: "Tidak ada antarmuka (interface) printer yang terdeteksi." };
-    }
-
-    const ifaceNumber = targetIface.interfaceNumber ?? 0;
+    const interfaceNumber = target.iface.interfaceNumber ?? 0;
     try {
-      await device.claimInterface(ifaceNumber);
+      await device.claimInterface(interfaceNumber);
     } catch {
+      await device.close().catch(() => undefined);
       return {
         ok: false,
-        message:
-          "Antarmuka USB printer sedang diklaim oleh driver sistem operasi (misal usblp di Linux atau driver Windows). " +
-          "Solusi: Gunakan tombol 'Serial / COM' atau jalankan browser dengan mode Kiosk Printing.",
+        message: "Antarmuka USB belum bisa diklaim. Jika printer memakai driver OS, pilih mode Driver OS untuk mencetak.",
       };
     }
-
-    if (!targetEndpoint) {
-      return { ok: false, message: "Endpoint pengirim data (OUT) tidak ditemukan pada printer USB." };
+    const alternateSetting = target.alternate.alternateSetting ?? 0;
+    if (alternateSetting !== (target.iface.alternate?.alternateSetting ?? 0)) {
+      await device.selectAlternateInterface(interfaceNumber, alternateSetting);
     }
-
-    return { ok: true, endpoint: targetEndpoint };
+    return { ok: true, endpoint: target.endpoint };
   } catch (error) {
+    await device.close().catch(() => undefined);
     return { ok: false, message: errorMessage(error, "Gagal menghubungkan perangkat USB.") };
   }
 }
@@ -369,6 +352,7 @@ export async function connectDirectUsbPrinter(): Promise<{
     savePrinterPreferences({
       type: "usb",
       name: deviceName,
+      usbSerialNumber: device.serialNumber || null,
     });
 
     notifyStatusChange();
@@ -440,7 +424,7 @@ export async function connectUsbPrinter(): Promise<{
 
 /**
  * Coba hubungkan ulang secara otomatis (auto-reconnect) tanpa menampilkan dialog pemilih.
- * Memanfaatkan navigator.usb.getDevices() dan navigator.serial.getPorts().
+ * Hanya untuk printer USB dan BLE yang dapat dikenali kembali.
  */
 export async function tryAutoReconnect(): Promise<{ ok: boolean; name?: string }> {
   if (typeof window === "undefined" || typeof navigator === "undefined") {
@@ -465,7 +449,9 @@ export async function tryAutoReconnect(): Promise<{ ok: boolean; name?: string }
         ? devices.find((candidate) => candidate.id === prefs.bluetoothDeviceId)
         : undefined;
       const matchingNames = devices.filter((candidate) => candidate.name === prefs.name);
-      const device = matchingDevice ?? (matchingNames.length === 1 ? matchingNames[0] : undefined);
+      const device = prefs.bluetoothDeviceId
+        ? matchingDevice
+        : matchingNames.length === 1 ? matchingNames[0] : undefined;
       reconnectingDevice = device ?? null;
       if (!device) return { ok: false };
       const server = await device?.gatt?.connect();
@@ -516,12 +502,17 @@ export async function tryAutoReconnect(): Promise<{ ok: boolean; name?: string }
     }
   }
 
-  // 1. Cek WebUSB yang sudah pernah diizinkan
+  // Cek perangkat WebUSB yang sudah pernah diizinkan
   if (prefs.type === "usb" && nav.usb) {
     try {
       const devices = await nav.usb.getDevices();
-      if (devices.length > 0) {
-        const dev = devices[0];
+      const matches = devices.filter((device) =>
+        prefs.usbSerialNumber
+          ? device.serialNumber === prefs.usbSerialNumber && (device.productName || "USB Thermal Printer") === prefs.name
+          : Boolean(device.productName) && device.productName === prefs.name,
+      );
+      if (matches.length === 1) {
+        const [dev] = matches;
         const res = await openAndClaimUsbDevice(dev);
         if (res.ok && res.endpoint) {
           activeUsbDevice = dev;
@@ -535,24 +526,8 @@ export async function tryAutoReconnect(): Promise<{ ok: boolean; name?: string }
     }
   }
 
-  // 2. Cek Web Serial yang sudah pernah diizinkan
-  if ((prefs.type === "serial" || prefs.type === "usb") && nav.serial) {
-    try {
-      const ports = await nav.serial.getPorts();
-      if (ports.length > 0) {
-        const port = ports[0];
-        if (!port.readable && !port.writable) {
-          await port.open({ baudRate: 9600 });
-        }
-        activeSerialPort = port;
-        notifyStatusChange();
-        return { ok: true, name: prefs.name || "Serial Thermal Printer" };
-      }
-    } catch {
-      // Background reconnect fallback
-    }
-  }
-
+  // Browser serial ports have no stable per-device identifier. A new
+  // session needs an explicit port selection to avoid printing elsewhere.
   return { ok: false };
 }
 
@@ -595,12 +570,13 @@ export function initPrinterAutoReconnect(): () => void {
  */
 export async function sendEscPosToPrinter(
   data: Uint8Array,
-): Promise<{ ok: boolean; message?: string }> {
+): Promise<{ ok: boolean; message?: string; uncertain?: boolean }> {
   try {
     return await withPrinterWriteLock(() => sendEscPosToPrinterUnlocked(data));
   } catch (error) {
     return {
       ok: false,
+      uncertain: true,
       message: errorMessage(error, "Gagal mengirim data ke printer."),
     };
   }
@@ -608,7 +584,7 @@ export async function sendEscPosToPrinter(
 
 async function sendEscPosToPrinterUnlocked(
   data: Uint8Array,
-): Promise<{ ok: boolean; message?: string }> {
+): Promise<{ ok: boolean; message?: string; uncertain?: boolean }> {
   const prefs = getPrinterPreferences();
 
   // Mode Bluetooth
@@ -647,13 +623,14 @@ async function sendEscPosToPrinterUnlocked(
       notifyStatusChange();
       return {
         ok: false,
+        uncertain: true,
         message: `Gagal mengirim ke Bluetooth printer: ${errorMessage(error, "tanpa keterangan")}`,
       };
     }
   }
 
   // Mode Serial
-  if (prefs.type === "serial" || (prefs.type === "usb" && activeSerialPort)) {
+  if (prefs.type === "serial") {
     if (!activeSerialPort?.writable) {
       const rec = await tryAutoReconnect();
       if (!rec.ok || !activeSerialPort?.writable) {
@@ -661,16 +638,22 @@ async function sendEscPosToPrinterUnlocked(
       }
     }
 
+    const port = activeSerialPort;
     try {
-      const writer = activeSerialPort.writable.getWriter();
-      await writer.write(data);
-      writer.releaseLock();
+      const writer = port.writable!.getWriter();
+      try {
+        await writer.write(data);
+      } finally {
+        writer.releaseLock();
+      }
       return { ok: true };
     } catch (error) {
       activeSerialPort = null;
+      await port.close().catch(() => undefined);
       notifyStatusChange();
       return {
         ok: false,
+        uncertain: true,
         message: `Gagal menulis ke Serial printer: ${errorMessage(error, "tanpa keterangan")}`,
       };
     }
@@ -686,13 +669,16 @@ async function sendEscPosToPrinterUnlocked(
     }
 
     try {
-      await activeUsbDevice.transferOut(activeUsbEndpoint.endpointNumber, data);
+      const result = await activeUsbDevice.transferOut(activeUsbEndpoint.endpointNumber, data);
+      if (result.status !== "ok" || result.bytesWritten !== data.byteLength) {
+        return { ok: false, uncertain: true, message: "Transfer USB tidak lengkap. Periksa hasil cetak sebelum mengulang." };
+      }
       return { ok: true };
     } catch (error) {
       activeUsbDevice = null;
       activeUsbEndpoint = null;
       notifyStatusChange();
-      return { ok: false, message: `Gagal menulis ke USB printer: ${errorMessage(error, "tanpa keterangan")}` };
+      return { ok: false, uncertain: true, message: `Gagal menulis ke USB printer: ${errorMessage(error, "tanpa keterangan")}` };
     }
   }
 
@@ -764,7 +750,7 @@ export function disconnectActivePrinter(): void {
 
   try {
     if (activeSerialPort) {
-      activeSerialPort.close();
+      void activeSerialPort.close().catch(() => undefined);
     }
   } catch {
     // Abaikan
@@ -773,7 +759,7 @@ export function disconnectActivePrinter(): void {
 
   try {
     if (activeUsbDevice) {
-      activeUsbDevice.close();
+      void activeUsbDevice.close().catch(() => undefined);
     }
   } catch {
     // Abaikan
@@ -785,6 +771,7 @@ export function disconnectActivePrinter(): void {
     type: "none",
     name: "Belum terhubung",
     bluetoothDeviceId: null,
+    usbSerialNumber: null,
   });
   notifyStatusChange();
 }

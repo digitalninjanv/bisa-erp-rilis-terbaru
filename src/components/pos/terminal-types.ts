@@ -131,6 +131,7 @@ export type ReceiptProfile = {
 };
 
 export type PosTerminalProps = {
+  canReprint: boolean;
   companyId: string;
   userId: string;
   companyName: string;

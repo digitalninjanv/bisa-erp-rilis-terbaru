@@ -1,7 +1,7 @@
 import type { Tx } from "@/db";
 import { idempotencyKeys } from "@/db/schema";
 import { createHash } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { AppError } from "@/lib/errors";
 
 /**
@@ -157,4 +157,9 @@ export async function runIdempotentPayment<T>(
       ),
     );
   return result;
+}
+
+/** Order browser checkout and offline reconciliation for the same sale attempt. */
+export async function lockPosSaleAttempt(tx: Tx, companyId: string, key: string) {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`pos.sale:${companyId}:${key}`}, 0))`);
 }

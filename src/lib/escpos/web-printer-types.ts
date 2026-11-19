@@ -52,6 +52,8 @@ export interface UsbEndpointLike {
 }
 
 export interface UsbAlternateLike {
+  alternateSetting?: number;
+  interfaceClass?: number;
   endpoints?: UsbEndpointLike[];
 }
 
@@ -68,11 +70,13 @@ export interface UsbConfigurationLike {
 export interface UsbDeviceLike {
   configuration: UsbConfigurationLike | null;
   productName?: string;
+  serialNumber?: string;
   open(): Promise<void>;
   close(): Promise<void>;
   selectConfiguration(value: number): Promise<void>;
   claimInterface(value: number): Promise<void>;
-  transferOut(endpointNumber: number, data: Uint8Array): Promise<unknown>;
+  selectAlternateInterface(interfaceNumber: number, alternateSetting: number): Promise<void>;
+  transferOut(endpointNumber: number, data: Uint8Array): Promise<{ status: string; bytesWritten: number }>;
 }
 
 export interface PrinterNavigator {

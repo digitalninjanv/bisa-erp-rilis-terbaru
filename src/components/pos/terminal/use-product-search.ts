@@ -16,11 +16,12 @@ const PRODUCT_PAGE_SIZE = 24;
 
 export function useProductSearch(params: {
   initialProducts: ProductOption[];
+  initialWarehouse: string;
   selectedWarehouse: string;
   selectedCategory: string;
   setCache: Dispatch<SetStateAction<Record<string, ProductOption>>>;
 }) {
-  const { initialProducts, selectedWarehouse, selectedCategory, setCache } = params;
+  const { initialProducts, initialWarehouse, selectedWarehouse, selectedCategory, setCache } = params;
   const [results, setResults] = useState<ProductOption[]>(initialProducts);
   const [search, setSearch] = useState("");
   // POS-1: kisi produk berpaginasi — `results` selalu berisi halaman
@@ -32,6 +33,7 @@ export function useProductSearch(params: {
   const [searching, setSearching] = useState(false);
 
   const searchSeq = useRef(0);
+  const initialCatalog = useRef(true);
 
   // POS-SRCH-01: pencarian menilai stok dari gudang yang sedang dipilih
   // kasir (sama seperti quote/checkout), bukan gudang default.
@@ -39,13 +41,14 @@ export function useProductSearch(params: {
   // yang kembali menggantikan halaman aktif dan menandai apakah masih
   // ada halaman berikutnya (halaman penuh = mungkin masih ada).
   const runSearch = useCallback(
-    async (term: string, pageNum: number, categoryId = selectedCategory): Promise<ProductOption[]> => {
-      const seq = ++searchSeq.current;
+    async (term: string, pageNum: number, categoryId = selectedCategory, updateCatalog = true): Promise<ProductOption[]> => {
+      const seq = updateCatalog ? ++searchSeq.current : null;
       const result = await searchProductsAction(
         term,
         selectedWarehouse,
         (pageNum - 1) * PRODUCT_PAGE_SIZE,
         categoryId,
+        !updateCatalog,
       );
       if (!result.ok) {
         toast.error(result.message);
@@ -67,7 +70,7 @@ export function useProductSearch(params: {
         matchedPackagingId:
           (p as { matchedPackagingId?: string | null }).matchedPackagingId ?? null,
       }));
-      if (seq === searchSeq.current) {
+      if (seq !== null && seq === searchSeq.current) {
         setResults(mapped);
         setPage(pageNum);
         setPageFull(mapped.length >= PRODUCT_PAGE_SIZE);
@@ -111,7 +114,7 @@ export function useProductSearch(params: {
       try {
         // Pindai barcode selalu lintas kategori — filter chip tidak
         // boleh membuat barang yang dipindai tidak ditemukan.
-        const fresh = await runSearch(code, 1, "");
+        const fresh = await runSearch(code, 1, "", false);
         return (
           fresh.find((p) => p.barcode === code) ??
           fresh.find((p) => p.matchedPackagingId) ??
@@ -132,11 +135,13 @@ export function useProductSearch(params: {
   // terbentuk ulang saat gudang berubah) memuat ulang dari halaman 1 —
   // filter tidak pernah mewarisi nomor halaman lama.
   useEffect(() => {
+    if (initialCatalog.current && !search && !selectedCategory && selectedWarehouse === initialWarehouse) return;
+    initialCatalog.current = false;
     const timer = setTimeout(() => {
       void searchProducts(search, 1);
     }, 220);
     return () => clearTimeout(timer);
-  }, [search, searchProducts]);
+  }, [initialWarehouse, search, searchProducts, selectedCategory, selectedWarehouse]);
 
   const goToPage = useCallback(
     (next: number) => {

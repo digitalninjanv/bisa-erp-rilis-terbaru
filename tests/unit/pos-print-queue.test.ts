@@ -59,14 +59,14 @@ describe("POS print queue", () => {
     expect(latest?.lastError).toBeNull();
   });
 
-  it("mengembalikan job printing yang macet ke pending", async () => {
+  it("menandai hasil job printing yang macet sebagai belum pasti", async () => {
     const queue = new PrintQueue(new MemoryPrintQueueStorage());
     const job = await queue.enqueue(input());
     await queue.claimNext();
     await queue.resetStuck(0);
     const latest = await queue.latestForSale("sale-1");
     expect(latest?.id).toBe(job.id);
-    expect(latest?.status).toBe("pending");
+    expect(latest?.status).toBe("uncertain");
   });
 
   it("membersihkan riwayat job selesai yang sudah tua", async () => {

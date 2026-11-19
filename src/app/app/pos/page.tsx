@@ -55,8 +55,7 @@ export default async function PosPage({
 
     // FIX-GDG Tahap 4 (butir b): reservasi AKTIF untuk pemilih di
     // terminal — hanya yang masih berlaku yang ditawarkan ke kasir.
-    const activeReservations = (await listReservations(tx, ctx.company.id))
-      .filter((row) => row.effectiveStatus === "active")
+    const activeReservations = (await listReservations(tx, ctx.company.id, true))
       .map((row) => ({
         id: row.id,
         number: row.number,
@@ -144,6 +143,7 @@ export default async function PosPage({
       <PosTerminal
       companyId={ctx.company.id}
       userId={ctx.user.id}
+      canReprint={can(ctx, "pos.receipt.reprint")}
       companyName={data.settings?.legalName ?? ctx.company.name}
       warehouseId={data.warehouseId}
       warehouses={data.warehouses}

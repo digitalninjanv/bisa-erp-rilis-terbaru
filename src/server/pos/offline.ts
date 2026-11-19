@@ -2,7 +2,7 @@ import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
 import { cashSessions, fiscalPeriods, idempotencyKeys, outbox, sales } from "@/db/schema";
 import { AppError } from "@/lib/errors";
-import { paymentRequestFingerprint } from "@/server/idempotency";
+import { lockPosSaleAttempt, paymentRequestFingerprint } from "@/server/idempotency";
 import { d, formatIDR } from "@/lib/money";
 import { todayISO } from "@/lib/format";
 import type {
@@ -194,9 +194,11 @@ export async function processOfflineSaleItem(
      *  keanggotaan. Bila diisi, kasir asal yang tidak berhak ditahan. */
     originEntitlements?: Record<string, OriginEntitlement | null>;
     item: OfflineSalePayload;
+    reconcileWebCheckout?: boolean;
   },
 ): Promise<OfflineSyncItemResult> {
   const { item } = input;
+  if (input.reconcileWebCheckout) await lockPosSaleAttempt(tx, input.companyId, item.clientKey);
   const originCashierId = item.cashierId ?? input.userId;
   const snapshotTotal = snapshotTotalOf(item);
   const idempotencyFingerprint = offlineSaleRequestFingerprint(item);
@@ -294,7 +296,26 @@ export async function processOfflineSaleItem(
         eq(idempotencyKeys.key, item.clientKey),
       ))
       .limit(1);
-    if (claim?.resultRef !== idempotencyFingerprint) {
+    const matchesWebCheckout = input.reconcileWebCheckout &&
+      originCashierId === input.userId &&
+      [false, true].some((canDiscount) => claim?.resultRef === paymentRequestFingerprint({
+        companyId: input.companyId,
+        userId: originCashierId,
+        warehouseId: item.warehouseId,
+        customerId: item.customerId ?? undefined,
+        dueDate: item.dueDate ?? undefined,
+        groupId: item.groupId ?? null,
+        reservationId: item.reservationId ?? null,
+        heldSaleId: item.heldSaleId ?? null,
+        idempotencyKey: item.clientKey,
+        canDiscount,
+        lines: item.lines.map(({ productId, qty, packagingId, discountType, discountValue, serialNumbers }) => ({
+          productId, qty: String(qty), packagingId: packagingId ?? null,
+          discountType: discountType ?? null, discountValue: discountValue ?? 0, serialNumbers,
+        })),
+        payments: item.payments,
+      }));
+    if (claim?.resultRef !== idempotencyFingerprint && !matchesWebCheckout) {
       return record({
         clientKey: item.clientKey,
         status: "conflict",

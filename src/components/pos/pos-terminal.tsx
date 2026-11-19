@@ -33,14 +33,13 @@ import { MobilePayBar } from "@/components/pos/terminal/mobile-pay-bar";
 import { PosCheckoutWorkspace } from "@/components/pos/terminal/pos-checkout-workspace";
 import { usePosCustomerActions } from "@/components/pos/terminal/use-pos-customer-actions";
 import { focusPosTenderedInput, useCloseMobileCartOnDesktop, useExitFullscreenOnEscape } from "@/components/pos/terminal/use-terminal-layout";
-import { useTerminalDialogEscape } from "@/components/pos/terminal/use-terminal-dialog-escape";
 import { useTerminalReset } from "@/components/pos/terminal/use-terminal-reset";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 
 export type { TerminalReservation };
 
 export function PosTerminal({
-  companyId, userId, companyName, warehouseId, warehouses, categories, methods, creditMethod,
+  companyId, userId, canReprint, companyName, warehouseId, warehouses, categories, methods, creditMethod,
   debtMethod, initialProducts, qrisImage, groups, sessionOpen, sessionId = null,
   heldCount, resumeId, posOfflineEnabled = false, offlineTaxRate = 0,
   offlineRoundingMode = "none", receivableDefaultTermDays = 7, reservations = [],
@@ -107,6 +106,7 @@ export function PosTerminal({
   const idempotencyKey = useRef(newUuid());
   // POS-IDEM-01: kunci quote boleh dipakai ulang sampai checkout dicoba;
   const checkoutAttempted = useRef(false);
+  const checkoutInFlight = useRef(false);
   const searchRef = useRef<HTMLInputElement>(null);
   // POS2-03: Enter sesudah ketikan secepat scanner = pindaian barcode.
   // A-28 UI-1 (UX-B01): terminal menyambut kasir dengan fokus LANGSUNG
@@ -307,11 +307,19 @@ export function PosTerminal({
   const isCreditSingle = single?.type === "credit";
   const cashTendered = Number(entries[singleMethod || "__none"]?.tendered ?? 0);
 
-  const { search, setSearch, products, page, pageFull, searching, scanBarcode, goToPage } =
-    useProductSearch({ initialProducts, selectedWarehouse, selectedCategory, setCache });
+  const { search, setSearch, products, page, pageFull, searching, scanBarcode: lookupBarcode, goToPage } =
+    useProductSearch({ initialProducts, initialWarehouse: warehouseId, selectedWarehouse, selectedCategory, setCache });
+
+  const scanBarcode = useCallback(async (code: string) => {
+    if (checkoutInFlight.current) return null;
+    const attempt = idempotencyKey.current;
+    const product = await lookupBarcode(code);
+    return checkoutInFlight.current || attempt !== idempotencyKey.current ? null : product;
+  }, [lookupBarcode]);
 
   const addProduct = useCallback(
     (product: ProductOption, packagingId?: string | null) => {
+      if (checkoutInFlight.current) return;
       // POS-1: produk terlacak stok yang habis tidak dapat masuk
       // keranjang — penjaga ini juga menolak jalur scan barcode, yang
       // menambahkan lewat fungsi yang sama. Diabaikan jika stok minus diizinkan.
@@ -329,14 +337,6 @@ export function PosTerminal({
     },
     [setSearch, allowNegativeStock],
   );
-
-  useGlobalBarcodeScan({
-    scanBarcode,
-    addProduct,
-    setSearch,
-    searchRef,
-    enabled: sessionOpen && !holdOpen && !resumeOffer && !completedSale,
-  });
 
   const applyReservation = useCallback(
     async (reservation: TerminalReservation) => {
@@ -397,7 +397,7 @@ export function PosTerminal({
         entries: Object.entries(entries)
           .map(
             ([methodId, entry]) =>
-              [methodId, entry.amount, entry.tendered, entry.reference] as const,
+              [methodId, entry.amount, entry.tendered, entry.reference, entry.fee] as const,
           )
           .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
         // POS-1 (D-19): pelanggan & jatuh tempo penjualan utang ikut
@@ -418,7 +418,7 @@ export function PosTerminal({
     if (!checkoutAttempted.current) return;
     checkoutAttempted.current = false;
     idempotencyKey.current = newUuid();
-  }, [cart, groupId, selectedWarehouse, paymentsFingerprint]);
+  }, [cart, groupId, heldSaleId, reservationId, selectedWarehouse, paymentsFingerprint]);
 
   // S4: penyunting baris berkunci (produk, kemasan) — logika murninya
   // hidup di terminal/cart-lines.ts, komponen ini hanya mengikatnya
@@ -454,6 +454,7 @@ export function PosTerminal({
     heldSaleId, setHeldSaleId, setHeldTotal, setLastSale, setReservationId, setQueuedCount,
     setOldestQueuedAt,
     idempotencyKeyRef: idempotencyKey, checkoutAttemptedRef: checkoutAttempted,
+    inFlightRef: checkoutInFlight,
     // A-28 UI-1 (UX-B01): penjualan terantre offline tidak berpindah
     // halaman — fokus kembali ke kotak cari sesudah keranjang bersih.
     onSaleQueued: () => {
@@ -467,6 +468,14 @@ export function PosTerminal({
       setMode("single");
       setSingleMethod(methods.find((method) => method.type === "cash")?.id ?? methods[0]?.id ?? "");
     },
+  });
+
+  useGlobalBarcodeScan({
+    scanBarcode,
+    addProduct,
+    setSearch,
+    searchRef,
+    enabled: !submitting && sessionOpen && !holdOpen && !resumeOffer && !completedSale,
   });
 
   const payDisabled =
@@ -496,8 +505,9 @@ export function PosTerminal({
   // A-28 UI-1 (UX-B01/B03): pintasan global terminal (peta tombol di
   // lib/pos/terminal-shortcuts); ditahan selama dialog Tahan/Resume.
   useTerminalShortcuts({
-    suspended: holdOpen || Boolean(resumeOffer) || Boolean(completedSale),
+    suspended: submitting || holdOpen || Boolean(resumeOffer) || Boolean(completedSale),
     onShortcut: (action: TerminalShortcutAction) => {
+      if (checkoutInFlight.current) return;
       switch (action) {
         case "focus-search":
           searchRef.current?.focus();
@@ -577,16 +587,9 @@ export function PosTerminal({
     }));
   }
 
-  useTerminalDialogEscape({
-    holdOpen,
-    resumeOpen: Boolean(resumeOffer),
-    resumeCancel,
-    setHoldOpen,
-  });
-
   useExitFullscreenOnEscape({
     fullscreen,
-    suspended: holdOpen || Boolean(resumeOffer) || Boolean(completedSale) || mobileCartOpen,
+    suspended: submitting || holdOpen || Boolean(resumeOffer) || Boolean(completedSale) || mobileCartOpen,
     setFullscreenOverride,
   });
 
@@ -681,60 +684,62 @@ export function PosTerminal({
           "fixed inset-0 z-[65] h-dvh overflow-y-auto p-3 lg:overflow-hidden",
       )}
     >
-      <PosPrintQueue />
-      <ProductCatalog
-        searchRef={searchRef}
-        search={search}
-        setSearch={setSearch}
-        products={products}
-        searching={searching}
-        page={page}
-        pageFull={pageFull}
-        goToPage={goToPage}
-        scanBarcode={scanBarcode}
-        addProduct={addProduct}
-        warehouses={warehouses}
-        categories={categories}
-        selectedWarehouse={selectedWarehouse}
-        setSelectedWarehouse={setSelectedWarehouse}
-        selectedCategory={selectedCategory}
-        setSelectedCategory={setSelectedCategory}
-        setReservationId={setReservationId}
-        reservations={reservations}
-        reservationId={reservationId}
-        applyReservation={applyReservation}
-        sessionOpen={sessionOpen}
-        heldCount={heldCount}
-        posOfflineEnabled={posOfflineEnabled}
-        online={online}
-        queuedCount={queuedCount}
-        oldestQueuedAt={oldestQueuedAt}
-        syncing={syncing}
-        syncOfflineQueue={syncOfflineQueue}
-        cart={cart}
-        display={display}
-        updateDisplay={updateDisplay}
-        resetDisplay={resetDisplay}
-        fullscreen={fullscreen}
-        setFullscreenOverride={setFullscreenOverride}
-        allowNegativeStock={allowNegativeStock}
-      />
+      <PosPrintQueue companyId={companyId} />
+      <div className="contents" inert={submitting}>
+        <ProductCatalog
+          searchRef={searchRef}
+          search={search}
+          setSearch={setSearch}
+          products={products}
+          searching={searching}
+          page={page}
+          pageFull={pageFull}
+          goToPage={goToPage}
+          scanBarcode={scanBarcode}
+          addProduct={addProduct}
+          warehouses={warehouses}
+          categories={categories}
+          selectedWarehouse={selectedWarehouse}
+          setSelectedWarehouse={setSelectedWarehouse}
+          selectedCategory={selectedCategory}
+          setSelectedCategory={setSelectedCategory}
+          setReservationId={setReservationId}
+          reservations={reservations}
+          reservationId={reservationId}
+          applyReservation={applyReservation}
+          sessionOpen={sessionOpen}
+          heldCount={heldCount}
+          posOfflineEnabled={posOfflineEnabled}
+          online={online}
+          queuedCount={queuedCount}
+          oldestQueuedAt={oldestQueuedAt}
+          syncing={syncing}
+          syncOfflineQueue={syncOfflineQueue}
+          cart={cart}
+          display={display}
+          updateDisplay={updateDisplay}
+          resetDisplay={resetDisplay}
+          fullscreen={fullscreen}
+          setFullscreenOverride={setFullscreenOverride}
+          allowNegativeStock={allowNegativeStock}
+        />
 
-      {/* Cart + payment */}
-      <aside
-        id="pos-cart"
-        className={cn(
-          "hidden min-w-0 lg:block lg:overflow-x-hidden",
-          // POS2-04: panel keranjang sticky saat produk menggulir.
-          !fullscreen &&
-            "lg:sticky lg:top-16 lg:max-h-[calc(100dvh-76px)] lg:self-start lg:overflow-y-auto lg:pr-1",
-          fullscreen && "lg:min-h-0 lg:overflow-y-auto lg:pr-1",
-        )}
-      >
-        <PosCheckoutWorkspace cartProps={cartPanelProps} paymentProps={paymentPanelProps} />
-      </aside>
+        {/* Cart + payment */}
+        <aside
+          id="pos-cart"
+          className={cn(
+            "hidden min-w-0 lg:block lg:overflow-x-hidden",
+            // POS2-04: panel keranjang sticky saat produk menggulir.
+            !fullscreen &&
+              "lg:sticky lg:top-16 lg:max-h-[calc(100dvh-76px)] lg:self-start lg:overflow-y-auto lg:pr-1",
+            fullscreen && "lg:min-h-0 lg:overflow-y-auto lg:pr-1",
+          )}
+        >
+          <PosCheckoutWorkspace cartProps={cartPanelProps} paymentProps={paymentPanelProps} />
+        </aside>
+      </div>
 
-      <Sheet open={mobileCartOpen} onOpenChange={setMobileCartOpen}>
+      <Sheet open={mobileCartOpen} onOpenChange={(open) => { if (!checkoutInFlight.current) setMobileCartOpen(open); }}>
         <SheetContent
           side="right"
           overlayClassName="z-[70]"
@@ -748,23 +753,29 @@ export function PosTerminal({
           aria-label="Keranjang dan pembayaran"
           className="z-[71] w-full gap-3 overflow-x-hidden overflow-y-auto px-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-0 sm:w-[520px] sm:max-w-[520px] lg:hidden"
         >
-          <PosCheckoutWorkspace
-            cartProps={cartPanelProps}
-            paymentProps={paymentPanelProps}
-            mobile
-            onClose={() => setMobileCartOpen(false)}
-          />
+          <div inert={submitting}>
+            <PosCheckoutWorkspace
+              cartProps={cartPanelProps}
+              paymentProps={paymentPanelProps}
+              mobile
+              onClose={() => setMobileCartOpen(false)}
+            />
+          </div>
+          <span className="sr-only" role="status">{submitting ? "Menyimpan transaksi…" : ""}</span>
         </SheetContent>
       </Sheet>
 
-      <MobilePayBar
-        cart={cart}
-        total={total}
-        payDisabled={payDisabled}
-        payLabel={payLabel}
-        checkout={checkout}
-        onOpenCart={() => setMobileCartOpen(true)}
-      />
+      <span className="sr-only" role="status">{submitting && !mobileCartOpen ? "Menyimpan transaksi…" : ""}</span>
+      <div inert={submitting} className="contents">
+        <MobilePayBar
+          cart={cart}
+          total={total}
+          payDisabled={payDisabled}
+          payLabel={payLabel}
+          checkout={checkout}
+          onOpenCart={() => setMobileCartOpen(true)}
+        />
+      </div>
 
       {holdOpen ? (
         <HoldDialog
@@ -772,6 +783,7 @@ export function PosTerminal({
           setHoldLabel={setHoldLabel}
           setHoldOpen={setHoldOpen}
           hold={hold}
+          returnFocus={mobileCartOpen ? undefined : searchRef}
         />
       ) : null}
 
@@ -783,12 +795,14 @@ export function PosTerminal({
           resumeHoldActiveFirst={resumeHoldActiveFirst}
           applyResume={applyResume}
           resumeCancel={resumeCancel}
+          returnFocus={mobileCartOpen ? undefined : searchRef}
         />
       ) : null}
 
       <CheckoutSuccessModal
         key={completedSale?.id ?? "no-sale"}
         sale={completedSale}
+        canReprint={canReprint}
         companyId={companyId}
         onDismiss={() => {
           setCompletedSale(null);

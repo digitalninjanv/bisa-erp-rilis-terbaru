@@ -1,19 +1,19 @@
-import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { formatIDR } from "@/lib/money";
 import type { StoredCart } from "@/components/pos/use-cart-persistence";
 import type { ResumeData } from "@/components/pos/use-held-sales";
 
-// FIX-ARS Tahap 5 (ARS2-01): dialog terminal — JSX dipindah apa adanya
-// dari PosTerminal; keduanya dirender bersyarat oleh komponen induk
-// persis seperti sebelumnya.
 export function HoldDialog(props: {
   holdLabel: string;
   setHoldLabel: Dispatch<SetStateAction<string>>;
   setHoldOpen: Dispatch<SetStateAction<boolean>>;
   hold: () => Promise<void>;
+  returnFocus?: RefObject<HTMLInputElement | null>;
 }) {
   const { holdLabel, setHoldLabel, setHoldOpen, hold } = props;
   const [busy, setBusy] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   async function submitHold() {
     if (busy) return;
@@ -25,35 +25,15 @@ export function HoldDialog(props: {
     }
   }
 
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && !busy) {
-        setHoldOpen(false);
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [busy, setHoldOpen]);
-
   return (
-    <div
-      className="fixed inset-0 z-[70] grid place-items-center bg-black/40 p-4"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !busy) setHoldOpen(false);
-      }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Tahan pesanan"
-        className="w-full max-w-sm rounded-xl border border-border bg-card p-4 shadow-xl"
-      >
-        <h3 className="text-sm font-semibold">Tahan pesanan</h3>
-        <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+    <Dialog open disablePointerDismissal={busy} onOpenChange={(open) => { if (!open && !busy) setHoldOpen(false); }}>
+      <DialogContent showCloseButton={false} initialFocus={inputRef} finalFocus={props.returnFocus}>
+        <DialogTitle>Tahan pesanan</DialogTitle>
+        <DialogDescription>
           Simpan keranjang agar bisa dilanjutkan nanti. Stok belum berkurang sampai pembayaran selesai.
-        </p>
+        </DialogDescription>
         <input
-          autoFocus
+          ref={inputRef}
           value={holdLabel}
           onChange={(event) => setHoldLabel(event.target.value)}
           disabled={busy}
@@ -79,8 +59,8 @@ export function HoldDialog(props: {
             {busy ? "Menyimpan…" : "Simpan pesanan"}
           </button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -90,41 +70,21 @@ export function ResumeDialog(props: {
   resumeHoldActiveFirst: () => Promise<void>;
   applyResume: (data: ResumeData) => void;
   resumeCancel: () => void;
+  returnFocus?: RefObject<HTMLInputElement | null>;
 }) {
   const { resumeOffer, resumeHolding, resumeHoldActiveFirst, applyResume, resumeCancel } = props;
 
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && !resumeHolding) {
-        resumeCancel();
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [resumeHolding, resumeCancel]);
-
+  const cancelRef = useRef<HTMLButtonElement>(null);
   return (
-    <div
-      className="fixed inset-0 z-[70] grid place-items-center bg-black/40 p-4"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !resumeHolding) resumeCancel();
-      }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="resume-dialog-title"
-        className="w-full max-w-sm rounded-xl border border-border bg-card p-4 shadow-xl"
-      >
-        <h3 id="resume-dialog-title" className="text-sm font-semibold">
-          Keranjang aktif belum kosong
-        </h3>
-        <p className="mt-1 text-[12px] leading-5 text-muted-foreground">
+    <Dialog open disablePointerDismissal={resumeHolding} onOpenChange={(open) => { if (!open && !resumeHolding) resumeCancel(); }}>
+      <DialogContent showCloseButton={false} initialFocus={cancelRef} finalFocus={props.returnFocus}>
+        <DialogTitle>Keranjang aktif belum kosong</DialogTitle>
+        <DialogDescription>
           Keranjang saat ini berisi {resumeOffer.stored.cart.length} produk. Pesanan ditahan
           yang dipilih (total tersimpan {formatIDR(resumeOffer.data.heldTotal)}) akan
           menggantikannya — pilih cara melanjutkan agar pekerjaan yang sedang berjalan tidak
           hilang.
-        </p>
+        </DialogDescription>
         <div className="mt-4 space-y-2">
           <button
             type="button"
@@ -146,6 +106,7 @@ export function ResumeDialog(props: {
           </button>
           <button
             type="button"
+            ref={cancelRef}
             onClick={resumeCancel}
             disabled={resumeHolding}
             className="h-9 w-full rounded-md px-3 text-[12px] text-muted-foreground hover:bg-muted disabled:opacity-50"
@@ -153,7 +114,7 @@ export function ResumeDialog(props: {
             Batal — tetap di keranjang aktif
           </button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
