@@ -25,6 +25,7 @@ import type { TerminalShortcutAction } from "@/lib/pos/terminal-shortcuts";
 import { defaultDueDate, useTerminalCheckout } from "@/components/pos/terminal/use-terminal-checkout";
 import { ProductCatalog } from "@/components/pos/terminal/product-catalog";
 import { CheckoutSuccessModal, type CompletedSaleInfo } from "@/components/pos/terminal/checkout-success-modal";
+import { PosPrintQueue } from "@/components/pos/terminal/pos-print-queue";
 import {
   addCartLine, changeCartLinePackaging, setCartLineQty, setCartLineSerial,
 } from "@/components/pos/terminal/cart-lines";
@@ -43,7 +44,7 @@ export function PosTerminal({
   debtMethod, initialProducts, qrisImage, groups, sessionOpen, sessionId = null,
   heldCount, resumeId, posOfflineEnabled = false, offlineTaxRate = 0,
   offlineRoundingMode = "none", receivableDefaultTermDays = 7, reservations = [],
-  allowNegativeStock = false,
+  allowNegativeStock = false, receiptProfile,
 }: PosTerminalProps) {
   // T3R-5: kunci snapshot keranjang milik kasir ini di perusahaan ini.
   const storageKey = cartStorageKey(companyId, userId);
@@ -267,7 +268,7 @@ export function PosTerminal({
     setOldestQueuedAt,
     syncing,
     syncOfflineQueue,
-  } = useOfflineQueue({ posOfflineEnabled });
+  } = useOfflineQueue({ posOfflineEnabled, companyId, userId });
 
   // POS2-05: konfirmasi hanya berlaku untuk metode & total yang
   // persis dikonfirmasi kasir.
@@ -383,7 +384,6 @@ export function PosTerminal({
     [addProduct, cache, selectedWarehouse],
   );
 
-
   // T3R-4: sidik jari state pembayaran (metode + nominal + diterima +
   // referensi, termasuk mode & metode tunggal terpilih). Perubahan
   // pembayaran sesudah percobaan checkout harus ikut mengganti kunci
@@ -448,7 +448,7 @@ export function PosTerminal({
   const { checkout, submitting } = useTerminalCheckout({
     cart, sessionOpen, mode, singleMethod, single, cashTendered, entries, methodById,
     outstanding, debtActive, customer, dueDate, total, quote, cache, posOfflineEnabled,
-    reservationId, selectedWarehouse, groupId, storageKey, sessionId, userId,
+    reservationId, selectedWarehouse, groupId, storageKey, sessionId, userId, companyId, receiptProfile,
     receivableDefaultTermDays, appliedCredit, setCart, setEntries, setCustomer,
     setCustomerQuery, setCustomerResults, setDueDate, resetCredit, setQuoteResult,
     heldSaleId, setHeldSaleId, setHeldTotal, setLastSale, setReservationId, setQueuedCount,
@@ -681,7 +681,7 @@ export function PosTerminal({
           "fixed inset-0 z-[65] h-dvh overflow-y-auto p-3 lg:overflow-hidden",
       )}
     >
-      {/* Products */}
+      <PosPrintQueue />
       <ProductCatalog
         searchRef={searchRef}
         search={search}
@@ -789,6 +789,7 @@ export function PosTerminal({
       <CheckoutSuccessModal
         key={completedSale?.id ?? "no-sale"}
         sale={completedSale}
+        companyId={companyId}
         onDismiss={() => {
           setCompletedSale(null);
           searchRef.current?.focus();

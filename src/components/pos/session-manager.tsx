@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { formatIDR } from "@/lib/money";
 import { newUuid } from "@/lib/uuid";
 import { MoneyInput } from "@/components/money-input";
+import { ConfirmDialog } from "@/components/blocks/confirm-dialog";
 import { IDR_CASH_DENOMINATIONS, denominationTotal } from "@/lib/pos/denominations";
 import {
   cashMovementAction,
@@ -57,6 +58,7 @@ export function SessionManager({
   const [moveAmount, setMoveAmount] = useState("");
   const [moveNotes, setMoveNotes] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const [closedSessionId, setClosedSessionId] = useState<string | null>(null);
   // A-28 Tahap 4 (H-PGT-01): modal awal & nominal mutasi memakai
   // MoneyInput bersama (sisa kas sesi dari Tahap 1); nilai kanonis
   // yang dikirim ke aksi sama seperti angka mentah sebelumnya.
@@ -101,6 +103,7 @@ export function SessionManager({
         return;
       }
       toast.success("Sesi kas ditutup.");
+      setClosedSessionId(session!.id);
       setDenomCounts({});
       setDifferenceReason("");
       setNotes("");
@@ -202,9 +205,18 @@ export function SessionManager({
               <h2 className="text-[13px] font-semibold">Sesi kas berjalan</h2>
               <p className="mt-0.5 text-[11px] text-muted-foreground">Dibuka {session.openedAt.slice(0, 16).replace("T", " ")}</p>
             </div>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-tone-teal-soft px-2.5 py-1 text-[11px] font-semibold text-tone-teal">
-              <span className="size-1.5 rounded-full bg-tone-teal" /> Terbuka
-            </span>
+            <div className="flex items-center gap-2">
+              <Link
+                href={`/app/pos/sesi/riwayat/${session.id}/cetak?x=1&autoprint=1`}
+                target="_blank"
+                className="inline-flex h-8 items-center rounded-md border border-border bg-card px-2.5 text-[11px] font-medium hover:bg-muted"
+              >
+                Cetak X
+              </Link>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-tone-teal-soft px-2.5 py-1 text-[11px] font-semibold text-tone-teal">
+                <span className="size-1.5 rounded-full bg-tone-teal" /> Terbuka
+              </span>
+            </div>
           </div>
 
           {/* A-28 Tahap 1 (H-POS-01): ubin "Kas seharusnya" DIBUANG
@@ -452,6 +464,21 @@ export function SessionManager({
           </div>
         </div>
       </aside>
+
+      <ConfirmDialog
+        open={Boolean(closedSessionId)}
+        title="Sesi ditutup"
+        description="Cetak laporan Z sekarang agar rekonsiliasi kas langsung terdokumentasi."
+        confirmLabel="Cetak Z"
+        cancelLabel="Nanti"
+        onCancel={() => setClosedSessionId(null)}
+        onConfirm={() => {
+          if (closedSessionId) {
+            window.open(`/app/pos/sesi/riwayat/${closedSessionId}/cetak?autoprint=1`, "_blank");
+          }
+          setClosedSessionId(null);
+        }}
+      />
     </div>
   );
 }

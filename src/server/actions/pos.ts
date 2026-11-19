@@ -35,6 +35,7 @@ import { parseInput } from "@/lib/action-validation";
 import { d, toDb } from "@/lib/money";
 import { paymentRequestFingerprint } from "@/server/idempotency";
 import { todayISO } from "@/lib/format";
+import { log } from "@/lib/log";
 
 const cartLine = z.object({
   productId: z.string().uuid(),
@@ -253,6 +254,7 @@ export async function checkoutAction(input: z.input<typeof checkoutSchema>) {
   return guard(async () => {
     const ctx = await requirePermissionInModule("pos.sell", "pos");
     const data = parseInput(checkoutSchema, input);
+    const startedAt = performance.now();
     const result = await withCompany(ctx.company.id, async (tx) => {
       const saleInput = {
         companyId: ctx.company.id,
@@ -336,6 +338,12 @@ export async function checkoutAction(input: z.input<typeof checkoutSchema>) {
         await tx.execute(sql`delete from sales where id = ${data.heldSaleId}`);
       }
       return sale;
+    });
+    log.info("pos.checkout.completed", {
+      companyId: ctx.company.id,
+      userId: ctx.user.id,
+      saleNumber: result.number,
+      durationMs: Math.round(performance.now() - startedAt),
     });
     revalidatePath("/app/pos");
     revalidatePath("/app/pos/riwayat");

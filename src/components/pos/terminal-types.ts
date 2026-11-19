@@ -114,6 +114,22 @@ export type PaymentEntry = {
   fee?: string;
 };
 
+export type ReceiptProfile = {
+  companyName: string;
+  address: string | null;
+  phone: string | null;
+  headerText: string | null;
+  footerText: string | null;
+  paperWidth: "58mm" | "80mm";
+  showTax: boolean;
+  showCashier: boolean;
+  showCustomer: boolean;
+  showQr: boolean;
+  cashierName: string | null;
+  openCashDrawer: boolean;
+  cutPaper: boolean;
+};
+
 export type PosTerminalProps = {
   companyId: string;
   userId: string;
@@ -137,4 +153,5 @@ export type PosTerminalProps = {
   receivableDefaultTermDays?: number;
   reservations?: TerminalReservation[];
   allowNegativeStock?: boolean;
+  receiptProfile: ReceiptProfile;
 };

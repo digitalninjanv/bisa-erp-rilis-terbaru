@@ -1,0 +1,169 @@
+{
+  "loginMs": 1011,
+  "initialPosMs": 513,
+  "navTiming": {
+    "domContentLoaded": 258,
+    "load": 259,
+    "responseEnd": 256
+  },
+  "navigation": [
+    {
+      "label": "Riwayat transaksi",
+      "round": 0,
+      "ms": 617
+    },
+    {
+      "label": "Kembali ke POS",
+      "round": 0,
+      "ms": 49
+    },
+    {
+      "label": "Sesi kas",
+      "round": 0,
+      "ms": 538
+    },
+    {
+      "label": "Kembali ke POS",
+      "round": 0,
+      "ms": 30
+    },
+    {
+      "label": "Pesanan ditahan",
+      "round": 0,
+      "ms": 887
+    },
+    {
+      "label": "Kembali ke POS",
+      "round": 0,
+      "ms": 49
+    },
+    {
+      "label": "Piutang pelanggan",
+      "round": 0,
+      "ms": 407
+    },
+    {
+      "label": "Kembali ke POS",
+      "round": 0,
+      "ms": 35
+    },
+    {
+      "label": "Peninjauan offline",
+      "round": 0,
+      "ms": 455
+    },
+    {
+      "label": "Kembali ke POS",
+      "round": 0,
+      "ms": 42
+    },
+    {
+      "label": "Riwayat sesi",
+      "round": 0,
+      "ms": 424
+    },
+    {
+      "label": "Kembali ke POS",
+      "round": 0,
+      "ms": 41
+    },
+    {
+      "label": "Riwayat transaksi",
+      "round": 1,
+      "ms": 570
+    },
+    {
+      "label": "Kembali ke POS",
+      "round": 1,
+      "ms": 32
+    },
+    {
+      "label": "Sesi kas",
+      "round": 1,
+      "ms": 545
+    },
+    {
+      "label": "Kembali ke POS",
+      "round": 1,
+      "ms": 33
+    },
+    {
+      "label": "Pesanan ditahan",
+      "round": 1,
+      "ms": 523
+    },
+    {
+      "label": "Kembali ke POS",
+      "round": 1,
+      "ms": 25
+    },
+    {
+      "label": "Piutang pelanggan",
+      "round": 1,
+      "ms": 879
+    },
+    {
+      "label": "Kembali ke POS",
+      "round": 1,
+      "ms": 30
+    },
+    {
+      "label": "Peninjauan offline",
+      "round": 1,
+      "ms": 381
+    },
+    {
+      "label": "Kembali ke POS",
+      "round": 1,
+      "ms": 34
+    },
+    {
+      "label": "Riwayat sesi",
+      "round": 1,
+      "ms": 403
+    },
+    {
+      "label": "Kembali ke POS",
+      "round": 1,
+      "ms": 42
+    }
+  ],
+  "searchTimes": [
+    63,
+    13,
+    41
+  ],
+  "addQuoteMs": 432,
+  "longTasks": {
+    "count": 0,
+    "max": 0,
+    "over50": 0
+  },
+  "fetchTimings": [
+    38,
+    32,
+    43,
+    52,
+    29,
+    45,
+    19,
+    20,
+    37,
+    38,
+    19,
+    32,
+    28,
+    16,
+    15,
+    53,
+    28,
+    43,
+    53,
+    47
+  ],
+  "checkoutMs": 245,
+  "nota": "INV-2026-00038",
+  "firstPrintMs": 1219,
+  "printTimes": [],
+  "popupCount": 2
+}

@@ -1,0 +1,49 @@
+{
+  "nota": "INV-2026-00039",
+  "first": {
+    "ms": 1115,
+    "calls": 1
+  },
+  "cycles": [
+    {
+      "ms": 1278,
+      "before": {
+        "calls": 1,
+        "origin": 1795005110180.2,
+        "url": "http://localhost:3100/app/pos/nota/01a1eea4-5667-7e13-8b8d-43e9966bc8fe?autoprint=1&popup=1"
+      },
+      "after": {
+        "calls": 1,
+        "origin": 1795005111261.2,
+        "url": "http://localhost:3100/app/pos/nota/01a1eea4-5667-7e13-8b8d-43e9966bc8fe?autoprint=1&popup=1"
+      }
+    },
+    {
+      "ms": 952,
+      "before": {
+        "calls": 1,
+        "origin": 1795005111261.2,
+        "url": "http://localhost:3100/app/pos/nota/01a1eea4-5667-7e13-8b8d-43e9966bc8fe?autoprint=1&popup=1"
+      },
+      "after": {
+        "calls": 1,
+        "origin": 1795005112544.8,
+        "url": "http://localhost:3100/app/pos/nota/01a1eea4-5667-7e13-8b8d-43e9966bc8fe?autoprint=1&popup=1"
+      }
+    },
+    {
+      "ms": 937,
+      "before": {
+        "calls": 1,
+        "origin": 1795005112544.8,
+        "url": "http://localhost:3100/app/pos/nota/01a1eea4-5667-7e13-8b8d-43e9966bc8fe?autoprint=1&popup=1"
+      },
+      "after": {
+        "calls": 1,
+        "origin": 1795005113489.3,
+        "url": "http://localhost:3100/app/pos/nota/01a1eea4-5667-7e13-8b8d-43e9966bc8fe?autoprint=1&popup=1"
+      }
+    }
+  ],
+  "pages": 2
+}

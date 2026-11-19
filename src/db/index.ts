@@ -14,7 +14,9 @@ const globalForDb = globalThis as unknown as { sql?: ReturnType<typeof postgres>
 export const sqlClient =
   globalForDb.sql ??
   postgres(connectionString, {
-    max: 12,
+    // Cukup untuk 20+ terminal; jaga max_connections PostgreSQL
+    // (default 100) agar tidak habis oleh proses lain.
+    max: 24,
     idle_timeout: 20,
     connect_timeout: 10,
   });

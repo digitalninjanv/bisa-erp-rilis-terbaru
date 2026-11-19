@@ -11,7 +11,9 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { checkoutAction } from "@/server/actions/pos";
 import { formatIDR } from "@/lib/money";
-import { todayISO } from "@/lib/format";
+import { formatDate, todayISO } from "@/lib/format";
+import { enqueuePrintJob } from "@/lib/pos/print-queue";
+import type { ReceiptData } from "@/lib/escpos/types";
 import {
   enqueueOfflineSale,
   getBrowserOfflineStorage,
@@ -30,6 +32,7 @@ import type {
   Method,
   PaymentEntry,
   ProductOption,
+  ReceiptProfile,
 } from "@/components/pos/terminal-types";
 
 function toLocalISODate(date: Date): string {
@@ -71,6 +74,8 @@ export function useTerminalCheckout(params: {
   storageKey: string;
   sessionId: string | null;
   userId: string;
+  companyId: string;
+  receiptProfile: ReceiptProfile;
   receivableDefaultTermDays: number;
   appliedCredit: PaymentEntry | undefined;
   setCart: Dispatch<SetStateAction<CartItem[]>>;
@@ -99,7 +104,7 @@ export function useTerminalCheckout(params: {
 }) {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
-  const { cart, sessionOpen, mode, singleMethod, single, cashTendered, entries, methodById, outstanding, debtActive, customer, dueDate, total, quote, cache, posOfflineEnabled, reservationId, selectedWarehouse, groupId, storageKey, sessionId, userId, receivableDefaultTermDays, appliedCredit, setCart, setEntries, setCustomer, setCustomerQuery, setCustomerResults, setDueDate, resetCredit, setQuoteResult, heldSaleId, setHeldSaleId, setHeldTotal, setLastSale, setReservationId, setQueuedCount, setOldestQueuedAt, idempotencyKeyRef, checkoutAttemptedRef, onSaleQueued, onCheckoutSuccess } = params;
+  const { cart, sessionOpen, mode, singleMethod, single, cashTendered, entries, methodById, outstanding, debtActive, customer, dueDate, total, quote, cache, posOfflineEnabled, reservationId, selectedWarehouse, groupId, storageKey, sessionId, userId, companyId, receiptProfile, receivableDefaultTermDays, appliedCredit, setCart, setEntries, setCustomer, setCustomerQuery, setCustomerResults, setDueDate, resetCredit, setQuoteResult, heldSaleId, setHeldSaleId, setHeldTotal, setLastSale, setReservationId, setQueuedCount, setOldestQueuedAt, idempotencyKeyRef, checkoutAttemptedRef, onSaleQueued, onCheckoutSuccess } = params;
 
   // A-24 T6 (T6-01/T6-02): antrekan penjualan ini ke antrean offline
   // lokal. Dipakai oleh DUA pemicu dengan semantik yang sama persis:
@@ -123,6 +128,7 @@ export function useTerminalCheckout(params: {
     }
     const payload: OfflineSalePayload = {
       clientKey,
+      companyId,
       warehouseId: selectedWarehouse,
       groupId: groupId || null,
       customerId: debtActive ? (customer?.id ?? null) : null,
@@ -173,12 +179,85 @@ export function useTerminalCheckout(params: {
       payments,
       queuedAt: new Date().toISOString(),
     };
+    const offlineSaleNumber = `OFF-${clientKey.slice(0, 8).toUpperCase()}`;
+    const receiptData: ReceiptData = {
+      companyName: receiptProfile.companyName,
+      address: receiptProfile.address,
+      phone: receiptProfile.phone,
+      headerText: receiptProfile.headerText,
+      footerText: receiptProfile.footerText,
+      saleNumber: offlineSaleNumber,
+      date: formatDate(todayISO()),
+      cashierName: receiptProfile.cashierName,
+      customerName: debtActive ? (customer?.name ?? null) : null,
+      lines: cart.map((line) => {
+        const quoted = quote?.lines.find(
+          (row) =>
+            row.productId === line.productId &&
+            (row.packagingId ?? null) === (line.packagingId ?? null),
+        );
+        const pack = line.packagingId
+          ? cache[line.productId]?.packagings?.find((row) => row.id === line.packagingId)
+          : undefined;
+        const name = cache[line.productId]?.name ?? "Produk";
+        const price = pack
+          ? quoted
+            ? quoted.groupUnitPrice * Number(quoted.isiSnapshot)
+            : Number(pack.salePrice ?? 0)
+          : (quoted?.groupUnitPrice ?? Number(cache[line.productId]?.salePrice ?? 0));
+        return {
+          name: pack ? `${name} (${pack.name})` : name,
+          qty: line.qty,
+          unit: pack?.name ?? null,
+          price,
+          subtotal: quoted ? quoted.lineTotal : price * line.qty,
+          discount: quoted?.discountAmount ?? 0,
+        };
+      }),
+      subtotal: quote?.subtotal ?? total,
+      taxTotal: quote?.taxTotal ?? 0,
+      discountTotal: quote?.discountTotal ?? 0,
+      total,
+      payments: payments.map((payment) => ({
+        methodName: methodById.get(payment.methodId)?.name ?? "Pembayaran",
+        methodType: methodById.get(payment.methodId)?.type,
+        amount: payment.amount,
+        tendered: payment.tendered,
+      })),
+      change: Math.max(
+        0,
+        payments.reduce((sum, payment) => sum + Number(payment.tendered ?? payment.amount), 0) - total,
+      ),
+      paperWidth: receiptProfile.paperWidth,
+      showTax: receiptProfile.showTax,
+      showCashier: receiptProfile.showCashier,
+      showCustomer: receiptProfile.showCustomer,
+      showQr: receiptProfile.showQr,
+      openCashDrawer: receiptProfile.openCashDrawer,
+      cutPaper: receiptProfile.cutPaper,
+    };
     try {
-      const storage = getBrowserOfflineStorage();
+      const storage = getBrowserOfflineStorage({
+        companyId,
+        userId,
+        terminalId: payload.deviceId,
+      });
       await enqueueOfflineSale(storage, payload);
       const summary = await getOfflineQueueSummary(storage);
       setQueuedCount(summary.count);
       setOldestQueuedAt(summary.oldestQueuedAt);
+      try {
+        await enqueuePrintJob({
+          saleId: clientKey,
+          saleNumber: offlineSaleNumber,
+          companyId,
+          terminalId: payload.deviceId ?? getOrCreateDeviceId(),
+          kind: "offline-receipt",
+          receiptData,
+        });
+      } catch {
+        toast.error("Penjualan tersimpan, tetapi antrean cetak offline gagal dibuat.");
+      }
     } catch {
       toast.error("Antrean offline tidak dapat disimpan di browser ini. Transaksi dibatalkan.");
       return;

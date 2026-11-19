@@ -37,6 +37,7 @@ vi.mock("@/lib/session", () => ({
   requirePermissionPage: async () => ({
     user: { id: "kasir-uji-salinan", name: "Sari Kasir" },
     company: { id: "01900000-0000-7000-8000-00000000aa53", name: "Uji Salinan" },
+    permissions: ["pos.sell", "pos.receipt.reprint"],
   }),
   requireUser: async () => ({
     user: { id: "kasir-uji-salinan", name: "Sari Kasir" },

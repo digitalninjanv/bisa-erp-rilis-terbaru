@@ -1,0 +1,46 @@
+{
+  "base": "http://localhost:3100",
+  "routes": {
+    "Riwayat transaksi": {
+      "n": 3,
+      "p50": 319,
+      "p95": 349,
+      "max": 349
+    },
+    "Sesi kas": {
+      "n": 3,
+      "p50": 225,
+      "p95": 225,
+      "max": 225
+    },
+    "Pesanan ditahan": {
+      "n": 3,
+      "p50": 241,
+      "p95": 274,
+      "max": 274
+    },
+    "Piutang pelanggan": {
+      "n": 3,
+      "p50": 302,
+      "p95": 321,
+      "max": 321
+    },
+    "Peninjauan offline": {
+      "n": 3,
+      "p50": 298,
+      "p95": 309,
+      "max": 309
+    },
+    "Riwayat sesi": {
+      "n": 3,
+      "p50": 300,
+      "p95": 300,
+      "max": 300
+    }
+  },
+  "all": {
+    "n": 18,
+    "p50": 298,
+    "p95": 349
+  }
+}

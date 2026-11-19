@@ -7,6 +7,7 @@ export const PERMISSIONS = {
   "pos.void": "POS: void transaksi",
   "pos.return": "POS: retur penjualan",
   "pos.session": "POS: buka/tutup kas",
+  "pos.receipt.reprint": "POS: cetak ulang nota",
   "inventory.view": "Gudang: lihat data",
   "inventory.manage": "Gudang: kelola produk & stok",
   "inventory.cost": "Gudang: lihat harga beli",
@@ -40,7 +41,7 @@ export type Permission = keyof typeof PERMISSIONS;
 export const ALL_MODULES: ModuleKey[] = ["pos", "gudang", "akuntansi", "hr", "analisa"];
 
 export const MODULE_PERMISSIONS: Record<ModuleKey, Permission[]> = {
-  pos: ["pos.sell", "pos.discount", "pos.void", "pos.return", "pos.session"],
+  pos: ["pos.sell", "pos.discount", "pos.void", "pos.return", "pos.session", "pos.receipt.reprint"],
   gudang: ["inventory.view", "inventory.manage", "inventory.cost", "inventory.cost_override", "inventory.price", "import.manage"],
   akuntansi: [
     "accounting.view",
@@ -108,6 +109,7 @@ export const BUILTIN_ROLES: Record<string, RoleDefinition> = {
       "pos.void",
       "pos.return",
       "pos.session",
+      "pos.receipt.reprint",
       "inventory.view",
       "inventory.manage",
       "inventory.cost",

@@ -6,14 +6,20 @@ import {
   applySyncResults,
   getBrowserOfflineStorage,
   getOfflineQueueSummary,
+  getOrCreateDeviceId,
   type OfflineSyncItemResult,
 } from "@/lib/pos-offline";
 
 // FIX-ARS Tahap 5 (ARS2-01): hook antrean offline — status koneksi,
 // jumlah antrean lokal, dan sinkronisasi berpotong 25 item; diekstrak
 // apa adanya dari PosTerminal (pemicu mount & online dipertahankan).
-export function useOfflineQueue(params: { posOfflineEnabled: boolean }) {
-  const { posOfflineEnabled } = params;
+export function useOfflineQueue(params: {
+  posOfflineEnabled: boolean;
+  companyId: string;
+  userId: string;
+}) {
+  const { posOfflineEnabled, companyId, userId } = params;
+  const terminalId = typeof window === "undefined" ? undefined : getOrCreateDeviceId();
   const router = useRouter();
   // SIM-2 S7B-2 Batch 6: keadaan mode offline — status koneksi browser,
   // jumlah antrean lokal (IndexedDB), dan proses sinkronisasi.
@@ -30,7 +36,7 @@ export function useOfflineQueue(params: { posOfflineEnabled: boolean }) {
   const syncOfflineQueue = useCallback(async () => {
     if (!posOfflineEnabled || syncing) return;
     try {
-      const storage = getBrowserOfflineStorage();
+      const storage = getBrowserOfflineStorage({ companyId, userId, terminalId });
       const items = await storage.list();
       if (items.length === 0) {
         setQueuedCount(0);
@@ -78,7 +84,7 @@ export function useOfflineQueue(params: { posOfflineEnabled: boolean }) {
     } finally {
       setSyncing(false);
     }
-  }, [posOfflineEnabled, syncing, router]);
+  }, [posOfflineEnabled, syncing, router, companyId, userId, terminalId]);
 
   useEffect(() => {
     if (!posOfflineEnabled) return;
@@ -86,7 +92,7 @@ export function useOfflineQueue(params: { posOfflineEnabled: boolean }) {
     updateOnline();
     void (async () => {
       try {
-        const summary = await getOfflineQueueSummary(getBrowserOfflineStorage());
+        const summary = await getOfflineQueueSummary(getBrowserOfflineStorage({ companyId, userId, terminalId }));
         setQueuedCount(summary.count);
         setOldestQueuedAt(summary.oldestQueuedAt);
         if (navigator.onLine) void syncOfflineQueue();
@@ -108,7 +114,7 @@ export function useOfflineQueue(params: { posOfflineEnabled: boolean }) {
     // syncOfflineQueue sengaja tidak menjadi dependensi: identitasnya
     // berubah bersama state syncing; pemicu online & mount yang dipakai.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [posOfflineEnabled]);
+  }, [posOfflineEnabled, companyId, userId, terminalId]);
 
   return {
     online,

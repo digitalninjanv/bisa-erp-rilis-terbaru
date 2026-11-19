@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/blocks/page-header";
 import { DataList } from "@/components/blocks/data-list";
 import { EmptyState } from "@/components/blocks/empty-state";
 import { HeldActions } from "@/components/pos/held-actions";
+import { HeldAge } from "@/components/pos/held-age";
 
 export const metadata = { title: "Pesanan ditahan" };
 export const dynamic = "force-dynamic";
@@ -62,7 +63,7 @@ export default async function HeldPage() {
                 <tr key={row.id}>
                   <td className="font-medium">{row.heldLabel ?? "—"}</td>
                   <td className="num text-[12px] text-muted-foreground">{row.number}</td>
-                  <td className="num text-[12px] text-muted-foreground">{formatDateTime(row.createdAt)}</td>
+                  <td className="num text-[12px] text-muted-foreground">{formatDateTime(row.createdAt)}<HeldAge createdAt={row.createdAt} /></td>
                   <td className="text-[12px]">{row.customerName ?? "Umum"}</td>
                   <td className="num text-right text-[12px]">{formatNumber(Number(row.itemCount))}</td>
                   <td className="num text-right font-medium">{formatIDR(row.total)}</td>
@@ -86,7 +87,8 @@ export default async function HeldPage() {
                 <span className="num text-[12px] font-semibold">{formatIDR(row.total)}</span>
               </div>
               <p className="num mt-0.5 text-[11px] text-muted-foreground">
-                {row.number} · {formatDateTime(row.createdAt)} · {row.customerName ?? "Umum"} ·{" "}
+                {row.number} · {formatDateTime(row.createdAt)}
+                <HeldAge createdAt={row.createdAt} /> · {row.customerName ?? "Umum"} ·{" "}
                 {formatNumber(Number(row.itemCount))} item
               </p>
               <div className="mt-1.5 flex justify-end">

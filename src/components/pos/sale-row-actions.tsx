@@ -13,12 +13,14 @@ export function SaleRowActions({
   status,
   canVoid,
   canReturn,
+  canReprint,
 }: {
   saleId: string;
   number: string;
   status: string;
   canVoid: boolean;
   canReturn: boolean;
+  canReprint: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -76,16 +78,18 @@ export function SaleRowActions({
 
   return (
     <div className="flex items-center justify-end gap-1.5">
-      <a
-        href={`/app/pos/nota/${saleId}?salinan=1&autoprint=1`}
-        target="_blank"
-        rel="noreferrer"
-        className="inline-flex h-8 items-center gap-1.5 rounded border border-border bg-card px-2.5 text-[11px] font-medium text-foreground transition-colors hover:bg-muted"
-        aria-label={`Cetak nota ${number}`}
-      >
-        <Printer className="size-3.5" />
-        Cetak nota
-      </a>
+      {canReprint ? (
+        <a
+          href={`/app/pos/nota/${saleId}?salinan=1&autoprint=1`}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex h-8 items-center gap-1.5 rounded border border-border bg-card px-2.5 text-[11px] font-medium text-foreground transition-colors hover:bg-muted"
+          aria-label={`Cetak nota ${number}`}
+        >
+          <Printer className="size-3.5" />
+          Cetak nota
+        </a>
+      ) : null}
       <RowMenu
         label={`Aksi lain untuk transaksi ${number}`}
         items={menuItems}

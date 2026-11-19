@@ -1,0 +1,22 @@
+[
+  {
+    "label": "drawer pointer",
+    "ms": 198,
+    "requestStartMs": 185
+  },
+  {
+    "label": "drawer keyboard",
+    "ms": 820,
+    "requestStartMs": 18
+  },
+  {
+    "label": "drawer no-animation",
+    "ms": 377,
+    "requestStartMs": 50
+  },
+  {
+    "label": "palette",
+    "ms": 800,
+    "requestStartMs": 4
+  }
+]

@@ -49,6 +49,8 @@ export type OfflineSalePayment = {
 
 export type OfflineSalePayload = {
   clientKey: string;
+  /** Tenant asal; antrean browser tidak boleh tercampur antar perusahaan. */
+  companyId?: string;
   warehouseId: string;
   /** Pesanan server yang sedang dilanjutkan. Dihapus hanya setelah
    *  penjualan offline yang merujuknya berhasil diposting di server. */
@@ -215,10 +217,63 @@ export class IndexedDbOfflineStorage implements OfflineQueueStorage {
   }
 }
 
+export type OfflineQueueScope = {
+  companyId: string;
+  userId: string;
+  terminalId?: string;
+};
+
+/**
+ * Filter tenant/kasir di atas store lama. Item warisan tanpa
+ * companyId hanya ditampilkan bila cashierId cocok, agar antrean
+ * kasir yang sudah ada tidak hilang setelah upgrade.
+ */
+export class ScopedOfflineStorage implements OfflineQueueStorage {
+  constructor(
+    private readonly base: OfflineQueueStorage,
+    private readonly scope: OfflineQueueScope,
+  ) {}
+
+  private matches(item: QueuedSale): boolean {
+    if (item.companyId) {
+      return (
+        item.companyId === this.scope.companyId &&
+        (!item.cashierId || item.cashierId === this.scope.userId) &&
+        (!this.scope.terminalId || !item.deviceId || item.deviceId === this.scope.terminalId)
+      );
+    }
+    return item.cashierId === this.scope.userId;
+  }
+
+  async add(item: QueuedSale): Promise<void> {
+    if (!this.matches(item)) throw new Error("Antrean offline bukan milik kasir/perusahaan ini.");
+    await this.base.add(item);
+  }
+
+  async put(item: QueuedSale): Promise<void> {
+    if (!this.matches(item)) throw new Error("Antrean offline bukan milik kasir/perusahaan ini.");
+    await this.base.put(item);
+  }
+
+  async get(clientKey: string): Promise<QueuedSale | undefined> {
+    const item = await this.base.get?.(clientKey);
+    return item && this.matches(item) ? item : undefined;
+  }
+
+  async list(): Promise<QueuedSale[]> {
+    return (await this.base.list()).filter((item) => this.matches(item));
+  }
+
+  async remove(clientKey: string): Promise<void> {
+    const item = await this.base.get?.(clientKey);
+    if (item && this.matches(item)) await this.base.remove(clientKey);
+  }
+}
+
 let browserStorage: OfflineQueueStorage | null = null;
 
 /** Penyimpanan antrean browser harus persisten agar checkout offline tidak hilang saat halaman ditutup. */
-export function getBrowserOfflineStorage(): OfflineQueueStorage {
+export function getBrowserOfflineStorage(scope?: OfflineQueueScope): OfflineQueueStorage {
   if (typeof window !== "undefined" && typeof indexedDB === "undefined") {
     throw new Error("Penyimpanan antrean offline tidak tersedia: browser ini tidak menyediakan IndexedDB.");
   }
@@ -226,7 +281,7 @@ export function getBrowserOfflineStorage(): OfflineQueueStorage {
     browserStorage =
       typeof indexedDB !== "undefined" ? new IndexedDbOfflineStorage() : new MemoryOfflineStorage();
   }
-  return browserStorage;
+  return scope ? new ScopedOfflineStorage(browserStorage, scope) : browserStorage;
 }
 
 /** Masukkan penjualan ke antrean. clientKey yang sama tidak digandakan. */

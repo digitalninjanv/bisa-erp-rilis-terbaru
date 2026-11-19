@@ -6,6 +6,8 @@ import { saleReturns } from "@/db/schema";
 import { getSaleDetail } from "@/server/reports";
 import { getSettings } from "@/server/catalog";
 import { requirePermissionPage } from "@/lib/session";
+import { can } from "@/lib/permissions";
+import { writeAudit } from "@/server/audit";
 import { formatIDR, formatQty } from "@/lib/money";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { ReceiptPrint } from "@/components/pos/receipt-print";
@@ -40,10 +42,21 @@ export default async function ReceiptPage({
   // salinan) tidak bertanda dan tidak berubah.
   const isCopy = query.salinan === "1";
   const ctx = await requirePermissionPage("pos.sell");
+  if (isCopy && !can(ctx, "pos.receipt.reprint")) notFound();
 
   const data = await withCompany(ctx.company.id, async (tx) => {
     const detail = await getSaleDetail(tx, ctx.company.id, id);
     if (!detail) return null;
+    if (isCopy) {
+      await writeAudit(tx, {
+        companyId: ctx.company.id,
+        userId: ctx.user.id,
+        action: "pos.receipt.reprint",
+        entityType: "sale",
+        entityId: id,
+        after: { number: detail.sale.number, autoprint: query.autoprint === "1" },
+      });
+    }
     const settings = await getSettings(tx, ctx.company.id);
     const returns = await tx
       .select({ id: saleReturns.id, number: saleReturns.number, total: saleReturns.total })

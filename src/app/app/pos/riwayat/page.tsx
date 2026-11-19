@@ -37,7 +37,7 @@ export default async function SalesHistoryPage({
         from,
         to,
         page: Number(params.page ?? 1),
-        pageSize: 25,
+        pageSize: 20,
       }),
       getSalesSummary(tx, ctx.company.id, {
         from: `${from}T00:00:00`,
@@ -160,7 +160,7 @@ export default async function SalesHistoryPage({
               {data.list.rows.map((sale) => (
                 <tr key={sale.id}>
                   <td>
-                    <Link href={`/app/pos/nota/${sale.id}?salinan=1`} className="num font-medium hover:underline">
+                    <Link href={`/app/pos/nota/${sale.id}?salinan=1`} prefetch={false} className="num font-medium hover:underline">
                       {sale.number}
                     </Link>
                     <p className="text-[10px] text-muted-foreground">{formatDate(sale.date)}</p>
@@ -187,6 +187,7 @@ export default async function SalesHistoryPage({
                       status={sale.status}
                       canVoid={can(ctx, "pos.void")}
                       canReturn={can(ctx, "pos.return")}
+                      canReprint={can(ctx, "pos.receipt.reprint")}
                     />
                   </td>
                 </tr>
@@ -200,6 +201,7 @@ export default async function SalesHistoryPage({
               <div className="flex items-baseline justify-between gap-2">
                 <Link
                   href={`/app/pos/nota/${sale.id}?salinan=1`}
+                  prefetch={false}
                   className="num text-[12px] font-medium text-primary hover:underline"
                 >
                   {sale.number}
@@ -221,6 +223,7 @@ export default async function SalesHistoryPage({
                     status={sale.status}
                     canVoid={can(ctx, "pos.void")}
                     canReturn={can(ctx, "pos.return")}
+                    canReprint={can(ctx, "pos.receipt.reprint")}
                   />
                 </span>
               </div>

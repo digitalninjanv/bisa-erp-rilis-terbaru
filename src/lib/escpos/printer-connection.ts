@@ -3,6 +3,7 @@
 import type { PrinterPreferences } from "./types";
 import { DEFAULT_PRINTER_PREFERENCES } from "./types";
 import { EscPosEncoder } from "./encoder";
+import { withPrinterWriteLock } from "./printer-write-lock";
 import {
   errorMessage,
   isNotFoundError,
@@ -590,8 +591,22 @@ export function initPrinterAutoReconnect(): () => void {
 
 /**
  * Kirim raw bytes ESC/POS ke printer aktif (Bluetooth / USB / Serial).
+ * Ditulis berurutan; satu job harus selesai sebelum job berikutnya.
  */
 export async function sendEscPosToPrinter(
+  data: Uint8Array,
+): Promise<{ ok: boolean; message?: string }> {
+  try {
+    return await withPrinterWriteLock(() => sendEscPosToPrinterUnlocked(data));
+  } catch (error) {
+    return {
+      ok: false,
+      message: errorMessage(error, "Gagal mengirim data ke printer."),
+    };
+  }
+}
+
+async function sendEscPosToPrinterUnlocked(
   data: Uint8Array,
 ): Promise<{ ok: boolean; message?: string }> {
   const prefs = getPrinterPreferences();

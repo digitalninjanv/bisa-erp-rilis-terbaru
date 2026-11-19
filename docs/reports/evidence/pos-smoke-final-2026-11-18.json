@@ -1,0 +1,19 @@
+{
+  "nav": [
+    {
+      "label": "Riwayat transaksi",
+      "ms": 498
+    },
+    {
+      "label": "Sesi kas",
+      "ms": 213
+    },
+    {
+      "label": "Pesanan ditahan",
+      "ms": 292
+    }
+  ],
+  "xHref": "/app/pos/sesi/riwayat/01a1e2bb-dc0a-79b5-9653-2c22a50e6e7f/cetak?x=1&autoprint=1",
+  "xHasSementara": true,
+  "errors": []
+}

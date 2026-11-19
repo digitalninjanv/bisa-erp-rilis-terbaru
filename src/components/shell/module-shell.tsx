@@ -11,6 +11,7 @@ import {
 import { AppSwitcher } from "@/components/shell/app-switcher";
 import { UserMenu } from "@/components/shell/user-menu";
 import { CommandPalette } from "@/components/shell/command-palette";
+import { NavMetrics } from "@/components/shell/nav-metrics";
 import { Database } from "lucide-react";
 import { buildPalettePages } from "@/lib/palette";
 import { hasMasterDataDirectoryAccess } from "@/lib/master-data-directory";
@@ -47,12 +48,18 @@ import type { CompanyContext } from "@/lib/session";
  * Kegagalan baca tidak pernah merusak cangkang: lencana hilang,
  * halaman tetap tampil.
  */
+const NAV_BADGE_TTL_MS = 15_000;
+const navBadgeCache = new Map<string, { expiresAt: number; value: NavBadges | undefined }>();
+
 async function computeNavBadges(
   moduleKey: ModuleKey,
   ctx: CompanyContext,
 ): Promise<NavBadges | undefined> {
+  const cacheKey = `${moduleKey}:${ctx.company.id}:${ctx.permissions.join(",")}`;
+  const cached = navBadgeCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
   try {
-    return await withCompanyReadOnly(ctx.company.id, async (tx) => {
+    const value = await withCompanyReadOnly(ctx.company.id, async (tx) => {
       const badges: NavBadges = {};
       if (moduleKey === "gudang" && ctx.permissions.includes("inventory.view")) {
         const requestsByStatus = await countPurchaseRequestsByStatus(tx, ctx.company.id);
@@ -90,7 +97,10 @@ async function computeNavBadges(
       }
       return badges;
     });
+    navBadgeCache.set(cacheKey, { expiresAt: Date.now() + NAV_BADGE_TTL_MS, value });
+    return value;
   } catch {
+    navBadgeCache.set(cacheKey, { expiresAt: Date.now() + NAV_BADGE_TTL_MS, value: undefined });
     return undefined;
   }
 }
@@ -190,6 +200,7 @@ export async function ModuleShell({
 
   return (
     <div className="module-shell theme-erp min-h-dvh bg-background lg:flex">
+      {moduleKey === "pos" ? <NavMetrics moduleKey={moduleKey} /> : null}
       <SidebarFrame
         defaultCollapsed={parseSidebarCollapsedCookie(sidebarCookie?.value)}
         hasPreference={sidebarCookie !== undefined}

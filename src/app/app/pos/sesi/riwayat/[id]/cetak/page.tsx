@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
-import { withCompanyReadOnly } from "@/db/tenant";
+import { withCompany } from "@/db/tenant";
 import { getCashSessionHistoryDetail } from "@/server/reports";
 import { getSettings } from "@/server/catalog";
 import { requirePermissionPage } from "@/lib/session";
+import { writeAudit } from "@/server/audit";
 import { d, formatIDR } from "@/lib/money";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { ReceiptPrint } from "@/components/pos/receipt-print";
@@ -29,15 +30,24 @@ export default async function SessionZReportPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ autoprint?: string }>;
+  searchParams: Promise<{ autoprint?: string; x?: string }>;
 }) {
   const { id } = await params;
   const query = await searchParams;
+  const isX = query.x === "1";
   const ctx = await requirePermissionPage("pos.session");
-  const data = await withCompanyReadOnly(ctx.company.id, async (tx) => {
+  const data = await withCompany(ctx.company.id, async (tx) => {
     const detail = await getCashSessionHistoryDetail(tx, ctx.company.id, id);
     if (!detail) return null;
     const settings = await getSettings(tx, ctx.company.id);
+    await writeAudit(tx, {
+      companyId: ctx.company.id,
+      userId: ctx.user.id,
+      action: isX ? "pos.session.x_report" : "pos.session.z_report",
+      entityType: "cash_session",
+      entityId: id,
+      after: { number: detail.session.id.slice(0, 8).toUpperCase() },
+    });
     return { detail, settings };
   });
   if (!data) notFound();
@@ -69,7 +79,7 @@ export default async function SessionZReportPage({
             phone={settings?.phone}
             taxId={settings?.taxId}
             variant="document"
-            title="Laporan Tutup Sesi (Z)"
+            title={isX ? "Laporan Sementara (X)" : "Laporan Tutup Sesi (Z)"}
             number={session.id.slice(0, 8).toUpperCase()}
             dateLabel={formatDateTime(session.closedAt ?? session.openedAt)}
           />

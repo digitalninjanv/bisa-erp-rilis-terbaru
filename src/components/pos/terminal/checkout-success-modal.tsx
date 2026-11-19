@@ -13,9 +13,9 @@ import {
   X,
 } from "lucide-react";
 import { formatIDR } from "@/lib/money";
-import { getSaleReceiptDataAction } from "@/server/actions/pos-receipt";
-import { formatReceiptToEscPos } from "@/lib/escpos/receipt-template";
-import { getPrinterPreferences, sendEscPosToPrinter } from "@/lib/escpos/printer-connection";
+import { getPrinterPreferences } from "@/lib/escpos/printer-connection";
+import { getOrCreateDeviceId } from "@/lib/pos-offline";
+import { enqueuePrintJob, latestPrintJob, retryPrintJob } from "@/lib/pos/print-queue";
 import { printReceiptViaPopup } from "@/components/pos/receipt-print-window";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PrinterConfigModal } from "@/components/pos/printer-modal";
@@ -29,86 +29,111 @@ export interface CompletedSaleInfo {
 
 export function CheckoutSuccessModal({
   sale,
+  companyId,
   onDismiss,
 }: {
   sale: CompletedSaleInfo | null;
+  companyId: string;
   onDismiss: () => void;
 }) {
   const [printStatus, setPrintStatus] = useState<"idle" | "printing" | "success" | "error">("idle");
   const [printMessage, setPrintMessage] = useState("");
   const [configOpen, setConfigOpen] = useState(false);
   const [prefs, setPrefs] = useState(getPrinterPreferences());
-  const printInFlight = useRef(false);
   const newSaleRef = useRef<HTMLButtonElement>(null);
 
-  const triggerPrint = useCallback(async (saleId: string, forceBrowser = false) => {
-    if (printInFlight.current) return;
-    printInFlight.current = true;
+  const triggerPrint = useCallback(async (saleId: string, saleNumber: string, forceBrowser = false) => {
+    const currentPrefs = getPrinterPreferences();
+    setPrefs(currentPrefs);
 
-    try {
-      const currentPrefs = getPrinterPreferences();
-      setPrefs(currentPrefs);
-
-      // Printer langsung mencetak data ESC/POS tanpa membuka halaman browser.
-      if (
-        currentPrefs.type === "bluetooth" ||
+    if (
+      !forceBrowser &&
+      (currentPrefs.type === "bluetooth" ||
         currentPrefs.type === "usb" ||
-        currentPrefs.type === "serial"
-      ) {
-        setPrintStatus("printing");
-        setPrintMessage(`Mengirim data ke ${currentPrefs.name}...`);
-        try {
-          const res = await getSaleReceiptDataAction(saleId);
-          if (!res.ok) {
-            throw new Error(res.message || "Gagal mengambil data nota.");
-          }
-
-          const escposBytes = formatReceiptToEscPos({
-            ...res.data,
-            paperWidth: currentPrefs.paperWidth,
-            openCashDrawer: currentPrefs.openCashDrawer,
-            cutPaper: currentPrefs.cutPaper,
-          });
-
-          const printRes = await sendEscPosToPrinter(escposBytes);
-          if (printRes.ok) {
-            setPrintStatus("success");
-            setPrintMessage(`Data nota terkirim ke ${currentPrefs.name}. Periksa hasil cetaknya.`);
-          } else {
-            setPrintStatus("error");
-            setPrintMessage(printRes.message || "Gagal mencetak ke printer thermal.");
-          }
-        } catch (err: unknown) {
-          setPrintStatus("error");
-          setPrintMessage(err instanceof Error ? err.message : "Gagal mencetak nota thermal.");
+        currentPrefs.type === "serial")
+    ) {
+      setPrintStatus("printing");
+      setPrintMessage(`Masuk antrean cetak ${currentPrefs.name}...`);
+      try {
+        const latest = await latestPrintJob(saleId);
+        if (latest?.status === "pending" || latest?.status === "printing") {
+          setPrintStatus("printing");
+          setPrintMessage("Struk masih dalam antrean cetak...");
+          return;
         }
-        return;
-      }
-
-      // Browser/Kiosk: popup independen. Iframe tersembunyi tidak dipakai
-      // karena Chrome mencetak halaman induk POS, bukan nota.
-      if (currentPrefs.type === "kiosk" || forceBrowser) {
-        setPrintStatus("printing");
-        setPrintMessage("Membuka jendela cetak nota...");
-        const opened = printReceiptViaPopup(saleId);
-        if (opened) {
-          setPrintStatus("success");
-          setPrintMessage("Jendela cetak dibuka. Selesaikan dialog cetak di jendela tersebut.");
+        if (latest?.status === "failed" || latest?.status === "uncertain") {
+          await retryPrintJob(saleId);
         } else {
-          setPrintStatus("error");
-          setPrintMessage(
-            "Popup cetak diblokir browser. Izinkan pop-up untuk situs ini, lalu klik Cetak nota lagi.",
-          );
+          await enqueuePrintJob({
+            saleId,
+            saleNumber,
+            companyId,
+            terminalId: getOrCreateDeviceId(),
+            kind: latest ? "copy" : "receipt",
+          });
         }
-        return;
+      } catch {
+        setPrintStatus("error");
+        setPrintMessage("Antrean cetak tidak tersedia. Periksa penyimpanan browser lalu coba lagi.");
       }
-
-      setPrintStatus("idle");
-      setPrintMessage("Printer thermal belum terhubung");
-    } finally {
-      printInFlight.current = false;
+      return;
     }
-  }, []);
+
+    // Browser/Kiosk: popup independen. Iframe tersembunyi tidak dipakai
+    // karena Chrome mencetak halaman induk POS, bukan nota.
+    if (currentPrefs.type === "kiosk" || forceBrowser) {
+      setPrintStatus("printing");
+      setPrintMessage("Membuka jendela cetak nota...");
+      const opened = printReceiptViaPopup(saleId);
+      if (opened) {
+        setPrintStatus("success");
+        setPrintMessage("Jendela cetak dibuka. Selesaikan dialog cetak di jendela tersebut.");
+      } else {
+        setPrintStatus("error");
+        setPrintMessage(
+          "Popup cetak diblokir browser. Izinkan pop-up untuk situs ini, lalu klik Cetak nota lagi.",
+        );
+      }
+      return;
+    }
+
+    setPrintStatus("idle");
+    setPrintMessage("Printer thermal belum terhubung");
+  }, [companyId]);
+
+  // Status job cetak dipantau dari antrean, bukan dari durasi transport.
+  useEffect(() => {
+    if (!sale) return;
+    let active = true;
+    const read = async () => {
+      try {
+        const job = await latestPrintJob(sale.id);
+        if (!active || !job) return;
+        if (job.status === "pending" || job.status === "printing") {
+          setPrintStatus("printing");
+          setPrintMessage(
+            job.status === "pending" ? "Menunggu antrean cetak..." : `Mengirim ke ${getPrinterPreferences().name}...`,
+          );
+        } else if (job.status === "sent") {
+          setPrintStatus("success");
+          setPrintMessage("Data nota terkirim ke printer. Periksa hasil cetaknya.");
+        } else if (job.status === "failed" || job.status === "uncertain") {
+          setPrintStatus("error");
+          setPrintMessage(job.lastError || "Cetak gagal. Periksa printer lalu coba lagi.");
+        }
+      } catch {
+        if (!active) return;
+        setPrintStatus("error");
+        setPrintMessage("Antrean cetak tidak dapat dibaca.");
+      }
+    };
+    void read();
+    const interval = window.setInterval(() => void read(), 700);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [sale]);
 
   // Auto-print hanya untuk printer thermal langsung (Bluetooth/USB/Serial).
   // Browser/kiosk memerlukan klik "Cetak nota" agar popup tidak diblokir
@@ -121,7 +146,7 @@ export function CheckoutSuccessModal({
       currentPrefs.type === "usb" ||
       currentPrefs.type === "serial";
     if (currentPrefs.autoPrintOnCheckout && directPrinter) {
-      const timeout = window.setTimeout(() => void triggerPrint(sale.id), 0);
+      const timeout = window.setTimeout(() => void triggerPrint(sale.id, sale.number), 0);
       return () => window.clearTimeout(timeout);
     }
   }, [sale, triggerPrint]);
@@ -229,7 +254,7 @@ export function CheckoutSuccessModal({
 
               <button
                 type="button"
-                onClick={() => sale && void triggerPrint(sale.id, prefs.type === "none")}
+                onClick={() => sale && void triggerPrint(sale.id, sale.number, prefs.type === "none")}
                 disabled={isPrinting}
                 autoFocus={!autoPrintExpected}
                 className={

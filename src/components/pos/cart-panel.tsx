@@ -1,13 +1,17 @@
 import { useState } from "react";
+import Link from "next/link";
 import type { Dispatch, SetStateAction } from "react";
 import {
   AlertTriangle,
+  History,
   Minus,
   PauseCircle,
   Plus,
   ShoppingCart,
   Trash2,
   UserRound,
+  Users,
+  Wallet,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -89,6 +93,33 @@ export function CartPanel(props: {
               </span>
             </div>
             <div className="flex shrink-0 items-center gap-1">
+              <Link
+                href="/app/pos/riwayat"
+                prefetch
+                aria-label="Riwayat transaksi"
+                title="Riwayat transaksi"
+                className="grid size-11 place-items-center rounded-md text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <History className="size-4" />
+              </Link>
+              <Link
+                href="/app/pos/sesi"
+                prefetch
+                aria-label="Sesi kas"
+                title="Sesi kas"
+                className="grid size-11 place-items-center rounded-md text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Wallet className="size-4" />
+              </Link>
+              <Link
+                href="/app/pos/piutang"
+                prefetch
+                aria-label="Piutang pelanggan"
+                title="Piutang pelanggan"
+                className="grid size-11 place-items-center rounded-md text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Users className="size-4" />
+              </Link>
               {heldCount > 0 ? (
                 <a
                   href="/app/pos/ditahan"

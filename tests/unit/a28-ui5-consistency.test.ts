@@ -94,6 +94,7 @@ describe("UX-A05 — Riwayat POS: aksi utama berlabel + menu ⋯", () => {
         status: "completed",
         canVoid: true,
         canReturn: true,
+        canReprint: true,
       }),
     );
     expect(html).toContain("Cetak nota");
@@ -105,6 +106,20 @@ describe("UX-A05 — Riwayat POS: aksi utama berlabel + menu ⋯", () => {
     expect(html).not.toContain('title="Retur"');
   });
 
+  it("tanpa izin reprint, aksi cetak nota tidak dirender", () => {
+    const html = renderToStaticMarkup(
+      createElement(SaleRowActions, {
+        saleId: "sale-3",
+        number: "INV-2026-00003",
+        status: "completed",
+        canVoid: false,
+        canReturn: false,
+        canReprint: false,
+      }),
+    );
+    expect(html).not.toContain("Cetak nota");
+  });
+
   it("transaksi ditahan tetap bisa dicetak ulang, tanpa menu void/retur yang selalu gagal", () => {
     const html = renderToStaticMarkup(
       createElement(SaleRowActions, {
@@ -113,6 +128,7 @@ describe("UX-A05 — Riwayat POS: aksi utama berlabel + menu ⋯", () => {
         status: "held",
         canVoid: true,
         canReturn: true,
+        canReprint: true,
       }),
     );
     expect(html).toContain("Cetak nota");

@@ -14,6 +14,7 @@ import { listReservations } from "@/server/reservations";
 import { requirePermissionPage } from "@/lib/session";
 import { can } from "@/lib/permissions";
 import { ForbiddenBanner } from "@/components/blocks/forbidden-banner";
+import { toPrintSettings } from "@/components/print/types";
 
 export const metadata = { title: "Kasir" };
 export const dynamic = "force-dynamic";
@@ -102,6 +103,23 @@ export default async function PosPage({
     );
   }
 
+  const printSettings = toPrintSettings(data.settings, "nota");
+  const receiptProfile = {
+    companyName: data.settings?.legalName ?? ctx.company.name,
+    address: data.settings?.address ?? null,
+    phone: data.settings?.phone ?? null,
+    headerText: printSettings.headerText,
+    footerText: printSettings.footerText,
+    paperWidth: printSettings.receiptPaper === "thermal58" ? ("58mm" as const) : ("80mm" as const),
+    showTax: printSettings.showTax,
+    showCashier: printSettings.showCashier,
+    showCustomer: printSettings.showCustomer,
+    showQr: printSettings.showQr,
+    cashierName: ctx.user.name,
+    openCashDrawer: true,
+    cutPaper: true,
+  };
+
   return (
     <>
       <h1 className="sr-only">Kasir</h1>
@@ -187,6 +205,7 @@ export default async function PosPage({
       offlineRoundingMode={data.settings?.roundingMode ?? "none"}
       receivableDefaultTermDays={data.settings?.receivableDefaultTermDays ?? 7}
       allowNegativeStock={data.settings?.allowNegativeStock ?? false}
+      receiptProfile={receiptProfile}
       />
     </>
   );

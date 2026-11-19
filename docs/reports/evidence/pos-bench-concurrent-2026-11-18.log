@@ -1,0 +1,39 @@
+Already up to date
+Done in 501ms using pnpm v11.8.0
+Already up to date
+Done in 515ms using pnpm v11.8.0
+fixture {
+  warehouse: '01a1e181-dec3-74e0-b252-f181b4d7c7ac',
+  cash: '01a1e181-df83-7630-9a5f-99fba063acb0',
+  productId: '01a1e28b-affb-7366-af23-2fe8d0ac480a'
+}
+{
+  "sequential": {
+    "label": "sequential x10",
+    "n": 10,
+    "p50": 53,
+    "p95": 117,
+    "max": 117
+  },
+  "concurrent5": {
+    "label": "concurrent x5",
+    "n": 5,
+    "p50": 176,
+    "p95": 296,
+    "max": 296
+  },
+  "concurrent10": {
+    "label": "concurrent x10",
+    "n": 10,
+    "p50": 287,
+    "p95": 517,
+    "max": 517
+  },
+  "concurrent20": {
+    "label": "concurrent x20",
+    "n": 20,
+    "p50": 458,
+    "p95": 857,
+    "max": 857
+  }
+}

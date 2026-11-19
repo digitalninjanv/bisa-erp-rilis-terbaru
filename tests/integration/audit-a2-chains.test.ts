@@ -70,13 +70,13 @@ import type { OfflineSalePayload } from "@/lib/pos/pos-offline";
 // =====================================================================
 
 const ALL_PERMS = [
-  "pos.sell", "pos.session", "pos.void", "pos.return",
+  "pos.sell", "pos.session", "pos.void", "pos.return", "pos.receipt.reprint",
   "payroll.manage", "payroll.salary", "payroll.view",
   "accounting.view", "accounting.manage", "inventory.view",
 ];
 const sessionState = vi.hoisted(() => ({
   permissions: [
-    "pos.sell", "pos.session", "pos.void", "pos.return",
+    "pos.sell", "pos.session", "pos.void", "pos.return", "pos.receipt.reprint", "pos.receipt.reprint",
     "payroll.manage", "payroll.salary", "payroll.view",
     "accounting.view", "accounting.manage", "inventory.view",
   ] as string[],
