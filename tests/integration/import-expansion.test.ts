@@ -10,6 +10,7 @@ import {
   journalEntries,
   journalLines,
   products,
+  stockMovements,
   stockOnHand,
   stockReceipts,
   suppliers,
@@ -494,10 +495,10 @@ describe("T4-5a impor stok awal", () => {
     const jobId = await makeJob(
       "opening_stock",
       [
-        { SKU: skuA, "Nama Produk": "", Qty: "10", "Biaya Satuan": "2.500,00" },
+        { SKU: skuA, "Nama Produk": "", Qty: "10", "Biaya Satuan": "2.500" },
         { SKU: skuB, "Nama Produk": "", Qty: "4", "Biaya Satuan": "10000" },
         { SKU: `TIDAK-ADA-${suffix}`, "Nama Produk": "", Qty: "5", "Biaya Satuan": "1000" },
-        { SKU: skuA, "Nama Produk": "", Qty: "2", "Biaya Satuan": "3.500,00" },
+        { SKU: skuA, "Nama Produk": "", Qty: "2", "Biaya Satuan": "3.500" },
       ],
       mapping,
     );
@@ -525,6 +526,11 @@ describe("T4-5a impor stok awal", () => {
     expect(receipt.number).toBe(result.receiptNumber);
     // 10×2.500 + 2×3.500 + 4×10.000 = 72.000
     expect(d(receipt.total).toFixed(2)).toBe("72000.00");
+    const moves = await withCompanyReadOnly(ORG_ID, (tx) =>
+      tx.select({ type: stockMovements.movementType }).from(stockMovements)
+        .where(eq(stockMovements.referenceId, openingReceiptId)),
+    );
+    expect(moves.map(({ type }) => type)).toEqual(["purchase", "purchase"]);
 
     const onHand = await withCompanyReadOnly(ORG_ID, (tx) =>
       tx

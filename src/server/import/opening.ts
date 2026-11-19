@@ -13,7 +13,7 @@ import {
   suppliers,
   warehouses,
 } from "@/db/schema";
-import { createMigrationOpeningReceipt } from "@/server/inventory/receipts";
+import { createMigrationOpeningReceipt, createReceipt } from "@/server/inventory/receipts";
 import { recomputeCostFromLedger } from "@/server/inventory/movements";
 import { createOpeningBalance } from "@/server/opening-balances";
 import { AppError } from "@/lib/errors";
@@ -192,6 +192,7 @@ export async function commitOpeningStockImport(
   type OpeningGroup = {
     warehouseId: string;
     date: string;
+    requiresMigrationReceipt: boolean;
     items: Map<string, { qty: ReturnType<typeof d>; value: ReturnType<typeof d> }>;
   };
   const groups = new Map<string, OpeningGroup>();
@@ -224,9 +225,10 @@ export async function commitOpeningStockImport(
     }
     chosen.set(key, { date, sign });
     const warehouseId = warehouse.id;
-    const groupKey = `${warehouseId}|${date}`;
+    const requiresMigrationReceipt = sign <= 0;
+    const groupKey = `${warehouseId}|${date}|${requiresMigrationReceipt}`;
     const group: OpeningGroup =
-      groups.get(groupKey) ?? { warehouseId, date, items: new Map() };
+      groups.get(groupKey) ?? { warehouseId, date, requiresMigrationReceipt, items: new Map() };
     const current = group.items.get(product.id) ?? { qty: d(0), value: d(0) };
     current.qty = current.qty.plus(mapped.value.qty);
     current.value = current.value.plus(d(mapped.value.qty).mul(mapped.value.unitCost));
@@ -240,22 +242,29 @@ export async function commitOpeningStockImport(
   let imported = 0;
   const touchedProducts = new Set<string>();
   const receiptByGroup = new Map<string, { id: string; number: string }>();
-  for (const [groupKey, group] of groups) {
+  const orderedGroups = [...groups].sort(([, left], [, right]) =>
+    Number(left.requiresMigrationReceipt) - Number(right.requiresMigrationReceipt));
+  for (const [groupKey, group] of orderedGroups) {
     if (group.items.size === 0) continue;
-    const receipt = await createMigrationOpeningReceipt(tx, {
+    const receiptInput = {
       companyId,
       userId: input.userId,
       warehouseId: group.warehouseId,
       date: group.date,
-      notes: `Saldo awal migrasi ${job.fileName}`,
+      notes: `Stok awal hasil impor ${job.fileName}`,
       lines: [...group.items.entries()].map(([productId, agg]) => ({
         productId,
         qty: toDb(agg.qty),
         unitCost: toDb(agg.qty.isZero() ? d(0) : agg.value.div(agg.qty)),
       })),
-    });
-    for (const [productId, item] of group.items) {
-      if (!item.qty.isZero()) touchedProducts.add(productId);
+    };
+    const receipt = group.requiresMigrationReceipt
+      ? await createMigrationOpeningReceipt(tx, receiptInput)
+      : await createReceipt(tx, { ...receiptInput, source: "opening" });
+    if (group.requiresMigrationReceipt) {
+      for (const [productId, item] of group.items) {
+        if (!item.qty.isZero()) touchedProducts.add(productId);
+      }
     }
     receiptByGroup.set(groupKey, { id: receipt.id, number: receipt.number });
     if (!receiptId) {

@@ -205,7 +205,7 @@ export function MasterImportWizard({
           </div>
 
           {analysis.summary.openingStock ? (
-            <section aria-label="Ringkasan saldo awal" className="rounded-lg border border-border bg-card px-4 py-3 text-sm">
+            <section aria-label="Ringkasan stok awal" className="rounded-lg border border-border bg-card px-4 py-3 text-sm">
               <p>
                 {formatNumber(analysis.summary.openingStock.positive)} positif ·{" "}
                 {formatNumber(analysis.summary.openingStock.zero)} nol ·{" "}
@@ -346,7 +346,7 @@ export function MasterImportWizard({
               <p className="text-[11px] text-muted-foreground">
                 Baris yang tidak dicentang akan dilewati saat impor.
                 {entity === "opening_stock"
-                  ? " Dokumen saldo awal dikelompokkan per gudang dan tanggal cut-off."
+                  ? " Penerimaan stok awal dikelompokkan per gudang dan tanggal cut-off."
                   : ""}
                 {receiptNumber ? ` Penerimaan stok awal: ${receiptNumber}.` : ""}
               </p>

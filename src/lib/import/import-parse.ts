@@ -527,13 +527,11 @@ function openingStockNumber(raw: unknown): number | null {
     value = value.replaceAll(".", "").replace(",", ".");
   } else if (/^-?\d{1,3}(,\d{3})+\.\d+$/.test(value)) {
     value = value.replaceAll(",", "");
-  } else if (/^-?\d{1,3}(\.\d{3}){2,}$/.test(value)) {
+  } else if (/^-?[1-9]\d{0,2}(\.\d{3})+$/.test(value)) {
     value = value.replaceAll(".", "");
-  } else if (/^-?\d{1,3}(,\d{3}){2,}$/.test(value)) {
+  } else if (/^-?[1-9]\d{0,2}(,\d{3})+$/.test(value)) {
     value = value.replaceAll(",", "");
   } else {
-    // Satu pemisah + tiga digit dapat berarti desimal atau ribuan.
-    if (/^-?[1-9]\d{0,2}[.,]\d{3}$/.test(value)) return null;
     if (!/^-?\d+(?:[.,]\d+)?$/.test(value)) return null;
     value = value.replace(",", ".");
   }
@@ -550,18 +548,18 @@ export function mapOpeningStockRow(
   if (!sku && !name) return { error: "SKU atau nama produk wajib diisi" };
   const rawQty = mapping.qty ? row[mapping.qty] : undefined;
   if (rawQty == null || String(rawQty).trim() === "") {
-    return { error: "Kuantitas belum diisi. Masukkan angka 0 untuk saldo nol." };
+    return { error: "Kuantitas belum diisi. Masukkan angka 0 untuk stok nol." };
   }
   const qty = openingStockNumber(rawQty);
   if (qty === null) {
-    return { error: `Qty tidak terbaca atau ambigu: "${String(rawQty).trim().slice(0, 40)}". Gunakan sel angka Excel.` };
+    return { error: `Qty tidak terbaca: "${String(rawQty).trim().slice(0, 40)}". Gunakan sel angka Excel.` };
   }
   const rawCost = mapping.unitCost ? row[mapping.unitCost] : undefined;
   const costBlank = rawCost == null || String(rawCost).trim() === "";
-  if (qty !== 0 && costBlank) return { error: "Biaya satuan wajib diisi untuk saldo bukan nol." };
+  if (qty < 0 && costBlank) return { error: "Biaya satuan wajib diisi untuk stok minus." };
   const unitCost = costBlank ? 0 : openingStockNumber(rawCost);
   if (unitCost === null) {
-    return { error: `Biaya satuan tidak terbaca atau ambigu: "${String(rawCost).trim().slice(0, 40)}". Gunakan sel angka Excel.` };
+    return { error: `Biaya satuan tidak terbaca: "${String(rawCost).trim().slice(0, 40)}". Gunakan sel angka Excel.` };
   }
   if (unitCost < 0) return { error: "Biaya satuan tidak boleh negatif" };
   if (Math.abs(qty) >= 1e15 || unitCost >= 1e15 ||
