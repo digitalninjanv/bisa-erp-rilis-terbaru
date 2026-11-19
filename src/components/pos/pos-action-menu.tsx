@@ -175,7 +175,6 @@ export function PosActionMenu({
                     key={item.href}
                     href={item.href}
                     prefetch
-                    onPointerDown={() => setOpen(false)}
                     onClick={() => setOpen(false)}
                     className="flex min-h-11 items-center gap-3 rounded-md px-2.5 py-1.5 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >

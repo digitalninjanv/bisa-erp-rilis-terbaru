@@ -60,7 +60,7 @@ export function ShortcutHelp() {
         <div
           role="dialog"
           aria-label="Pintasan keyboard terminal"
-          className="absolute right-0 top-full z-20 mt-1 w-72 rounded-lg border border-border bg-card p-3 shadow-lg"
+          className="absolute bottom-full right-0 z-20 mb-1 w-72 rounded-lg border border-border bg-card p-3 shadow-lg"
         >
           <p className="mb-2 text-[12px] font-semibold">Pintasan keyboard</p>
           <dl className="space-y-1.5">
