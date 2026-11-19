@@ -52,6 +52,22 @@ export async function postReceiptJournal(
     advanceApplied,
     advanceAccountId,
   } = args;
+  if (source === "opening" && total.lt(0)) {
+    const map = await getAccountMap(tx, ctx.companyId);
+    await postJournal(tx, {
+      companyId: ctx.companyId,
+      date: ctx.date,
+      description: `Saldo awal migrasi ${receipt.number}`,
+      sourceType: "receipt_opening",
+      sourceId: receipt.id,
+      createdBy: ctx.userId,
+      lines: [
+        { accountId: map.equity, debit: total.abs(), description: "Koreksi saldo awal persediaan" },
+        { accountId: map.inventory, credit: total.abs(), description: "Persediaan awal berkurang" },
+      ],
+    });
+    return;
+  }
   if (total.gt(0)) {
     const map = await getAccountMap(tx, ctx.companyId);
     const supplierParty = supplierId

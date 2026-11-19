@@ -1,5 +1,7 @@
 import { and, asc, eq, ne } from "drizzle-orm";
 import type { Tx } from "@/db";
+import { mapOpeningStockRow } from "@/lib/import-parse";
+import { d, toDb } from "@/lib/money";
 import type { CustomFieldDefinition } from "@/lib/custom-fields";
 import { importCustomFieldValues } from "@/lib/import/import-custom-fields";
 import {
@@ -16,7 +18,6 @@ import {
   paymentMethods,
   importRows,
   partyOpeningBalances,
-  products,
   suppliers,
   units,
   warehouses,
@@ -28,7 +29,7 @@ import {
   requiredCustomFieldsNote,
   type MasterEntity,
 } from "./masters";
-import { loadImportedOpeningStockProductIds, openingBalanceKey } from "./opening";
+import { loadOpeningStockContext, resolveOpeningStockRow, openingBalanceKey } from "./opening";
 import { persistPendingImportRowIssues } from "@/server/import-row-issues";
 import type { JobRow, Mapping, RowData } from "./shared";
 
@@ -47,6 +48,12 @@ export type MasterSummary = {
   invalidRows: number;
   unknownGroups: string[];
   unknownProducts: number;
+  openingStock?: {
+    positive: number;
+    zero: number;
+    negative: number;
+    warehouses: { name: string; value: string }[];
+  };
   // Penghitung khusus produk selalu 0/[] di sini — bentuk ringkasan
   // disatukan dengan jalur produk agar tipe hasil analyzeImportAction
   // tetap satu dan konsumen lama (wizard/test produk) tidak berubah.
@@ -83,6 +90,8 @@ export async function analyzeMasterImport(
     job: JobRow;
     mapping: Mapping;
     customFields?: CustomFieldDefinition[];
+    warehouseId?: string;
+    date?: string;
   },
 ): Promise<{ summary: MasterSummary; preview: PreviewItem[] }> {
   const { companyId, job, mapping } = input;
@@ -123,8 +132,6 @@ export async function analyzeMasterImport(
   const existingFixedAssetKeys = new Set<string>();
   const categoryByName = new Map<string, string>();
   const groupByName = new Map<string, string>();
-  const productBySku = new Map<string, { id: string }>();
-  const productByName = new Map<string, { id: string }>();
   // T4-5b: konteks pihak untuk saldo awal — nama ATAU kode master.
   const partyNames = new Set<string>();
   const partyCodes = new Set<string>();
@@ -133,7 +140,7 @@ export async function analyzeMasterImport(
   // stok awal dari impor job lain.
   const partyIdByKey = new Map<string, string>();
   const existingOpeningKeys = new Set<string>();
-  let importedStockProductIds = new Set<string>();
+  let stockContext: Awaited<ReturnType<typeof loadOpeningStockContext>> | undefined;
 
   if (entity === "suppliers") {
     const found = await tx
@@ -299,15 +306,10 @@ export async function analyzeMasterImport(
     }
     for (const row of accountRows) existingAccountCodes.add(row.code.toLowerCase());
   } else if (entity === "opening_stock") {
-    const found = await tx
-      .select({ id: products.id, sku: products.sku, name: products.name })
-      .from(products)
-      .where(eq(products.companyId, companyId));
-    for (const row of found) {
-      productBySku.set(row.sku.toLowerCase(), { id: row.id });
-      if (!productByName.has(row.name.toLowerCase())) productByName.set(row.name.toLowerCase(), { id: row.id });
-    }
-    importedStockProductIds = await loadImportedOpeningStockProductIds(tx, companyId, job.id);
+    stockContext = await loadOpeningStockContext(tx, companyId, rows.flatMap((row) => {
+      const parsed = mapOpeningStockRow((row.data ?? {}) as RowData, mapping);
+      return parsed.value ? [parsed.value] : [];
+    }), input.warehouseId);
   } else if (entity === "opening_payables" || entity === "opening_receivables") {
     const isPayable = entity === "opening_payables";
     const table = isPayable ? suppliers : customers;
@@ -358,6 +360,9 @@ export async function analyzeMasterImport(
     newUnits: [],
     newSuppliers: [],
   };
+  const stockCounts = { positive: 0, zero: 0, negative: 0 };
+  const stockValues = new Map<string, { name: string; value: ReturnType<typeof d> }>();
+  const openingRows = new Map<string, { date: string; sign: number }>();
   const preview: PreviewItem[] = [];
   const rowIssues: { id: string; status: string; issue: string | null }[] = [];
   const seenNames = new Set<string>();
@@ -649,23 +654,32 @@ export async function analyzeMasterImport(
             detail = `${detail ?? ""} · perbarui`.trim();
           }
         }
-      } else if (value.kind === "opening_stock") {
-        const found =
-          (value.value.sku ? productBySku.get(value.value.sku.toLowerCase()) : undefined) ??
-          (value.value.name ? productByName.get(value.value.name.toLowerCase()) : undefined);
-        if (!found) {
+      } else if (value.kind === "opening_stock" && stockContext) {
+        const found = resolveOpeningStockRow(value.value, stockContext, input.date);
+        if (found.error) {
           summary.invalidRows += 1;
-          summary.unknownProducts += 1;
-          issue = `Produk tidak ditemukan (SKU/nama "${value.value.sku ?? value.value.name ?? ""}") — buat produknya dulu`;
-          storedIssue = issue;
+          if (found.unknownProduct) summary.unknownProducts += 1;
+          issue = storedIssue = found.error;
           action = "error";
-        } else if (importedStockProductIds.has(found.id)) {
-          // T4R-5: stok awal produk ini sudah pernah diimpor job lain —
-          // mengimpornya lagi akan menggandakan stok & jurnal pembuka.
+        } else if (found.skip) {
           summary.existingCount += 1;
-          issue = "Duplikat — produk ini sudah memiliki stok awal dari impor sebelumnya, baris akan dilewati";
-          storedIssue = issue;
+          issue = storedIssue = found.skip;
           action = "skip";
+        } else if (found.product && row.status === "pending") {
+          const sign = Math.sign(value.value.qty);
+          const previous = openingRows.get(found.key);
+          if (previous && (previous.sign !== sign || previous.date !== found.date)) {
+            summary.duplicateInFile += 1;
+            issue = storedIssue = "Saldo SKU dan gudang yang sama memiliki tanda atau tanggal cut-off berbeda.";
+            action = "error";
+          } else {
+            openingRows.set(found.key, { sign, date: found.date });
+            stockCounts[sign < 0 ? "negative" : sign === 0 ? "zero" : "positive"] += 1;
+            const warehouse = stockValues.get(found.warehouse.id) ?? { name: found.warehouse.name, value: d(0) };
+            warehouse.value = warehouse.value.plus(d(value.value.qty).mul(value.value.unitCost));
+            stockValues.set(found.warehouse.id, warehouse);
+            detail = `${detail} · ${found.warehouse.name} · ${found.date}`;
+          }
         }
       } else if (value.kind === "opening_payables" || value.kind === "opening_receivables") {
         // T4-5b: pihak saldo awal harus master yang SUDAH ada — impor
@@ -730,6 +744,13 @@ export async function analyzeMasterImport(
     if (preview.length < 30) {
       preview.push({ rowNumber: row.rowNumber, label, detail, issue, action });
     }
+  }
+
+  if (stockContext) {
+    summary.openingStock = {
+      ...stockCounts,
+      warehouses: [...stockValues.values()].map(({ name, value }) => ({ name, value: toDb(value) })),
+    };
   }
 
   // Sama seperti produk (GD-P2-7): isu baris bermasalah disimpan agar

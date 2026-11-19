@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Printer } from "lucide-react";
 import { toast } from "sonner";
+import { getDesktopPrintBridge } from "@/lib/pos/desktop-print";
 import { voidSaleAction } from "@/server/actions/pos";
 import { RowMenu, type RowMenuItem } from "@/components/blocks/row-menu";
 
@@ -85,6 +86,15 @@ export function SaleRowActions({
           rel="noreferrer"
           className="inline-flex h-8 items-center gap-1.5 rounded border border-border bg-card px-2.5 text-[11px] font-medium text-foreground transition-colors hover:bg-muted"
           aria-label={`Cetak nota ${number}`}
+          onClick={(event) => {
+            const desktop = getDesktopPrintBridge();
+            if (!desktop) return;
+            event.preventDefault();
+            void desktop.printReceipt(saleId, true).then((result) => {
+              if (result.ok) toast.success("Data struk dikirim ke antrean printer.");
+              else toast.error(result.message ?? "Gagal mengirim struk.");
+            }).catch(() => toast.error("Status cetak belum pasti. Periksa printer sebelum mengulang."));
+          }}
         >
           <Printer className="size-3.5" />
           Cetak nota

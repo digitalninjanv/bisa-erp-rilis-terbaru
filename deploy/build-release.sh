@@ -17,16 +17,18 @@
 #                                      systemd units, this script
 #   VERSION                            release version stamp
 #
-# Usage: bash deploy/build-release.sh [versi] [--skip-build]
+# Usage: bash deploy/build-release.sh [versi] [--skip-build] [--without-tauri-bundles]
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
 version=""
 skip_build=0
+include_tauri_bundles=1
 for arg in "$@"; do
   case "$arg" in
     --skip-build) skip_build=1 ;;
+    --without-tauri-bundles) include_tauri_bundles=0 ;;
     *) version="$arg" ;;
   esac
 done
@@ -53,6 +55,9 @@ cp -r .next/standalone/. "$stage/"
 # Never ship database backups that happened to be under the source workspace;
 # production backup storage is configured outside the release directory.
 rm -rf "$stage/backups"
+if [[ "$include_tauri_bundles" == "0" ]]; then
+  rm -rf "$stage/src-tauri/target/release/bundle"
+fi
 find "$stage" -type f \( -name '*.dump' -o -name '*.dump.*' \) -delete
 cp -r .next/static "$stage/.next/static"
 cp -r public "$stage/public"

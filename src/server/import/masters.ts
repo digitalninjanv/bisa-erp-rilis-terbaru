@@ -283,7 +283,7 @@ export function masterPreview(value: MasterMapped): MasterRowPreview {
     case "opening_stock":
       return {
         label: value.value.sku ?? value.value.name ?? "—",
-        detail: `Qty ${formatNumber(value.value.qty)} × ${formatIDR(value.value.unitCost)}${
+        detail: value.value.qty === 0 ? "Saldo nol" : `${value.value.qty < 0 ? "Saldo minus" : "Qty"} ${formatNumber(value.value.qty)} × ${formatIDR(value.value.unitCost)}${
           value.value.unitCost === 0 ? " — biaya 0, nilai persediaan akan 0" : ""
         }`,
       };

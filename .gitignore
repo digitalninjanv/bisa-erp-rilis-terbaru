@@ -80,3 +80,5 @@ pos-native-keys/
 
 # Disposable verification build
 /.next-remediation/
+
+/pos-electron/node_modules/

@@ -11,6 +11,7 @@ import {
   products,
   stockReceiptLines,
   stockReceipts,
+  stockMovements,
   supplierReturnAllocations,
 } from "@/db/schema";
 import { AppError } from "@/lib/errors";
@@ -105,6 +106,7 @@ async function assertVoidStockAvailable(
   input: { companyId: string; warehouseId: string; receiptNumber: string; lines: VoidLine[] },
 ) {
   for (const line of input.lines) {
+    if (d(line.qty).lte(0)) continue;
     const available = await lockStockQty(tx, input.companyId, input.warehouseId, line.productId);
     if (available.lt(d(line.qty))) {
       throw new AppError(
@@ -116,7 +118,7 @@ async function assertVoidStockAvailable(
 }
 
 /**
- * createReceipt only posts its journal when the receipt total is > 0, so a
+ * createReceipt only posts its journal when the receipt total is nonzero, so a
  * reversal is only owed under the same condition. The journal is found by
  * the document's sourceId — never by guessing a sourceType (D-5) — and
  * payment journals (sourceType "payment", same sourceId) are excluded:
@@ -129,7 +131,7 @@ async function reverseReceiptJournal(
   input: { companyId: string; userId: string; receipt: ReceiptRow; date: string; reason: string },
 ): Promise<{ id: string; number: string } | null> {
   const { receipt } = input;
-  if (!d(receipt.total).gt(0)) return null;
+  if (d(receipt.total).isZero()) return null;
   const [original] = await tx
     .select({ id: journalEntries.id })
     .from(journalEntries)
@@ -170,10 +172,12 @@ async function reverseReceiptStock(
     lines: VoidLine[];
     date: string;
     reason: string;
+    openingMigration: boolean;
   },
 ) {
   const { receipt } = input;
   for (const line of input.lines) {
+    if (d(line.qty).isZero()) continue;
     // Nilai persediaan masuk pada DPP/net (lineTotal), bukan harga
     // faktur bruto. Void harus memakai biaya per unit yang sama agar
     // AVCO dan GL tetap cocok saat PPN/diskon dipisah.
@@ -223,6 +227,7 @@ async function reverseReceiptStock(
       // on the average is applied once, explicitly, by
       // recomputeCostFromLedger below (FIX-P1 AK4-06b).
       movementType: "reversal",
+      allowNegative: input.openingMigration && d(line.qty).lt(0),
       referenceType: "stock_receipt_void",
       referenceId: receipt.id,
       referenceNumber: receipt.number,
@@ -235,8 +240,8 @@ async function reverseReceiptStock(
   // FIX-P1 (AK4-06b): with the mirror movements written, rebuild each
   // affected product's moving average from the remaining ledger so the
   // stock valuation (Σ qty × costPrice) matches the GL again.
-  for (const productId of [...new Set(input.lines.map((line) => line.productId))]) {
-    await recomputeCostFromLedger(tx, input.companyId, productId);
+  for (const productId of [...new Set(input.lines.filter((line) => !d(line.qty).isZero()).map((line) => line.productId))]) {
+    await recomputeCostFromLedger(tx, input.companyId, productId, input.openingMigration);
   }
 }
 
@@ -269,7 +274,15 @@ export async function voidReceipt(
     await lockPurchaseOrderHeader(tx, input.companyId, receipt.purchaseOrderId);
   }
 
-  const lines = await loadVoidLines(tx, input.companyId, receipt.id);
+  const lines = (await loadVoidLines(tx, input.companyId, receipt.id)).sort((a, b) => a.productId.localeCompare(b.productId));
+  const [migrationMovement] = receipt.source === "opening"
+    ? await tx.select({ id: stockMovements.id }).from(stockMovements).where(and(
+        eq(stockMovements.companyId, input.companyId),
+        eq(stockMovements.referenceId, receipt.id),
+        eq(stockMovements.movementType, "opening_migration"),
+      )).limit(1)
+    : [];
+
   await assertVoidStockAvailable(tx, {
     companyId: input.companyId,
     warehouseId: receipt.warehouseId,
@@ -290,6 +303,7 @@ export async function voidReceipt(
     userId: input.userId,
     receipt,
     lines,
+    openingMigration: Boolean(migrationMovement),
     date: input.date,
     reason: input.reason,
   });

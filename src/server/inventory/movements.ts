@@ -8,6 +8,7 @@ import {
   products,
   stockMovements,
   stockOnHand,
+  stockReceipts,
   suppliers,
   warehouses,
 } from "@/db/schema";
@@ -78,7 +79,7 @@ export async function applyStockMovement(
   const before = d(locked?.qty ?? 0);
   const after = before.plus(delta);
 
-  if (after.lt(0) && !input.allowNegative) {
+  if (after.lt(0) && delta.lte(0) && !input.allowNegative) {
     throw new AppError("INSUFFICIENT_STOCK", `Stok tidak cukup. Tersedia ${before.toFixed(2)}.`);
   }
 
@@ -151,6 +152,23 @@ export async function applyStockMovement(
         .where(and(eq(products.companyId, input.companyId), eq(products.id, input.productId))).limit(1);
       const globalAfter = d(globalRow?.total ?? 0).plus(transit?.qty ?? 0);
       const globalBefore = globalAfter.minus(delta);
+      if (globalBefore.lt(0)) {
+        const [migration] = await tx.select({ id: stockMovements.id }).from(stockMovements)
+          .innerJoin(stockReceipts, and(
+            eq(stockReceipts.id, stockMovements.referenceId),
+            eq(stockReceipts.companyId, input.companyId),
+            eq(stockReceipts.status, "posted"),
+          )).where(and(
+            eq(stockMovements.companyId, input.companyId),
+            eq(stockMovements.productId, input.productId),
+            eq(stockMovements.movementType, "opening_migration"),
+            sql`${stockMovements.qty} < 0`,
+          )).limit(1);
+        if (migration) {
+          await recomputeCostFromLedger(tx, input.companyId, input.productId, true);
+          return { before: before.toNumber(), after: after.toNumber() };
+        }
+      }
       // GDG1-02: rumus tertimbang berlaku untuk SETIAP globalAfter > 0 —
       // termasuk globalBefore NEGATIF. Invariant nilainya: nilai akhir =
       // nilai sebelum + qty masuk × biaya masuk, dengan nilai sebelum =
@@ -397,7 +415,7 @@ export async function lockStockQty(
  */
 
 
-export async function recomputeCostFromLedger(tx: Tx, companyId: string, productId: string) {
+export async function recomputeCostFromLedger(tx: Tx, companyId: string, productId: string, signedOpening = false) {
   await tx.select({ id: products.id }).from(products)
     .where(and(eq(products.companyId, companyId), eq(products.id, productId))).for("update");
   const [row] = await tx
@@ -418,7 +436,10 @@ export async function recomputeCostFromLedger(tx: Tx, companyId: string, product
   }).from(products).where(and(eq(products.companyId, companyId), eq(products.id, productId))).limit(1);
   const qty = d(row?.qty ?? 0).plus(transit?.qty ?? 0);
   const value = d(row?.value ?? 0).plus(transit?.value ?? 0);
-  if (qty.lte(0)) return;
+  if (signedOpening && (qty.isZero() ? !value.isZero() : value.div(qty).lt(0))) {
+    throw new AppError("VALIDATION", "Nilai persediaan tidak dapat direpresentasikan dengan biaya rata-rata per produk. Rekonsiliasi saldo dan nilai SKU di semua gudang terlebih dahulu.");
+  }
+  if (qty.isZero() || (!signedOpening && qty.lt(0))) return;
   await tx
     .update(products)
     .set({ costPrice: toDb(value.div(qty)), updatedAt: new Date() })

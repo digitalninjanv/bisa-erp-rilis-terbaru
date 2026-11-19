@@ -127,6 +127,7 @@ export const JOURNAL_SOURCE_LABELS: Record<string, string> = {
   // kata-per-kata "Transfer difference" di daftar jurnal.
   transfer_difference: "Selisih transfer",
   opening: "Saldo awal",
+  opening_migration: "Saldo awal migrasi",
   opening_balance: "Saldo awal",
   expense: "Beban",
   bank_transfer: "Transfer bank",

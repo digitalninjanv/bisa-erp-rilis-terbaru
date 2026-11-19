@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNotNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, or, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
 import {
   customers,
@@ -6,17 +6,20 @@ import {
   importRows,
   partyOpeningBalances,
   products,
+  stockMovements,
+  stockOnHand,
   stockReceiptLines,
   stockReceipts,
   suppliers,
   warehouses,
 } from "@/db/schema";
-import { createReceipt } from "@/server/inventory";
+import { createMigrationOpeningReceipt } from "@/server/inventory/receipts";
+import { recomputeCostFromLedger } from "@/server/inventory/movements";
 import { createOpeningBalance } from "@/server/opening-balances";
 import { AppError } from "@/lib/errors";
 import { d, toDb } from "@/lib/money";
 import { todayISO } from "@/lib/format";
-import { mapOpeningStockRow, type MappedOpeningBalance } from "@/lib/import-parse";
+import { mapOpeningStockRow, type MappedOpeningStock, type MappedOpeningBalance } from "@/lib/import-parse";
 import { mapMasterRow } from "./masters";
 import type { MasterCommitResult } from "./commit";
 import { finalizeJob, markRow, type JobRow, type Mapping, type RowData } from "./shared";
@@ -44,61 +47,98 @@ export function openingBalanceKey(
   return ref ? `ref|${partyId}|${ref}` : `amt|${partyId}|${d(amount).toFixed(4)}|${date}`;
 }
 
-/**
- * Produk yang sudah menerima stok awal DARI IMPOR job lain (T4R-5).
- * Penandanya adalah baris impor opening_stock berstatus "imported"
- * milik job lain — entityId baris itu adalah id penerimaan yang dibuat
- * commit-nya. Penerimaan opening manual dari UI tidak punya baris
- * impor, jadi tidak pernah menghalangi impor pertama. Penerimaan yang
- * sudah di-void juga tidak menghalangi (stoknya sudah ditarik kembali).
- */
-export async function loadImportedOpeningStockProductIds(
+const openingKey = (productId: string, warehouseId: string) => `${productId}|${warehouseId}`;
+
+export async function loadOpeningStockContext(
   tx: Tx,
   companyId: string,
-  excludeJobId: string,
-): Promise<Set<string>> {
-  const markerRows = await tx
-    .select({ receiptId: importRows.entityId })
-    .from(importRows)
-    .innerJoin(importJobs, eq(importRows.jobId, importJobs.id))
-    .where(
-      and(
-        eq(importRows.companyId, companyId),
-        eq(importJobs.entity, "opening_stock"),
-        eq(importRows.status, "imported"),
-        isNotNull(importRows.entityId),
-        ne(importJobs.id, excludeJobId),
+  rows: readonly MappedOpeningStock[],
+  warehouseId?: string,
+  lockProducts = false,
+) {
+  const skuKeys = [...new Set(rows.flatMap((row) => row.sku ? [row.sku.toLowerCase()] : []))];
+  const nameKeys = [...new Set(rows.flatMap((row) => !row.sku && row.name ? [row.name.toLowerCase()] : []))];
+  const productQuery = tx
+    .select({ id: products.id, sku: products.sku, name: products.name,
+      trackStock: products.trackStock, trackBatch: products.trackBatch, trackSerial: products.trackSerial })
+    .from(products).where(and(
+      eq(products.companyId, companyId),
+      or(
+        sql`lower(${products.sku}) in (select jsonb_array_elements_text(${JSON.stringify(skuKeys)}::jsonb))`,
+        sql`lower(${products.name}) in (select jsonb_array_elements_text(${JSON.stringify(nameKeys)}::jsonb))`,
       ),
-    );
-  const receiptIds = [
-    ...new Set(markerRows.map((row) => row.receiptId).filter((id): id is string => Boolean(id))),
-  ];
-  const productIds = new Set<string>();
-  if (receiptIds.length === 0) return productIds;
-  const lines = await tx
-    .select({ productId: stockReceiptLines.productId })
+    )).orderBy(asc(products.id));
+  const productRows = await (lockProducts ? productQuery.for("update") : productQuery);
+  const warehouseRows = await tx
+    .select({ id: warehouses.id, code: warehouses.code, name: warehouses.name, isDefault: warehouses.isDefault })
+    .from(warehouses).where(eq(warehouses.companyId, companyId)).orderBy(asc(warehouses.code));
+  const productIds = JSON.stringify(productRows.map((product) => product.id));
+  const prior = await tx
+    .selectDistinct({ productId: stockReceiptLines.productId, warehouseId: stockReceipts.warehouseId })
     .from(stockReceiptLines)
-    .innerJoin(stockReceipts, eq(stockReceiptLines.receiptId, stockReceipts.id))
-    .where(
-      and(
-        eq(stockReceiptLines.companyId, companyId),
-        inArray(stockReceiptLines.receiptId, receiptIds),
-        eq(stockReceipts.status, "posted"),
-      ),
-    );
-  for (const line of lines) productIds.add(line.productId);
-  return productIds;
+    .innerJoin(stockReceipts, and(eq(stockReceiptLines.receiptId, stockReceipts.id), eq(stockReceipts.companyId, companyId)))
+    .innerJoin(importRows, and(eq(importRows.entityId, stockReceipts.id), eq(importRows.companyId, companyId), eq(importRows.status, "imported")))
+    .innerJoin(importJobs, and(eq(importRows.jobId, importJobs.id), eq(importJobs.entity, "opening_stock")))
+    .where(and(eq(stockReceiptLines.companyId, companyId), eq(stockReceipts.status, "posted"),
+      sql`${stockReceiptLines.productId} in (select jsonb_array_elements_text(${productIds}::jsonb)::uuid)`));
+  const nonPositiveSkus = new Set(rows.filter((row) => row.qty <= 0).map((row) => (row.sku ?? row.name)!.toLowerCase()));
+  const checkIds = JSON.stringify(productRows.filter((product) => nonPositiveSkus.has(product.sku.toLowerCase()) || nonPositiveSkus.has(product.name.toLowerCase())).map((product) => product.id));
+  const movementRows = checkIds === "[]" ? [] : await tx.selectDistinct({ productId: stockMovements.productId, warehouseId: stockMovements.warehouseId })
+    .from(stockMovements)
+    .leftJoin(stockReceipts, and(eq(stockReceipts.id, stockMovements.referenceId),
+      eq(stockReceipts.companyId, companyId),
+      inArray(stockMovements.referenceType, ["stock_receipt", "stock_receipt_void"])))
+    .where(and(eq(stockMovements.companyId, companyId),
+      sql`${stockMovements.productId} in (select jsonb_array_elements_text(${checkIds}::jsonb)::uuid)`,
+      sql`coalesce(${stockReceipts.status}, '') <> 'void'`));
+  const balances = checkIds === "[]" ? [] : await tx.select({ productId: stockOnHand.productId, warehouseId: stockOnHand.warehouseId })
+    .from(stockOnHand).where(and(eq(stockOnHand.companyId, companyId), sql`${stockOnHand.qty} <> 0`,
+      sql`${stockOnHand.productId} in (select jsonb_array_elements_text(${checkIds}::jsonb)::uuid)`));
+
+  const byName = new Map<string, (typeof productRows)[number] | null>();
+  for (const product of productRows) {
+    const key = product.name.toLowerCase();
+    byName.set(key, byName.has(key) ? null : product);
+  }
+  const warehouseByKey = new Map<string, (typeof warehouseRows)[number] | null>();
+  for (const warehouse of warehouseRows) {
+    for (const key of new Set([warehouse.name.toLowerCase(), warehouse.code.toLowerCase()])) {
+      warehouseByKey.set(key, warehouseByKey.has(key) ? null : warehouse);
+    }
+  }
+  return {
+    productBySku: new Map(productRows.map((product) => [product.sku.toLowerCase(), product])),
+    productByName: byName,
+    warehouseByKey,
+    warehouseIds: new Map(warehouseRows.map((warehouse) => [warehouse.id, warehouse])),
+    fallbackWarehouseId: warehouseId ?? warehouseRows.find((warehouse) => warehouse.isDefault)?.id ?? warehouseRows[0]?.id,
+    imported: new Set(prior.map((row) => openingKey(row.productId, row.warehouseId))),
+    occupied: new Set([...movementRows, ...balances].map((row) => openingKey(row.productId, row.warehouseId))),
+  };
 }
 
+export function resolveOpeningStockRow(
+  row: MappedOpeningStock,
+  context: Awaited<ReturnType<typeof loadOpeningStockContext>>,
+  fallbackDate?: string,
+) {
+  const product = row.sku ? context.productBySku.get(row.sku.toLowerCase()) : context.productByName.get(row.name!.toLowerCase());
+  if (!product) return { error: `Produk tidak ditemukan atau nama ambigu ("${row.sku ?? row.name}") — gunakan SKU yang terdaftar.`, unknownProduct: true };
+  const warehouse = row.warehouse ? context.warehouseByKey.get(row.warehouse.toLowerCase())
+    : context.warehouseIds.get(context.fallbackWarehouseId ?? "");
+  if (!warehouse) return { error: `Gudang "${row.warehouse ?? "tujuan"}" tidak ditemukan atau ambigu.` };
+  const key = openingKey(product.id, warehouse.id);
+  if (context.imported.has(key)) return { skip: "Duplikat — stok awal SKU ini sudah diimpor di gudang yang sama." };
+  if (!product.trackStock) return { error: "Produk non-persediaan/jasa tidak boleh menerima stok awal." };
+  if (row.qty !== 0 && (product.trackBatch || product.trackSerial)) {
+    return { error: "Saldo produk batch/serial memerlukan rincian batch atau nomor seri. Gunakan Penerimaan." };
+  }
+  if (row.qty <= 0 && context.occupied.has(key)) {
+    return { error: "Saldo nol atau minus hanya dapat diimpor pada SKU/gudang tanpa saldo atau mutasi aktif." };
+  }
+  return { product, warehouse, key, date: row.date ?? fallbackDate ?? todayISO() };
+}
 
-/**
- * Commit stok awal bersifat satu dokumen: seluruh baris pending yang
- * valid digabung menjadi SATU penerimaan sumber "opening" lewat
- * createReceipt, agar jurnal Dr Persediaan / Cr Ekuitas, gerakan stok,
- * dan batch mengikuti jalur penerimaan biasa. Baris produk yang sama
- * digabung (qty dijumlah, biaya dirata-rata tertimbang menurut nilai)
- * karena satu dokumen tidak mengulang produk non-batch.
- */
 export async function commitOpeningStockImport(
   tx: Tx,
   input: {
@@ -113,6 +153,7 @@ export async function commitOpeningStockImport(
   },
 ): Promise<MasterCommitResult> {
   const { companyId, job, mapping } = input;
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${"opening_stock:" + companyId}, 0))`);
 
   const rows = await tx
     .select()
@@ -141,36 +182,10 @@ export async function commitOpeningStockImport(
     };
   }
 
-  const productRows = await tx
-    .select({
-      id: products.id,
-      sku: products.sku,
-      name: products.name,
-      trackStock: products.trackStock,
-      trackBatch: products.trackBatch,
-      trackSerial: products.trackSerial,
-    })
-    .from(products)
-    .where(eq(products.companyId, companyId));
-  const productBySku = new Map(productRows.map((row) => [row.sku.toLowerCase(), row]));
-  const productByName = new Map<string, (typeof productRows)[number]>();
-  for (const row of productRows) {
-    if (!productByName.has(row.name.toLowerCase())) productByName.set(row.name.toLowerCase(), row);
-  }
-  // T4R-5: produk yang stok awalnya sudah diimpor job lain dilewati —
-  // commit ulang berkas yang sama tidak menggandakan stok.
-  const importedProductIds = await loadImportedOpeningStockProductIds(tx, companyId, job.id);
-
-  const warehouseRows = await tx
-    .select({ id: warehouses.id, code: warehouses.code, name: warehouses.name })
-    .from(warehouses)
-    .where(eq(warehouses.companyId, companyId));
-  const warehouseByName = new Map(
-    warehouseRows.map((row) => [row.name.toLowerCase(), row.id]),
-  );
-  const warehouseByCode = new Map(
-    warehouseRows.map((row) => [row.code.toLowerCase(), row.id]),
-  );
+  const mappedRows = rows.map((row) => ({ row, mapped: mapOpeningStockRow((row.data ?? {}) as RowData, mapping) }));
+  const context = await loadOpeningStockContext(tx, companyId,
+    mappedRows.flatMap(({ mapped }) => mapped.value ? [mapped.value] : []), input.warehouseId, true);
+  const chosen = new Map<string, { date: string; sign: number }>();
 
   let failed = 0;
   let skipped = 0;
@@ -182,80 +197,40 @@ export async function commitOpeningStockImport(
   const groups = new Map<string, OpeningGroup>();
   const validRows: { rowId: string; groupKey: string }[] = [];
 
-  for (const row of rows) {
-    const mapped = mapOpeningStockRow((row.data ?? {}) as RowData, mapping);
+  for (const { row, mapped } of mappedRows) {
     if (!mapped.value) {
       failed += 1;
       await markRow(tx, row.id, "error", mapped.error ?? "Baris tidak valid");
       continue;
     }
-    const found =
-      (mapped.value.sku ? productBySku.get(mapped.value.sku.toLowerCase()) : undefined) ??
-      (mapped.value.name ? productByName.get(mapped.value.name.toLowerCase()) : undefined);
-    if (!found) {
+    const resolved = resolveOpeningStockRow(mapped.value, context, input.date);
+    if (!resolved.product) {
+      if (resolved.skip) {
+        skipped += 1;
+        await markRow(tx, row.id, "skipped", resolved.skip);
+      } else {
+        failed += 1;
+        await markRow(tx, row.id, "error", resolved.error ?? "Baris tidak valid.");
+      }
+      continue;
+    }
+    const { product, warehouse, key, date } = resolved;
+    const sign = Math.sign(mapped.value.qty);
+    const previous = chosen.get(key);
+    if (previous && (previous.date !== date || previous.sign !== sign)) {
       failed += 1;
-      await markRow(
-        tx,
-        row.id,
-        "error",
-        `Produk tidak ditemukan (SKU/nama "${mapped.value.sku ?? mapped.value.name ?? ""}") — buat produknya dulu`,
-      );
+      await markRow(tx, row.id, "error", "Saldo SKU dan gudang yang sama memiliki tanda atau tanggal cut-off berbeda.");
       continue;
     }
-    if (!found.trackStock) {
-      failed += 1;
-      await markRow(
-        tx,
-        row.id,
-        "error",
-        "Produk non-persediaan/jasa tidak boleh menerima stok awal — kosongkan baris ini atau ubah produk menjadi produk stok.",
-      );
-      continue;
-    }
-    if (found.trackSerial || found.trackBatch) {
-      failed += 1;
-      await markRow(
-        tx,
-        row.id,
-        "error",
-        found.trackSerial
-          ? "Produk bernomor seri tidak dapat menerima stok awal lewat impor ini — gunakan Penerimaan dengan daftar nomor seri."
-          : "Produk ber-batch tidak dapat menerima stok awal lewat impor ini — gunakan Penerimaan dengan batch/kedaluwarsa.",
-      );
-      continue;
-    }
-    if (importedProductIds.has(found.id)) {
-      skipped += 1;
-      await markRow(
-        tx,
-        row.id,
-        "skipped",
-        "Duplikat — produk ini sudah memiliki stok awal dari impor sebelumnya",
-      );
-      continue;
-    }
-    const warehouseId = mapped.value.warehouse
-      ? (warehouseByName.get(mapped.value.warehouse.toLowerCase()) ??
-        warehouseByCode.get(mapped.value.warehouse.toLowerCase()))
-      : input.warehouseId;
-    if (!warehouseId) {
-      failed += 1;
-      await markRow(
-        tx,
-        row.id,
-        "error",
-        `Gudang "${mapped.value.warehouse}" tidak ditemukan — buat gudangnya dulu atau kosongkan kolom Gudang`,
-      );
-      continue;
-    }
-    const date = mapped.value.date ?? input.date ?? todayISO();
+    chosen.set(key, { date, sign });
+    const warehouseId = warehouse.id;
     const groupKey = `${warehouseId}|${date}`;
     const group: OpeningGroup =
       groups.get(groupKey) ?? { warehouseId, date, items: new Map() };
-    const current = group.items.get(found.id) ?? { qty: d(0), value: d(0) };
+    const current = group.items.get(product.id) ?? { qty: d(0), value: d(0) };
     current.qty = current.qty.plus(mapped.value.qty);
     current.value = current.value.plus(d(mapped.value.qty).mul(mapped.value.unitCost));
-    group.items.set(found.id, current);
+    group.items.set(product.id, current);
     groups.set(groupKey, group);
     validRows.push({ rowId: row.id, groupKey });
   }
@@ -263,27 +238,33 @@ export async function commitOpeningStockImport(
   let receiptNumber: string | null = null;
   let receiptId: string | null = null;
   let imported = 0;
+  const touchedProducts = new Set<string>();
   const receiptByGroup = new Map<string, { id: string; number: string }>();
   for (const [groupKey, group] of groups) {
     if (group.items.size === 0) continue;
-    const receipt = await createReceipt(tx, {
+    const receipt = await createMigrationOpeningReceipt(tx, {
       companyId,
       userId: input.userId,
       warehouseId: group.warehouseId,
-      source: "opening",
       date: group.date,
-      notes: `Saldo awal hasil impor ${job.fileName}`,
+      notes: `Saldo awal migrasi ${job.fileName}`,
       lines: [...group.items.entries()].map(([productId, agg]) => ({
         productId,
         qty: toDb(agg.qty),
-        unitCost: toDb(agg.qty.gt(0) ? agg.value.div(agg.qty) : d(0)),
+        unitCost: toDb(agg.qty.isZero() ? d(0) : agg.value.div(agg.qty)),
       })),
     });
+    for (const [productId, item] of group.items) {
+      if (!item.qty.isZero()) touchedProducts.add(productId);
+    }
     receiptByGroup.set(groupKey, { id: receipt.id, number: receipt.number });
     if (!receiptId) {
       receiptId = receipt.id;
       receiptNumber = receipt.number;
     }
+  }
+  for (const productId of touchedProducts) {
+    await recomputeCostFromLedger(tx, companyId, productId, true);
   }
   for (const valid of validRows) {
     const receipt = receiptByGroup.get(valid.groupKey);

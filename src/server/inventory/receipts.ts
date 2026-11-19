@@ -128,6 +128,19 @@ type CreateReceiptInput = {
 
 
 export async function createReceipt(tx: Tx, input: CreateReceiptInput) {
+  return postReceipt(tx, input, false);
+}
+
+export async function createMigrationOpeningReceipt(
+  tx: Tx,
+  input: Pick<CreateReceiptInput, "companyId" | "userId" | "warehouseId" | "date" | "notes"> & {
+    lines: Pick<CreateReceiptInput["lines"][number], "productId" | "qty" | "unitCost">[];
+  },
+) {
+  return postReceipt(tx, { ...input, source: "opening" }, true);
+}
+
+async function postReceipt(tx: Tx, input: CreateReceiptInput, openingMigration: boolean) {
   if (input.lines.length === 0) throw new AppError("VALIDATION", "Tambahkan minimal satu barang.");
 
   const { existing, idemKey } = await claimReceiptIdempotency(tx, input);
@@ -136,7 +149,7 @@ export async function createReceipt(tx: Tx, input: CreateReceiptInput) {
   const context = await resolveReceiptContext(tx, input);
   const { source, supplierId, paymentAccountId } = context;
 
-  const { effectiveLines, productById, bridgeLines } = await buildReceiptLines(tx, input, context);
+  const { effectiveLines, productById, bridgeLines } = await buildReceiptLines(tx, input, context, openingMigration);
 
   // Optional PO link (G7/D-6): validate and lock the order before any
   // write, so an over-receipt or wrong-supplier rejection leaves nothing
@@ -189,7 +202,9 @@ export async function createReceipt(tx: Tx, input: CreateReceiptInput) {
     : d(0);
   const explicitTaxForDocument = context.explicitTax.gt(0) ? context.explicitTax : percentTax;
   const invoiceTotal = linesDpp.plus(explicitTaxForDocument);
-  const advancePlan = await prepareReceiptAdvance(tx, {
+  const advancePlan = openingMigration
+    ? { applied: d(0), allocations: [], accountId: null }
+    : await prepareReceiptAdvance(tx, {
     companyId: input.companyId,
     source,
     supplierId,
@@ -216,7 +231,7 @@ export async function createReceipt(tx: Tx, input: CreateReceiptInput) {
     receipt.id,
     advancePlan.allocations,
   );
-  await applyReceiptStock(tx, input, receipt, effectiveLines, productById);
+  await applyReceiptStock(tx, input, receipt, effectiveLines, productById, openingMigration);
   await applyReceiptSalePrices(tx, {
     companyId: input.companyId,
     userId: input.userId,
@@ -476,6 +491,7 @@ async function buildReceiptLines(
   tx: Tx,
   input: CreateReceiptInput,
   { source, taxIncluded, taxRate }: ReceiptContext,
+  openingMigration: boolean,
 ) {
   const productIds = [...new Set(input.lines.map((l) => l.productId))];
   const found = await tx
@@ -535,7 +551,10 @@ async function buildReceiptLines(
         `Jumlah dan harga beli untuk ${product.name} harus berupa angka yang valid.`,
       );
     }
-    if (!enteredQty.gt(0)) {
+    if (openingMigration && !enteredQty.isZero() && (product.trackBatch || product.trackSerial)) {
+      throw new AppError("VALIDATION", `Saldo awal ${product.name} memerlukan rincian batch atau nomor seri.`);
+    }
+    if (!openingMigration && !enteredQty.gt(0)) {
       throw new AppError(
         "VALIDATION",
         `Jumlah penerimaan ${product.name} harus lebih dari 0.`,
@@ -571,7 +590,7 @@ async function buildReceiptLines(
       : null;
     const batchNumber = line.batchNumber?.trim() || null;
     const expiryDate = line.expiryDate || null;
-    if (product.trackBatch && !batchNumber) {
+    if (product.trackBatch && !batchNumber && !(openingMigration && qty.isZero())) {
       throw new AppError(
         "VALIDATION",
         `Nomor batch wajib diisi untuk ${product.name} karena produk ini dilacak per batch.`,
@@ -580,7 +599,7 @@ async function buildReceiptLines(
     // SIM-2 S7B-2 Batch 5: produk serial wajib daftar nomor seri per
     // unit — jumlah seri harus persis qty (bilangan bulat) dan unik.
     let serialNumbers: string[] = [];
-    if (product.trackSerial) {
+    if (product.trackSerial && !(openingMigration && qty.isZero())) {
       serialNumbers = normalizeSerialNumbers(line.serialNumbers ?? []);
       if (!qty.isInteger() || serialNumbers.length !== qty.toNumber()) {
         throw new AppError(
@@ -624,12 +643,12 @@ async function buildReceiptLines(
     // Diskon mengurangi DPP. Nominal diperlakukan sebagai TOTAL potongan
     // baris (bukan per unit) agar cocok dengan faktur pemasok.
     const lineGross = qty.mul(effectiveUnitCost);
-    const discountAmount = receiptLineDiscount(
+    const discountAmount = openingMigration ? d(0) : receiptLineDiscount(
       lineGross,
       discountType,
       enteredDiscount,
     ).toDecimalPlaces(4, Decimal.ROUND_HALF_UP);
-    if (discountAmount.gt(lineGross)) {
+    if (!openingMigration && discountAmount.gt(lineGross)) {
       throw new AppError(
         "VALIDATION",
         `Diskon ${product.name} melebihi nilai baris. Periksa kembali potongan yang dimasukkan.`,
@@ -645,7 +664,7 @@ async function buildReceiptLines(
     const lineTaxAmount = taxIncluded
       ? lineTax({ net: lineNet, rate: taxRate, inclusive: true })
       : d(0);
-    const stockUnitCost = lineNet.minus(lineTaxAmount).div(qty);
+    const stockUnitCost = openingMigration ? effectiveUnitCost : lineNet.minus(lineTaxAmount).div(qty);
     return {
       productId: line.productId,
       // REM-02: freeze the master's name/SKU on the line (snapshot).

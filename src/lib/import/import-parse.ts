@@ -134,7 +134,6 @@ export const OPENING_STOCK_FIELDS: ImportFieldDef[] = [
   {
     key: "unitCost",
     label: "Biaya satuan",
-    required: true,
     aliases: ["biaya satuan", "harga beli", "harga pokok", "hpp", "cost", "unit cost", "biaya", "nilai satuan"],
   },
   // Tanggal cut-off & gudang asal baris. Bila tidak dipetakan, wizard
@@ -515,6 +514,33 @@ export type MappedOpeningStock = {
   costUnmapped: boolean;
 };
 
+function openingStockNumber(raw: unknown): number | null {
+  if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
+  if (typeof raw !== "string") return null;
+  let value = raw.trim();
+  const accountingNegative = value.startsWith("(") && value.endsWith(")");
+  if (accountingNegative) value = value.slice(1, -1).trim();
+  value = value.replace(/^(-?)Rp\s*/i, "$1");
+  if (accountingNegative && value.startsWith("-")) return null;
+
+  if (/^-?\d{1,3}(\.\d{3})+,\d+$/.test(value)) {
+    value = value.replaceAll(".", "").replace(",", ".");
+  } else if (/^-?\d{1,3}(,\d{3})+\.\d+$/.test(value)) {
+    value = value.replaceAll(",", "");
+  } else if (/^-?\d{1,3}(\.\d{3}){2,}$/.test(value)) {
+    value = value.replaceAll(".", "");
+  } else if (/^-?\d{1,3}(,\d{3}){2,}$/.test(value)) {
+    value = value.replaceAll(",", "");
+  } else {
+    // Satu pemisah + tiga digit dapat berarti desimal atau ribuan.
+    if (/^-?[1-9]\d{0,2}[.,]\d{3}$/.test(value)) return null;
+    if (!/^-?\d+(?:[.,]\d+)?$/.test(value)) return null;
+    value = value.replace(",", ".");
+  }
+  const result = Number(value);
+  return Number.isFinite(result) ? (accountingNegative ? -result : result) : null;
+}
+
 export function mapOpeningStockRow(
   row: Record<string, unknown>,
   mapping: Partial<Record<string, string>>,
@@ -522,12 +548,26 @@ export function mapOpeningStockRow(
   const sku = cellText(row, mapping, "sku", 60);
   const name = cellText(row, mapping, "name", 180);
   if (!sku && !name) return { error: "SKU atau nama produk wajib diisi" };
-  const qty = numericCell(mapping.qty ? row[mapping.qty] : undefined, "Qty");
-  if ("error" in qty) return { error: qty.error };
-  if (qty.value <= 0) return { error: "Qty harus lebih dari 0" };
-  const unitCost = numericCell(mapping.unitCost ? row[mapping.unitCost] : undefined, "Biaya satuan");
-  if ("error" in unitCost) return { error: unitCost.error };
-  if (unitCost.value < 0) return { error: "Biaya satuan tidak boleh negatif" };
+  const rawQty = mapping.qty ? row[mapping.qty] : undefined;
+  if (rawQty == null || String(rawQty).trim() === "") {
+    return { error: "Kuantitas belum diisi. Masukkan angka 0 untuk saldo nol." };
+  }
+  const qty = openingStockNumber(rawQty);
+  if (qty === null) {
+    return { error: `Qty tidak terbaca atau ambigu: "${String(rawQty).trim().slice(0, 40)}". Gunakan sel angka Excel.` };
+  }
+  const rawCost = mapping.unitCost ? row[mapping.unitCost] : undefined;
+  const costBlank = rawCost == null || String(rawCost).trim() === "";
+  if (qty !== 0 && costBlank) return { error: "Biaya satuan wajib diisi untuk saldo bukan nol." };
+  const unitCost = costBlank ? 0 : openingStockNumber(rawCost);
+  if (unitCost === null) {
+    return { error: `Biaya satuan tidak terbaca atau ambigu: "${String(rawCost).trim().slice(0, 40)}". Gunakan sel angka Excel.` };
+  }
+  if (unitCost < 0) return { error: "Biaya satuan tidak boleh negatif" };
+  if (Math.abs(qty) >= 1e15 || unitCost >= 1e15 ||
+      Number(qty.toFixed(4)) !== qty || Number(unitCost.toFixed(4)) !== unitCost) {
+    return { error: "Qty dan biaya satuan harus muat dalam 15 digit bulat dan 4 digit desimal." };
+  }
 
   const rawDate = mapping.date ? row[mapping.date] : undefined;
   let date: string | null = null;
@@ -542,8 +582,8 @@ export function mapOpeningStockRow(
     value: {
       sku,
       name,
-      qty: qty.value,
-      unitCost: unitCost.value,
+      qty,
+      unitCost,
       date,
       warehouse: cellText(row, mapping, "warehouse", 120),
       costUnmapped: !mapping.unitCost,

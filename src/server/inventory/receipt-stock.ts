@@ -18,8 +18,10 @@ export async function applyReceiptStock(
   receipt: { id: string; number: string },
   effectiveLines: EffectiveReceiptLine[],
   productById: Map<string, { trackBatch: boolean }>,
+  openingMigration = false,
 ) {
   for (const line of effectiveLines) {
+    if (openingMigration && line.qty.isZero()) continue;
     // Batch-tracked lines land in their batch row first; the movement then
     // carries that batch's id so the ledger slice and the batch row agree.
     let batchId: string | null = null;
@@ -42,7 +44,8 @@ export async function applyReceiptStock(
       // AVCO menyerap DPP (stockUnitCost), bukan harga faktur bruto,
       // bila PPN dipisah — lihat belah baris di effectiveLines.
       unitCost: line.stockUnitCost,
-      movementType: "purchase",
+      movementType: openingMigration ? "opening_migration" : "purchase",
+      allowNegative: openingMigration,
       referenceType: "stock_receipt",
       referenceId: receipt.id,
       referenceNumber: receipt.number,

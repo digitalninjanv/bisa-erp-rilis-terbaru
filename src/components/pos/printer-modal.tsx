@@ -37,6 +37,7 @@ import {
   type PrinterPreferences,
 } from "@/lib/escpos/types";
 import { toast } from "sonner";
+import { getDesktopPrintBridge } from "@/lib/pos/desktop-print";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
@@ -65,7 +66,14 @@ export function PrinterStatusButton({ compact = false }: { compact?: boolean }) 
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          const desktop = getDesktopPrintBridge();
+          if (desktop) {
+            void desktop.openPrinterSettings().catch(() => toast.error("Pengaturan printer tidak bisa dibuka."));
+          } else {
+            setOpen(true);
+          }
+        }}
         aria-label={connected ? `Printer siap: ${prefs.name} (${prefs.paperWidth})` : prefs.type === "kiosk" ? "Mode cetak sistem aktif" : "Hubungkan printer kasir"}
         className={cn(
           compact

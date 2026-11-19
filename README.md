@@ -107,7 +107,9 @@ Baris disimpan di `import_jobs`/`import_rows`, sehingga pratinjau dan riwayat im
 - Rasio kemasan harus bilangan bulat ≥ 2. Baris dengan rasio pecahan (mis. 1 cup = 0,5 porsi) ditolak per baris dan harus ditangani manual.
 - Bagan akun Accurate diimpor **datar** (tanpa hierarki akun induk) dan tidak mengubah pemetaan akun perusahaan. Untuk perusahaan yang sudah berjalan, lebih aman memetakan akun Accurate ke COA ERP yang ada daripada mengimpor COA kedua.
 - Riwayat transaksi (penjualan/pembelian/jurnal) **tidak** diimpor oleh wizard ini; yang didukung adalah master data + saldo awal.
-- Stok awal per gudang memakai tab **Stok Awal** dengan kolom `Gudang Saldo Awal`, `Kuantitas Saldo Awal`, `Nilai Satuan`, dan `Per Tanggal`. Satu penerimaan dibuat per kombinasi gudang+tanggal; tanpa kolom tanggal, dipakai tanggal cut-off di layar. Masukkan semua gudang untuk satu produk dalam **satu file** — impor stok awal produk yang sama dari job lain akan dilewati sebagai duplikat.
+- Impor stok awal per gudang dari tab **Stok Awal** setelah master produk dan gudang tersedia. Petakan **Kode Barang**, **Kuantitas Saldo Awal**, **Nilai Satuan**, **Gudang Saldo Awal**, serta **Per Tanggal** jika tersedia. Gunakan kuantitas dan biaya dalam satuan dasar. Gudang dan cut-off pilihan di layar dipakai jika kolom baris kosong.
+- Qty `0` eksplisit dicatat di dokumen impor tanpa mutasi atau jurnal. Qty kosong ditolak. Saldo minus dapat dimigrasikan pada SKU/gudang tanpa saldo atau mutasi aktif, dengan jurnal pembuka bertanda sesuai nilai. Gunakan angka Excel atau format teks yang tegas seperti `1.250,00` jika pemisah desimal dan ribuan bisa tertukar.
+- Dokumen saldo awal dikelompokkan per gudang dan tanggal. Impor ulang SKU yang sudah memiliki dokumen stok awal impor aktif dilewati pada gudang yang sama. Cocokkan jumlah dan nilai per gudang dengan laporan Accurate pada cut-off sebelum mulai bertransaksi.
 - Produk ber-seri/batch tidak bisa menerima stok awal lewat impor produk; stoknya harus masuk lewat Penerimaan dengan daftar seri/batch.
 
 Benchmark jalur impor tanpa database (10.000 baris, XLSX ~4 MB):
@@ -169,6 +171,23 @@ tests/{unit,integration}                         Vitest
 > 4. Pendaftaran akun publik sudah dimatikan di konfigurasi auth —
 >    pengguna hanya dibuat lewat Pengaturan → Pengguna oleh
 >    owner/admin.
+
+## POS Desktop dan deployment VPS
+
+Bisa POS Desktop (Electron) membuka `/app/pos` yang sama dengan versi web. **Bisa ERP dan PostgreSQL 18** berjalan di VPS atau server LAN toko. **Aplikasi desktop dan driver printer thermal** dipasang di komputer kasir. Setiap kasir bisa memilih printer USB atau LAN serta ukuran kertas 58 atau 80 mm. Setelah **Bayar**, kasir memilih **Cetak struk** atau **Tanpa cetak**.
+
+1. **Deploy ERP terbaru.** Commit integrasi desktop sebelum push. Bangun paket server dengan versi rilis baru agar updater memakai hasil build terbaru. Folder `dist-release/` diabaikan Git, jadi buat paket dari kode yang sudah dipush atau unggah artefaknya secara terpisah. Untuk VPS yang sudah punya data, gunakan prosedur update yang membuat backup sebelum migrasi. [Runbook deployment](docs/RUNBOOK-INSTALASI-PRODUKSI.md)
+2. **Siapkan HTTPS.** Gunakan domain dan sertifikat yang dipercaya komputer kasir. Samakan origin yang dipakai kasir dengan `BETTER_AUTH_URL`. Jika reverse proxy menangani akses publik, batasi akses langsung ke port aplikasi 3000.
+3. **Hubungkan terminal kasir.** Pasang AppImage Linux x86‑64 di komputer kasir. Saat aplikasi tertutup, jalankan dengan `--erp-url=https://erp.tokoanda.id` untuk menyimpan alamat VPS. Pasang printer lewat pengaturan sistem operasi, lalu buka **Atur printer** di Bisa POS dan jalankan **Uji cetak**. [Panduan instalasi desktop](pos-electron/README.md)
+
+### Checklist pilot satu kasir
+
+- [ ] Periksa `/api/health` dan login dari komputer kasir dengan domain VPS.
+- [ ] Scan produk, bayar, dan periksa struk fisik. Uji juga **Tanpa cetak** serta cetak ulang dari riwayat.
+- [ ] Putuskan koneksi sebentar, lalu verifikasi status transaksi dan pastikan sinkronisasi tidak menggandakan penjualan.
+- [ ] Ukur waktu **scan → item masuk**, **Bayar → tersimpan**, dan **Cetak → struk keluar** pada perangkat toko.
+
+Pada setup VPS, checkout dan pengambilan nota bergantung pada koneksi toko ke server. Antrean offline web memiliki cakupan terbatas dan cetak lewat driver desktop untuk transaksi offline belum tersedia. Jika toko perlu menjalankan seluruh alur saat internet luar putus, gunakan server ERP di LAN toko. AppImage dan cetak dengan driver simulasi sudah diuji secara lokal. Hasil di VPS dan printer thermal fisik perlu diverifikasi lewat pilot.
 
 ## Keamanan & audit
 

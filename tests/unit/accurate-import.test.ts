@@ -411,6 +411,22 @@ describe("stok awal Accurate", () => {
       { "Kode Barang": "100001", "Kuantitas Saldo Awal": "24" },
       { sku: "Kode Barang", qty: "Kuantitas Saldo Awal" },
     );
-    expect(result.value).toMatchObject({ unitCost: 0, costUnmapped: true });
+    expect(result.error).toContain("Biaya satuan wajib diisi");
   });
+  it.each([
+    [0, 0],
+    [-5, -5],
+    ["(5)", -5],
+    ["1,2500", 1.25],
+    ["1.250,00", 1250],
+    ["24.000000", 24],
+  ])("mempertahankan tanda dan nilai stok %s", (qty, expected) => {
+    const mapping = { sku: "sku", qty: "qty", unitCost: "cost" };
+    expect(mapOpeningStockRow({ sku: "001", qty, cost: qty === 0 ? "" : 1000 }, mapping).value?.qty).toBe(expected);
+  });
+
+  it.each(["", "1.250", "1,250", "--5", "abc5"])("menolak kuantitas kosong, ambigu, atau rusak %s", (qty) => {
+    expect(mapOpeningStockRow({ sku: "001", qty, cost: 1000 }, { sku: "sku", qty: "qty", unitCost: "cost" }).error).toBeTruthy();
+  });
+
 });

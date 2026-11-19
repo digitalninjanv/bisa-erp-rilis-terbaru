@@ -9,10 +9,13 @@ import {
   companySettings,
   importJobs,
   importRows,
+  journalEntries,
   journalLines,
   partyOpeningBalances,
   products,
+  stockMovements,
   stockOnHand,
+  stockReceipts,
   stockReceiptLines,
   suppliers,
   warehouses,
@@ -25,7 +28,7 @@ import {
   matchLine,
   unmatchLine,
 } from "@/server/bank-reconciliation";
-import { createReceipt } from "@/server/inventory";
+import { createReceipt, voidReceipt } from "@/server/inventory";
 import {
   analyzeMasterImport,
   commitOpeningBalancesImport,
@@ -598,6 +601,74 @@ describe("T4R-5 impor ulang antar-job ditandai duplikat", () => {
         limit: 200,
       });
       expect(commit3.imported).toBe(1);
+    });
+  });
+
+  it("migrasi stok nol dan minus menjaga saldo, jurnal, AVCO, dan deduplikasi per gudang", async () => {
+    await rollbackTransaction(async (tx) => {
+      const [warehouse] = await tx.select({ id: warehouses.id }).from(warehouses)
+        .where(and(eq(warehouses.companyId, ORG_ID), eq(warehouses.isDefault, true))).limit(1);
+      const [secondWarehouse] = await tx.insert(warehouses).values({
+        companyId: ORG_ID, code: `MIG-${suffix}`, name: `Gudang migrasi ${suffix}`,
+      }).returning({ id: warehouses.id });
+      const [negative, zero] = await tx.insert(products).values([
+        { companyId: ORG_ID, sku: `MIG-MIN-${suffix}`, name: "Migrasi saldo minus", costPrice: "0", salePrice: "3000" },
+        { companyId: ORG_ID, sku: `MIG-ZERO-${suffix}`, name: "Migrasi saldo nol", costPrice: "1500", salePrice: "3000" },
+      ]).returning({ id: products.id, sku: products.sku });
+      const mapping = { sku: "SKU", qty: "Qty", unitCost: "Biaya", warehouse: "Gudang" };
+      const rows = [{ SKU: negative.sku, Qty: "-5", Biaya: "1000", Gudang: "" },
+        { SKU: zero.sku, Qty: "0", Biaya: "", Gudang: "" }];
+      const date = todayISO();
+      const first = await makeMasterJob(tx, "opening_stock", rows, mapping);
+      const analysis = await analyzeMasterImport(tx, { companyId: ORG_ID, job: first, mapping, warehouseId: warehouse.id, date });
+      expect(analysis.summary.openingStock).toMatchObject({ negative: 1, zero: 1, positive: 0 });
+      const post = (job: typeof first, warehouseId = warehouse.id) => commitOpeningStockImport(tx, {
+        companyId: ORG_ID, userId: USER_ID, job, mapping, warehouseId, date,
+      });
+      const posted = await post(first);
+      expect(posted.imported).toBe(2);
+      const [receipt] = await tx.select().from(stockReceipts)
+        .where(and(eq(stockReceipts.companyId, ORG_ID), eq(stockReceipts.number, posted.receiptNumber!)));
+      expect(d(receipt.total).toFixed(2)).toBe("-5000.00");
+      const ledger = await tx.select().from(stockMovements).where(eq(stockMovements.referenceId, receipt.id));
+      expect(ledger.map((move) => [move.productId, d(move.qty).toNumber()])).toEqual([[negative.id, -5]]);
+      const [journal] = await tx.select().from(journalEntries).where(eq(journalEntries.sourceId, receipt.id));
+      expect(journal.sourceType).toBe("receipt_opening");
+      const legs = await tx.select().from(journalLines).where(eq(journalLines.entryId, journal.id));
+      expect(legs.map((leg) => d(leg.debit).minus(leg.credit).toNumber()).sort((a, b) => a - b)).toEqual([-5000, 5000]);
+      const repeated = await post(await makeMasterJob(tx, "opening_stock", rows, mapping));
+      expect(repeated.skipped).toBe(2);
+
+      await createReceipt(tx, { companyId: ORG_ID, userId: USER_ID, warehouseId: warehouse.id,
+        source: "other", date, notes: "Penerimaan sebagian setelah migrasi",
+        lines: [{ productId: negative.id, qty: 2, unitCost: 2000 }] });
+      const [partial] = await tx.select({ cost: products.costPrice }).from(products).where(eq(products.id, negative.id));
+      expect(d(partial.cost).toFixed(4)).toBe("333.3333");
+
+      const inbound = await createReceipt(tx, { companyId: ORG_ID, userId: USER_ID, warehouseId: warehouse.id,
+        source: "other", date, notes: "Penerimaan setelah migrasi", lines: [{ productId: negative.id, qty: 6, unitCost: 2000 }] });
+      const [master] = await tx.select({ cost: products.costPrice }).from(products).where(eq(products.id, negative.id));
+      expect(d(master.cost).toFixed(4)).toBe("3666.6667");
+
+      const other = await post(await makeMasterJob(tx, "opening_stock", [
+        { SKU: negative.sku, Qty: "4", Biaya: "1500", Gudang: "" },
+      ], mapping), secondWarehouse.id);
+      expect(other.imported).toBe(1);
+      const [otherBalance] = await tx.select({ qty: stockOnHand.qty }).from(stockOnHand)
+        .where(and(eq(stockOnHand.productId, negative.id), eq(stockOnHand.warehouseId, secondWarehouse.id)));
+      expect(d(otherBalance.qty).toNumber()).toBe(4);
+
+      await voidReceipt(tx, { companyId: ORG_ID, userId: USER_ID, receiptId: receipt.id, date,
+        reason: "Uji pembatalan stok awal migrasi" });
+      const [restored] = await tx.select({ qty: stockOnHand.qty }).from(stockOnHand)
+        .where(and(eq(stockOnHand.productId, negative.id), eq(stockOnHand.warehouseId, warehouse.id)));
+      expect(d(restored.qty).toNumber()).toBe(8);
+      expect(inbound.id).toBeTruthy();
+      await expect(createReceipt(tx, {
+        companyId: ORG_ID, userId: USER_ID, warehouseId: warehouse.id, date,
+        source: "opening", lines: [{ productId: negative.id, qty: -1, unitCost: 1000 }],
+      })).rejects.toThrow("harus lebih dari 0");
+
     });
   });
 

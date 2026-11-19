@@ -12,6 +12,8 @@ import {
   Settings2,
   X,
 } from "lucide-react";
+import { toast } from "sonner";
+import { getDesktopPrintBridge } from "@/lib/pos/desktop-print";
 import { formatIDR } from "@/lib/money";
 import { getPrinterPreferences } from "@/lib/escpos/printer-connection";
 import { getOrCreateDeviceId } from "@/lib/pos-offline";
@@ -46,11 +48,37 @@ export function CheckoutSuccessModal({
   const [configOpen, setConfigOpen] = useState(false);
   const [prefs, setPrefs] = useState(getPrinterPreferences());
   const submittingPrint = useRef(false);
+  const desktopSent = useRef(false);
+  const desktopUncertain = useRef(false);
   const [browserOpened, setBrowserOpened] = useState(false);
   const newSaleRef = useRef<HTMLButtonElement>(null);
 
   const triggerPrint = useCallback(async (saleId: string, saleNumber: string) => {
     if (submittingPrint.current) return;
+    const desktop = getDesktopPrintBridge();
+    if (desktop && !sale?.offlineReceipt) {
+      if (desktopSent.current && !canReprint) return;
+      if (desktopUncertain.current && !window.confirm("Struk mungkin sudah keluar. Kirim ulang?")) return;
+      submittingPrint.current = true;
+      setPrintStatus("printing");
+      setPrintMessage("Mengirim struk ke printer yang dipilih…");
+      try {
+        const result = await desktop.printReceipt(saleId, desktopSent.current);
+        desktopUncertain.current = Boolean(result.uncertain);
+        if (result.ok) desktopSent.current = true;
+        setPrintStatus(result.ok ? "success" : "error");
+        setPrintMessage(result.ok
+          ? "Data struk dikirim ke antrean printer. Periksa hasil cetaknya."
+          : result.message ?? "Gagal mengirim struk.");
+      } catch {
+        desktopUncertain.current = true;
+        setPrintStatus("error");
+        setPrintMessage("Status cetak belum pasti. Periksa printer sebelum mengulang.");
+      } finally {
+        submittingPrint.current = false;
+      }
+      return;
+    }
     const currentPrefs = getPrinterPreferences();
     setPrefs(currentPrefs);
 
@@ -132,7 +160,7 @@ export function CheckoutSuccessModal({
 
   // Status job cetak dipantau dari antrean, bukan dari durasi transport.
   useEffect(() => {
-    if (!sale) return;
+    if (!sale || (getDesktopPrintBridge() && !sale.offlineReceipt)) return;
     let active = true;
     let readSequence = 0;
     const read = async () => {
@@ -296,7 +324,14 @@ export function CheckoutSuccessModal({
               )}
               <button
                 type="button"
-                onClick={() => setConfigOpen(true)}
+                onClick={() => {
+                  const desktop = getDesktopPrintBridge();
+                  if (desktop && !sale?.offlineReceipt) {
+                    void desktop.openPrinterSettings().catch(() => toast.error("Pengaturan printer tidak bisa dibuka."));
+                    return;
+                  }
+                  setConfigOpen(true);
+                }}
                 className="inline-flex min-h-8 items-center gap-1.5 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <Settings2 aria-hidden="true" className="size-4" /> Atur printer

@@ -22,10 +22,15 @@ import { analyzeProductJob } from "./shared";
 
 const mappingSchema = z.record(z.string(), z.string().optional()).optional();
 
-export async function analyzeImportAction(input: { jobId: string; mapping?: Record<string, string | undefined> }) {
+export async function analyzeImportAction(input: { jobId: string; mapping?: Record<string, string | undefined>; warehouseId?: string; date?: string }) {
   return guard(async () => {
     const ctx = await requirePermission("import.manage");
-    const data = parseInput(z.object({ jobId: z.string().uuid(), mapping: mappingSchema }), input);
+    const data = parseInput(z.object({
+      jobId: z.string().uuid(),
+      mapping: mappingSchema,
+      warehouseId: z.string().uuid().optional(),
+      date: z.iso.date().optional(),
+    }), input);
 
     return withCompany(ctx.company.id, async (tx) => {
       const [job] = await tx
@@ -56,6 +61,8 @@ export async function analyzeImportAction(input: { jobId: string; mapping?: Reco
           job,
           mapping: mapping as Partial<Record<string, string>>,
           customFields,
+          warehouseId: data.warehouseId,
+          date: data.date,
         });
         return {
           summary: result.summary,

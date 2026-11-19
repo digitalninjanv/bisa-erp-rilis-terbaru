@@ -494,10 +494,10 @@ describe("T4-5a impor stok awal", () => {
     const jobId = await makeJob(
       "opening_stock",
       [
-        { SKU: skuA, "Nama Produk": "", Qty: "10", "Biaya Satuan": "2.500" },
+        { SKU: skuA, "Nama Produk": "", Qty: "10", "Biaya Satuan": "2.500,00" },
         { SKU: skuB, "Nama Produk": "", Qty: "4", "Biaya Satuan": "10000" },
         { SKU: `TIDAK-ADA-${suffix}`, "Nama Produk": "", Qty: "5", "Biaya Satuan": "1000" },
-        { SKU: skuA, "Nama Produk": "", Qty: "2", "Biaya Satuan": "3.500" },
+        { SKU: skuA, "Nama Produk": "", Qty: "2", "Biaya Satuan": "3.500,00" },
       ],
       mapping,
     );

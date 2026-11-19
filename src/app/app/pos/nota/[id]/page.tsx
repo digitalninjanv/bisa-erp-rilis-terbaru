@@ -32,7 +32,7 @@ export default async function ReceiptPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ autoprint?: string; salinan?: string; popup?: string }>;
+  searchParams: Promise<{ autoprint?: string; salinan?: string; popup?: string; thermal?: string }>;
 }) {
   const { id } = await params;
   const query = await searchParams;
@@ -70,6 +70,9 @@ export default async function ReceiptPage({
   // Print Engine (T4-4, D-13): paper/template come from the shared print
   // settings; the legacy receipt width column no longer drives layout.
   const printSettings = toPrintSettings(settings, "nota");
+  if (query.thermal === "58" || query.thermal === "80") {
+    printSettings.receiptPaper = query.thermal === "58" ? "thermal58" : "thermal80";
+  }
   const qrDataUrl = printSettings.showQr ? await documentQrDataUrl(sale.number) : null;
   // CT-17: on sheet paper (A4/A5) the receipt stays a receipt — its
   // content is capped at 80mm and centered inside the wide shell

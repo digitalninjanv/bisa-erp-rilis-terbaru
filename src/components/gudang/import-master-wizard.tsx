@@ -4,7 +4,7 @@ import { useState } from "react";
 import { CheckCircle2, Loader2 } from "lucide-react";
 import { DateField } from "@/components/date-field";
 import { todayISO } from "@/lib/format";
-import { formatNumber } from "@/lib/money";
+import { formatIDR, formatNumber } from "@/lib/money";
 import type { CustomFieldDefinition } from "@/lib/custom-fields";
 import { ENTITY_FIELDS, type ImportEntity } from "@/lib/import-parse";
 import { customFieldImportField } from "@/lib/import/import-custom-fields";
@@ -30,6 +30,7 @@ type MasterAnalysis = {
     invalidRows: number;
     unknownGroups: string[];
     unknownProducts: number;
+    openingStock?: { positive: number; zero: number; negative: number; warehouses: { name: string; value: string }[] };
   };
 };
 type PreviewRow = {
@@ -102,6 +103,10 @@ export function MasterImportWizard({
     done,
   } = flow;
 
+  const analyze = () => flow.analyze(entity === "opening_stock"
+    ? { warehouseId: warehouseId || undefined, date: stockDate || undefined }
+    : undefined);
+
   async function commit() {
     await flow.commit({
       validate: () =>
@@ -141,6 +146,41 @@ export function MasterImportWizard({
         />
       ) : null}
 
+      {uploaded && entity === "opening_stock" && warehouses.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-1.5 text-[11px]">
+            Gudang tujuan
+            <select
+              value={warehouseId}
+              onChange={(event) => {
+                setWarehouseId(event.target.value);
+                flow.setAnalysis(null);
+              }}
+              disabled={busy}
+              className="h-9 rounded border border-input bg-background px-1.5 text-[11px]"
+            >
+              {warehouses.map((row) => (
+                <option key={row.id} value={row.id}>{row.name}</option>
+              ))}
+            </select>
+          </label>
+          <span className="flex items-center gap-1.5 text-[11px]">
+            <span>Tanggal cut-off</span>
+            <span className="block w-32">
+              <DateField
+                value={stockDate}
+                onChange={(date) => {
+                  setStockDate(date);
+                  flow.setAnalysis(null);
+                }}
+                aria-label="Tanggal cut-off"
+                disabled={busy}
+              />
+            </span>
+          </span>
+        </div>
+      ) : null}
+
       {uploaded ? (
         <ImportMappingCard
           uploaded={uploaded}
@@ -149,7 +189,7 @@ export function MasterImportWizard({
           onMappingChange={flow.changeMapping}
           busy={busy}
           showAnalyze={!analysis}
-          onAnalyze={() => void flow.analyze()}
+          onAnalyze={() => void analyze()}
           onCancelRequest={() => flow.setPendingCancelJob(uploaded.jobId)}
           onResetFile={flow.resetFile}
         />
@@ -164,6 +204,24 @@ export function MasterImportWizard({
             <StatCard label="Bermasalah" value={formatNumber(problemCount)} valueClassName="text-destructive" />
           </div>
 
+          {analysis.summary.openingStock ? (
+            <section aria-label="Ringkasan saldo awal" className="rounded-lg border border-border bg-card px-4 py-3 text-sm">
+              <p>
+                {formatNumber(analysis.summary.openingStock.positive)} positif ·{" "}
+                {formatNumber(analysis.summary.openingStock.zero)} nol ·{" "}
+                {formatNumber(analysis.summary.openingStock.negative)} minus
+              </p>
+              <dl className="mt-2 space-y-1">
+                {analysis.summary.openingStock.warehouses.map((warehouse) => (
+                  <div key={warehouse.name} className="flex justify-between gap-3">
+                    <dt>{warehouse.name}</dt>
+                    <dd>{formatIDR(warehouse.value)}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+          ) : null}
+
           <div className="rounded-lg border border-border bg-card">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
               <div>
@@ -172,32 +230,7 @@ export function MasterImportWizard({
                   Pratinjau persisten (staging) — data master belum berubah sampai impor dijalankan.
                 </p>
               </div>
-              {entity === "opening_stock" && warehouses.length > 0 ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <label className="flex items-center gap-1.5 text-[11px]">
-                    Gudang tujuan
-                    <select
-                      value={warehouseId}
-                      onChange={(event) => setWarehouseId(event.target.value)}
-                      className="h-9 rounded border border-input bg-background px-1.5 text-[11px]"
-                    >
-                      {warehouses.map((row) => (
-                        <option key={row.id} value={row.id}>{row.name}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <span className="flex items-center gap-1.5 text-[11px]">
-                    <span>Tanggal cut-off</span>
-                    <span className="block w-32">
-                      <DateField
-                        value={stockDate}
-                        onChange={setStockDate}
-                        aria-label="Tanggal cut-off"
-                      />
-                    </span>
-                  </span>
-                </div>
-              ) : null}
+
             </div>
 
             <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2">
@@ -224,11 +257,12 @@ export function MasterImportWizard({
               {rowsLoading ? <span className="text-[11px] text-muted-foreground">Memuat baris…</span> : null}
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Pratinjau hasil impor">
               <table className="data-table">
+                <caption className="sr-only">Baris hasil validasi impor</caption>
                 <thead>
                   <tr>
-                    <th className="w-8">
+                    <th scope="col" className="w-8">
                       <input
                         type="checkbox"
                         checked={
@@ -250,10 +284,10 @@ export function MasterImportWizard({
                         aria-label="Pilih semua baris di halaman ini"
                       />
                     </th>
-                    <th className="text-right">Baris</th>
-                    <th>Isi</th>
-                    <th>Detail</th>
-                    <th>Catatan</th>
+                    <th scope="col" className="text-right">Baris</th>
+                    <th scope="col">Isi</th>
+                    <th scope="col">Detail</th>
+                    <th scope="col">Catatan</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -312,14 +346,14 @@ export function MasterImportWizard({
               <p className="text-[11px] text-muted-foreground">
                 Baris yang tidak dicentang akan dilewati saat impor.
                 {entity === "opening_stock"
-                  ? " Seluruh baris valid digabung menjadi satu dokumen penerimaan stok awal."
+                  ? " Dokumen saldo awal dikelompokkan per gudang dan tanggal cut-off."
                   : ""}
                 {receiptNumber ? ` Penerimaan stok awal: ${receiptNumber}.` : ""}
               </p>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => void flow.analyze()}
+                  onClick={() => void analyze()}
                   disabled={busy}
                   className="h-8 rounded-md border border-border px-3 text-[12px] hover:bg-muted disabled:opacity-50"
                 >

@@ -1,0 +1,25 @@
+{
+  "name": "bisa-pos-electron",
+  "productName": "Bisa POS",
+  "version": "0.1.0",
+  "description": "Terminal desktop untuk Bisa ERP",
+  "author": "Bisa ERP",
+  "private": true,
+  "main": "main.cjs",
+  "desktopName": "id.bisaerp.pos.desktop",
+  "scripts": {
+    "start": "electron .",
+    "package": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "45.4.1",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "id.bisaerp.pos",
+    "directories": { "output": "../dist-release/pos-electron" },
+    "files": ["main.cjs", "preload.cjs", "settings.cjs"],
+    "linux": { "target": ["AppImage"], "icon": "../public/icon-512.png", "syncDesktopName": true, "category": "Office", "executableName": "bisa-pos" },
+    "win": { "target": ["nsis"] }
+  }
+}

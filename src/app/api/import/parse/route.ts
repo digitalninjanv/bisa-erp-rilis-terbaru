@@ -83,7 +83,7 @@ export async function POST(request: Request) {
     const fileHash = hashImportFile(buffer);
     let workbook: ReturnType<typeof XLSX.read>;
     try {
-      workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
+      workbook = XLSX.read(buffer, { type: "buffer", cellDates: true, ...(entity === "opening_stock" ? { raw: true } : {}) });
     } catch {
       // Hanya kegagalan baca berkas sungguhan yang menjadi pesan ini;
       // error izin/otentikasi ditangani di catch luar apa adanya.
