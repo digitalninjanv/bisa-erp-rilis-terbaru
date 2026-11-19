@@ -4,6 +4,36 @@ import { formatIDR } from "@/lib/money";
 import type { StoredCart } from "@/components/pos/use-cart-persistence";
 import type { ResumeData } from "@/components/pos/use-held-sales";
 
+export function CheckoutRecoveryDialog(props: {
+  open: boolean;
+  busy: boolean;
+  error: string | null;
+  canRetry: boolean;
+  retry: () => void;
+  returnFocus: RefObject<HTMLInputElement | null>;
+}) {
+  const retryRef = useRef<HTMLButtonElement>(null);
+  return (
+    <Dialog open={props.open} disablePointerDismissal onOpenChange={(_, event) => event.cancel()}>
+      <DialogContent showCloseButton={false} initialFocus={retryRef} finalFocus={props.returnFocus}>
+        <DialogTitle>Pembayaran belum terkonfirmasi</DialogTitle>
+        <DialogDescription>
+          Periksa pembayaran sebelumnya sebelum melayani transaksi berikutnya. Pemeriksaan ini
+          melanjutkan pembayaran yang sama dan tidak membuat pembayaran kedua.
+        </DialogDescription>
+        {props.error ? <p role="alert" className="text-sm text-destructive">{props.error}</p> : null}
+        <button ref={retryRef} type="button" disabled={props.busy || !props.canRetry} onClick={props.retry}
+          className="h-11 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground disabled:opacity-50">
+          {props.busy ? "Memeriksa pembayaran…" : "Periksa pembayaran"}
+        </button>
+        <a href="/app/pos/riwayat" target="_blank" rel="noopener noreferrer" className="text-sm underline">
+          Buka riwayat transaksi
+        </a>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function HoldDialog(props: {
   holdLabel: string;
   setHoldLabel: Dispatch<SetStateAction<string>>;

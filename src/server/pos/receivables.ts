@@ -7,6 +7,7 @@ import type { Tx } from "@/db";
 import {
   accounts,
   cashMovements,
+  cashSessions,
   idempotencyKeys,
   partyPayments,
   paymentMethods,
@@ -23,7 +24,6 @@ import {
   resolvePartyCreditForUse,
   setPartyCreditJournal,
 } from "@/server/party-credits";
-import { getOpenCashSession } from "@/server/pos/sessions";
 import { nextDocumentNumber } from "@/server/sequences";
 
 export async function payReceivable(
@@ -313,7 +313,9 @@ export async function payReceivable(
 
   // POS-002: Catat mutasi kas ke sesi laci kasir yang sedang aktif jika penerimaan berupa kas
   if (!credit && (receivingAccount?.cashBankKind === "cash" || fundingAccountId === map.cash)) {
-    const session = await getOpenCashSession(tx, input.companyId, input.userId);
+    const [session] = await tx.select({ id: cashSessions.id }).from(cashSessions)
+      .where(and(eq(cashSessions.companyId, input.companyId), eq(cashSessions.userId, input.userId), eq(cashSessions.status, "open")))
+      .limit(1).for("update");
     if (session) {
       await tx.insert(cashMovements).values({
         companyId: input.companyId,

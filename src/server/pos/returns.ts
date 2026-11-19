@@ -15,7 +15,7 @@ import {
   type Decimal,
 } from "@/lib/money";
 import { getAccountMap, postJournal } from "@/server/accounting";
-import { claimIdempotencyKey } from "@/server/idempotency";
+import { claimIdempotencyKey, paymentRequestFingerprint, readIdempotencyResultRef, writeIdempotencyResultRef } from "@/server/idempotency";
 import { writeAudit } from "@/server/audit";
 import { applyStockMovement } from "@/server/inventory";
 import { restoreSerialsForSale, serialTrackFlags } from "@/server/serials";
@@ -29,12 +29,22 @@ export async function createSaleReturn(tx: Tx, input: CreateSaleReturnInput) {
   if (input.lines.length === 0) throw new AppError("VALIDATION", "Pilih minimal satu barang yang diretur.");
 
   if (input.idempotencyKey) {
+    // The action supplies today's date again on retry, including after midnight.
+    const fingerprint = paymentRequestFingerprint({
+      saleId: input.saleId, reason: input.reason, refundMethod: input.refundMethod,
+      type: input.type, disposition: input.disposition ?? "sellable",
+      lines: input.lines.map((line) => ({ productId: line.productId, saleLineId: line.saleLineId ?? null, qty: d(line.qty).toString() })),
+    });
+    const key = { companyId: input.companyId, key: input.idempotencyKey, scope: "pos.return" };
     const existing = () => tx.select({ id: saleReturns.id, number: saleReturns.number, total: saleReturns.total, saleId: saleReturns.saleId })
       .from(saleReturns).where(and(eq(saleReturns.companyId, input.companyId), eq(saleReturns.idempotencyKey, input.idempotencyKey!))).limit(1);
     const replay = async () => {
       const [row] = await existing();
       if (!row) return null;
       if (row.saleId !== input.saleId) throw new AppError("CONFLICT", "Kunci retur sudah dipakai pada penjualan lain.");
+      if (await readIdempotencyResultRef(tx, key) !== fingerprint) {
+        throw new AppError("CONFLICT", "Kunci retur sudah dipakai untuk data berbeda atau retur lama tanpa fingerprint. Periksa riwayat retur.");
+      }
       return { id: row.id, number: row.number, total: d(row.total).toNumber(), warnings: [] as string[] };
     };
     const found = await replay();
@@ -44,6 +54,7 @@ export async function createSaleReturn(tx: Tx, input: CreateSaleReturnInput) {
       if (winner) return winner;
       throw new AppError("CONFLICT", "Retur dengan kunci yang sama sedang diproses. Coba lagi.");
     }
+    await writeIdempotencyResultRef(tx, { ...key, resultRef: fingerprint });
   }
 
   const origin = await loadReturnOrigin(tx, input);

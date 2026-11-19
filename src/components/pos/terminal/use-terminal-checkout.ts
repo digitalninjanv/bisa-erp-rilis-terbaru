@@ -5,12 +5,13 @@
  */
 "use client";
 
-import { useState, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { useEffect, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { newUuid } from "@/lib/uuid";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { checkoutAction } from "@/server/actions/pos";
 import { formatIDR } from "@/lib/money";
+import { clearCheckoutAttempt, readCheckoutAttempt, storeCheckoutAttempt, type CheckoutAttempt } from "@/lib/pos/checkout-attempt";
 import { formatDate, todayISO } from "@/lib/format";
 import type { CompletedSaleInfo } from "./checkout-success-modal";
 import type { ReceiptData } from "@/lib/escpos/types";
@@ -53,6 +54,8 @@ export function defaultDueDate(termDays: number): string {
 
 export function useTerminalCheckout(params: {
   cart: CartItem[];
+  cartSignature: string;
+  cartLoaded: boolean;
   sessionOpen: boolean;
   mode: "single" | "mixed";
   singleMethod: string;
@@ -62,6 +65,7 @@ export function useTerminalCheckout(params: {
   methodById: Map<string, Method>;
   outstanding: number;
   debtActive: boolean;
+  debtAmount: number;
   customer: CustomerOption | null;
   dueDate: string;
   total: number;
@@ -105,7 +109,70 @@ export function useTerminalCheckout(params: {
 }) {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
+  const [pendingCheckout, setPendingCheckout] = useState<CheckoutAttempt | null>(null);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const { cart, sessionOpen, mode, singleMethod, single, cashTendered, entries, methodById, outstanding, debtActive, customer, dueDate, total, quote, cache, posOfflineEnabled, reservationId, selectedWarehouse, groupId, storageKey, sessionId, userId, companyId, receiptProfile, receivableDefaultTermDays, appliedCredit, setCart, setEntries, setCustomer, setCustomerQuery, setCustomerResults, setDueDate, resetCredit, setQuoteResult, heldSaleId, setHeldSaleId, setHeldTotal, setLastSale, setReservationId, setQueuedCount, setOldestQueuedAt, idempotencyKeyRef, checkoutAttemptedRef, inFlightRef, onSaleQueued, onCheckoutSuccess } = params;
+
+  useEffect(() => {
+    if (!params.cartLoaded) return;
+    void (async () => {
+      try {
+        setPendingCheckout(readCheckoutAttempt(storageKey));
+      } catch (error) {
+        setRecoveryError(error instanceof Error ? error.message : "Penyimpanan pembayaran tidak dapat dibaca.");
+      }
+    })();
+  }, [params.cartLoaded, storageKey]);
+
+  function completeCheckout(sale: { id: string; number: string; total: number; change: number }, attempt: CheckoutAttempt) {
+    clearCheckoutAttempt(storageKey);
+    setPendingCheckout(null);
+    setRecoveryError(null);
+    setLastSale({ id: sale.id, number: sale.number });
+    // Another tab may have saved a different cart while this payment was unresolved.
+    if (attempt.cartSignature === params.cartSignature) {
+      clearStoredCart(storageKey);
+      setCart([]);
+      setEntries({});
+      setCustomer(null);
+      setCustomerQuery("");
+      setCustomerResults([]);
+      setDueDate(defaultDueDate(receivableDefaultTermDays));
+      resetCredit();
+      setQuoteResult(null);
+      setHeldSaleId(null);
+      setHeldTotal(null);
+      setReservationId(null);
+    }
+    idempotencyKeyRef.current = newUuid();
+    checkoutAttemptedRef.current = false;
+    if (onCheckoutSuccess) onCheckoutSuccess(sale);
+    else router.push(`/app/pos/nota/${sale.id}`);
+  }
+
+  async function retryPendingCheckout() {
+    if (!pendingCheckout || inFlightRef.current) return;
+    inFlightRef.current = true;
+    setSubmitting(true);
+    try {
+      const result = await checkoutAction(pendingCheckout.request);
+      if (result.ok) completeCheckout(result.data, pendingCheckout);
+      else {
+        setRecoveryError(result.message);
+        if (["VALIDATION", "NOT_FOUND", "INVALID_STATE"].includes(result.code)) {
+          clearCheckoutAttempt(storageKey);
+          setPendingCheckout(null);
+          setRecoveryError(null);
+          toast.error(result.message);
+        }
+      }
+    } catch {
+      setRecoveryError("Status pembayaran belum pasti. Sambungkan jaringan lalu periksa lagi.");
+    } finally {
+      inFlightRef.current = false;
+      setSubmitting(false);
+    }
+  }
 
   // A-24 T6 (T6-01/T6-02): antrekan penjualan ini ke antrean offline
   // lokal. Dipakai oleh DUA pemicu dengan semantik yang sama persis:
@@ -220,6 +287,7 @@ export function useTerminalCheckout(params: {
       taxTotal: quote?.taxTotal ?? 0,
       discountTotal: quote?.discountTotal ?? 0,
       total,
+      outstanding: params.debtAmount,
       payments: payments.map((payment) => ({
         methodName: methodById.get(payment.methodId)?.name ?? "Pembayaran",
         methodType: methodById.get(payment.methodId)?.type,
@@ -256,6 +324,8 @@ export function useTerminalCheckout(params: {
       return;
     }
     toast.success("Offline: transaksi tersimpan di antrean dan akan disinkronkan saat koneksi kembali.");
+    clearCheckoutAttempt(storageKey);
+    setPendingCheckout(null);
     clearStoredCart(storageKey);
     setCart([]);
     setEntries({});
@@ -284,6 +354,15 @@ export function useTerminalCheckout(params: {
 
   async function checkout() {
     if (inFlightRef.current) return;
+    if (pendingCheckout) { await retryPendingCheckout(); return; }
+    if (recoveryError || !params.cartLoaded) return;
+    try {
+      const saved = readCheckoutAttempt(storageKey);
+      if (saved) { setPendingCheckout(saved); return; }
+    } catch {
+      setRecoveryError("Penyimpanan pembayaran tidak dapat dibaca. Periksa riwayat bersama supervisor.");
+      return;
+    }
     if (cart.length === 0) {
       toast.error("Keranjang masih kosong.");
       return;
@@ -359,7 +438,7 @@ export function useTerminalCheckout(params: {
         return;
       }
       checkoutAttemptedRef.current = true;
-      const result = await checkoutAction({
+      const request = {
         warehouseId: selectedWarehouse,
         groupId: groupId || null,
         reservationId: reservationId ?? undefined,
@@ -379,55 +458,36 @@ export function useTerminalCheckout(params: {
           serialNumbers: line.serialNumbers?.filter((value) => value.trim()),
         })),
         payments,
-      }).catch(() => null);
+      };
+      const attempt = { request, cartSignature: params.cartSignature };
+      try {
+        storeCheckoutAttempt(storageKey, attempt);
+      } catch {
+        toast.error("Pembayaran belum dikirim. Aktifkan penyimpanan browser agar transaksi dapat dipulihkan.");
+        return;
+      }
+      const result = await checkoutAction(request).catch(() => null);
 
       if (!result) {
+        setPendingCheckout(attempt);
         if (posOfflineEnabled) await queueSaleOffline(payments, attemptKey);
         else toast.error("Checkout gagal. Periksa koneksi lalu coba lagi.");
         return;
       }
 
       if (!result.ok) {
+        if (["VALIDATION", "NOT_FOUND", "INVALID_STATE"].includes(result.code)) clearCheckoutAttempt(storageKey);
+        else setPendingCheckout(attempt);
         toast.error(result.message);
         return;
       }
 
-      setLastSale({ id: result.data.id, number: result.data.number });
-      // D-10: checkout sukses — snapshot keranjang lokal dibersihkan
-      // agar transaksi yang sudah terbayar tidak bangkit lagi.
-      clearStoredCart(storageKey);
-      setCart([]);
-      setEntries({});
-      // POS-1 (D-19): panel utang direset untuk pelanggan berikutnya.
-      setCustomer(null);
-      setCustomerQuery("");
-      setCustomerResults([]);
-      setDueDate(defaultDueDate(receivableDefaultTermDays));
-      resetCredit();
-      setQuoteResult(null);
-      setHeldSaleId(null);
-      setHeldTotal(null);
-      // FIX-GDG Tahap 4 (butir b): reservasi terpakai dilepas untuk
-      // penjualan berikutnya (domain menandainya fulfilled).
-      setReservationId(null);
-      idempotencyKeyRef.current = newUuid();
-      checkoutAttemptedRef.current = false;
-      if (onCheckoutSuccess) {
-        onCheckoutSuccess({
-          id: result.data.id,
-          number: result.data.number,
-          total: result.data.total,
-          change: result.data.change,
-        });
-      } else {
-        toast.success(`Transaksi ${result.data.number} tersimpan.`);
-        router.push(`/app/pos/nota/${result.data.id}`);
-      }
+      completeCheckout(result.data, attempt);
     } finally {
       inFlightRef.current = false;
       setSubmitting(false);
     }
   }
 
-  return { checkout, submitting };
+  return { checkout, submitting, pendingCheckout, recoveryError, retryPendingCheckout };
 }

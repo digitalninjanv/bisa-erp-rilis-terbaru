@@ -104,6 +104,17 @@ export async function searchProductsAction(
   });
 }
 
+export async function cartProductsAction(input: { warehouseId: string; productIds: string[] }) {
+  return guard(async () => {
+    const ctx = await requirePermission("pos.sell");
+    const data = parseInput(z.object({ warehouseId: z.string().uuid(), productIds: z.array(z.string().uuid()).min(1).max(200) }), input);
+    const warehouseId = await assertWarehouseUsable(ctx.company.id, data.warehouseId);
+    return withCompanyReadOnly(ctx.company.id, (tx) => searchProducts(tx, {
+      companyId: ctx.company.id, warehouseId, q: "", productIds: [...new Set(data.productIds)], limit: 200, includeCost: false,
+    }));
+  });
+}
+
 // POS-1 (D-19): pencarian pelanggan untuk panel utang terminal. Baca
 // saja — tetap requirePermission biasa seperti action baca lain (T5R-2).
 export async function searchCustomersAction(q: string) {

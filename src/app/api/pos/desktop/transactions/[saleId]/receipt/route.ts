@@ -4,6 +4,8 @@ import { toPrintSettings } from "@/components/print/types";
 import { formatDate } from "@/lib/format";
 import { formatReceiptToEscPos } from "@/lib/escpos/receipt-template";
 import type { ReceiptData } from "@/lib/escpos/types";
+import { saleReceiptLine } from "@/lib/escpos/sale-receipt-line";
+import { d } from "@/lib/money";
 import { getSettings } from "@/server/catalog";
 import { getSaleDetail } from "@/server/reports";
 import { POS_API_CORS_HEADERS, resolvePosDevice } from "@/server/pos-device";
@@ -60,18 +62,12 @@ export async function GET(
       date: formatDate(detail.sale.date),
       cashierName: detail.cashier?.name ?? null,
       customerName: detail.customer?.name ?? null,
-      lines: detail.lines.map((line) => ({
-        name: line.packagingName ? `${line.productName} (${line.packagingName})` : line.productName,
-        qty: Number(line.qty),
-        unit: line.packagingName || null,
-        price: Number(line.unitPrice),
-        subtotal: Number(line.lineTotal),
-        discount: Number(line.discountAmount || 0),
-      })),
+      lines: detail.lines.map(saleReceiptLine),
       subtotal: Number(detail.sale.subtotal),
       taxTotal: Number(detail.sale.taxTotal || 0),
       discountTotal: Number(detail.sale.discountTotal || 0),
       total: Number(detail.sale.total),
+      outstanding: d(detail.sale.total).minus(detail.sale.paidTotal).clamp(0, Infinity).toNumber(),
       payments: detail.payments.map((payment) => ({
         methodName: payment.methodName || "Pembayaran",
         methodType: payment.methodType || "other",

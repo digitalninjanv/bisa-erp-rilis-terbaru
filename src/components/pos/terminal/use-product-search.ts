@@ -7,8 +7,28 @@
 
 import { useCallback, useEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { toast } from "sonner";
-import { searchProductsAction } from "@/server/actions/pos";
-import type { ProductOption } from "@/components/pos/terminal-types";
+import { cartProductsAction, searchProductsAction } from "@/server/actions/pos";
+import type { searchProducts } from "@/server/catalog/products";
+import type { CartItem, ProductOption } from "@/components/pos/terminal-types";
+
+function productOption(p: Awaited<ReturnType<typeof searchProducts>>[number]): ProductOption {
+  return {
+    id: p.id,
+    name: p.name,
+    sku: p.sku,
+    barcode: p.barcode,
+    categoryId: p.categoryId ?? null,
+    categoryName: p.categoryName ?? null,
+    salePrice: p.salePrice,
+    stock: Number(p.stock ?? 0),
+    trackStock: p.trackStock ?? true,
+    trackSerial: p.trackSerial,
+    unitCode: p.unitCode ?? "PCS",
+    // S4: kemasan aktif + kemasan yang cocok dengan pindaian.
+    packagings: p.packagings ?? [],
+    matchedPackagingId: p.matchedPackagingId ?? null,
+  };
+}
 
 // POS-1: ukuran halaman kisi produk terminal — sama dengan limit
 // searchProductsAction agar satu halaman = satu panggilan server.
@@ -16,6 +36,8 @@ const PRODUCT_PAGE_SIZE = 24;
 
 export function useProductSearch(params: {
   initialProducts: ProductOption[];
+  cart: CartItem[];
+  cache: Record<string, ProductOption>;
   initialWarehouse: string;
   selectedWarehouse: string;
   selectedCategory: string;
@@ -25,14 +47,31 @@ export function useProductSearch(params: {
 }) {
   const { initialProducts, initialWarehouse, selectedWarehouse, selectedCategory, setCache, checkoutInFlight, idempotencyKey } = params;
   const [results, setResults] = useState<ProductOption[]>(initialProducts);
+  const [resultsFor, setResultsFor] = useState({ term: "", warehouse: initialWarehouse, category: "" });
   const [search, setSearch] = useState("");
   // POS-1: kisi produk berpaginasi — `results` selalu berisi halaman
   // aktif untuk kata cari saat ini (halaman 1 = initialProducts dari
   // server); halaman berikutnya diambil per 24 lewat offset.
   const products = results;
+  const resultsCurrent = resultsFor.term === search && resultsFor.warehouse === selectedWarehouse && resultsFor.category === selectedCategory;
   const [page, setPage] = useState(1);
   const [pageFull, setPageFull] = useState(initialProducts.length >= PRODUCT_PAGE_SIZE);
   const [searching, setSearching] = useState(false);
+
+  const missingProductIds = [...new Set(params.cart.map((line) => line.productId))]
+    .filter((id) => params.cache[id]?.trackSerial === undefined).sort().join(",");
+  useEffect(() => {
+    if (!missingProductIds) return;
+    let cancelled = false;
+    void cartProductsAction({ warehouseId: selectedWarehouse, productIds: missingProductIds.split(",") })
+      .then((result) => {
+        if (cancelled || !result.ok) return;
+        setCache((current) => ({ ...current, ...Object.fromEntries(result.data.map((p) => [p.id, productOption(p)])) }));
+      }).catch(() => {
+        if (!cancelled) toast.error("Data produk keranjang belum dapat dipulihkan. Periksa koneksi lalu muat ulang.");
+      });
+    return () => { cancelled = true; };
+  }, [missingProductIds, selectedWarehouse, setCache]);
 
   const searchSeq = useRef(0);
   const initialCatalog = useRef(true);
@@ -56,24 +95,10 @@ export function useProductSearch(params: {
         toast.error(result.message);
         return [];
       }
-      const mapped: ProductOption[] = result.data.map((p) => ({
-        id: p.id,
-        name: p.name,
-        sku: p.sku,
-        barcode: p.barcode,
-        categoryId: (p as { categoryId?: string | null }).categoryId ?? null,
-        categoryName: (p as { categoryName?: string | null }).categoryName ?? null,
-        salePrice: p.salePrice,
-        stock: "stock" in p ? Number((p as { stock?: string }).stock ?? 0) : 0,
-        trackStock: (p as { trackStock?: boolean }).trackStock ?? true,
-        unitCode: (p as { unitCode?: string | null }).unitCode ?? "PCS",
-        // S4: kemasan aktif + kemasan yang cocok dengan pindaian.
-        packagings: (p as { packagings?: ProductOption["packagings"] }).packagings ?? [],
-        matchedPackagingId:
-          (p as { matchedPackagingId?: string | null }).matchedPackagingId ?? null,
-      }));
+      const mapped = result.data.map(productOption);
       if (seq !== null && seq === searchSeq.current) {
         setResults(mapped);
+        setResultsFor({ term, warehouse: selectedWarehouse, category: categoryId });
         setPage(pageNum);
         setPageFull(mapped.length >= PRODUCT_PAGE_SIZE);
         setCache((current) => {
@@ -156,5 +181,5 @@ export function useProductSearch(params: {
     [search, searchProducts, searching],
   );
 
-  return { search, setSearch, products, page, pageFull, searching, scanBarcode, goToPage };
+  return { search, setSearch, products, page, pageFull, searching, resultsCurrent, scanBarcode, goToPage };
 }

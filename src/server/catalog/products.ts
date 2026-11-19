@@ -468,6 +468,7 @@ export async function searchProducts(
     includeCost?: boolean;
     /** Filter kategori untuk navigasi cepat terminal (opsional). */
     categoryId?: string;
+    productIds?: string[];
   },
 ) {
   const q = input.q.trim();
@@ -511,6 +512,7 @@ export async function searchProducts(
             eq(products.companyId, input.companyId),
             eq(products.isActive, true),
             input.categoryId ? eq(products.categoryId, input.categoryId) : undefined,
+            input.productIds ? inArray(products.id, input.productIds) : undefined,
           ),
         )
         .orderBy(asc(products.name))
@@ -576,7 +578,7 @@ export async function searchProducts(
         name: pack.name,
         isi: pack.isi,
         salePrice: pack.salePrice,
-        buyPrice: pack.buyPrice,
+        ...(input.includeCost ? { buyPrice: pack.buyPrice } : {}),
         barcode: pack.barcode,
         isDefaultSale: pack.isDefaultSale,
       }));

@@ -93,10 +93,17 @@ export function formatReceiptToEscPos(data: ReceiptData): Uint8Array {
     encoder.row(payLabel, formatIDR(pay.tendered ?? pay.amount));
   }
 
+  const outstanding = data.outstanding ?? data.payments
+    .filter((payment) => payment.methodType === "credit")
+    .reduce((sum, payment) => sum + payment.amount, 0);
+  if (outstanding > 0) {
+    encoder.bold(true).row("Sisa utang:", formatIDR(outstanding)).bold(false);
+    encoder.row("Status:", "BELUM LUNAS");
+  }
   // Kembalian
   if (data.change > 0) {
     encoder.bold(true).row("KEMBALIAN:", formatIDR(data.change)).bold(false);
-  } else {
+  } else if (outstanding <= 0) {
     encoder.row("Status:", "LUNAS");
   }
 

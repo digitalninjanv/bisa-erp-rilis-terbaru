@@ -47,6 +47,7 @@ export interface ReceiptData {
   taxTotal?: number;
   discountTotal?: number;
   total: number;
+  outstanding?: number;
   payments: ReceiptPaymentItem[];
   change: number;
   paperWidth?: PaperWidth;

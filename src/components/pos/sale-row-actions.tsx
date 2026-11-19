@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Printer } from "lucide-react";
 import { toast } from "sonner";
 import { getDesktopPrintBridge } from "@/lib/pos/desktop-print";
 import { voidSaleAction } from "@/server/actions/pos";
 import { RowMenu, type RowMenuItem } from "@/components/blocks/row-menu";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 
 export function SaleRowActions({
   saleId,
@@ -27,34 +28,33 @@ export function SaleRowActions({
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
-
-  // POS2-19 (sebagian): dialog void menutup dengan Escape, sejajar
-  // dengan dialog terminal.
-  useEffect(() => {
-    if (!open) return;
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false);
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const submitting = useRef(false);
 
   async function submit() {
+    if (submitting.current) return;
     if (reason.trim().length < 3) {
       toast.error("Alasan void minimal 3 karakter.");
       return;
     }
+    submitting.current = true;
     setBusy(true);
-    const result = await voidSaleAction({ saleId, reason });
-    setBusy(false);
-    if (!result.ok) {
-      toast.error(result.message);
-      return;
+    try {
+      const result = await voidSaleAction({ saleId, reason });
+      if (!result.ok) {
+        toast.error(result.message);
+        return;
+      }
+      toast.success(`Transaksi ${number} di-void.`);
+      setOpen(false);
+      setReason("");
+      router.refresh();
+    } catch {
+      toast.error("Status void belum pasti. Periksa riwayat sebelum mencoba lagi.");
+    } finally {
+      submitting.current = false;
+      setBusy(false);
     }
-    toast.success(`Transaksi ${number} di-void.`);
-    setOpen(false);
-    setReason("");
-    router.refresh();
   }
 
   // A-28 UI-5 (UX-A05): pola aksi baris A-25 — satu aksi utama
@@ -108,46 +108,45 @@ export function SaleRowActions({
         }}
       />
 
-      {open ? (
-        <div className="fixed inset-0 z-[80] grid place-items-center bg-black/40 p-4">
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label={`Void transaksi ${number}`}
-            className="w-full max-w-sm rounded-xl border border-border bg-card p-4 shadow-xl"
-          >
-            <h3 className="text-sm font-semibold">Void transaksi {number}</h3>
-            <p className="mt-1 text-[12px] leading-5 text-muted-foreground">
-              Stok dikembalikan dan jurnal pembalik otomatis dibuat. Tindakan ini tercatat di audit log.
-            </p>
-            <textarea
-              autoFocus
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-              rows={3}
-              placeholder="Alasan void (wajib)"
-              className="mt-3 w-full rounded-md border border-input bg-background px-2.5 py-2 text-[13px] outline-none focus:border-ring"
-            />
-            <div className="mt-3 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="h-8 rounded-md border border-border px-3 text-[12px] hover:bg-muted"
-              >
-                Batal
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={submit}
-                className="h-8 rounded-md bg-destructive px-3 text-[12px] font-medium text-white disabled:opacity-50"
-              >
-                {busy ? "Memproses…" : "Void transaksi"}
-              </button>
-            </div>
+      <Dialog open={open} disablePointerDismissal={busy} onOpenChange={(next, event) => {
+        if (submitting.current) { event.cancel(); return; }
+        setOpen(next);
+      }}>
+        <DialogContent showCloseButton={false} initialFocus={cancelRef}>
+          <DialogTitle>Void transaksi {number}</DialogTitle>
+          <DialogDescription>
+            Stok dikembalikan dan jurnal pembalik otomatis dibuat. Tindakan ini tercatat di audit log.
+          </DialogDescription>
+          <textarea
+            disabled={busy}
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            rows={3}
+            aria-label="Alasan void (wajib)"
+            placeholder="Alasan void (wajib)"
+            className="mt-3 w-full rounded-md border border-input bg-background px-2.5 py-2 text-[13px] outline-none focus:border-ring"
+          />
+          <div className="mt-3 flex justify-end gap-2">
+            <button
+              type="button"
+              ref={cancelRef}
+              disabled={busy}
+              onClick={() => setOpen(false)}
+              className="h-8 rounded-md border border-border px-3 text-[12px] hover:bg-muted"
+            >
+              Batal
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={submit}
+              className="h-8 rounded-md bg-destructive px-3 text-[12px] font-medium text-white disabled:opacity-50"
+            >
+              {busy ? "Memproses…" : "Void transaksi"}
+            </button>
           </div>
-        </div>
-      ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -9,6 +9,8 @@ import { toPrintSettings } from "@/components/print/types";
 import { formatDate } from "@/lib/format";
 import { writeAudit } from "@/server/audit";
 import type { ReceiptData } from "@/lib/escpos/types";
+import { saleReceiptLine } from "@/lib/escpos/sale-receipt-line";
+import { d } from "@/lib/money";
 
 /**
  * Mengambil data terstruktur nota penjualan untuk dicetak langsung
@@ -46,18 +48,12 @@ export async function getSaleReceiptDataAction(saleId: string, copyIndex = 0) {
         date: formatDate(detail.sale.date),
         cashierName: detail.cashier?.name ?? null,
         customerName: detail.customer?.name ?? null,
-        lines: detail.lines.map((l) => ({
-          name: l.packagingName ? `${l.productName} (${l.packagingName})` : l.productName,
-          qty: Number(l.qty),
-          unit: l.packagingName || null,
-          price: Number(l.unitPrice),
-          subtotal: Number(l.lineTotal),
-          discount: Number(l.discountAmount || 0),
-        })),
+        lines: detail.lines.map(saleReceiptLine),
         subtotal: Number(detail.sale.subtotal),
         taxTotal: Number(detail.sale.taxTotal || 0),
         discountTotal: Number(detail.sale.discountTotal || 0),
         total: Number(detail.sale.total),
+        outstanding: d(detail.sale.total).minus(detail.sale.paidTotal).clamp(0, Infinity).toNumber(),
         payments: detail.payments.map((p) => ({
           methodName: p.methodName || "Pembayaran",
           methodType: p.methodType || "other",

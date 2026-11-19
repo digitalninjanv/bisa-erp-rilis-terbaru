@@ -23,9 +23,8 @@ export function useOfflineQueue(params: {
   const router = useRouter();
   // SIM-2 S7B-2 Batch 6: keadaan mode offline — status koneksi browser,
   // jumlah antrean lokal (IndexedDB), dan proses sinkronisasi.
-  const [online, setOnline] = useState<boolean>(
-    () => typeof navigator === "undefined" || navigator.onLine,
-  );
+  // Server and hydration share one snapshot; the effect reads the browser status.
+  const [online, setOnline] = useState(true);
   const [queuedCount, setQueuedCount] = useState(0);
   const [oldestQueuedAt, setOldestQueuedAt] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);

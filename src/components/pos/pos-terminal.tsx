@@ -17,7 +17,7 @@ import { useQuote } from "@/components/pos/use-quote";
 import { useHeldSales } from "@/components/pos/use-held-sales";
 import { useOfflineQueue } from "@/components/pos/use-offline-queue";
 import { useReturnCredit } from "@/components/pos/use-return-credit";
-import { HoldDialog, ResumeDialog } from "@/components/pos/terminal-dialogs";
+import { CheckoutRecoveryDialog, HoldDialog, ResumeDialog } from "@/components/pos/terminal-dialogs";
 import { useProductSearch } from "@/components/pos/terminal/use-product-search";
 import { usePaymentPlan } from "@/components/pos/terminal/use-payment-plan";
 import { useTerminalShortcuts } from "@/components/pos/terminal/use-terminal-shortcuts";
@@ -151,7 +151,7 @@ export function PosTerminal({
   // tahanan/resume, antrean offline) — komponen ini menjadi komposisi.
   // Urutan pemanggilan menjaga urutan pendaftaran efek yang setara:
   // pulih/simpan snapshot, quote, resume, lalu pemicu offline.
-  const { resumeGuardRef, storedActiveRef } = useCartPersistence({
+  const { cartLoaded, resumeGuardRef, storedActiveRef } = useCartPersistence({
     storageKey,
     resumeId,
     warehouses,
@@ -306,8 +306,8 @@ export function PosTerminal({
   const isCreditSingle = single?.type === "credit";
   const cashTendered = Number(entries[singleMethod || "__none"]?.tendered ?? 0);
 
-  const { search, setSearch, products, page, pageFull, searching, scanBarcode, goToPage } =
-    useProductSearch({ initialProducts, initialWarehouse: warehouseId, selectedWarehouse, selectedCategory, setCache, checkoutInFlight, idempotencyKey });
+  const { search, setSearch, products, page, pageFull, searching, resultsCurrent, scanBarcode, goToPage } =
+    useProductSearch({ cart, cache, initialProducts, initialWarehouse: warehouseId, selectedWarehouse, selectedCategory, setCache, checkoutInFlight, idempotencyKey });
 
   const addProduct = useCallback(
     (product: ProductOption, packagingId?: string | null) => {
@@ -349,6 +349,8 @@ export function PosTerminal({
               salePrice: found.salePrice,
               stock: Number((found as { stock?: string }).stock ?? 0),
               trackStock: (found as { trackStock?: boolean }).trackStock ?? true,
+              trackSerial: found.trackSerial,
+              packagings: found.packagings,
               unitCode: (found as { unitCode?: string | null }).unitCode ?? "PCS",
             };
           }
@@ -437,9 +439,9 @@ export function PosTerminal({
   });
   const { appliedCredit, resetCredit } = credit;
 
-  const { checkout, submitting } = useTerminalCheckout({
-    cart, sessionOpen, mode, singleMethod, single, cashTendered, entries, methodById,
-    outstanding, debtActive, customer, dueDate, total, quote, cache, posOfflineEnabled,
+  const { checkout, submitting, pendingCheckout, recoveryError, retryPendingCheckout } = useTerminalCheckout({
+    cart, cartSignature, cartLoaded, sessionOpen, mode, singleMethod, single, cashTendered, entries, methodById,
+    outstanding, debtActive, debtAmount, customer, dueDate, total, quote, cache, posOfflineEnabled,
     reservationId, selectedWarehouse, groupId, storageKey, sessionId, userId, companyId, receiptProfile,
     receivableDefaultTermDays, appliedCredit, setCart, setEntries, setCustomer,
     setCustomerQuery, setCustomerResults, setDueDate, resetCredit, setQuoteResult,
@@ -460,10 +462,11 @@ export function PosTerminal({
     addProduct,
     setSearch,
     searchRef,
-    enabled: !submitting && sessionOpen && !holdOpen && !resumeOffer && !completedSale,
+    enabled: !submitting && !pendingCheckout && !recoveryError && sessionOpen && !holdOpen && !resumeOffer && !completedSale,
   });
 
   const payDisabled =
+    !cartLoaded || Boolean(pendingCheckout) || Boolean(recoveryError) ||
     submitting ||
     cart.length === 0 ||
     !sessionOpen ||
@@ -490,7 +493,7 @@ export function PosTerminal({
   // A-28 UI-1 (UX-B01/B03): pintasan global terminal (peta tombol di
   // lib/pos/terminal-shortcuts); ditahan selama dialog Tahan/Resume.
   useTerminalShortcuts({
-    suspended: submitting || holdOpen || Boolean(resumeOffer) || Boolean(completedSale),
+    suspended: submitting || Boolean(pendingCheckout) || Boolean(recoveryError) || holdOpen || Boolean(resumeOffer) || Boolean(completedSale),
     onShortcut: (action: TerminalShortcutAction) => {
       if (checkoutInFlight.current) return;
       switch (action) {
@@ -677,6 +680,7 @@ export function PosTerminal({
           setSearch={setSearch}
           products={products}
           searching={searching}
+          resultsCurrent={resultsCurrent}
           page={page}
           pageFull={pageFull}
           goToPage={goToPage}
@@ -793,6 +797,14 @@ export function PosTerminal({
           setCompletedSale(null);
           searchRef.current?.focus();
         }}
+      />
+      <CheckoutRecoveryDialog
+        open={Boolean(pendingCheckout) || Boolean(recoveryError)}
+        busy={submitting}
+        error={recoveryError}
+        canRetry={Boolean(pendingCheckout)}
+        retry={() => void retryPendingCheckout()}
+        returnFocus={searchRef}
       />
     </div>
   );

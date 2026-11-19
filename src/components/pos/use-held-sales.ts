@@ -267,6 +267,7 @@ export function useHeldSales(params: {
       cart,
       groupId,
       selectedWarehouse,
+      reservationId: reservationId ?? null,
       customerId: customerId ?? null,
       dueDate: dueDate ?? null,
     });

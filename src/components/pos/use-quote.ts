@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { QuoteResultPublic } from "@/server/pos";
 import { quoteAction } from "@/server/actions/pos";
@@ -62,6 +62,7 @@ export function useQuote(params: {
   const [quoteNonce, setQuoteNonce] = useState(0);
   const [quoting, setQuoting] = useState(false);
   const quoteSeq = useRef(0);
+  const getOfflineQuote = useEffectEvent(() => offlineQuote);
 
   useEffect(() => {
     if (cart.length === 0) return;
@@ -71,6 +72,7 @@ export function useQuote(params: {
     // tanpa menjadwalkan quote baru, bukan toast berulang.
     if (serialIncomplete) return;
     const seq = ++quoteSeq.current;
+    let cancelled = false;
     // POS2-01: signature ditangkap saat quote DIMINTA; hasil hanya
     // diterapkan sebagai quote berlaku bila keadaan belum berubah.
     const signature = cartSignature;
@@ -96,8 +98,9 @@ export function useQuote(params: {
             })),
           });
         } catch {
-          if (seq !== quoteSeq.current) return;
+          if (cancelled || seq !== quoteSeq.current) return;
           setQuoting(false);
+          const offlineQuote = getOfflineQuote();
           // A-24 T6 (T6-01): quote server tak terjangkau sama sekali
           // (lemparan transportasi) + mode offline perusahaan aktif →
           // quote lokal dari katalog terminal, supaya penjualan dapat
@@ -150,7 +153,7 @@ export function useQuote(params: {
           setQuoteError("Gagal menghitung keranjang. Periksa koneksi lalu coba lagi.");
           return;
         }
-        if (seq !== quoteSeq.current) return;
+        if (cancelled || seq !== quoteSeq.current) return;
         setQuoting(false);
         if (!result.ok) {
           setQuoteResult(null);
@@ -186,7 +189,10 @@ export function useQuote(params: {
         });
       })();
     }, 180);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      cancelled = true;
+    };
   }, [
     cart,
     selectedWarehouse,
@@ -195,7 +201,6 @@ export function useQuote(params: {
     quoteNonce,
     serialIncomplete,
     reservationId,
-    offlineQuote,
     setCache,
   ]);
 
@@ -219,7 +224,8 @@ export function useQuote(params: {
   // Label tombol selalu jujur tentang alasannya — tidak pernah ada
   // "Bayar Rp 0" yang dapat diklik.
   const quotePending = cart.length > 0 && !serialIncomplete && !quoteError && quote === null;
-  const quoteBusy = quoting || quotePending;
+  const activeQuoting = cart.length > 0 && !serialIncomplete && quoting;
+  const quoteBusy = activeQuoting || quotePending;
 
-  return { quote, quoting, quoteError, quotePending, quoteBusy, quoteLine, setQuoteResult, setQuoteNonce };
+  return { quote, quoting: activeQuoting, quoteError, quotePending, quoteBusy, quoteLine, setQuoteResult, setQuoteNonce };
 }

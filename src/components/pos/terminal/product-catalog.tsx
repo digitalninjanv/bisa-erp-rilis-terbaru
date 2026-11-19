@@ -50,6 +50,7 @@ export function ProductCatalog(props: {
   setSearch: Dispatch<SetStateAction<string>>;
   products: ProductOption[];
   searching: boolean;
+  resultsCurrent?: boolean;
   page: number;
   pageFull: boolean;
   goToPage: (next: number) => void;
@@ -210,6 +211,7 @@ export function ProductCatalog(props: {
                     // A-28 UI-1 (UX-B02): Enter memilih produk yang
                     // tersorot bila ada; tanpa sorotan, perilaku lama
                     // (hasil pertama) dipertahankan persis.
+                    if (props.resultsCurrent === false || searching) return;
                     const highlighted =
                       highlight >= 0 && products[highlight] && !isSoldOut(products[highlight])
                         ? products[highlight]
