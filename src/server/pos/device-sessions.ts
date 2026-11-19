@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { createHash } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
@@ -253,6 +254,18 @@ export async function syncPosDeviceSessionIntents(
             },
           });
           return status;
+        }
+
+        if (!z.string().uuid().safeParse(intent.localSessionId).success) {
+          // Terminal lama memakai ID lokal teks. Catat peninjauan tanpa
+          // mencoba mencocokkan ID itu ke kolom UUID sesi server.
+          const [warehouse] = await tx.select({ id: warehouses.id }).from(warehouses)
+            .where(and(eq(warehouses.companyId, device.companyId), eq(warehouses.id, intent.warehouseId)))
+            .limit(1);
+          if (!warehouse || (device.warehouseId && intent.warehouseId !== device.warehouseId)) {
+            throw new AppError("VALIDATION", "Gudang sesi tidak sesuai dengan gudang terminal.");
+          }
+          return recordTerminalSessionClose(tx, { companyId: device.companyId, terminalId: device.terminalId, intent });
         }
 
         const [serverSession] = await tx

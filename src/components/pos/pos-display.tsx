@@ -41,6 +41,7 @@ export type PosDisplayPrefs = {
   cardShape: PosCardShape;
   cardTint: boolean;
   showCategory: boolean;
+  colorByCategory: boolean;
   autoFullscreen: boolean;
   actionTheme: PosActionTheme;
 };
@@ -58,6 +59,7 @@ export const POS_DISPLAY_DEFAULTS: PosDisplayPrefs = {
   cardShape: "rounded",
   cardTint: true,
   showCategory: false,
+  colorByCategory: false,
   autoFullscreen: false,
   actionTheme: "odoo",
 };
@@ -105,6 +107,7 @@ function readPrefs(): PosDisplayPrefs {
       cardShape: parsed.cardShape === "square" ? "square" : "rounded",
       cardTint: typeof parsed.cardTint === "boolean" ? parsed.cardTint : true,
       showCategory: typeof parsed.showCategory === "boolean" ? parsed.showCategory : false,
+      colorByCategory: typeof parsed.colorByCategory === "boolean" ? parsed.colorByCategory : false,
       autoFullscreen:
         typeof parsed.autoFullscreen === "boolean" ? parsed.autoFullscreen : false,
       actionTheme:

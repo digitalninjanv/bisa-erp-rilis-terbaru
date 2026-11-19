@@ -17,7 +17,7 @@ export {
 export type { OpnameReminder, OpnameTaskRow } from "./opname-tasks";
 export { getOperationQueue } from "./operations";
 export type { OperationQueue, OperationQueueCard } from "./operations";
-export { RECEIPT_SOURCE_LABELS, createReceipt } from "./receipts";
+export { RECEIPT_SOURCE_LABELS, createMigrationOpeningReceipt, createReceipt } from "./receipts";
 export { recordReceiptInvoiceNumber } from "./receipt-invoice";
 export { voidReceipt } from "./receipt-void";
 export type { ReceiptSource } from "./receipts";

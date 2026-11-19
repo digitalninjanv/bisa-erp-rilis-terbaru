@@ -117,6 +117,8 @@ async function terminalDocument(request, cache) {
     // pernah disimpan sebagai shell terminal.
     if (fresh.ok && !fresh.redirected) {
       await cache.put(SHELL_PATH, await cacheableCopy(fresh));
+    } else if (fresh.redirected || fresh.status === 401 || fresh.status === 403) {
+      await cache.delete(SHELL_PATH).catch(() => undefined);
     }
     return fresh;
   } catch (error) {

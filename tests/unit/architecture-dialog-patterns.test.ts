@@ -33,8 +33,6 @@ const OVERLAY_EXCEPTIONS: Record<string, string> = {
   "components/shell/mobile-nav.tsx": "Laci navigasi shell, bukan form per fitur.",
   "components/pos/pos-terminal.tsx":
     "Pengambilalihan layar penuh terminal POS (bukan dialog) — alur offline kasir; migrasi membahayakan alur itu.",
-  "components/pos/terminal-dialogs.tsx":
-    "Dialog permukaan terminal POS z-[70] di bawah lapisan kasir; kekhususan tercatat di docs/form-crud/HASIL-G1.md.",
   "components/pos/sale-row-actions.tsx":
     "Lembar aksi baris penjualan di dalam terminal POS; kekhususan tercatat di docs/form-crud/HASIL-G1.md.",
 };

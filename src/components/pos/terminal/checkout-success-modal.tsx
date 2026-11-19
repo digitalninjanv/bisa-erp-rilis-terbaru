@@ -19,7 +19,7 @@ import { getPrinterPreferences } from "@/lib/escpos/printer-connection";
 import { getOrCreateDeviceId } from "@/lib/pos-offline";
 import { enqueuePrintJob, latestPrintJob, retryPrintJob, PRINT_QUEUE_EVENT } from "@/lib/pos/print-queue";
 import { printReceiptViaPopup } from "@/components/pos/receipt-print-window";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PrinterConfigModal } from "@/components/pos/printer-modal";
 
 import type { ReceiptData } from "@/lib/escpos/types";
@@ -50,15 +50,20 @@ export function CheckoutSuccessModal({
   const submittingPrint = useRef(false);
   const desktopSent = useRef(false);
   const desktopUncertain = useRef(false);
+  const [confirmRetry, setConfirmRetry] = useState(false);
+  const cancelRetryRef = useRef<HTMLButtonElement>(null);
   const [browserOpened, setBrowserOpened] = useState(false);
   const newSaleRef = useRef<HTMLButtonElement>(null);
 
-  const triggerPrint = useCallback(async (saleId: string, saleNumber: string) => {
+  const triggerPrint = useCallback(async (saleId: string, saleNumber: string, retryConfirmed = false) => {
     if (submittingPrint.current) return;
     const desktop = getDesktopPrintBridge();
     if (desktop && !sale?.offlineReceipt) {
       if (desktopSent.current && !canReprint) return;
-      if (desktopUncertain.current && !window.confirm("Struk mungkin sudah keluar. Kirim ulang?")) return;
+      if (desktopUncertain.current && !retryConfirmed) {
+        setConfirmRetry(true);
+        return;
+      }
       submittingPrint.current = true;
       setPrintStatus("printing");
       setPrintMessage("Mengirim struk ke printer yang dipilih…");
@@ -102,7 +107,8 @@ export function CheckoutSuccessModal({
           setPrintMessage("Data struk sudah terkirim ke printer.");
           return;
         }
-        if (latest?.status === "uncertain" && !window.confirm("Struk mungkin sudah keluar. Kirim ulang?")) {
+        if (latest?.status === "uncertain" && !retryConfirmed) {
+          setConfirmRetry(true);
           setPrintStatus("error");
           setPrintMessage(latest.lastError ?? "Hasil cetak belum pasti.");
           return;
@@ -214,6 +220,7 @@ export function CheckoutSuccessModal({
   const handleDismiss = () => {
     setPrintStatus("idle");
     setBrowserOpened(false);
+    setConfirmRetry(false);
     setPrintMessage("");
     onDismiss();
   };
@@ -375,6 +382,28 @@ export function CheckoutSuccessModal({
             </div>
           </div>
         </DialogContent>
+        <Dialog open={confirmRetry} onOpenChange={setConfirmRetry}>
+          <DialogContent initialFocus={cancelRetryRef} showCloseButton={false}>
+            <DialogHeader>
+              <DialogTitle>Kirim ulang struk?</DialogTitle>
+            </DialogHeader>
+            <DialogDescription>
+              Hasil cetak sebelumnya belum pasti. Periksa printer sebelum mengirim ulang.
+            </DialogDescription>
+            <div className="flex justify-end gap-2">
+              <button type="button" ref={cancelRetryRef} onClick={() => setConfirmRetry(false)}
+                className="h-10 rounded-md border px-3 text-sm font-medium">
+                Batal
+              </button>
+              <button type="button" onClick={() => {
+                setConfirmRetry(false);
+                if (sale) void triggerPrint(sale.id, sale.number, true);
+              }} className="h-10 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground">
+                Kirim ulang
+              </button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </Dialog>
 
       {configOpen ? (

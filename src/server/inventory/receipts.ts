@@ -17,7 +17,7 @@ import { findPurchaseOrderPriceVariances } from "@/lib/purchase-order-price-vari
 import { costPerBaseUnit, toBaseQty } from "@/lib/packaging";
 import { resolveLinePackagings } from "@/server/catalog";
 import { assertPeriodOpen, listCashBankIds } from "@/server/accounting";
-import { writeAudit } from "@/server/audit";
+import { auditPostedReceipt } from "./receipt-audit";
 import {
   applyReceiptToPurchaseOrder,
   lockPurchaseOrderForReceipt,
@@ -266,33 +266,10 @@ async function postReceipt(tx: Tx, input: CreateReceiptInput, openingMigration: 
     },
   );
 
-  await writeAudit(tx, {
-    companyId: input.companyId,
-    userId: input.userId,
-    action: "purchase.receive",
-    entityType: "stock_receipt",
-    entityId: receipt.id,
-    after: {
-      number: receipt.number,
-      source,
-      total: toDb(total),
-      ...(totalTax.gt(0) ? { taxAmount: toDb(totalTax) } : {}),
-      ...(purchaseOrderContext
-        ? { purchaseOrderNumber: purchaseOrderContext.order.number }
-        : {}),
-      ...(priceVariances.length > 0
-        ? {
-            priceVarianceReason,
-            priceVariances: priceVariances.map((row) => ({
-              productId: row.productId,
-              qty: row.qty,
-              expectedUnitCost: row.expectedUnitCost,
-              receivedUnitCost: row.receivedUnitCost,
-              differenceAmount: row.differenceAmount,
-            })),
-          }
-        : {}),
-    },
+  await auditPostedReceipt(tx, {
+    companyId: input.companyId, userId: input.userId, receipt, source, total, totalTax,
+    purchaseOrderNumber: purchaseOrderContext?.order.number,
+    priceVarianceReason, priceVariances,
   });
 
   return receipt;

@@ -36,8 +36,7 @@ import { makeRollbackTransaction } from "../helpers/rollback-transaction";
 // - T3R-2 (P2): voidSale menulis mutasi refund ke sesi asal walau sesi
 //   itu sudah ditutup, mengubah ringkasan sesi final secara retroaktif.
 //   Kini: sesi asal hanya bila masih terbuka; selain itu sesi terbuka
-//   pemroses void; tanpa sesi mana pun void tetap jalan tanpa mutasi
-//   dan audit mencatatnya (pola D-8).
+//   pemroses void; tanpa sesi kas terbuka, void tunai ditolak.
 // - T3R-3 (P2): dua checkout bersamaan atas heldSaleId yang sama dulu
 //   menghasilkan dua penjualan final. checkoutAction kini mengklaim
 //   baris tahanan FOR UPDATE dalam transaksi checkout yang sama.
@@ -475,7 +474,7 @@ describe("T3R-2 void tidak menulis ke sesi tertutup (commit)", () => {
     expect(after.auditAfter.refundSessionId).toBe(processorSessionId);
   });
 
-  it("sesi asal terbuka menerima refund; tanpa sesi mana pun void jalan tanpa mutasi + catatan audit", async () => {
+  it("sesi asal terbuka menerima refund dan void tunai ditolak tanpa sesi kas", async () => {
     const fx = await t3Transaction((tx) => t3Fixture(tx));
 
     // Bagian 1 — sesi asal masih terbuka: perilaku lama dipertahankan,
@@ -510,9 +509,7 @@ describe("T3R-2 void tidak menulis ke sesi tertutup (commit)", () => {
 
     await t3Transaction((tx) => closeSessionBalanced(tx, SELLER, originSessionId));
 
-    // Bagian 2 — sesi asal ditutup dan pemroses tidak punya sesi
-    // terbuka: void tetap berhasil, tanpa mutasi kas, dan audit
-    // mencatat bahwa refund tidak masuk sesi mana pun.
+    // Bagian 2: tanpa sesi kas terbuka, refund tunai dan seluruh void ditolak.
     const closedSessionId = await t3Transaction((tx) => openSessionFor(tx, SELLER, 0));
     const saleClosed = await t3Transaction((tx) =>
       createSale(tx, {
@@ -526,14 +523,14 @@ describe("T3R-2 void tidak menulis ke sesi tertutup (commit)", () => {
       }),
     );
     await t3Transaction((tx) => closeSessionBalanced(tx, SELLER, closedSessionId));
-    await t3Transaction((tx) =>
+    await expect(t3Transaction((tx) =>
       voidSale(tx, {
         companyId: T3_ORG,
         userId: NOSESSION,
         saleId: saleClosed.id,
         reason: "Uji T3R-2 tanpa sesi terbuka",
       }),
-    );
+    )).rejects.toMatchObject({ code: "INVALID_STATE" });
     const checkClosed = await t3Transaction(async (tx) => {
       const [saleRow] = await tx
         .select({ status: sales.status })
@@ -544,13 +541,10 @@ describe("T3R-2 void tidak menulis ke sesi tertutup (commit)", () => {
         // sesi tertutup memang ada dan sah (tercatat saat penjualan).
         refunds: await refundMovements(tx, saleClosed.id),
         saleStatus: saleRow?.status,
-        auditAfter: await latestVoidAudit(tx, saleClosed.id),
       };
     });
-    expect(checkClosed.saleStatus).toBe("void");
+    expect(checkClosed.saleStatus).toBe("completed");
     expect(checkClosed.refunds).toHaveLength(0);
-    expect(checkClosed.auditAfter.refundSessionId).toBeNull();
-    expect(checkClosed.auditAfter.refundSessionNote).toMatch(/tidak dicatat ke sesi/);
   });
 });
 

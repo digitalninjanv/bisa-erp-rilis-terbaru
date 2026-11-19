@@ -34,6 +34,9 @@ class MockCache {
     const url = typeof key === "string" ? new URL(key, ORIGIN).toString() : key.url;
     return this.store.get(url);
   }
+  async delete(key: string) {
+    return this.store.delete(new URL(key, ORIGIN).toString());
+  }
   async add(url: string) {
     const res = await this.fetchFn(new Request(url));
     if (!res.ok) throw new Error(`cache.add gagal: ${url}`);
@@ -215,6 +218,21 @@ describe("service worker terminal POS (T6B)", () => {
     const res = await second.response();
     expect(res!.status).toBe(200);
     expect(await res!.text()).toContain("Terminal POS");
+  });
+
+  it("membuang dokumen kasir ketika sesi ditolak oleh server", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(htmlResponse(TERMINAL_HTML))
+      .mockResolvedValueOnce(new Response(null, { status: 401 }));
+    const { handlers, cachesByName } = loadSw(fetchMock as typeof fetch);
+    const navigate = async () => {
+      const event = fetchEvent({ url: `${ORIGIN}/app/pos`, mode: "navigate" });
+      handlers.get("fetch")!(event as never);
+      return event.response();
+    };
+    expect((await navigate())?.status).toBe(200);
+    expect((await navigate())?.status).toBe(401);
+    expect([...cachesByName.values()].flatMap((cache) => [...cache.store.keys()])).toEqual([]);
   });
 
   it("navigasi /app/pos berparameter (?resume=) tetap memperbarui cache kunci kanonis /app/pos", async () => {

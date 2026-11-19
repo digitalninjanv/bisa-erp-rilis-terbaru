@@ -7,14 +7,15 @@ import { expect, test, type Page } from "@playwright/test";
 // bila sesi belum terbuka, test membukanya seperti kasir.
 
 async function openTerminal(page: Page) {
-  await page.goto("/app/pos");
-  if (await page.getByText("Sesi kas belum dibuka").first().isVisible().catch(() => false)) {
-    await page.goto("/app/pos/sesi");
+  await page.goto("/app/pos/sesi");
+  await expect(page.getByRole("heading", { name: "Sesi kas", exact: true })).toBeVisible();
+  const openSession = page.getByRole("button", { name: "Buka sesi", exact: true });
+  if (await openSession.isVisible()) {
     await page.getByLabel("Modal awal").fill("100000");
-    await page.getByRole("button", { name: "Buka sesi" }).click();
-    await page.goto("/app/pos");
+    await openSession.click();
   }
-  await expect(page.getByText("Sesi kas terbuka")).toBeVisible();
+  await expect(page.getByText("Sesi kas berjalan", { exact: true })).toBeVisible();
+  await page.goto("/app/pos");
 }
 
 test("terminal: autofocus saat dimuat, F2 memulihkan fokus, fokus kembali sesudah tambah produk", async ({ page }) => {
@@ -91,9 +92,11 @@ test("campuran: Bayar nonaktif selama sisa > 0, tender tampil terformat, F9 meny
   await expect(payButton).toHaveText(/Bayar Rp\s?4\.000/);
   await page.keyboard.press("F9");
   // Pola native 2026: terminal tidak ditinggalkan — modal sukses tampil
-  // dan kasir memilih Transaksi Baru atau membuka detail nota.
-  await expect(page.getByText("Transaksi berhasil")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Cetak nota" })).toBeVisible();
+  // dan kasir memilih untuk mencetak atau melanjutkan tanpa cetak.
+  await expect(page.getByRole("heading", { name: "Transaksi berhasil", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Cetak struk" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Tutup dialog transaksi berhasil" })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Transaksi baru/ })).toBeVisible();
+  await page.getByRole("button", { name: "Tanpa cetak" }).click();
+  await expect(page.getByRole("heading", { name: "Transaksi berhasil", exact: true })).toBeHidden();
+  await expect(search).toBeFocused();
 });

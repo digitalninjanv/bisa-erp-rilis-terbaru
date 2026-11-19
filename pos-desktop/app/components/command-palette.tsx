@@ -20,16 +20,17 @@ export function CommandPalette({
   actions: CommandAction[];
   onClose: () => void;
 }) {
+  return open ? <OpenCommandPalette actions={actions} onClose={onClose} /> : null;
+}
+
+function OpenCommandPalette({ actions, onClose }: { actions: CommandAction[]; onClose: () => void }) {
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    if (!open) return;
-    setQuery("");
-    window.requestAnimationFrame(() => inputRef.current?.focus());
-  }, [open]);
-
-  if (!open) return null;
+    const frame = window.requestAnimationFrame(() => inputRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
   const normalized = query.trim().toLocaleLowerCase("id-ID");
   const filtered = normalized
     ? actions.filter((action) => `${action.label} ${action.hint ?? ""}`.toLocaleLowerCase("id-ID").includes(normalized))

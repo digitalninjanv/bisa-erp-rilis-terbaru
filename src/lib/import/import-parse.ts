@@ -130,11 +130,13 @@ export const OPENING_STOCK_FIELDS: ImportFieldDef[] = [
     label: "Qty",
     required: true,
     aliases: ["qty", "jumlah", "kuantitas", "quantity", "stok", "stok awal", "kuantitas saldo awal"],
+    exclude: ["minimum", "maksimum", "min stok", "stok min", "max stock", "min stock"],
   },
   {
     key: "unitCost",
     label: "Biaya satuan",
     aliases: ["biaya satuan", "harga beli", "harga pokok", "hpp", "cost", "unit cost", "biaya", "nilai satuan"],
+    exclude: ["total", "jumlah biaya", "jumlah nilai"],
   },
   // Tanggal cut-off & gudang asal baris. Bila tidak dipetakan, wizard
   // memakai tanggal/gudang yang dipilih di layar.

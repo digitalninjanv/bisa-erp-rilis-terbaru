@@ -45,7 +45,6 @@ export function PosTerminal({
   offlineRoundingMode = "none", receivableDefaultTermDays = 7, reservations = [],
   allowNegativeStock = false, receiptProfile,
 }: PosTerminalProps) {
-  // T3R-5: kunci snapshot keranjang milik kasir ini di perusahaan ini.
   const storageKey = cartStorageKey(companyId, userId);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [cache, setCache] = useState<Record<string, ProductOption>>(
@@ -307,15 +306,8 @@ export function PosTerminal({
   const isCreditSingle = single?.type === "credit";
   const cashTendered = Number(entries[singleMethod || "__none"]?.tendered ?? 0);
 
-  const { search, setSearch, products, page, pageFull, searching, scanBarcode: lookupBarcode, goToPage } =
-    useProductSearch({ initialProducts, initialWarehouse: warehouseId, selectedWarehouse, selectedCategory, setCache });
-
-  const scanBarcode = useCallback(async (code: string) => {
-    if (checkoutInFlight.current) return null;
-    const attempt = idempotencyKey.current;
-    const product = await lookupBarcode(code);
-    return checkoutInFlight.current || attempt !== idempotencyKey.current ? null : product;
-  }, [lookupBarcode]);
+  const { search, setSearch, products, page, pageFull, searching, scanBarcode, goToPage } =
+    useProductSearch({ initialProducts, initialWarehouse: warehouseId, selectedWarehouse, selectedCategory, setCache, checkoutInFlight, idempotencyKey });
 
   const addProduct = useCallback(
     (product: ProductOption, packagingId?: string | null) => {
@@ -455,16 +447,9 @@ export function PosTerminal({
     setOldestQueuedAt,
     idempotencyKeyRef: idempotencyKey, checkoutAttemptedRef: checkoutAttempted,
     inFlightRef: checkoutInFlight,
-    // A-28 UI-1 (UX-B01): penjualan terantre offline tidak berpindah
-    // halaman — fokus kembali ke kotak cari sesudah keranjang bersih.
-    onSaleQueued: () => {
-      setMobileCartOpen(false);
-      searchRef.current?.focus();
-    },
     onCheckoutSuccess: (sale) => {
       setMobileCartOpen(false);
       setCompletedSale(sale);
-      // Transaksi berikutnya kembali ke alur tercepat: Tunai + Tunggal.
       setMode("single");
       setSingleMethod(methods.find((method) => method.type === "cash")?.id ?? methods[0]?.id ?? "");
     },

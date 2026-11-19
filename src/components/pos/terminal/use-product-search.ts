@@ -5,7 +5,7 @@
  */
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { toast } from "sonner";
 import { searchProductsAction } from "@/server/actions/pos";
 import type { ProductOption } from "@/components/pos/terminal-types";
@@ -19,9 +19,11 @@ export function useProductSearch(params: {
   initialWarehouse: string;
   selectedWarehouse: string;
   selectedCategory: string;
+  checkoutInFlight: RefObject<boolean>;
+  idempotencyKey: RefObject<string>;
   setCache: Dispatch<SetStateAction<Record<string, ProductOption>>>;
 }) {
-  const { initialProducts, initialWarehouse, selectedWarehouse, selectedCategory, setCache } = params;
+  const { initialProducts, initialWarehouse, selectedWarehouse, selectedCategory, setCache, checkoutInFlight, idempotencyKey } = params;
   const [results, setResults] = useState<ProductOption[]>(initialProducts);
   const [search, setSearch] = useState("");
   // POS-1: kisi produk berpaginasi — `results` selalu berisi halaman
@@ -110,11 +112,14 @@ export function useProductSearch(params: {
   // KEMASAN itu, bukan 1 Pcs (mode gagal klasik satuan kemasan).
   const scanBarcode = useCallback(
     async (code: string): Promise<ProductOption | null> => {
+      if (checkoutInFlight.current) return null;
+      const attempt = idempotencyKey.current;
       setSearching(true);
       try {
         // Pindai barcode selalu lintas kategori — filter chip tidak
         // boleh membuat barang yang dipindai tidak ditemukan.
         const fresh = await runSearch(code, 1, "", false);
+        if (checkoutInFlight.current || attempt !== idempotencyKey.current) return null;
         return (
           fresh.find((p) => p.barcode === code) ??
           fresh.find((p) => p.matchedPackagingId) ??
@@ -128,7 +133,7 @@ export function useProductSearch(params: {
         setSearching(false);
       }
     },
-    [runSearch],
+    [runSearch, checkoutInFlight, idempotencyKey],
   );
 
   // POS-1: setiap perubahan kata cari ATAU gudang (searchProducts

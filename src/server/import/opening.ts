@@ -13,8 +13,7 @@ import {
   suppliers,
   warehouses,
 } from "@/db/schema";
-import { createMigrationOpeningReceipt, createReceipt } from "@/server/inventory/receipts";
-import { recomputeCostFromLedger } from "@/server/inventory/movements";
+import { createMigrationOpeningReceipt, createReceipt, recomputeCostFromLedger } from "@/server/inventory";
 import { createOpeningBalance } from "@/server/opening-balances";
 import { AppError } from "@/lib/errors";
 import { d, toDb } from "@/lib/money";

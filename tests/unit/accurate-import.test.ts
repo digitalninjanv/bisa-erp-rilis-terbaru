@@ -406,6 +406,13 @@ describe("stok awal Accurate", () => {
     });
   });
 
+  it("mengabaikan stok minimum serta total biaya saat menyarankan kolom saldo awal", () => {
+    const mapping = suggestMappingFor(OPENING_STOCK_FIELDS, [
+      "Kode Barang", "Batas Minimum Stok", "Total Biaya",
+    ]);
+    expect(mapping).toEqual({ sku: "Kode Barang" });
+  });
+
   it("biaya yang tidak dipetakan ditandai, bukan diam-diam 0", () => {
     const result = mapOpeningStockRow(
       { "Kode Barang": "100001", "Kuantitas Saldo Awal": "24" },

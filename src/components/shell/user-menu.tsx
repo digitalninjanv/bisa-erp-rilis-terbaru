@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { LogOut, Settings, ShieldCheck } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { initials } from "@/lib/format";
@@ -16,12 +16,18 @@ export function UserMenu({
   role: string;
   showSettings?: boolean;
 }) {
-  const router = useRouter();
-
   async function signOut() {
-    await authClient.signOut();
-    router.push("/login");
-    router.refresh();
+    const result = await authClient.signOut();
+    if (result.error) {
+      toast.error("Gagal keluar. Periksa koneksi dan coba lagi.");
+      return;
+    }
+    if ("caches" in window) {
+      await window.caches.keys().then((keys) => Promise.allSettled(
+        keys.filter((key) => key.startsWith("bisa-pos-shell-")).map((key) => window.caches.delete(key)),
+      )).catch(() => undefined);
+    }
+    window.location.replace("/login");
   }
 
   return (

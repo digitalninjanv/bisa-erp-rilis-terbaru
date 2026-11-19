@@ -2,7 +2,7 @@ import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
 import { cashSessions, fiscalPeriods, idempotencyKeys, outbox, sales } from "@/db/schema";
 import { AppError } from "@/lib/errors";
-import { lockPosSaleAttempt, paymentRequestFingerprint } from "@/server/idempotency";
+import { lockPosSaleAttempt } from "@/server/idempotency";
 import { d, formatIDR } from "@/lib/money";
 import { todayISO } from "@/lib/format";
 import type {
@@ -10,6 +10,7 @@ import type {
   OfflineSalePayload,
   OfflineSyncItemResult,
 } from "@/lib/pos-offline";
+import { matchesWebCheckoutFingerprint, offlineSaleRequestFingerprint } from "./offline-fingerprint";
 import { quoteCart } from "./quote";
 import { createSale } from "./sales-create";
 import { consumeHeldSale } from "./sales-hold";
@@ -110,23 +111,6 @@ function mapPayments(item: OfflineSalePayload) {
   }));
 }
 
-function offlineSaleRequestFingerprint(item: OfflineSalePayload): string {
-  return paymentRequestFingerprint({
-    channel: "offline",
-    warehouseId: item.warehouseId,
-    heldSaleId: item.heldSaleId ?? null,
-    groupId: item.groupId ?? null,
-    customerId: item.customerId ?? null,
-    dueDate: item.dueDate ?? null,
-    date: item.date,
-    lines: item.lines,
-    payments: item.payments,
-    cashierId: item.cashierId ?? null,
-    originSessionId: item.originSessionId ?? null,
-    deviceId: item.deviceId ?? null,
-    expectedTotal: item.expectedTotal ?? null,
-  });
-}
 
 /** Cermin baca assertPeriodOpen (FIX-P1): tanpa baris = tertutup,
  *  kecuali tahun berjalan/berikutnya yang termaterialisasi lazy. */
@@ -298,23 +282,7 @@ export async function processOfflineSaleItem(
       .limit(1);
     const matchesWebCheckout = input.reconcileWebCheckout &&
       originCashierId === input.userId &&
-      [false, true].some((canDiscount) => claim?.resultRef === paymentRequestFingerprint({
-        companyId: input.companyId,
-        userId: originCashierId,
-        warehouseId: item.warehouseId,
-        customerId: item.customerId ?? undefined,
-        dueDate: item.dueDate ?? undefined,
-        groupId: item.groupId ?? null,
-        reservationId: item.reservationId ?? null,
-        heldSaleId: item.heldSaleId ?? null,
-        idempotencyKey: item.clientKey,
-        canDiscount,
-        lines: item.lines.map(({ productId, qty, packagingId, discountType, discountValue, serialNumbers }) => ({
-          productId, qty: String(qty), packagingId: packagingId ?? null,
-          discountType: discountType ?? null, discountValue: discountValue ?? 0, serialNumbers,
-        })),
-        payments: item.payments,
-      }));
+      matchesWebCheckoutFingerprint(input.companyId, originCashierId, item, claim?.resultRef);
     if (claim?.resultRef !== idempotencyFingerprint && !matchesWebCheckout) {
       return record({
         clientKey: item.clientKey,

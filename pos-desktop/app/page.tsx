@@ -548,11 +548,14 @@ export default function DesktopTerminalPage() {
   }, [activeTool, cashierActive, cashierMenuOpen, clearOrderOpen, closeCountOpen, checkoutOpen, displaySettingsOpen, heldPanelOpen, helpOpen, historyOpen, saleSuccess]);
 
   useEffect(() => {
-    try {
-      setDarkTheme(window.localStorage.getItem("bisa.pos.theme") === "dark");
-    } catch {
-      setDarkTheme(false);
-    }
+    const frame = window.requestAnimationFrame(() => {
+      try {
+        setDarkTheme(window.localStorage.getItem("bisa.pos.theme") === "dark");
+      } catch {
+        setDarkTheme(false);
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, []);
 
   function toggleTheme() {
@@ -1015,21 +1018,32 @@ export default function DesktopTerminalPage() {
     const to = reportRange === "custom" ? reportTo : todayISODate();
     if (!from || !to) return;
     let cancelled = false;
-    setReportLoading(true);
-    void Promise.all([
-      listPaymentTotalsInRange(from, to),
-      listLocalSalesPage(1, "", 100, from, to),
-    ])
-      .then(([totals, page]) => {
-        if (!cancelled) {
-          setReportTotals(totals);
-          setReportTxCount(page.total);
-          setReportSalesTotal(totals.reduce((sum, row) => sum + row.total, 0));
-        }
-      })
-      .catch(() => { if (!cancelled) setReportTotals([]); })
-      .finally(() => { if (!cancelled) setReportLoading(false); });
-    return () => { cancelled = true; };
+    const frame = window.requestAnimationFrame(() => {
+      setReportLoading(true);
+      void Promise.all([
+        listPaymentTotalsInRange(from, to),
+        listLocalSalesPage(1, "", 100, from, to),
+      ])
+        .then(([totals, page]) => {
+          if (!cancelled) {
+            setReportTotals(totals);
+            setReportTxCount(page.total);
+            setReportSalesTotal(totals.reduce((sum, row) => sum + row.total, 0));
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setReportTotals([]);
+            setReportTxCount(0);
+            setReportSalesTotal(0);
+          }
+        })
+        .finally(() => { if (!cancelled) setReportLoading(false); });
+    });
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(frame);
+    };
   }, [activeTool, inTauri, reportRange, reportFrom, reportTo]);
 
   // Progres mesin Rust tiba sebagai event: segarkan tampilan lokal
@@ -4378,7 +4392,7 @@ export default function DesktopTerminalPage() {
               )}
               <p className="history-note">
                 Tiket berasal dari penjualan yang sudah diposting server. Penanda usia membantu dapur
-                mengurut pesanan; status "siap" belum tersedia di kontrak server saat ini.
+                mengurut pesanan; status &quot;siap&quot; belum tersedia di kontrak server saat ini.
               </p>
             </section>
           </ToolScreen>
@@ -5099,7 +5113,7 @@ export default function DesktopTerminalPage() {
             <ol className="cashier-help-steps">
               <li><span>1</span><div><strong>Cari atau pindai produk</strong><small>Pilih kategori, ketik nama/SKU, atau pindai barcode lalu tekan Enter.</small></div></li>
               <li><span>2</span><div><strong>Periksa keranjang</strong><small>Ubah jumlah, satuan, atau diskon pada baris produk sebelum pembayaran.</small></div></li>
-              <li><span>3</span><div><strong>Pilih pembayaran dan bayar</strong><small>Non-tunai wajib dicentang "sudah diterima" sebelum tombol Bayar aktif. Pembayaran campuran dan jatuh tempo tersedia di panel checkout.</small></div></li>
+              <li><span>3</span><div><strong>Pilih pembayaran dan bayar</strong><small>Non-tunai wajib dicentang &quot;sudah diterima&quot; sebelum tombol Bayar aktif. Pembayaran campuran dan jatuh tempo tersedia di panel checkout.</small></div></li>
               <li><span>4</span><div><strong>Cetak atau lanjutkan</strong><small>Setelah berhasil, cetak salinan nota atau mulai transaksi berikutnya.</small></div></li>
             </ol>
             <div className="cashier-help-shortcuts">
