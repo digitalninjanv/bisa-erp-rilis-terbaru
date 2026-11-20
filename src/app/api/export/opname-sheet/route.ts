@@ -1,14 +1,14 @@
+import { and, asc, eq } from "drizzle-orm";
 import { withApiError } from "@/lib/api-error";
 import { withCompanyReadOnly } from "@/db/tenant";
+import { products, units } from "@/db/schema";
 import { requirePermission } from "@/lib/session";
-import { listProducts, listWarehouses, pickDefaultWarehouseId, getSettings } from "@/server/catalog";
+import { listWarehouses, pickDefaultWarehouseId, getSettings } from "@/server/catalog";
 import { todayISO } from "@/lib/format";
 import { xlsxResponse } from "@/lib/xlsx";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const MAX_ROWS = 1000;
 
 async function GETHandler(request: Request) {
   const ctx = await requirePermission("inventory.view");
@@ -26,23 +26,23 @@ async function GETHandler(request: Request) {
     const warehouse = warehouses.find((row) => row.id === warehouseId);
     if (!warehouse) return null;
 
-    const rows: { id: string; name: string; sku: string; unitName: string | null }[] = [];
-    let page = 1;
-    for (;;) {
-      const result = await listProducts(tx, {
-        companyId: ctx.company.id,
-        warehouseId,
-        page,
-        pageSize: 200,
-      });
-      for (const row of result.rows) {
-        if (!row.trackStock) continue;
-        rows.push({ id: row.id, name: row.name, sku: row.sku, unitName: row.unitName ?? null });
-        if (rows.length >= MAX_ROWS) break;
-      }
-      if (rows.length >= MAX_ROWS || page * result.pageSize >= result.total) break;
-      page += 1;
-    }
+    const rows = await tx
+      .select({
+        id: products.id,
+        name: products.name,
+        sku: products.sku,
+        unitName: units.name,
+      })
+      .from(products)
+      .leftJoin(units, eq(products.unitId, units.id))
+      .where(
+        and(
+          eq(products.companyId, ctx.company.id),
+          eq(products.isActive, true),
+          eq(products.trackStock, true),
+        ),
+      )
+      .orderBy(asc(products.name));
     return { warehouse, rows };
   });
 

@@ -38,7 +38,6 @@ import {
   assertBarcodeAvailable,
   findProductByAnyBarcode,
   listPackagingsForProducts,
-  listProducts,
   syncProductPackagings,
 } from "@/server/catalog";
 import type { PackagingInput } from "@/lib/packaging";
@@ -675,71 +674,95 @@ export async function productsStockAction(input: { warehouseId: string; productI
   });
 }
 
-/** Batas produk yang dimuat mode "muat semua" opname dalam sekali jalan. */
-const OPNAME_LOAD_ALL_LIMIT = 1000;
+/** Batas aman maksimal produk yang dimuat mode "muat semua" opname sekaligus. */
+const OPNAME_LOAD_ALL_LIMIT = 50_000;
 
 /**
  * Semua produk aktif terlacak di satu gudang beserta stok sistemnya
- * (GD-P3-9) untuk mode hitung menyeluruh pada form opname. `listProducts`
- * terpaginasi maks 200 per halaman, jadi pemuatan berjalan berchunk sampai
- * batas OPNAME_LOAD_ALL_LIMIT; `truncated` memberi tahu UI bila katalog
- * terlacak gudang itu melebihi batas. Server tetap menghitung ulang stok
- * saat posting opname, jadi angka di sini murni tampilan awal.
+ * (GD-P3-9) untuk mode hitung form opname. Mengambil data langsung
+ * dalam satu query terindeks (tanpa perulangan halaman listProducts),
+ * mendukung hingga 50.000 produk dan filter kategori opsional.
  */
-export async function loadOpnameProductsAction(input: { warehouseId: string }) {
+export async function loadOpnameProductsAction(input: {
+  warehouseId: string;
+  categoryId?: string | null;
+}) {
   return guard(async () => {
     const ctx = await requirePermission("inventory.view");
     // R3 K-3: costPrice hanya untuk pemegang `inventory.cost`.
     const includeCost = can(ctx, "inventory.cost");
-    const data = parseInput(z.object({ warehouseId: z.string().uuid() }), input);
+    const data = parseInput(
+      z.object({
+        warehouseId: z.string().uuid(),
+        categoryId: z.string().uuid().optional().nullable(),
+      }),
+      input,
+    );
     return withCompany(ctx.company.id, async (tx) => {
-      const rows: {
+      const rows = await tx
+        .select({
+          productId: products.id,
+          name: products.name,
+          sku: products.sku,
+          costPrice: includeCost ? products.costPrice : sql<string | null>`null`,
+          unitName: units.name,
+          system: sql<string>`coalesce(${stockOnHand.qty}, 0)`,
+        })
+        .from(products)
+        .leftJoin(units, eq(products.unitId, units.id))
+        .leftJoin(
+          stockOnHand,
+          and(
+            eq(stockOnHand.companyId, products.companyId),
+            eq(stockOnHand.warehouseId, data.warehouseId),
+            eq(stockOnHand.productId, products.id),
+          ),
+        )
+        .where(
+          and(
+            eq(products.companyId, ctx.company.id),
+            eq(products.isActive, true),
+            eq(products.trackStock, true),
+            data.categoryId ? eq(products.categoryId, data.categoryId) : undefined,
+          ),
+        )
+        .orderBy(asc(products.name))
+        .limit(OPNAME_LOAD_ALL_LIMIT);
+
+      const mappedRows: {
         productId: string;
         name: string;
         sku: string;
         system: number;
         costPrice: string | null;
         unitName: string | null;
-        // Satuan Kemasan S3: kemasan AKTIF produk — form opname
-        // menawarkan hitungan campuran untuk produk berkemasan.
         packagings: { id: string; name: string; isi: string }[];
-      }[] = [];
-      let page = 1;
-      for (;;) {
-        const result = await listProducts(tx, {
-          companyId: ctx.company.id,
-          warehouseId: data.warehouseId,
-          page,
-          pageSize: 200,
-        });
-        for (const row of result.rows) {
-          if (!row.trackStock) continue;
-          rows.push({
-            productId: row.id,
-            name: row.name,
-            sku: row.sku,
-            system: row.stock,
-            costPrice: includeCost ? row.costPrice : null,
-            unitName: row.unitName ?? null,
-            packagings: [],
-          });
-          if (rows.length >= OPNAME_LOAD_ALL_LIMIT) break;
+      }[] = rows.map((r) => ({
+        productId: r.productId,
+        name: r.name,
+        sku: r.sku,
+        system: Number(r.system ?? 0),
+        costPrice: r.costPrice != null ? String(r.costPrice) : null,
+        unitName: r.unitName ?? null,
+        packagings: [],
+      }));
+
+      const CHUNK_SIZE = 500;
+      for (let i = 0; i < mappedRows.length; i += CHUNK_SIZE) {
+        const slice = mappedRows.slice(i, i + CHUNK_SIZE);
+        const packagingsByProduct = await listPackagingsForProducts(
+          tx,
+          ctx.company.id,
+          slice.map((row) => row.productId),
+        );
+        for (const row of slice) {
+          row.packagings = (packagingsByProduct.get(row.productId) ?? [])
+            .filter((pack) => pack.isActive)
+            .map((pack) => ({ id: pack.id, name: pack.name, isi: pack.isi }));
         }
-        if (rows.length >= OPNAME_LOAD_ALL_LIMIT || page * result.pageSize >= result.total) break;
-        page += 1;
       }
-      const truncated = rows.length >= OPNAME_LOAD_ALL_LIMIT;
-      const packagingsByProduct = await listPackagingsForProducts(
-        tx,
-        ctx.company.id,
-        rows.map((row) => row.productId),
-      );
-      for (const row of rows) {
-        row.packagings = (packagingsByProduct.get(row.productId) ?? [])
-          .filter((pack) => pack.isActive)
-          .map((pack) => ({ id: pack.id, name: pack.name, isi: pack.isi }));
-      }
-      return { rows, truncated };
+
+      return { rows: mappedRows, truncated: rows.length >= OPNAME_LOAD_ALL_LIMIT };
     });
   });
 }

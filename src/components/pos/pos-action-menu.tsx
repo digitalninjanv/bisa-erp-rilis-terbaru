@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useHydrated } from "@/components/pos/pos-display";
 import {
+  ArrowDownUp,
   CloudOff,
   History,
   LayoutDashboard,
@@ -15,6 +16,7 @@ import {
   Users,
   Wallet,
 } from "lucide-react";
+import { CashMovementDialog } from "@/components/pos/terminal/cash-movement-dialog";
 import { cn } from "@/lib/utils";
 import {
   Sheet,
@@ -80,16 +82,19 @@ function PosRoutePrefetcher({ open }: { open: boolean }) {
  */
 export function PosActionMenu({
   sessionOpen,
+  sessionId = null,
   heldCount,
   queuedCount,
   children,
 }: {
   sessionOpen: boolean;
+  sessionId?: string | null;
   heldCount: number;
   queuedCount: number;
   children?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const [cashMovementOpen, setCashMovementOpen] = useState(false);
   const hydrated = useHydrated();
 
   const groups: { title: string; items: MenuItem[] }[] = [
@@ -133,7 +138,8 @@ export function PosActionMenu({
   ];
 
   return (
-    <Sheet open={open} onOpenChange={setOpen}>
+    <>
+      <Sheet open={open} onOpenChange={setOpen}>
       {hydrated ? <PosRoutePrefetcher open={open} /> : null}
       <SheetTrigger
         aria-label="Menu POS lainnya"
@@ -203,6 +209,23 @@ export function PosActionMenu({
                   </Link>
                 );
               })}
+              {group.title === "Sesi kas" && sessionOpen && sessionId ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    setCashMovementOpen(true);
+                  }}
+                  className="flex min-h-11 w-full items-center gap-3 rounded-md px-2.5 py-1.5 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <span className="grid size-8 shrink-0 place-items-center rounded-md bg-muted text-foreground">
+                    <ArrowDownUp className="size-4" />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+                    Mutasi kas (Masuk / Keluar)
+                  </span>
+                </button>
+              ) : null}
             </section>
           ))}
         </nav>
@@ -222,5 +245,11 @@ export function PosActionMenu({
         </div>
       </SheetContent>
     </Sheet>
+    <CashMovementDialog
+      open={cashMovementOpen}
+      onOpenChange={setCashMovementOpen}
+      sessionId={sessionId}
+    />
+  </>
   );
 }

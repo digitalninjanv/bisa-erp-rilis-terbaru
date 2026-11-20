@@ -8,18 +8,21 @@ import {
   PauseCircle,
   Plus,
   ShoppingCart,
+  Tag,
   Trash2,
   UserRound,
   Users,
   Wallet,
   X,
 } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { formatIDR, formatQty } from "@/lib/money";
 import type { QuoteResultPublic } from "@/server/pos";
 import { QtyInput } from "@/components/qty-input";
 import { ConfirmDialog } from "@/components/blocks/confirm-dialog";
 import {
+  cartLineBaseQty,
   cartLineIsi,
   cartLineKey,
   type CartItem,
@@ -54,6 +57,7 @@ export function CartPanel(props: {
   setQty: (key: string, qty: number) => void;
   setSerial: (key: string, index: number, value: string) => void;
   setLinePackaging: (key: string, packagingId: string | null) => void;
+  setLineDiscount?: (key: string, type: "percent" | "nominal" | null, value: number) => void;
   quoteBusy: boolean;
   allowNegativeStock?: boolean;
   scrollMode?: "contained" | "page";
@@ -66,6 +70,7 @@ export function CartPanel(props: {
     quote,
     quoteLine,
     total,
+    heldTotal,
     groupId,
     setGroupId,
     groups,
@@ -75,12 +80,18 @@ export function CartPanel(props: {
     setQty,
     setSerial,
     setLinePackaging,
+    setLineDiscount,
     quoteBusy,
     allowNegativeStock = false,
     scrollMode = "contained",
     compactHeader = false,
   } = props;
   const [confirmClearCart, setConfirmClearCart] = useState(false);
+  const [discountTargetKey, setDiscountTargetKey] = useState<string | null>(null);
+  const [lineDiscType, setLineDiscType] = useState<"percent" | "nominal">("percent");
+  const [lineDiscVal, setLineDiscVal] = useState("");
+  const [bulkSerialKey, setBulkSerialKey] = useState<string | null>(null);
+  const [bulkSerialText, setBulkSerialText] = useState("");
   return (
         <div className="rounded-lg border border-border bg-card">
           {(!compactHeader || cart.length > 0 || heldCount > 0) ? (
@@ -321,6 +332,85 @@ export function CartPanel(props: {
                         </div>
                       </div>
 
+                      {setLineDiscount ? (
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          {item.discountType && (item.discountValue ?? 0) > 0 ? (
+                            <span className="inline-flex items-center gap-1 rounded bg-tone-plum-soft px-2 py-0.5 text-xs font-semibold text-tone-plum">
+                              <Tag className="size-3" />
+                              Diskon {item.discountType === "percent" ? `${item.discountValue}%` : formatIDR(item.discountValue ?? 0)}
+                              <button
+                                type="button"
+                                onClick={() => setLineDiscount(key, null, 0)}
+                                className="ml-1 rounded p-0.5 text-muted-foreground hover:bg-tone-plum/10 hover:text-destructive"
+                                aria-label={`Hapus diskon ${line?.name ?? cached?.name ?? ""}`}
+                              >
+                                <X className="size-3" />
+                              </button>
+                            </span>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (discountTargetKey === key) {
+                                setDiscountTargetKey(null);
+                              } else {
+                                setDiscountTargetKey(key);
+                                setLineDiscType(item.discountType ?? "percent");
+                                setLineDiscVal(item.discountValue ? String(item.discountValue) : "");
+                              }
+                            }}
+                            className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:underline"
+                          >
+                            <Tag className="size-3" />
+                            {item.discountType && (item.discountValue ?? 0) > 0 ? "Ubah diskon" : "+ Diskon"}
+                          </button>
+                        </div>
+                      ) : null}
+
+                      {discountTargetKey === key ? (
+                        <div className="mt-2 flex items-center gap-2 rounded-md border border-border bg-muted/40 p-2">
+                          <select
+                            value={lineDiscType}
+                            onChange={(e) => setLineDiscType(e.target.value as "percent" | "nominal")}
+                            className="h-8 rounded border border-input bg-background px-1.5 text-xs font-medium"
+                          >
+                            <option value="percent">% Persen</option>
+                            <option value="nominal">Rp Nominal</option>
+                          </select>
+                          <input
+                            type="number"
+                            min="0"
+                            max={lineDiscType === "percent" ? 100 : undefined}
+                            value={lineDiscVal}
+                            onChange={(e) => setLineDiscVal(e.target.value)}
+                            placeholder={lineDiscType === "percent" ? "Diskon %" : "Nominal Rp"}
+                            className="num h-8 w-24 rounded border border-input bg-background px-2 text-xs"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const val = Number(lineDiscVal) || 0;
+                              if (val > 0) {
+                                setLineDiscount?.(key, lineDiscType, val);
+                              } else {
+                                setLineDiscount?.(key, null, 0);
+                              }
+                              setDiscountTargetKey(null);
+                            }}
+                            className="h-8 rounded bg-primary px-2.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+                          >
+                            Simpan
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDiscountTargetKey(null)}
+                            className="h-8 rounded px-1.5 text-xs text-muted-foreground hover:bg-muted"
+                          >
+                            Batal
+                          </button>
+                        </div>
+                      ) : null}
+
                       {/* FIX-POS Tahap 4 (POS2-06): qty melewati stok
                           diperingatkan SEGERA di baris — bukan baru
                           gagal di checkout. Tombol + juga berhenti di
@@ -337,16 +427,41 @@ export function CartPanel(props: {
 
                       {(line?.trackSerial ?? cached?.trackSerial) ? (
                         <div className="mt-2 space-y-2">
-                          {Array.from({ length: Math.max(0, Math.floor(baseQty)) }, (_, serialIndex) => (
-                            <input
-                              key={serialIndex}
-                              value={item.serialNumbers?.[serialIndex] ?? ""}
-                              onChange={(event) => setSerial(key, serialIndex, event.target.value)}
-                              placeholder={`Nomor seri unit ${serialIndex + 1} *`}
-                              aria-label={`Nomor seri unit ${serialIndex + 1} ${line?.name ?? cached?.name ?? ""}`}
-                              className="num h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
-                            />
-                          ))}
+                          {baseQty <= 3 ? (
+                            Array.from({ length: Math.max(0, Math.floor(baseQty)) }, (_, serialIndex) => (
+                              <input
+                                key={serialIndex}
+                                value={item.serialNumbers?.[serialIndex] ?? ""}
+                                onChange={(event) => setSerial(key, serialIndex, event.target.value)}
+                                placeholder={`Nomor seri unit ${serialIndex + 1} *`}
+                                aria-label={`Nomor seri unit ${serialIndex + 1} ${line?.name ?? cached?.name ?? ""}`}
+                                className="num h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
+                              />
+                            ))
+                          ) : (
+                            <div className="rounded-md border border-border bg-muted/30 p-2.5 text-xs">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-medium">
+                                  Nomor Seri ({((item.serialNumbers ?? []).filter((s) => s.trim().length > 0)).length} / {Math.floor(baseQty)} terisi)
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setBulkSerialKey(key);
+                                    setBulkSerialText((item.serialNumbers ?? []).join("\n"));
+                                  }}
+                                  className="rounded bg-primary/10 px-2 py-1 font-semibold text-primary hover:bg-primary/20"
+                                >
+                                  Kelola Seri ({Math.floor(baseQty)} unit)
+                                </button>
+                              </div>
+                              {((item.serialNumbers ?? []).filter((s) => s.trim().length > 0)).length < Math.floor(baseQty) ? (
+                                <p className="mt-1 text-[11px] text-destructive">
+                                  Wajib mengisi semua nomor seri sebelum pembayaran.
+                                </p>
+                              ) : null}
+                            </div>
+                          )}
                           <p className="text-xs leading-4 text-muted-foreground">
                             Produk bernomor seri — isi seri yang tersedia untuk setiap unit sebelum membayar.
                           </p>
@@ -378,6 +493,11 @@ export function CartPanel(props: {
               <span className="text-base font-bold text-[var(--pos-action)]">Total</span>
               <span className="num text-2xl font-bold text-[var(--pos-action)]">{formatIDR(total)}</span>
             </div>
+            {heldTotal !== null && Math.abs(total - heldTotal) > 0.01 ? (
+              <p className="rounded bg-amber-500/10 p-1.5 text-xs text-amber-700 dark:text-amber-300">
+                Total berbeda dari {formatIDR(heldTotal)} saat ditahan karena penyesuaian harga atau diskon terkini.
+              </p>
+            ) : null}
             {/* POS2-01/22: status perhitungan adalah informasi
                 operasional — 11px, dan tampil juga saat quote basi
                 sedang dihitung ulang (quotePending). */}
@@ -399,6 +519,64 @@ export function CartPanel(props: {
             }}
             onCancel={() => setConfirmClearCart(false)}
           />
+
+          {bulkSerialKey ? (
+            <Dialog open={true} onOpenChange={(open) => !open && setBulkSerialKey(null)}>
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Input Nomor Seri Massal</DialogTitle>
+                  <DialogDescription>
+                    Tempel atau scan nomor seri (satu seri per baris). Sistem akan memetakan seri berurutan per unit.
+                  </DialogDescription>
+                </DialogHeader>
+                <textarea
+                  value={bulkSerialText}
+                  onChange={(e) => setBulkSerialText(e.target.value)}
+                  rows={8}
+                  placeholder="Contoh:&#10;SN10001&#10;SN10002&#10;SN10003"
+                  className="mt-2 w-full rounded-md border border-input bg-background p-2 font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+                <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
+                  <span>
+                    Terdeteksi:{" "}
+                    <strong className="num text-foreground">
+                      {bulkSerialText.split(/\r?\n/).filter((s) => s.trim().length > 0).length}
+                    </strong>{" "}
+                    nomor seri
+                  </span>
+                </div>
+                <div className="mt-3 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setBulkSerialKey(null)}
+                    className="rounded-md border border-border px-3 py-1.5 text-xs font-semibold hover:bg-muted"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const targetItem = cart.find((c) => cartLineKey(c) === bulkSerialKey);
+                      const needed = targetItem
+                        ? Math.floor(cartLineBaseQty(targetItem, cache[targetItem.productId]))
+                        : 0;
+                      const lines = bulkSerialText
+                        .split(/\r?\n/)
+                        .map((s) => s.trim())
+                        .filter((s) => s.length > 0);
+                      for (let i = 0; i < needed; i++) {
+                        setSerial(bulkSerialKey, i, lines[i] ?? "");
+                      }
+                      setBulkSerialKey(null);
+                    }}
+                    className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
+                  >
+                    Simpan Nomor Seri
+                  </button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          ) : null}
         </div>
   );
 }

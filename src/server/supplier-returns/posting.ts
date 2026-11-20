@@ -5,13 +5,11 @@
 // Perilaku, urutan langkah, & pesan identik dengan fungsi asal di
 // returns.ts sebelum tahap ini.
 
-import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
 import {
   journalEntries,
   products,
-  stockBatches,
-  stockMovements,
   stockReceiptLines,
   supplierReturnAllocations,
   supplierReturnResolutions,

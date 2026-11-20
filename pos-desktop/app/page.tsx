@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   ArrowLeft,
   Banknote,
@@ -18,7 +18,7 @@ import {
   UserRound,
   Wifi,
 } from "lucide-react";
-import { cashTenderSuggestions, dateAfterDays, formatIDR, formatQtyLabel, isValidIsoDate, todayISODate } from "../lib/pos-native-format";
+import { cashTenderSuggestions, dateAfterDays, formatIDR, isValidIsoDate, todayISODate } from "../lib/pos-native-format";
 import { d } from "@shared/lib/money";
 import { kitchenTicketAgeLabel } from "@shared/lib/pos/kitchen-display";
 import {

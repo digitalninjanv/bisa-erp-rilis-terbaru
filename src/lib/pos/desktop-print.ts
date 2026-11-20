@@ -5,7 +5,7 @@ type DesktopPrintResult = {
 };
 
 type DesktopPrintBridge = {
-  printReceipt: (saleId: string, copy: boolean) => Promise<DesktopPrintResult>;
+  printReceipt: (saleId: string, copy: boolean, rawHtml?: string) => Promise<DesktopPrintResult>;
   openPrinterSettings: () => Promise<void>;
 };
 

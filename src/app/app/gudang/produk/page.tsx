@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertTriangle, Download, Package, Percent, TrendingDown, TrendingUp, Upload } from "lucide-react";
+import { Download, Package, Upload } from "lucide-react";
 import { withCompanyReadOnly } from "@/db/tenant";
 import {
   getSettings,
@@ -17,7 +17,7 @@ import { requirePermissionPage } from "@/lib/session";
 import { LIST_PAGE_SIZE, parsePageParam } from "@/lib/pagination";
 import { can } from "@/lib/permissions";
 import { formatNumber } from "@/lib/money";
-import { formatMargin, marginToneClass } from "@/lib/margin";
+import { formatMargin } from "@/lib/margin";
 import { PageHeader } from "@/components/blocks/page-header";
 import { SummaryStrip } from "@/components/blocks/summary-strip";
 import { Pagination } from "@/components/blocks/pagination";

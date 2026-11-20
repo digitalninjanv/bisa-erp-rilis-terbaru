@@ -67,6 +67,7 @@ export function ProductCatalog(props: {
   reservationId: string | null;
   applyReservation: (reservation: TerminalReservation) => Promise<void>;
   sessionOpen: boolean;
+  sessionId?: string | null;
   heldCount?: number;
   posOfflineEnabled: boolean;
   online: boolean;
@@ -82,7 +83,7 @@ export function ProductCatalog(props: {
   setFullscreenOverride: Dispatch<SetStateAction<boolean | null>>;
   allowNegativeStock?: boolean;
 }) {
-  const { searchRef, search, setSearch, products, searching, page, pageFull, goToPage, scanBarcode, addProduct, warehouses, categories, selectedWarehouse, setSelectedWarehouse, selectedCategory, setSelectedCategory, setReservationId, reservations, reservationId, applyReservation, sessionOpen, heldCount = 0, posOfflineEnabled, online, queuedCount, oldestQueuedAt, cart = [], display, updateDisplay, resetDisplay, fullscreen, setFullscreenOverride, allowNegativeStock = false } = props;
+  const { searchRef, search, setSearch, products, searching, page, pageFull, goToPage, scanBarcode, addProduct, warehouses, categories, selectedWarehouse, setSelectedWarehouse, selectedCategory, setSelectedCategory, setReservationId, reservations, reservationId, applyReservation, sessionOpen, sessionId = null, heldCount = 0, posOfflineEnabled, online, queuedCount, oldestQueuedAt, cart = [], display, updateDisplay, resetDisplay, fullscreen, setFullscreenOverride, allowNegativeStock = false } = props;
   const searchBurstRef = useRef<BurstState>(createBurstState());
   // A-28 UI-1 (UX-B02): sorotan hasil pencarian untuk navigasi panah.
   // -1 = belum ada sorotan (Enter berperilaku seperti dulu: hasil
@@ -322,6 +323,7 @@ export function ProductCatalog(props: {
             <PrinterStatusButton compact />
             <PosActionMenu
               sessionOpen={sessionOpen}
+              sessionId={sessionId}
               heldCount={heldCount}
               queuedCount={queuedCount}
             >

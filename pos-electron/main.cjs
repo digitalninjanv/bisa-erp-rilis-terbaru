@@ -3,6 +3,16 @@ const { join } = require("node:path");
 const { loadSettings, saveSettings, parseOrigin } = require("./settings.cjs");
 
 const POS_PATH = "/app/pos";
+const POS_SUB_PATHS = [
+  POS_PATH,
+  POS_PATH + "/",
+  POS_PATH + "/riwayat",
+  POS_PATH + "/riwayat/",
+  POS_PATH + "/ditahan",
+  POS_PATH + "/ditahan/",
+  POS_PATH + "/sesi",
+  POS_PATH + "/sesi/",
+];
 const PARTITION = "persist:bisa-pos";
 const SALE_ID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const SERVER_ARG = "--erp-url=";
@@ -27,7 +37,7 @@ function trustedUrl(value) {
   }
 }
 
-function trustedTerminal(event, paths = [POS_PATH, POS_PATH + "/"]) {
+function trustedTerminal(event, paths = POS_SUB_PATHS) {
   const frame = event.senderFrame;
   return terminal && !terminal.isDestroyed() && event.sender === terminal.webContents &&
     frame && frame === event.sender.mainFrame && trustedUrl(frame.url) &&
@@ -56,7 +66,7 @@ function withTimeout(promise, milliseconds, message) {
   ]).finally(() => clearTimeout(timer));
 }
 
-async function printDocument(receiptPath) {
+async function printDocument(receiptPath, rawHtml) {
   if (printing) return { ok: false, message: "Cetakan sebelumnya masih diproses." };
   if (!settings.printer) return { ok: false, message: "Pilih printer melalui Atur printer, lalu coba lagi." };
 
@@ -82,8 +92,12 @@ async function printDocument(receiptPath) {
     const testHtml = '<!doctype html><meta charset=utf-8><title>Uji printer</title>' +
       '<main class="print-doc" style="font:12px monospace"><h2>Bisa POS</h2>' +
       '<p>Uji printer thermal ' + width + ' mm</p><p>Periksa lebar kertas dan keterbacaan.</p></main>';
+    const contentUrl = rawHtml
+      ? "data:text/html;charset=utf-8," + encodeURIComponent(rawHtml)
+      : receiptUrl?.href ?? "data:text/html;charset=utf-8," + encodeURIComponent(testHtml);
+
     await withTimeout(
-      contents.loadURL(receiptUrl?.href ?? "data:text/html;charset=utf-8," + encodeURIComponent(testHtml)),
+      contents.loadURL(contentUrl),
       15_000,
       "Halaman nota tidak dapat dimuat. Periksa koneksi ke ERP.",
     );
@@ -120,7 +134,12 @@ async function printDocument(receiptPath) {
   } catch (error) {
     return { ok: false, uncertain: submitted, message: error.message || "Cetak gagal." };
   } finally {
-    if (documentWindow && !documentWindow.isDestroyed()) documentWindow.destroy();
+    if (documentWindow && !documentWindow.isDestroyed()) {
+      // Tunggu buffer OS spooler thermal selesai sebelum menutup window (mencegah cetakan terpotong)
+      setTimeout(() => {
+        if (!documentWindow.isDestroyed()) documentWindow.close();
+      }, 500);
+    }
     printing = false;
   }
 }
@@ -179,6 +198,9 @@ async function openTerminal() {
     { label: "Buka kasir", click: () => void loadTerminal() },
     { label: "Atur printer", click: () => void printerMenu().catch(showError) },
     { type: "separator" },
+    { role: "togglefullscreen", label: "Layar penuh (F11)" },
+    { role: "reload", label: "Muat ulang" },
+    { type: "separator" },
     { role: "quit", label: "Keluar" },
   ] }]));
   await loadTerminal();
@@ -222,12 +244,15 @@ if (!app.requestSingleInstanceLock()) {
     profile.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     profile.setPermissionCheckHandler(() => false);
 
-    ipcMain.handle("pos:print-receipt", (event, saleId, copy) =>
-      typeof copy === "boolean" && typeof saleId === "string" && SALE_ID.test(saleId) &&
-      (trustedTerminal(event) || (copy && trustedTerminal(event, [POS_PATH + "/riwayat"])))
-        ? printDocument(POS_PATH + "/nota/" + saleId + (copy ? "?salinan=1" : ""))
-        : { ok: false, message: "Permintaan cetak tidak valid." },
-    );
+    ipcMain.handle("pos:print-receipt", (event, saleId, copy, rawHtml) => {
+      if (typeof rawHtml === "string" && rawHtml.includes("print-doc") && trustedTerminal(event)) {
+        return printDocument(undefined, rawHtml);
+      }
+      return typeof copy === "boolean" && typeof saleId === "string" && SALE_ID.test(saleId) &&
+        (trustedTerminal(event, [POS_PATH, POS_PATH + "/"]) || (copy && trustedTerminal(event, [POS_PATH + "/riwayat", POS_PATH + "/riwayat/"])))
+          ? printDocument(POS_PATH + "/nota/" + saleId + (copy ? "?salinan=1" : ""))
+          : { ok: false, message: "Permintaan cetak tidak valid." };
+    });
     ipcMain.handle("pos:printer-settings", async (event) => {
       if (trustedTerminal(event)) await printerMenu().catch(showError);
     });

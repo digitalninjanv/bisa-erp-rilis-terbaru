@@ -26,7 +26,7 @@ import {
 import { writeAudit } from "@/server/audit";
 import { nextDocumentNumber } from "@/server/sequences";
 import { claimIdempotencyKey } from "@/server/idempotency";
-import { applyDocumentMovement, assertWarehouseOwned, lockStockQty } from "./movements";
+import { applyDocumentMovement, assertWarehouseOwned, lockStockQtyBatch } from "./movements";
 import { autoCompleteOpnameTaskForPosting } from "./opname-tasks";
 
 export async function createOpname(
@@ -124,15 +124,14 @@ export async function createOpname(
 
   // GD-P2-4: lock every counted product's stock row BEFORE reading the
   // system quantity, so a sale or receipt landing mid-count cannot make the
-  // posted result differ from the physical count. Rows are locked in sorted
-  // product order for every opname, which keeps lock ordering deterministic.
-  const lockedStock = new Map<string, ReturnType<typeof d>>();
-  for (const productId of [...opnameProductIds].sort()) {
-    lockedStock.set(
-      productId,
-      await lockStockQty(tx, input.companyId, input.warehouseId, productId),
-    );
-  }
+  // posted result differ from the physical count. Batched in lockStockQtyBatch
+  // to execute in O(1) batched queries across sorted product IDs.
+  const lockedStock = await lockStockQtyBatch(
+    tx,
+    input.companyId,
+    input.warehouseId,
+    opnameProductIds,
+  );
   // S3: selesaikan kemasan komponen hitungan campuran lebih dulu —
   // satu gerbang validasi untuk semua baris (kemasan harus milik
   // produk barisnya & aktif; pola resolveLinePackagings S2). Nama

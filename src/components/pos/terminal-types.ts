@@ -54,6 +54,8 @@ export type CustomerOption = {
   name: string;
   phone: string | null;
   creditLimit: number;
+  currentDebt?: number;
+  remainingCredit?: number;
 };
 
 export type Method = {

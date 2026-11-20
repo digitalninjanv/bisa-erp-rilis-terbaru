@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, ilike, or, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { withCompany, withCompanyReadOnly } from "@/db/tenant";
@@ -27,7 +27,7 @@ import {
   quoteCart,
   voidSale,
 } from "@/server/pos";
-import { searchProducts } from "@/server/catalog";
+import { searchPosCustomersWithDebt, searchProducts } from "@/server/catalog";
 import { requirePermission, requirePermissionInModule, requireAuth } from "@/lib/session";
 import { can } from "@/lib/permissions";
 import { AppError, guard, type ActionResult } from "@/lib/errors";
@@ -104,46 +104,15 @@ export async function searchProductsAction(
   });
 }
 
-export async function cartProductsAction(input: { warehouseId: string; productIds: string[] }) {
-  return guard(async () => {
-    const ctx = await requirePermission("pos.sell");
-    const data = parseInput(z.object({ warehouseId: z.string().uuid(), productIds: z.array(z.string().uuid()).min(1).max(200) }), input);
-    const warehouseId = await assertWarehouseUsable(ctx.company.id, data.warehouseId);
-    return withCompanyReadOnly(ctx.company.id, (tx) => searchProducts(tx, {
-      companyId: ctx.company.id, warehouseId, q: "", productIds: [...new Set(data.productIds)], limit: 200, includeCost: false,
-    }));
-  });
-}
-
 // POS-1 (D-19): pencarian pelanggan untuk panel utang terminal. Baca
 // saja — tetap requirePermission biasa seperti action baca lain (T5R-2).
 export async function searchCustomersAction(q: string) {
   return guard(async () => {
     const ctx = await requirePermission("pos.sell");
     const term = parseInput(z.string().trim().max(80), q);
-    return withCompanyReadOnly(ctx.company.id, async (tx) => {
-      const rows = await tx
-        .select({
-          id: customers.id,
-          code: customers.code,
-          name: customers.name,
-          phone: customers.phone,
-          creditLimit: customers.creditLimit,
-        })
-        .from(customers)
-        .where(
-          and(
-            eq(customers.companyId, ctx.company.id),
-            eq(customers.isActive, true),
-            term
-              ? or(ilike(customers.name, `%${term}%`), ilike(customers.phone, `%${term}%`))
-              : undefined,
-          ),
-        )
-        .orderBy(customers.name)
-        .limit(10);
-      return rows.map((row) => ({ ...row, creditLimit: d(row.creditLimit).toNumber() }));
-    });
+    return withCompanyReadOnly(ctx.company.id, (tx) =>
+      searchPosCustomersWithDebt(tx, ctx.company.id, term),
+    );
   });
 }
 
@@ -169,7 +138,12 @@ export async function quickAddCustomerAction(input: { name: string; phone?: stri
       const code = `CUST-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
       const [created] = await tx.insert(customers).values({ companyId: ctx.company.id, code, name: data.name, phone: data.phone || null, creditLimit: "0" }).returning({ id: customers.id, code: customers.code, name: customers.name, phone: customers.phone, creditLimit: customers.creditLimit });
       await writeAudit(tx, { companyId: ctx.company.id, userId: ctx.user.id, action: "customer.quick_add", entityType: "customer", entityId: created.id, after: { code: created.code, name: created.name, phone: created.phone, creditLimit: created.creditLimit } });
-      return { ...created, creditLimit: d(created.creditLimit).toNumber() };
+      return {
+        ...created,
+        creditLimit: d(created.creditLimit).toNumber(),
+        currentDebt: 0,
+        remainingCredit: d(created.creditLimit).toNumber(),
+      };
     });
     revalidatePath("/app/gudang/pelanggan");
     return result;
@@ -209,7 +183,7 @@ export async function quoteAction(
   return guard(async () => {
     const ctx = await requirePermission("pos.sell");
     const data = parseInput(cartSchema, input);
-    const quote = await withCompany(ctx.company.id, (tx) =>
+    const quote = await withCompanyReadOnly(ctx.company.id, (tx) =>
       quoteCart(tx, {
         companyId: ctx.company.id,
         warehouseId: data.warehouseId,
@@ -788,8 +762,6 @@ export async function closeSessionAction(input: {
         sessionId: z.string().uuid(),
         countedCash: z.union([z.string(), z.number()]),
         notes: z.string().max(300).optional(),
-        // A-28 Tahap 1 (H-POS-02): alasan selisih — kewajiban isinya
-        // diputuskan domain dari toleransi perusahaan, bukan di sini.
         differenceReason: z.string().max(300).optional(),
       }),
       input,

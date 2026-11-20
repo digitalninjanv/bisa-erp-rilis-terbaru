@@ -3,6 +3,7 @@ import { useRef, useState, type Dispatch, type RefObject, type SetStateAction } 
 import { formatIDR } from "@/lib/money";
 import type { StoredCart } from "@/components/pos/use-cart-persistence";
 import type { ResumeData } from "@/components/pos/use-held-sales";
+import { CheckoutSuccessModal, type CompletedSaleInfo } from "@/components/pos/terminal/checkout-success-modal";
 
 export function CheckoutRecoveryDialog(props: {
   open: boolean;
@@ -146,5 +147,80 @@ export function ResumeDialog(props: {
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+export function PosTerminalModals(props: {
+  holdOpen: boolean;
+  holdLabel: string;
+  setHoldLabel: Dispatch<SetStateAction<string>>;
+  setHoldOpen: Dispatch<SetStateAction<boolean>>;
+  hold: () => Promise<void>;
+  resumeOffer: { data: ResumeData; stored: StoredCart } | null;
+  resumeHolding: boolean;
+  resumeHoldActiveFirst: () => Promise<void>;
+  applyResume: (data: ResumeData) => void;
+  resumeCancel: () => void;
+  completedSale: CompletedSaleInfo | null;
+  setCompletedSale: (sale: CompletedSaleInfo | null) => void;
+  canReprint: boolean;
+  companyId: string;
+  pendingCheckout: unknown;
+  recoveryError: string | null;
+  submitting: boolean;
+  retryPendingCheckout: () => void;
+  searchRef: RefObject<HTMLInputElement | null>;
+  mobileCartOpen: boolean;
+}) {
+  const {
+    holdOpen, holdLabel, setHoldLabel, setHoldOpen, hold,
+    resumeOffer, resumeHolding, resumeHoldActiveFirst, applyResume, resumeCancel,
+    completedSale, setCompletedSale, canReprint, companyId,
+    pendingCheckout, recoveryError, submitting, retryPendingCheckout,
+    searchRef, mobileCartOpen,
+  } = props;
+
+  return (
+    <>
+      {holdOpen ? (
+        <HoldDialog
+          holdLabel={holdLabel}
+          setHoldLabel={setHoldLabel}
+          setHoldOpen={setHoldOpen}
+          hold={hold}
+          returnFocus={mobileCartOpen ? undefined : searchRef}
+        />
+      ) : null}
+
+      {resumeOffer ? (
+        <ResumeDialog
+          resumeOffer={resumeOffer}
+          resumeHolding={resumeHolding}
+          resumeHoldActiveFirst={resumeHoldActiveFirst}
+          applyResume={applyResume}
+          resumeCancel={resumeCancel}
+          returnFocus={mobileCartOpen ? undefined : searchRef}
+        />
+      ) : null}
+
+      <CheckoutSuccessModal
+        key={completedSale?.id ?? "no-sale"}
+        sale={completedSale}
+        canReprint={canReprint}
+        companyId={companyId}
+        onDismiss={() => {
+          setCompletedSale(null);
+          searchRef.current?.focus();
+        }}
+      />
+      <CheckoutRecoveryDialog
+        open={Boolean(pendingCheckout) || Boolean(recoveryError)}
+        busy={submitting}
+        error={recoveryError}
+        canRetry={Boolean(pendingCheckout)}
+        retry={() => void retryPendingCheckout()}
+        returnFocus={searchRef}
+      />
+    </>
   );
 }

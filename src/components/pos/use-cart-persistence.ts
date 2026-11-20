@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import type { CartItem, CustomerOption } from "@/components/pos/terminal-types";
+import type { CartItem, CustomerOption, ProductOption } from "@/components/pos/terminal-types";
 
 // D-10 butir 3 — persistensi keranjang ke localStorage.
 //
@@ -31,6 +31,7 @@ export type StoredCart = {
   reservationId?: string | null;
   customer?: CustomerOption | null;
   dueDate?: string | null;
+  products?: Record<string, ProductOption>;
 };
 
 function readStoredCart(storageKey: string): StoredCart | null {
@@ -80,6 +81,14 @@ function readStoredCart(storageKey: string): StoredCart | null {
                 : 0,
           }
         : null;
+    const products: Record<string, ProductOption> = {};
+    if (parsed.products && typeof parsed.products === "object") {
+      for (const [id, p] of Object.entries(parsed.products)) {
+        if (p && typeof p === "object" && typeof (p as ProductOption).name === "string") {
+          products[id] = p as ProductOption;
+        }
+      }
+    }
     return {
       cart,
       groupId: typeof parsed.groupId === "string" ? parsed.groupId : "",
@@ -92,6 +101,7 @@ function readStoredCart(storageKey: string): StoredCart | null {
         typeof parsed.dueDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(parsed.dueDate)
           ? parsed.dueDate
           : null,
+      products: Object.keys(products).length > 0 ? products : undefined,
     };
   } catch {
     // JSON rusak atau localStorage tidak tersedia — mulai dari kosong.
@@ -117,6 +127,7 @@ export function useCartPersistence(params: {
   warehouses: readonly { id: string }[];
   groups: readonly { id: string }[];
   cart: CartItem[];
+  cache?: Record<string, ProductOption>;
   groupId: string;
   selectedWarehouse: string;
   heldSaleId: string | null;
@@ -125,6 +136,7 @@ export function useCartPersistence(params: {
   customer?: CustomerOption | null;
   dueDate?: string;
   setCart: Dispatch<SetStateAction<CartItem[]>>;
+  setCache?: Dispatch<SetStateAction<Record<string, ProductOption>>>;
   setGroupId: Dispatch<SetStateAction<string>>;
   setSelectedWarehouse: Dispatch<SetStateAction<string>>;
   setHeldSaleId: Dispatch<SetStateAction<string | null>>;
@@ -139,6 +151,7 @@ export function useCartPersistence(params: {
     warehouses,
     groups,
     cart,
+    cache,
     groupId,
     selectedWarehouse,
     heldSaleId,
@@ -147,6 +160,7 @@ export function useCartPersistence(params: {
     customer,
     dueDate,
     setCart,
+    setCache,
     setGroupId,
     setSelectedWarehouse,
     setHeldSaleId,
@@ -184,6 +198,9 @@ export function useCartPersistence(params: {
       }
       const stored = readStoredCart(storageKey);
       if (stored) {
+        if (stored.products && setCache) {
+          setCache((current) => ({ ...stored.products, ...current }));
+        }
         if (warehouses.some((warehouse) => warehouse.id === stored.warehouseId)) {
           if (resumeId) {
             storedActiveRef.current = stored;
@@ -212,6 +229,7 @@ export function useCartPersistence(params: {
     groups,
     storageKey,
     setCart,
+    setCache,
     setGroupId,
     setHeldSaleId,
     setHeldTotal,
@@ -245,13 +263,18 @@ export function useCartPersistence(params: {
         reservationId: reservationId ?? null,
         customer: customer ?? null,
         dueDate: dueDate ?? null,
+        products: cache
+          ? Object.fromEntries(
+              cart.map((line) => [line.productId, cache[line.productId]]).filter(([, p]) => Boolean(p)),
+            )
+          : undefined,
       };
       window.localStorage.setItem(storageKey, JSON.stringify(snapshot));
     } catch {
       // localStorage tidak tersedia (mode privat); keranjang tetap
       // berfungsi dari memori selama halaman terbuka.
     }
-  }, [cartLoaded, cart, groupId, selectedWarehouse, heldSaleId, heldTotal, reservationId, customer, dueDate, storageKey]);
+  }, [cartLoaded, cart, cache, groupId, selectedWarehouse, heldSaleId, heldTotal, reservationId, customer, dueDate, storageKey]);
 
   return { cartLoaded, resumeGuardRef, storedActiveRef };
 }

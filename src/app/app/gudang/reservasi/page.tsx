@@ -1,4 +1,3 @@
-import { Bookmark } from "lucide-react";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { listProductOptions, listWarehouseOptions } from "@/server/catalog";
 import { requirePermissionPage } from "@/lib/session";

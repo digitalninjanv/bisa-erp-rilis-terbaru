@@ -2,7 +2,7 @@
 // domain yang sudah ada di dalamnya. Perilaku tidak berubah;
 // jalur impor publik tetap lewat src/server/inventory.ts.
 
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
 import {
   products,
@@ -393,6 +393,65 @@ export async function lockStockQty(
     )
     .for("update");
   return d(row?.qty ?? 0);
+}
+
+/**
+ * Batch version of lockStockQty: locks products in sorted order to prevent deadlocks,
+ * ensures stock_on_hand rows exist via onConflictDoNothing, and locks all stockOnHand
+ * rows in chunks, turning an O(N*3) sequential round-trip loop into O(1) batched queries.
+ */
+export async function lockStockQtyBatch(
+  tx: Tx,
+  companyId: string,
+  warehouseId: string,
+  productIds: string[],
+): Promise<Map<string, ReturnType<typeof d>>> {
+  if (productIds.length === 0) return new Map();
+  const sortedIds = [...new Set(productIds)].sort();
+
+  const CHUNK_SIZE = 500;
+  for (let i = 0; i < sortedIds.length; i += CHUNK_SIZE) {
+    const chunk = sortedIds.slice(i, i + CHUNK_SIZE);
+    await tx
+      .select({ id: products.id })
+      .from(products)
+      .where(and(eq(products.companyId, companyId), inArray(products.id, chunk)))
+      .orderBy(asc(products.id))
+      .for("update");
+  }
+
+  for (let i = 0; i < sortedIds.length; i += CHUNK_SIZE) {
+    const chunk = sortedIds.slice(i, i + CHUNK_SIZE);
+    await tx
+      .insert(stockOnHand)
+      .values(chunk.map((productId) => ({ companyId, warehouseId, productId, qty: "0" })))
+      .onConflictDoNothing();
+  }
+
+  const result = new Map<string, ReturnType<typeof d>>();
+  for (let i = 0; i < sortedIds.length; i += CHUNK_SIZE) {
+    const chunk = sortedIds.slice(i, i + CHUNK_SIZE);
+    const rows = await tx
+      .select({ productId: stockOnHand.productId, qty: stockOnHand.qty })
+      .from(stockOnHand)
+      .where(
+        and(
+          eq(stockOnHand.companyId, companyId),
+          eq(stockOnHand.warehouseId, warehouseId),
+          inArray(stockOnHand.productId, chunk),
+        ),
+      )
+      .orderBy(asc(stockOnHand.productId))
+      .for("update");
+    for (const row of rows) {
+      result.set(row.productId, d(row.qty));
+    }
+  }
+
+  for (const id of sortedIds) {
+    if (!result.has(id)) result.set(id, d(0));
+  }
+  return result;
 }
 
 /**

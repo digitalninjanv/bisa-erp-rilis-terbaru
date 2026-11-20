@@ -61,6 +61,37 @@ export interface ReceiptData {
   cutPaper?: boolean;
 }
 
+export interface SessionReportData {
+  companyName: string;
+  address?: string | null;
+  phone?: string | null;
+  isX?: boolean;
+  sessionId: string;
+  cashierName?: string | null;
+  branchName?: string | null;
+  openedAt: string;
+  closedAt?: string | null;
+  openingCash: number;
+  closingCash?: number | null;
+  expectedCash: number;
+  cashDifference?: number | null;
+  differenceReason?: string | null;
+  totals: {
+    salesCount: number;
+    cashSales: number;
+    nonCashSales: number;
+    totalSales: number;
+    cashIn: number;
+    cashOut: number;
+  };
+  paymentBreakdown: Array<{
+    methodName: string;
+    methodType?: string;
+    amount: number;
+  }>;
+  paperWidth?: PaperWidth;
+}
+
 export interface PrinterPreferences {
   type: PrinterConnectionType;
   name: string;

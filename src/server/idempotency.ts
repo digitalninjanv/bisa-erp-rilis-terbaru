@@ -1,7 +1,7 @@
 import type { Tx } from "@/db";
 import { idempotencyKeys } from "@/db/schema";
 import { createHash } from "node:crypto";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, lt, sql } from "drizzle-orm";
 import { AppError } from "@/lib/errors";
 
 /**
@@ -162,4 +162,27 @@ export async function runIdempotentPayment<T>(
 /** Order browser checkout and offline reconciliation for the same sale attempt. */
 export async function lockPosSaleAttempt(tx: Tx, companyId: string, key: string) {
   await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`pos.sale:${companyId}:${key}`}, 0))`);
+}
+
+/**
+ * Prune idempotency keys older than the specified retention window (default 30 days).
+ * Company-scoped to respect tenant boundary and RLS.
+ * Returns the count of deleted records.
+ */
+export async function pruneExpiredIdempotencyKeys(
+  tx: Tx,
+  input: { companyId: string; retentionDays?: number },
+): Promise<number> {
+  const days = input.retentionDays ?? 30;
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const deleted = await tx
+    .delete(idempotencyKeys)
+    .where(
+      and(
+        eq(idempotencyKeys.companyId, input.companyId),
+        lt(idempotencyKeys.createdAt, cutoff),
+      ),
+    )
+    .returning({ id: idempotencyKeys.id });
+  return deleted.length;
 }

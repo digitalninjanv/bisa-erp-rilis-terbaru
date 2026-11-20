@@ -45,7 +45,7 @@ export default async function ReceiptDetailPage({
     getReceiptDetail(tx, ctx.company.id, id),
   );
   if (!data) notFound();
-  const { receipt, lines, serialsByProduct, journals, payments, linkedReturns, returnStatus, returnedTotalQty } = data;
+  const { receipt, lines, serialsByProduct, journals, payments, linkedReturns, returnStatus } = data;
   const anyLineReturned = lines.some((line) => d(line.returnedQty).gt(0));
   const hasDiscount = lines.some((line) => d(line.discountAmount).gt(0));
   const isCreditPurchase = receipt.source === "purchase" && !receipt.paymentAccountCode;

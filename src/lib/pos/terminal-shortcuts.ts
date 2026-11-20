@@ -16,7 +16,8 @@ export type TerminalShortcutAction =
   | "exact-cash"
   | "hold"
   | "pay"
-  | "toggle-mode";
+  | "toggle-mode"
+  | "clear-cart";
 
 export type TerminalShortcutKeyEvent = {
   key: string;
@@ -35,7 +36,10 @@ export function resolveTerminalShortcut(
 ): TerminalShortcutAction | null {
   if (event.ctrlKey || event.metaKey) return null;
   if (event.altKey) {
-    return event.key.toLowerCase() === "m" ? "toggle-mode" : null;
+    const k = event.key.toLowerCase();
+    if (k === "m") return "toggle-mode";
+    if (k === "c") return "clear-cart";
+    return null;
   }
   switch (event.key) {
     case "F2":
@@ -69,5 +73,6 @@ export const TERMINAL_SHORTCUT_HELP: { keys: string; label: string }[] = [
   { keys: "F8", label: "Tahan pesanan" },
   { keys: "F9", label: "Bayar / selesaikan transaksi" },
   { keys: "Alt+M", label: "Ganti mode pembayaran Tunggal / Campuran" },
+  { keys: "Alt+C", label: "Kosongkan keranjang belanja" },
   { keys: "Esc", label: "Bersihkan pencarian / tutup dialog" },
 ];

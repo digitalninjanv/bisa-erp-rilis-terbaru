@@ -55,8 +55,11 @@ export function DebtSection(props: {
                       ) : null}
                       {customer.creditLimit > 0 ? (
                         <span className="mt-1 block text-xs leading-4 text-muted-foreground">
-                          Batas kredit {formatIDR(customer.creditLimit)} — server menolak bila
-                          piutang terbuka + penjualan ini melewatinya.
+                          Plafon {formatIDR(customer.creditLimit)}
+                          {(customer.currentDebt ?? 0) > 0 ? (
+                            <> · Utang berjalan: <span className="num font-semibold text-destructive">{formatIDR(customer.currentDebt ?? 0)}</span></>
+                          ) : null}
+                          {" "}· Sisa limit: <span className="num font-semibold text-foreground">{formatIDR(customer.remainingCredit ?? (customer.creditLimit - (customer.currentDebt ?? 0)))}</span>
                         </span>
                       ) : null}
                     </span>
@@ -100,6 +103,7 @@ export function DebtSection(props: {
                               {option.creditLimit > 0 ? (
                                 <span className="num shrink-0 text-xs text-muted-foreground">
                                   Limit {formatIDR(option.creditLimit)}
+                                  {(option.currentDebt ?? 0) > 0 ? ` (sisa ${formatIDR(option.remainingCredit ?? (option.creditLimit - (option.currentDebt ?? 0)))})` : ""}
                                 </span>
                               ) : null}
                             </button>

@@ -8,7 +8,7 @@ import { saveProductAction } from "@/server/actions/inventory/produk";
 import { MoneyInput } from "@/components/money-input";
 import { formatMargin, marginPercent, marginToneClass, priceForMargin } from "@/lib/margin";
 import { QtyInput } from "@/components/qty-input";
-import { requireFilled, useActionRunner } from "@/components/use-action-runner";
+import { useActionRunner } from "@/components/use-action-runner";
 import {
   PackagingEditor,
   toRowState,

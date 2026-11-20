@@ -3,12 +3,25 @@ const { join } = require("node:path");
 
 const DEFAULT_ORIGIN = "http://localhost:3000";
 
+function isPrivateOrLoopbackHost(hostname) {
+  if (["localhost", "127.0.0.1", "[::1]"].includes(hostname)) return true;
+  if (hostname.endsWith(".local")) return true;
+  // RFC 1918 IPv4 private ranges:
+  // 10.0.0.0 - 10.255.255.255
+  if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+  // 172.16.0.0 - 172.31.255.255
+  if (/^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+  // 192.168.0.0 - 192.168.255.255
+  if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+  return false;
+}
+
 function parseOrigin(value) {
   const url = new URL(value);
-  const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
-  if ((url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) ||
+  const localOrLan = isPrivateOrLoopbackHost(url.hostname);
+  if ((url.protocol !== "https:" && !(url.protocol === "http:" && localOrLan)) ||
       url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
-    throw new Error("Gunakan alamat HTTPS ERP atau HTTP localhost, tanpa path.");
+    throw new Error("Gunakan alamat HTTPS ERP atau HTTP jaringan lokal (LAN/localhost), tanpa path.");
   }
   return url.origin;
 }
@@ -33,4 +46,4 @@ function saveSettings(directory, settings) {
   renameSync(file + ".tmp", file);
 }
 
-module.exports = { loadSettings, saveSettings, parseOrigin };
+module.exports = { loadSettings, saveSettings, parseOrigin, isPrivateOrLoopbackHost };

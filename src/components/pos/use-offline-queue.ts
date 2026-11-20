@@ -34,54 +34,66 @@ export function useOfflineQueue(params: {
   // lalu menerapkan hasilnya ke antrean lokal.
   const syncOfflineQueue = useCallback(async () => {
     if (!posOfflineEnabled || syncing) return;
-    try {
-      const storage = getBrowserOfflineStorage({ companyId, userId, terminalId });
-      const items = await storage.list();
-      if (items.length === 0) {
-        setQueuedCount(0);
-        setOldestQueuedAt(null);
-        return;
-      }
-      setSyncing(true);
-      // FIX-POS Tahap 2 (POS3-01/16): antrean dikirim BERPOTONG 25
-      // item per panggilan — plafon server adalah per request, bukan
-      // per antrean, jadi antrean sebesar apa pun tersinkron; hasil
-      // tiap potong langsung diterapkan sebelum potong berikutnya.
-      const allResults: OfflineSyncItemResult[] = [];
-      let chunkFailed = false;
-      for (let offset = 0; offset < items.length; offset += 25) {
-        const result = await syncOfflineSalesAction({ items: items.slice(offset, offset + 25) });
-        if (!result.ok) {
-          toast.error(result.message);
-          chunkFailed = true;
-          break;
+
+    const doSync = async () => {
+      try {
+        const storage = getBrowserOfflineStorage({ companyId, userId, terminalId });
+        const items = await storage.list();
+        if (items.length === 0) {
+          setQueuedCount(0);
+          setOldestQueuedAt(null);
+          return;
         }
-        await applySyncResults(storage, result.data);
-        allResults.push(...result.data);
-        const summary = await getOfflineQueueSummary(storage);
-        setQueuedCount(summary.count);
-        setOldestQueuedAt(summary.oldestQueuedAt);
+        setSyncing(true);
+        // FIX-POS Tahap 2 (POS3-01/16): antrean dikirim BERPOTONG 25
+        // item per panggilan — plafon server adalah per request, bukan
+        // per antrean, jadi antrean sebesar apa pun tersinkron; hasil
+        // tiap potong langsung diterapkan sebelum potong berikutnya.
+        const allResults: OfflineSyncItemResult[] = [];
+        let chunkFailed = false;
+        for (let offset = 0; offset < items.length; offset += 25) {
+          const result = await syncOfflineSalesAction({ items: items.slice(offset, offset + 25) });
+          if (!result.ok) {
+            toast.error(result.message);
+            chunkFailed = true;
+            break;
+          }
+          await applySyncResults(storage, result.data);
+          allResults.push(...result.data);
+          const summary = await getOfflineQueueSummary(storage);
+          setQueuedCount(summary.count);
+          setOldestQueuedAt(summary.oldestQueuedAt);
+        }
+        if (chunkFailed && allResults.length === 0) return;
+        const synced = allResults.filter((row) => row.status === "synced").length;
+        const duplicates = allResults.filter((row) => row.status === "duplicate").length;
+        const conflicts = allResults.filter((row) => row.status === "conflict").length;
+        const failed = allResults.filter((row) => row.status === "failed").length;
+        if (synced + duplicates > 0) {
+          toast.success(
+            `Sinkronisasi offline: ${synced} penjualan tercatat${duplicates ? `, ${duplicates} duplikat dilewati` : ""}.`,
+          );
+        }
+        if (conflicts + failed > 0) {
+          toast.warning(
+            `${conflicts + failed} penjualan belum tuntas (${conflicts} konflik stok, ${failed} gagal) — lihat menu Peninjauan offline.`,
+          );
+        }
+        router.refresh();
+      } catch {
+        toast.error("Antrean offline tidak dapat dibaca atau disinkronkan. Periksa penyimpanan dan koneksi sebelum melanjutkan.");
+      } finally {
+        setSyncing(false);
       }
-      if (chunkFailed && allResults.length === 0) return;
-      const synced = allResults.filter((row) => row.status === "synced").length;
-      const duplicates = allResults.filter((row) => row.status === "duplicate").length;
-      const conflicts = allResults.filter((row) => row.status === "conflict").length;
-      const failed = allResults.filter((row) => row.status === "failed").length;
-      if (synced + duplicates > 0) {
-        toast.success(
-          `Sinkronisasi offline: ${synced} penjualan tercatat${duplicates ? `, ${duplicates} duplikat dilewati` : ""}.`,
-        );
-      }
-      if (conflicts + failed > 0) {
-        toast.warning(
-          `${conflicts + failed} penjualan belum tuntas (${conflicts} konflik stok, ${failed} gagal) — lihat menu Peninjauan offline.`,
-        );
-      }
-      router.refresh();
-    } catch {
-      toast.error("Antrean offline tidak dapat dibaca atau disinkronkan. Periksa penyimpanan dan koneksi sebelum melanjutkan.");
-    } finally {
-      setSyncing(false);
+    };
+
+    if (typeof navigator !== "undefined" && "locks" in navigator && navigator.locks) {
+      await navigator.locks.request("bisa:pos-offline-sync", { ifAvailable: true }, async (lock) => {
+        if (!lock) return; // Tab lain sedang menyinkronkan antrean
+        await doSync();
+      });
+    } else {
+      await doSync();
     }
   }, [posOfflineEnabled, syncing, router, companyId, userId, terminalId]);
 

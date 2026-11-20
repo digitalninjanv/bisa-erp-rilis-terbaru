@@ -4,7 +4,6 @@
 
 import {
   and,
-  desc,
   eq,
   inArray,
 } from "drizzle-orm";

@@ -29,7 +29,7 @@ function prepareThermalPageSize() {
   // 2 × 2mm margin + sedikit cadangan agar baris terakhir tidak terpotong.
   const heightMm = Math.max(60, Math.ceil(contentMm + 6));
 
-  const rule = `@page { size: ${widthMm}mm ${heightMm}mm; margin: 2mm; }`;
+  const rule = `@page { size: ${widthMm}mm ${heightMm}mm; margin: 0; } body { margin: 0; padding: 2mm; }`;
   // PrintShell menaruh aturan @page di dalam .print-doc. Ganti aturan
   // itu langsung; menambah <style> baru sebelum elemennya membuat
   // aturan statis 297mm tetap menang dalam cascade.

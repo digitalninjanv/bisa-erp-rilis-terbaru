@@ -43,15 +43,23 @@ export class EscPosEncoder {
 
   /** Tulis teks tanpa ganti baris */
   text(str: string): this {
-    // Bersihkan karakter non-ASCII dan encode ke byte CP437/ASCII
-    for (let i = 0; i < str.length; i++) {
-      const code = str.charCodeAt(i);
-      if (code < 128) {
-        this.buffer.push(code);
-      } else {
-        // Karakter umum seperti tanda centang atau aksen disederhanakan
-        this.buffer.push(0x20); // fallback spasi jika karakter di luar ASCII dasar
-      }
+    // Normalisasi unicode dan transliterasi tanda baca umum ke ASCII
+    const normalized = str
+      .replace(/[\u2014\u2013]/g, "-")
+      .replace(/\u2022/g, "*")
+      .replace(/[\u201c\u201d]/g, '"')
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/\u2026/g, "...")
+      .replace(/\u00b0/g, " deg")
+      .replace(/\u00d7/g, "x")
+      .replace(/\u00f7/g, "/")
+      .replace(/\u00b1/g, "+/-")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+
+    for (let i = 0; i < normalized.length; i++) {
+      const code = normalized.charCodeAt(i);
+      this.buffer.push(code < 128 ? code : 0x20);
     }
     return this;
   }
@@ -126,6 +134,15 @@ export class EscPosEncoder {
   cut(): this {
     this.feed(3);
     this.buffer.push(0x1d, 0x56, 0x42, 0x00);
+    return this;
+  }
+
+  /** Set margin kiri dalam dots (GS L nL nH) */
+  leftMargin(dots = 0): this {
+    const d = Math.max(0, Math.min(65535, Math.floor(dots)));
+    const nL = d % 256;
+    const nH = Math.floor(d / 256);
+    this.buffer.push(0x1d, 0x4c, nL, nH);
     return this;
   }
 

@@ -17,23 +17,24 @@ import { useQuote } from "@/components/pos/use-quote";
 import { useHeldSales } from "@/components/pos/use-held-sales";
 import { useOfflineQueue } from "@/components/pos/use-offline-queue";
 import { useReturnCredit } from "@/components/pos/use-return-credit";
-import { CheckoutRecoveryDialog, HoldDialog, ResumeDialog } from "@/components/pos/terminal-dialogs";
+import { PosTerminalModals } from "@/components/pos/terminal-dialogs";
 import { useProductSearch } from "@/components/pos/terminal/use-product-search";
 import { usePaymentPlan } from "@/components/pos/terminal/use-payment-plan";
 import { useTerminalShortcuts } from "@/components/pos/terminal/use-terminal-shortcuts";
 import type { TerminalShortcutAction } from "@/lib/pos/terminal-shortcuts";
 import { defaultDueDate, useTerminalCheckout } from "@/components/pos/terminal/use-terminal-checkout";
 import { ProductCatalog } from "@/components/pos/terminal/product-catalog";
-import { CheckoutSuccessModal, type CompletedSaleInfo } from "@/components/pos/terminal/checkout-success-modal";
+import type { CompletedSaleInfo } from "@/components/pos/terminal/checkout-success-modal";
 import { PosPrintQueue } from "@/components/pos/terminal/pos-print-queue";
 import {
-  addCartLine, changeCartLinePackaging, setCartLineQty, setCartLineSerial,
+  addCartLine, changeCartLinePackaging, setCartLineDiscount, setCartLineQty, setCartLineSerial,
 } from "@/components/pos/terminal/cart-lines";
 import { MobilePayBar } from "@/components/pos/terminal/mobile-pay-bar";
 import { PosCheckoutWorkspace } from "@/components/pos/terminal/pos-checkout-workspace";
 import { usePosCustomerActions } from "@/components/pos/terminal/use-pos-customer-actions";
 import { focusPosTenderedInput, useCloseMobileCartOnDesktop, useExitFullscreenOnEscape } from "@/components/pos/terminal/use-terminal-layout";
 import { useTerminalReset } from "@/components/pos/terminal/use-terminal-reset";
+import { ConfirmDialog } from "@/components/blocks/confirm-dialog";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 
 export type { TerminalReservation };
@@ -47,6 +48,7 @@ export function PosTerminal({
 }: PosTerminalProps) {
   const storageKey = cartStorageKey(companyId, userId);
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [clearCartConfirmOpen, setClearCartConfirmOpen] = useState(false);
   const [cache, setCache] = useState<Record<string, ProductOption>>(
     Object.fromEntries(initialProducts.map((p) => [p.id, p])),
   );
@@ -157,6 +159,7 @@ export function PosTerminal({
     warehouses,
     groups,
     cart,
+    cache,
     groupId,
     selectedWarehouse,
     heldSaleId,
@@ -165,6 +168,7 @@ export function PosTerminal({
     customer,
     dueDate,
     setCart,
+    setCache,
     setGroupId,
     setSelectedWarehouse,
     setHeldSaleId,
@@ -417,14 +421,10 @@ export function PosTerminal({
   // S4: penyunting baris berkunci (produk, kemasan) — logika murninya
   // hidup di terminal/cart-lines.ts, komponen ini hanya mengikatnya
   // ke state keranjang.
-  const setQty = (key: string, qty: number) =>
-    setCart((current) => setCartLineQty(current, key, qty));
-
-  const setSerial = (key: string, index: number, value: string) =>
-    setCart((current) => setCartLineSerial(current, key, index, value));
-
-  const setLinePackaging = (key: string, packagingId: string | null) =>
-    setCart((current) => changeCartLinePackaging(current, key, packagingId));
+  const setQty = (key: string, qty: number) => setCart((c) => setCartLineQty(c, key, qty));
+  const setSerial = (key: string, idx: number, val: string) => setCart((c) => setCartLineSerial(c, key, idx, val));
+  const setLinePackaging = (key: string, packId: string | null) => setCart((c) => changeCartLinePackaging(c, key, packId));
+  const setLineDiscount = (key: string, t: "percent" | "nominal" | null, v: number) => setCart((c) => setCartLineDiscount(c, key, t, v));
 
   const { mixedPlan, change, outstanding, mixedShortfall, debtEntryAmount, debtActive, debtAmount, nonCashNeedsConfirm } =
     usePaymentPlan({ mode, entries, methodById, total, singleMethod, single, isCreditSingle, cashTendered, debtMethod });
@@ -536,6 +536,11 @@ export function PosTerminal({
         case "toggle-mode":
           setMode((current) => (current === "single" ? "mixed" : "single"));
           break;
+        case "clear-cart":
+          if (cart.length > 0) {
+            setClearCartConfirmOpen(true);
+          }
+          break;
       }
     },
   });
@@ -584,77 +589,21 @@ export function PosTerminal({
   const selectedGroup = groups.find((g) => g.id === groupId);
   const actionTheme = POS_ACTION_THEMES[display.actionTheme] ?? POS_ACTION_THEMES.odoo;
   const cartPanelProps = {
-    cart,
-    cache,
-    quote,
-    quoteLine,
-    total,
-    heldTotal,
-    groupId,
-    setGroupId,
-    groups,
-    selectedGroup,
-    heldCount,
-    setCart,
-    setQty,
-    setSerial,
-    setLinePackaging,
-    quoteBusy,
-    allowNegativeStock,
+    cart, cache, quote, quoteLine, total, heldTotal, groupId, setGroupId, groups,
+    selectedGroup, heldCount, setCart, setQty, setSerial, setLinePackaging,
+    setLineDiscount, quoteBusy, allowNegativeStock,
   };
 
   const paymentPanelProps = {
-    companyName,
-    mode,
-    setMode,
-    methods,
-    single,
-    singleMethod,
-    setSingleMethod,
-    entries,
-    setEntries,
-    total,
-    change,
-    isCreditSingle,
-    debtMethod,
-    debtActive,
-    debtAmount,
-    qrisImage,
-    nonCashNeedsConfirm,
-    nonCashConfirmed,
-    setNonCashConfirmedFor,
-    creditMethod,
-    credit,
-    customer,
-    setCustomer,
-    customerQuery,
-    setCustomerQuery,
-    customerResults,
-    customerSearching,
-    quickAddOpen,
-    setQuickAddOpen,
-    quickName,
-    setQuickName,
-    quickPhone,
-    setQuickPhone,
-    quickBusy,
-    quickAddCustomer,
-    dueDate,
-    setDueDate,
-    outstanding,
-    mixedPlan,
-    fillDebtRemainder,
-    cart,
-    serialIncomplete,
-    quoteError,
-    quote,
-    setQuoteNonce,
-    payDisabled,
-    payLabel,
-    checkout,
-    setHoldOpen,
-    sessionOpen,
-    lastSale,
+    companyName, mode, setMode, methods, single, singleMethod, setSingleMethod,
+    entries, setEntries, total, change, isCreditSingle, debtMethod, debtActive,
+    debtAmount, qrisImage, nonCashNeedsConfirm, nonCashConfirmed, setNonCashConfirmedFor,
+    creditMethod, credit, customer, setCustomer, customerQuery, setCustomerQuery,
+    customerResults, customerSearching, quickAddOpen, setQuickAddOpen, quickName,
+    setQuickName, quickPhone, setQuickPhone, quickBusy, quickAddCustomer, dueDate,
+    setDueDate, outstanding, mixedPlan, fillDebtRemainder, cart, serialIncomplete,
+    quoteError, quote, setQuoteNonce, payDisabled, payLabel, checkout, setHoldOpen,
+    sessionOpen, lastSale,
   };
 
   useCloseMobileCartOnDesktop(setMobileCartOpen);
@@ -697,6 +646,7 @@ export function PosTerminal({
           reservationId={reservationId}
           applyReservation={applyReservation}
           sessionOpen={sessionOpen}
+          sessionId={sessionId}
           heldCount={heldCount}
           posOfflineEnabled={posOfflineEnabled}
           online={online}
@@ -766,45 +716,41 @@ export function PosTerminal({
         />
       </div>
 
-      {holdOpen ? (
-        <HoldDialog
-          holdLabel={holdLabel}
-          setHoldLabel={setHoldLabel}
-          setHoldOpen={setHoldOpen}
-          hold={hold}
-          returnFocus={mobileCartOpen ? undefined : searchRef}
-        />
-      ) : null}
-
-      {/* POS2-02: dialog resume hanya bila keranjang aktif akan tertimpa. */}
-      {resumeOffer ? (
-        <ResumeDialog
-          resumeOffer={resumeOffer}
-          resumeHolding={resumeHolding}
-          resumeHoldActiveFirst={resumeHoldActiveFirst}
-          applyResume={applyResume}
-          resumeCancel={resumeCancel}
-          returnFocus={mobileCartOpen ? undefined : searchRef}
-        />
-      ) : null}
-
-      <CheckoutSuccessModal
-        key={completedSale?.id ?? "no-sale"}
-        sale={completedSale}
+      <PosTerminalModals
+        holdOpen={holdOpen}
+        holdLabel={holdLabel}
+        setHoldLabel={setHoldLabel}
+        setHoldOpen={setHoldOpen}
+        hold={hold}
+        resumeOffer={resumeOffer}
+        resumeHolding={resumeHolding}
+        resumeHoldActiveFirst={resumeHoldActiveFirst}
+        applyResume={applyResume}
+        resumeCancel={resumeCancel}
+        completedSale={completedSale}
+        setCompletedSale={setCompletedSale}
         canReprint={canReprint}
         companyId={companyId}
-        onDismiss={() => {
-          setCompletedSale(null);
-          searchRef.current?.focus();
-        }}
+        pendingCheckout={pendingCheckout}
+        recoveryError={recoveryError}
+        submitting={submitting}
+        retryPendingCheckout={() => void retryPendingCheckout()}
+        searchRef={searchRef}
+        mobileCartOpen={mobileCartOpen}
       />
-      <CheckoutRecoveryDialog
-        open={Boolean(pendingCheckout) || Boolean(recoveryError)}
-        busy={submitting}
-        error={recoveryError}
-        canRetry={Boolean(pendingCheckout)}
-        retry={() => void retryPendingCheckout()}
-        returnFocus={searchRef}
+
+      <ConfirmDialog
+        open={clearCartConfirmOpen}
+        onCancel={() => setClearCartConfirmOpen(false)}
+        title="Kosongkan Keranjang"
+        description="Semua item dalam keranjang saat ini akan dihapus. Lanjutkan?"
+        confirmLabel="Kosongkan"
+        danger
+        onConfirm={() => {
+          setCart([]);
+          setCustomer(null);
+          setClearCartConfirmOpen(false);
+        }}
       />
     </div>
   );

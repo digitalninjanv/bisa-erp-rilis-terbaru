@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { ClipboardList } from "lucide-react";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { requirePermissionPage } from "@/lib/session";
 import { can } from "@/lib/permissions";

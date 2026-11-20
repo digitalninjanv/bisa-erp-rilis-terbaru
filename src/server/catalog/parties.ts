@@ -3,9 +3,10 @@
  * pemasok, pelanggan, dan kelompok pelanggan.
  * Badan kueri dipindah apa adanya.
  */
-import { and, asc, count, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { customerGroups, customers, suppliers } from "@/db/schema";
+import { customerGroups, customers, sales, suppliers } from "@/db/schema";
+import { d } from "@/lib/money";
 import {
   LIST_PAGE_SIZE,
   normalizePageParams,
@@ -205,4 +206,69 @@ export async function listCustomerGroupsWithCounts(tx: Tx, companyId: string) {
     .from(customerGroups)
     .where(eq(customerGroups.companyId, companyId))
     .orderBy(asc(customerGroups.name));
+}
+
+export async function searchPosCustomersWithDebt(
+  tx: Tx,
+  companyId: string,
+  term?: string,
+) {
+  const rows = await tx
+    .select({
+      id: customers.id,
+      code: customers.code,
+      name: customers.name,
+      phone: customers.phone,
+      creditLimit: customers.creditLimit,
+    })
+    .from(customers)
+    .where(
+      and(
+        eq(customers.companyId, companyId),
+        eq(customers.isActive, true),
+        term
+          ? or(ilike(customers.name, `%${term}%`), ilike(customers.phone, `%${term}%`))
+          : undefined,
+      ),
+    )
+    .orderBy(customers.name)
+    .limit(10);
+
+  if (rows.length === 0) return [];
+
+  const customerIds = rows.map((r) => r.id);
+  const outstandingRows = await tx
+    .select({
+      customerId: sales.customerId,
+      outstanding: sql<string>`coalesce(sum(${sales.total} - ${sales.paidTotal}), 0)`,
+    })
+    .from(sales)
+    .where(
+      and(
+        eq(sales.companyId, companyId),
+        inArray(sales.customerId, customerIds),
+        inArray(sales.status, ["completed", "partial"]),
+        inArray(sales.paymentStatus, ["unpaid", "partial"]),
+      ),
+    )
+    .groupBy(sales.customerId);
+
+  const debtMap = new Map<string, number>();
+  for (const item of outstandingRows) {
+    if (item.customerId) {
+      debtMap.set(item.customerId, d(item.outstanding).toNumber());
+    }
+  }
+
+  return rows.map((row) => {
+    const creditLimit = d(row.creditLimit).toNumber();
+    const currentDebt = debtMap.get(row.id) ?? 0;
+    const remainingCredit = creditLimit > 0 ? Math.max(0, creditLimit - currentDebt) : 0;
+    return {
+      ...row,
+      creditLimit,
+      currentDebt,
+      remainingCredit,
+    };
+  });
 }

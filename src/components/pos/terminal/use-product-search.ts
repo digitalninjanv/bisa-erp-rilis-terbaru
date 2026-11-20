@@ -7,11 +7,13 @@
 
 import { useCallback, useEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { toast } from "sonner";
-import { cartProductsAction, searchProductsAction } from "@/server/actions/pos";
-import type { searchProducts } from "@/server/catalog/products";
+import { searchProductsAction } from "@/server/actions/pos";
+import { cartProductsAction } from "@/server/actions/pos-cart";
 import type { CartItem, ProductOption } from "@/components/pos/terminal-types";
 
-function productOption(p: Awaited<ReturnType<typeof searchProducts>>[number]): ProductOption {
+type CatalogProduct = Extract<Awaited<ReturnType<typeof searchProductsAction>>, { ok: true }>["data"][number];
+
+function productOption(p: CatalogProduct): ProductOption {
   return {
     id: p.id,
     name: p.name,
@@ -128,38 +130,56 @@ export function useProductSearch(params: {
     [runSearch],
   );
 
-  // POS-SCAN-01: scanner mengirim kode + Enter jauh lebih cepat daripada
-  // debounce 220 ms, jadi jalur barcode menjalankan pencarian segar dan
-  // hanya menambahkan kecocokan persis (barcode, lalu SKU) — tidak pernah
-  // menebak produk pertama dari hasil pencarian sebelumnya.
-  // S4: barcode kemasan juga kecocokan persis — produk ditemukan
-  // membawa matchedPackagingId dan pemanggil menambahkan baris
-  // KEMASAN itu, bukan 1 Pcs (mode gagal klasik satuan kemasan).
-  const scanBarcode = useCallback(
-    async (code: string): Promise<ProductOption | null> => {
-      if (checkoutInFlight.current) return null;
-      const attempt = idempotencyKey.current;
-      setSearching(true);
-      try {
-        // Pindai barcode selalu lintas kategori — filter chip tidak
-        // boleh membuat barang yang dipindai tidak ditemukan.
-        const fresh = await runSearch(code, 1, "", false);
-        if (checkoutInFlight.current || attempt !== idempotencyKey.current) return null;
-        return (
-          fresh.find((p) => p.barcode === code) ??
-          fresh.find((p) => p.matchedPackagingId) ??
-          fresh.find((p) => p.sku === code) ??
-          null
-        );
-      } catch {
-        toast.error("Pencarian barcode gagal. Periksa koneksi lalu coba lagi.");
-        return null;
-      } finally {
-        setSearching(false);
-      }
-    },
-    [runSearch, checkoutInFlight, idempotencyKey],
-  );
+function findLocalProductMatch(pool: ProductOption[], code: string): ProductOption | null {
+  for (const p of pool) {
+    if (p.barcode === code) return p;
+    if (p.packagings?.some((pkg) => pkg.barcode === code)) {
+      const pkg = p.packagings.find((k) => k.barcode === code);
+      return { ...p, matchedPackagingId: pkg?.id ?? null };
+    }
+    if (p.sku === code) return p;
+  }
+  return null;
+}
+
+// POS-SCAN-01: scanner mengirim kode + Enter jauh lebih cepat daripada
+// debounce 220 ms, jadi jalur barcode menjalankan pencarian segar dan
+// hanya menambahkan kecocokan persis (barcode, lalu SKU) — tidak pernah
+// menebak produk pertama dari hasil pencarian sebelumnya.
+// S4: barcode kemasan juga kecocokan persis — produk ditemukan
+// membawa matchedPackagingId dan pemanggil menambahkan baris
+// KEMASAN itu, bukan 1 Pcs (mode gagal klasik satuan kemasan).
+const scanBarcode = useCallback(
+  async (code: string): Promise<ProductOption | null> => {
+    if (checkoutInFlight.current) return null;
+    const attempt = idempotencyKey.current;
+    setSearching(true);
+    try {
+      // Pindai barcode selalu lintas kategori — filter chip tidak
+      // boleh membuat barang yang dipindai tidak ditemukan.
+      const fresh = await runSearch(code, 1, "", false);
+      if (checkoutInFlight.current || attempt !== idempotencyKey.current) return null;
+      const matched =
+        fresh.find((p) => p.barcode === code) ??
+        fresh.find((p) => p.matchedPackagingId) ??
+        fresh.find((p) => p.sku === code) ??
+        null;
+      if (matched) return matched;
+      // Fallback cache lokal (offline atau produk sudah tersimpan di memori terminal)
+      const localPool = [...Object.values(params.cache), ...params.initialProducts];
+      return findLocalProductMatch(localPool, code);
+    } catch {
+      const localPool = [...Object.values(params.cache), ...params.initialProducts];
+      const local = findLocalProductMatch(localPool, code);
+      if (local) return local;
+      toast.error("Pencarian barcode gagal. Periksa koneksi lalu coba lagi.");
+      return null;
+    } finally {
+      setSearching(false);
+    }
+  },
+  [runSearch, checkoutInFlight, idempotencyKey, params.cache, params.initialProducts],
+);
 
   // POS-1: setiap perubahan kata cari ATAU gudang (searchProducts
   // terbentuk ulang saat gudang berubah) memuat ulang dari halaman 1 —

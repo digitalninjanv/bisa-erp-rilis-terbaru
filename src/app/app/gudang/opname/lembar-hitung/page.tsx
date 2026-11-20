@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { and, asc, eq } from "drizzle-orm";
 import { withCompanyReadOnly } from "@/db/tenant";
+import { products } from "@/db/schema";
 import {
   getSettings,
-  listProducts,
   listWarehouses,
   pickDefaultWarehouseId,
 } from "@/server/catalog";
@@ -43,24 +44,18 @@ export default async function OpnameCountSheetPage({
     const warehouse = warehouses.find((row) => row.id === warehouseId);
     if (!warehouse) return null;
 
-    const rows: { id: string; name: string; sku: string }[] = [];
-    let page = 1;
-    for (;;) {
-      const result = await listProducts(tx, {
-        companyId: ctx.company.id,
-        warehouseId,
-        page,
-        pageSize: 200,
-      });
-      for (const row of result.rows) {
-        if (!row.trackStock) continue;
-        rows.push({ id: row.id, name: row.name, sku: row.sku });
-        if (rows.length >= 1000) break;
-      }
-      if (rows.length >= 1000 || page * result.pageSize >= result.total) break;
-      page += 1;
-    }
-    return { warehouse, rows, settings, truncated: rows.length >= 1000 };
+    const rows = await tx
+      .select({ id: products.id, name: products.name, sku: products.sku })
+      .from(products)
+      .where(
+        and(
+          eq(products.companyId, ctx.company.id),
+          eq(products.isActive, true),
+          eq(products.trackStock, true),
+        ),
+      )
+      .orderBy(asc(products.name));
+    return { warehouse, rows, settings, truncated: false };
   });
 
   if (!data) notFound();

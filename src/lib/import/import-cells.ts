@@ -219,10 +219,17 @@ export function normalizeBarcode(value: unknown): string | null {
     .trim()
     .replace(/[\s'-]/g, "");
   if (!text) return null;
-  // Excel sometimes stores long barcodes as scientific notation.
-  if (/^\d+(\.\d+)?e\+\d+$/i.test(text)) {
-    const asNumber = Number(text);
-    return Number.isFinite(asNumber) ? asNumber.toFixed(0) : text;
+  // Excel sometimes stores long barcodes as scientific notation (e.g. 8.99123456789e+12).
+  // Pure string expansion prevents IEEE 754 precision loss on >15 digit barcodes.
+  const match = text.match(/^(\d+)(?:\.(\d+))?e\+(\d+)$/i);
+  if (match) {
+    const [, intPart, fracPart = "", expPart] = match;
+    const exp = parseInt(expPart, 10);
+    if (exp >= fracPart.length) {
+      return (intPart + fracPart + "0".repeat(exp - fracPart.length)).slice(0, 60);
+    }
+    const combined = intPart + fracPart;
+    return (combined.slice(0, intPart.length + exp) + "." + combined.slice(intPart.length + exp)).slice(0, 60);
   }
   return text.slice(0, 60);
 }

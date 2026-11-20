@@ -10,6 +10,7 @@
 "use server";
 
 import { z } from "zod";
+import { revalidatePath } from "next/cache";
 import { withCompany } from "@/db/tenant";
 import { requirePermission } from "@/lib/session";
 import { AppError, guard } from "@/lib/errors";
@@ -48,7 +49,7 @@ export async function commitImportBatchAction(input: z.input<typeof commitSchema
     const ctx = await requirePermission("import.manage");
     const data = parseInput(commitSchema, input);
 
-    return withCompany(ctx.company.id, async (tx) => {
+    const result = await withCompany(ctx.company.id, async (tx) => {
       const job = await lockImportJob(tx, ctx.company.id, data.jobId);
       const accountingImport = [
         "accounts",
@@ -140,5 +141,11 @@ export async function commitImportBatchAction(input: z.input<typeof commitSchema
         stockQty: processed.stockQty,
       });
     });
+
+    revalidatePath("/app/gudang/impor");
+    revalidatePath("/app/gudang/produk");
+    revalidatePath("/app/pos");
+
+    return result;
   });
 }

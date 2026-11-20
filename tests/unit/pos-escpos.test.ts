@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { EscPosEncoder } from "@/lib/escpos/encoder";
-import { formatReceiptToEscPos } from "@/lib/escpos/receipt-template";
-import type { ReceiptData } from "@/lib/escpos/types";
+import { formatReceiptToEscPos, formatSessionReportToEscPos } from "@/lib/escpos/receipt-template";
+import type { ReceiptData, SessionReportData } from "@/lib/escpos/types";
 
 describe("ESC/POS Encoder & Thermal Receipt Engine", () => {
   it("menginisialisasi buffer dengan ESC @ (0x1B, 0x40)", () => {
@@ -110,5 +110,57 @@ describe("ESC/POS Encoder & Thermal Receipt Engine", () => {
     // Pemotong kertas GS V (0x1D, 0x56) ada di akhir
     expect(bytes[bytes.length - 2]).toBe(0x42);
     expect(bytes[bytes.length - 1]).toBe(0x00);
+  });
+
+  it("melakukan transliterasi karakter non-ASCII (em-dash, bullet, aksen) ke ASCII bersih", () => {
+    const encoder = new EscPosEncoder("58mm");
+    encoder.line("Kopi Robusta — 250g • Café “Spesial”");
+    const bytes = encoder.encode();
+    const str = Buffer.from(bytes).toString("latin1");
+    expect(str).toContain("Kopi Robusta - 250g * Cafe \"Spesial\"");
+    expect(str).not.toContain("Kopi Robusta   250g");
+  });
+
+  it("formatSessionReportToEscPos menyusun Z-Report lengkap untuk printer thermal 58mm", () => {
+    const sessionData: SessionReportData = {
+      companyName: "Minimarket Barokah",
+      address: "Jl. Merdeka No. 10",
+      phone: "08123456789",
+      isX: false,
+      sessionId: "sess-abc12345-6789",
+      cashierName: "Budi Santoso",
+      branchName: "Cabang Utama",
+      openedAt: "2026-11-20 08:00",
+      closedAt: "2026-11-20 16:00",
+      openingCash: 200000,
+      closingCash: 1250000,
+      expectedCash: 1250000,
+      cashDifference: 0,
+      totals: {
+        salesCount: 45,
+        cashSales: 1050000,
+        nonCashSales: 500000,
+        totalSales: 1550000,
+        cashIn: 0,
+        cashOut: 0,
+      },
+      paymentBreakdown: [
+        { methodName: "Tunai", amount: 1050000 },
+        { methodName: "QRIS", amount: 500000 },
+      ],
+      paperWidth: "58mm",
+    };
+
+    const bytes = formatSessionReportToEscPos(sessionData);
+    expect(bytes.length).toBeGreaterThan(100);
+    const text = Buffer.from(bytes).toString("latin1");
+
+    expect(text).toContain("Minimarket Barokah");
+    expect(text).toContain("LAPORAN TUTUP SESI (Z)");
+    expect(text).toContain("Budi Santoso");
+    expect(text).toContain("RINGKASAN PENJUALAN");
+    expect(text).toContain("TOTAL PENJUALAN");
+    expect(text).toContain("KAS FISIK LACI");
+    expect(text).toContain("PAS");
   });
 });

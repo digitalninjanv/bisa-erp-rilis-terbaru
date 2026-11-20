@@ -1,5 +1,5 @@
 import { EscPosEncoder } from "./encoder";
-import type { ReceiptData } from "./types";
+import type { ReceiptData, SessionReportData } from "./types";
 import { formatIDR, formatNumber } from "@/lib/money";
 
 /**
@@ -122,8 +122,14 @@ export function formatReceiptToEscPos(data: ReceiptData): Uint8Array {
   // 7. QR Code (Opsional)
   if (data.showQr) {
     encoder.feed(1);
+    // Standard ESC/POS ignores ESC a for GS ( k. Centering requires margin offset.
+    // 58mm: 384 dots wide, module 4 is ~104 dots -> offset ~140 dots
+    // 80mm: 576 dots wide, module 4 is ~104 dots -> offset ~236 dots
+    const offset = paper === "80mm" ? 236 : 140;
+    encoder.leftMargin(offset);
     encoder.qrCode(data.saleNumber);
-    encoder.line(data.saleNumber);
+    encoder.leftMargin(0);
+    encoder.align("center").line(data.saleNumber);
   }
 
   // 8. Pakan Kertas & Potong (Cutter)
@@ -132,6 +138,72 @@ export function formatReceiptToEscPos(data: ReceiptData): Uint8Array {
   } else {
     encoder.feed(4);
   }
+
+  return encoder.encode();
+}
+
+/**
+ * Format laporan tutup sesi kasir (Z-Report) atau laporan sementara (X-Report)
+ * menjadi deretan byte ESC/POS siap kirim ke printer thermal 58mm / 80mm.
+ */
+export function formatSessionReportToEscPos(data: SessionReportData): Uint8Array {
+  const paper = data.paperWidth ?? "58mm";
+  const encoder = new EscPosEncoder(paper);
+
+  encoder.init();
+  encoder.align("center").bold(true).size(false, true).line(data.companyName).size(false, false).bold(false);
+  if (data.address) encoder.line(data.address);
+  if (data.phone) encoder.line(`Telp: ${data.phone}`);
+
+  encoder.divider("=");
+  encoder.align("center").bold(true);
+  encoder.line(data.isX ? "LAPORAN SEMENTARA (X)" : "LAPORAN TUTUP SESI (Z)");
+  encoder.bold(false).line(`SESI: ${data.sessionId.slice(0, 8).toUpperCase()}`);
+  encoder.divider("-");
+
+  encoder.align("left");
+  if (data.cashierName) encoder.row("Kasir   :", data.cashierName);
+  if (data.branchName) encoder.row("Cabang  :", data.branchName);
+  encoder.row("Buka    :", data.openedAt);
+  if (data.closedAt) encoder.row("Tutup   :", data.closedAt);
+
+  encoder.divider("-");
+  encoder.bold(true).line("RINGKASAN PENJUALAN").bold(false);
+  encoder.row("Jumlah Transaksi :", String(data.totals.salesCount));
+  encoder.row("Penjualan Tunai  :", formatIDR(data.totals.cashSales));
+  encoder.row("Penjualan Non-Tun:", formatIDR(data.totals.nonCashSales));
+  encoder.bold(true).row("TOTAL PENJUALAN  :", formatIDR(data.totals.totalSales)).bold(false);
+
+  if (data.paymentBreakdown.length > 0) {
+    encoder.divider("-");
+    encoder.bold(true).line("RINCIAN METODE BAYAR").bold(false);
+    for (const p of data.paymentBreakdown) {
+      encoder.row(p.methodName, formatIDR(p.amount));
+    }
+  }
+
+  encoder.divider("-");
+  encoder.bold(true).line("KAS FISIK LACI").bold(false);
+  encoder.row("Modal Awal      :", formatIDR(data.openingCash));
+  if (data.totals.cashIn > 0) encoder.row("Kas Masuk (+)   :", formatIDR(data.totals.cashIn));
+  if (data.totals.cashOut > 0) encoder.row("Kas Keluar (-)  :", formatIDR(data.totals.cashOut));
+  encoder.row("Ekspektasi Kas  :", formatIDR(data.expectedCash));
+  if (data.closingCash != null) {
+    encoder.bold(true).row("Kas Dihitung    :", formatIDR(data.closingCash)).bold(false);
+    const diff = data.cashDifference ?? 0;
+    if (diff !== 0) {
+      encoder.bold(true).row(diff > 0 ? "LEBIH FISIK (+):" : "SELISIH FISIK (-):", formatIDR(Math.abs(diff))).bold(false);
+      if (data.differenceReason) encoder.line(`Alasan: ${data.differenceReason}`);
+    } else {
+      encoder.row("Selisih Fisik   :", "Rp 0 (PAS)");
+    }
+  }
+
+  encoder.divider("=");
+  encoder.align("center");
+  encoder.line("Dicetak otomatis oleh Sistem POS");
+  encoder.feed(3);
+  encoder.cut();
 
   return encoder.encode();
 }

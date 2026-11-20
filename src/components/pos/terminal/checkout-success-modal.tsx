@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { getDesktopPrintBridge } from "@/lib/pos/desktop-print";
+import { renderReceiptHtml } from "@/lib/pos/receipt-html";
 import { formatIDR } from "@/lib/money";
 import { getPrinterPreferences } from "@/lib/escpos/printer-connection";
 import { getOrCreateDeviceId } from "@/lib/pos-offline";
@@ -58,7 +59,7 @@ export function CheckoutSuccessModal({
   const triggerPrint = useCallback(async (saleId: string, saleNumber: string, retryConfirmed = false) => {
     if (submittingPrint.current) return;
     const desktop = getDesktopPrintBridge();
-    if (desktop && !sale?.offlineReceipt) {
+    if (desktop) {
       if (desktopSent.current && !canReprint) return;
       if (desktopUncertain.current && !retryConfirmed) {
         setConfirmRetry(true);
@@ -68,7 +69,8 @@ export function CheckoutSuccessModal({
       setPrintStatus("printing");
       setPrintMessage("Mengirim struk ke printer yang dipilih…");
       try {
-        const result = await desktop.printReceipt(saleId, desktopSent.current);
+        const rawHtml = sale?.offlineReceipt ? renderReceiptHtml(sale.offlineReceipt) : undefined;
+        const result = await desktop.printReceipt(saleId, desktopSent.current, rawHtml);
         desktopUncertain.current = Boolean(result.uncertain);
         if (result.ok) desktopSent.current = true;
         setPrintStatus(result.ok ? "success" : "error");

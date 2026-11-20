@@ -80,7 +80,7 @@ export function PosPrintQueue({ companyId }: { companyId: string }) {
     }
 
     void run();
-    const interval = window.setInterval(() => void run(), 2_000);
+    const interval = isDirectPrinter() ? window.setInterval(() => void run(), 2_000) : undefined;
     const onOnline = () => void run();
     const onQueue = () => void run();
     const onError = (event: ErrorEvent) => {
@@ -96,7 +96,7 @@ export function PosPrintQueue({ companyId }: { companyId: string }) {
     window.addEventListener("unhandledrejection", onRejection);
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
+      if (interval !== undefined) window.clearInterval(interval);
       window.removeEventListener("online", onOnline);
       window.removeEventListener(PRINT_QUEUE_EVENT, onQueue);
       window.removeEventListener("error", onError);

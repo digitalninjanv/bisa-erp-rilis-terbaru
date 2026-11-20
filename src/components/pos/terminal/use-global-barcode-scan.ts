@@ -4,6 +4,7 @@ import { useCallback, type Dispatch, type RefObject, type SetStateAction } from 
 import { toast } from "sonner";
 import { useBarcodeScannerCapture } from "@/components/pos/use-barcode-scanner";
 import type { ProductOption } from "@/components/pos/terminal-types";
+import { playScannerBeep } from "@/lib/pos/scanner-beep";
 
 /** Pindai barcode global: cari kode, lalu masukkan produk/kemasan ke keranjang. */
 export function useGlobalBarcodeScan(params: {
@@ -21,11 +22,13 @@ export function useGlobalBarcodeScan(params: {
       if (!trimmed) return;
       const product = await scanBarcode(trimmed);
       if (!product) {
+        playScannerBeep("error");
         toast.error(`Produk dengan barcode/SKU "${trimmed}" tidak ditemukan.`);
         setSearch("");
         searchRef.current?.focus();
         return;
       }
+      playScannerBeep("success");
       addProduct(product, product.matchedPackagingId ?? null);
     },
     [scanBarcode, addProduct, setSearch, searchRef],

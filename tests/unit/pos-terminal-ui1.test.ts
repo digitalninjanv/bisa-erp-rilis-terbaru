@@ -44,6 +44,8 @@ describe("resolveTerminalShortcut — peta pintasan terminal", () => {
     expect(resolveTerminalShortcut({ key: "F9" })).toBe("pay");
     expect(resolveTerminalShortcut({ key: "m", altKey: true })).toBe("toggle-mode");
     expect(resolveTerminalShortcut({ key: "M", altKey: true })).toBe("toggle-mode");
+    expect(resolveTerminalShortcut({ key: "c", altKey: true })).toBe("clear-cart");
+    expect(resolveTerminalShortcut({ key: "C", altKey: true })).toBe("clear-cart");
   });
 
   it("menolak tombol browser, modifier Ctrl/Cmd, dan tombol biasa", () => {

@@ -45,16 +45,12 @@ import { ConfirmDialog } from "@/components/blocks/confirm-dialog";
 import { StatusSteps } from "@/components/blocks/document-page";
 import { DateField } from "@/components/date-field";
 import { fieldClass, labelClass } from "@/components/blocks/field-classes";
-
 type Row = OpnameCountRow;
 type CountFilter = "all" | "uncounted" | "counted";
-
 const COUNT_PAGE_SIZE = 50;
-
 function byProductName(a: { name: string }, b: { name: string }) {
   return a.name.localeCompare(b.name, "id", { numeric: true, sensitivity: "base" });
 }
-
 /**
  * FIX-GDG Tahap 4 (GDG2-01) — opname dua langkah dengan HITUNG BUTA.
  *
@@ -179,27 +175,31 @@ export function OpnameForm({
       window.localStorage.removeItem(key);
       return;
     }
-    window.localStorage.setItem(
-      key,
-      serializeOpnameDraft({
-        warehouseId,
-        date,
-        notes,
-        step,
-        scope,
-        fullLoaded,
-        rows: rows.map((row) => ({
-          productId: row.productId,
-          name: row.name,
-          sku: row.sku,
-          counted: row.counted,
-          unitCost: row.unitCost,
-          unitName: row.unitName ?? null,
-          packagings: row.packagings ?? [],
-          components: row.components ?? {},
-        })),
-      }),
-    );
+    try {
+      window.localStorage.setItem(
+        key,
+        serializeOpnameDraft({
+          warehouseId,
+          date,
+          notes,
+          step,
+          scope,
+          fullLoaded,
+          rows: rows.map((row) => ({
+            productId: row.productId,
+            name: row.name,
+            sku: row.sku,
+            counted: row.counted,
+            unitCost: row.unitCost,
+            unitName: row.unitName ?? null,
+            packagings: row.packagings ?? [],
+            components: row.components ?? {},
+          })),
+        }),
+      );
+    } catch {
+      // Tangani QuotaExceededError atau mode privat peramban agar form tidak crash
+    }
   }, [rows, date, notes, step, scope, fullLoaded, warehouseId, companyId]);
 
   // GD-P3-9: mode hitung menyeluruh — muat semua produk aktif terlacak
@@ -234,7 +234,7 @@ export function OpnameForm({
     });
     setFullLoaded(true);
     if (result.data.truncated) {
-      toast.warning("Produk terlacak melebihi batas 1.000 — hanya 1.000 pertama yang dimuat.");
+      toast.warning("Produk terlacak melebihi batas 50.000 — 50.000 produk pertama yang dimuat.");
     } else {
       toast.success(`${result.data.rows.length} produk dimuat untuk dihitung.`);
     }
