@@ -12,7 +12,10 @@ Aplikasi desktop resmi untuk Bisa POS yang secara bawaan membuka terminal `https
 ## Instalasi
 
 1. Siapkan build Bisa ERP yang mencakup integrasi desktop ini. Di root repo jalankan `bash deploy/build-release.sh 0.1.0-pos-local --without-tauri-bundles`. Gunakan prosedur deployment ERP yang sudah dipakai toko. Installer systemd berbasis Debian dan jalur Docker dijelaskan di direktori `deploy/`.
-2. Di direktori `pos-electron/`, jalankan `pnpm install --frozen-lockfile` dan `pnpm run package --linux AppImage`. Untuk paket Windows, jalankan `pnpm run package --win nsis` di mesin build Windows. Hasil berada di `dist-release/pos-electron/`.
+2. Di direktori `pos-electron/`, jalankan `pnpm install --frozen-lockfile` lalu:
+   - Linux: `pnpm run package:linux` → `Bisa POS-<versi>.AppImage`.
+   - Windows: jalankan `pnpm run package:win` **di Windows** (NSIS membutuhkan Wine bila dijalankan dari Linux) → `Bisa POS Setup <versi>.exe`.
+   Workflow `.github/workflows/pos-electron-build.yml` membangun AppImage di Ubuntu dan installer NSIS di Windows secara otomatis; unduh artifact `bisa-pos-windows-nsis` dari halaman Actions. Hasil lokal berada di `dist-release/pos-electron/`.
 3. Build ini memakai bawaan `https://ifi.lapak.my.id`. Untuk server lain, jalankan dengan `--erp-url=https://alamat-erp-toko` atau ubah lewat **Atur printer & server**. Alamat HTTPS harus memakai sertifikat yang dipercaya komputer kasir.
 4. Untuk Linux, dari root repo jalankan `bash pos-electron/install-linux.sh "/path/ke/Bisa POS-0.1.1.AppImage"` untuk menambahkan ikon **Bisa POS** ke menu aplikasi pengguna. Jika sistem tidak menyediakan FUSE, jalankan AppImage dengan `--appimage-extract-and-run`.
 
