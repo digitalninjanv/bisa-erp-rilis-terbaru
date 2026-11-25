@@ -623,7 +623,7 @@ export function PosTerminal({
     promotions, cart, cache, quoteLine, setLineDiscount,
   });
 
-  const actionTheme = POS_ACTION_THEMES[display.actionTheme] ?? POS_ACTION_THEMES.odoo;
+  const actionTheme = POS_ACTION_THEMES[display.actionTheme] ?? POS_ACTION_THEMES.accurate;
   const cartPanelProps = {
     cart, cache, quote, quoteLine, total, heldTotal, groupId, setGroupId, groups,
     selectedGroup, heldCount, setCart, onClearCart: resetNewSale, setQty, setSerial,
@@ -650,13 +650,15 @@ export function PosTerminal({
       style={{
         "--pos-cart-w": `${display.cartWidth}px`,
         "--pos-action": actionTheme.primary,
+        "--pos-action-deep": actionTheme.deep,
         "--pos-action-soft": actionTheme.soft,
+        "--pos-action-text": actionTheme.softText,
         "--pos-action-fg": actionTheme.foreground,
       } as React.CSSProperties}
       className={cn(
-        "pos-terminal-root grid gap-3 bg-[#f0eeee] pb-20 dark:bg-background lg:grid-cols-[minmax(0,1fr)_var(--pos-cart-w)] lg:pb-0",
+        "pos-terminal-root grid gap-3 rounded-xl bg-[var(--pos-canvas)] p-2.5 pb-20 lg:grid-cols-[minmax(0,1fr)_var(--pos-cart-w)] lg:p-3",
         fullscreen &&
-          "fixed inset-0 z-[65] h-dvh overflow-y-auto p-3 lg:overflow-hidden",
+          "fixed inset-0 z-[65] h-dvh rounded-none overflow-y-auto p-3 lg:overflow-hidden",
       )}
     >
       <PosPrintQueue companyId={companyId} userId={userId} />
@@ -724,11 +726,13 @@ export function PosTerminal({
           style={{
             height: "92dvh", width: "100%",
             "--pos-action": actionTheme.primary,
+            "--pos-action-deep": actionTheme.deep,
             "--pos-action-soft": actionTheme.soft,
+            "--pos-action-text": actionTheme.softText,
             "--pos-action-fg": actionTheme.foreground,
           } as React.CSSProperties}
           aria-label="Keranjang dan pembayaran"
-          className="z-[71] w-full gap-3 overflow-x-hidden overflow-y-auto rounded-t-2xl px-3 pb-0 pt-0 sm:mx-auto sm:max-w-[560px] lg:hidden"
+          className="pos-terminal-surface z-[71] w-full gap-3 overflow-x-hidden overflow-y-auto rounded-t-2xl bg-[var(--pos-canvas)] px-3 pb-0 pt-0 sm:mx-auto sm:max-w-[560px] lg:hidden"
         >
           <div inert={submitting}>
             <PosCheckoutWorkspace

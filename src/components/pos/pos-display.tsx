@@ -20,12 +20,12 @@ export type PosActionTheme = "odoo" | "teal" | "accurate" | "graphite";
 
 export const POS_ACTION_THEMES: Record<
   PosActionTheme,
-  { label: string; primary: string; soft: string; foreground: string }
+  { label: string; primary: string; deep: string; soft: string; softText: string; foreground: string }
 > = {
-  odoo: { label: "Odoo", primary: "#714b67", soft: "#f3eaf1", foreground: "#ffffff" },
-  teal: { label: "Teal", primary: "#017e84", soft: "#e6f4f6", foreground: "#ffffff" },
-  accurate: { label: "Accurate", primary: "#0f6b3f", soft: "#e7f3ea", foreground: "#ffffff" },
-  graphite: { label: "Grafit", primary: "#3f3a36", soft: "#f1efec", foreground: "#ffffff" },
+  accurate: { label: "Hijau Retail", primary: "#047857", deep: "#065f46", soft: "#ecfdf5", softText: "#065f46", foreground: "#ffffff" },
+  teal: { label: "Teal Modern", primary: "#0f766e", deep: "#115e59", soft: "#f0fdfa", softText: "#115e59", foreground: "#ffffff" },
+  graphite: { label: "Biru POS", primary: "#2563eb", deep: "#1d4ed8", soft: "#eff6ff", softText: "#1e40af", foreground: "#ffffff" },
+  odoo: { label: "Odoo Indigo", primary: "#4f46e5", deep: "#4338ca", soft: "#eef2ff", softText: "#3730a3", foreground: "#ffffff" },
 };
 
 export type PosDisplayPrefs = {
@@ -61,7 +61,7 @@ export const POS_DISPLAY_DEFAULTS: PosDisplayPrefs = {
   showCategory: false,
   colorByCategory: false,
   autoFullscreen: false,
-  actionTheme: "odoo",
+  actionTheme: "accurate",
 };
 
 export const POS_CART_WIDTHS = [360, 396, 440, 480] as const;
@@ -202,7 +202,7 @@ export function PosDisplayControls({
           "hidden h-11 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium transition-colors lg:flex",
           fullscreen
             ? "border-primary bg-primary/5 text-foreground"
-            : "border-border bg-background text-muted-foreground hover:bg-muted",
+            : "border-[var(--pos-border-strong)] bg-background text-slate-700 hover:bg-muted",
         )}
       >
         {fullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
@@ -218,7 +218,7 @@ export function PosDisplayControls({
           aria-expanded={open}
           aria-haspopup="dialog"
           className={cn(
-            "flex h-11 min-w-11 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-[13px] font-semibold text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:justify-start",
+            "flex h-11 min-w-11 items-center justify-center gap-2 rounded-md border border-[var(--pos-border-strong)] bg-background px-3 text-[13px] font-semibold text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:justify-start",
             open && "bg-muted",
           )}
         >

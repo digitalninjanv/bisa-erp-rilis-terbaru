@@ -148,7 +148,7 @@ export function PosActionMenu({
           "flex h-11 min-w-11 items-center justify-center gap-2 rounded-md border px-3 text-[13px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:justify-start",
           open
             ? "border-primary bg-primary/5 text-foreground"
-            : "border-border bg-background text-muted-foreground hover:bg-muted",
+            : "border-[var(--pos-border-strong)] bg-background text-slate-700 hover:bg-muted",
         )}
       >
         <Menu className="size-4" />

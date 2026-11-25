@@ -39,12 +39,12 @@ export function CashChips({
 }) {
   const suggestions = cashSuggestions(total);
   const chipClass =
-    "inline-flex h-11 items-center justify-center rounded-md border border-border/80 bg-background px-1 text-xs font-semibold transition-colors hover:border-border hover:bg-muted active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40";
+    "inline-flex h-11 items-center justify-center rounded-md border border-[var(--pos-border-strong)] bg-white px-1 text-xs font-semibold text-slate-900 transition-colors hover:border-slate-600 hover:bg-slate-100 active:scale-[0.98] disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-100 disabled:text-slate-500 disabled:opacity-100";
 
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-medium text-muted-foreground">Saran uang diterima</span>
+        <span className="text-xs font-semibold text-foreground">Saran uang diterima</span>
         {tendered > 0 ? (
           <button
             type="button"
@@ -61,7 +61,10 @@ export function CashChips({
           type="button"
           disabled={disabled || total <= 0}
           onClick={() => onChange(total)}
-          className={`${chipClass} border-[var(--pos-action)] bg-[var(--pos-action-soft)] text-[var(--pos-action)] hover:opacity-90`}
+          className={cn(
+            chipClass,
+            "border-[var(--pos-action)] bg-[var(--pos-action-soft)] text-[var(--pos-action-text)] hover:brightness-95",
+          )}
         >
           Uang Pas
         </button>
@@ -73,7 +76,7 @@ export function CashChips({
             onClick={() => onChange(value)}
             className={cn(
               chipClass,
-              tendered === value && "border-[var(--pos-action)] bg-[var(--pos-action-soft)] text-[var(--pos-action)]",
+              tendered === value && "border-2 border-[var(--pos-action)] bg-[var(--pos-action-soft)] text-[var(--pos-action-text)]",
             )}
             aria-label={`Isi uang diterima ${formatIDR(value)}`}
           >

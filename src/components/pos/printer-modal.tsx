@@ -119,7 +119,7 @@ export function PrinterStatusButton({ compact = false }: { compact?: boolean }) 
             : "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[11px] font-medium transition-colors",
           ready
             ? "border-tone-teal/40 bg-tone-teal-soft/40 text-tone-teal hover:bg-tone-teal-soft/60"
-            : "border-border bg-card text-foreground hover:bg-muted",
+            : "border-[var(--pos-border-strong)] bg-card text-foreground hover:bg-muted",
         )}
         title={ariaText}
       >

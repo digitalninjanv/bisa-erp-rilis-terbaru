@@ -97,13 +97,13 @@ export function CartPanel(props: {
   const [bulkSerialKey, setBulkSerialKey] = useState<string | null>(null);
   const [bulkSerialText, setBulkSerialText] = useState("");
   return (
-        <div className="rounded-lg border border-border bg-card">
+        <div className="overflow-hidden rounded-xl border border-[var(--pos-border-strong)] bg-[var(--pos-panel)] shadow-sm">
           {(!compactHeader || cart.length > 0 || heldCount > 0) ? (
-          <div className={cn("flex min-h-14 items-center justify-between gap-2 border-b border-border bg-card px-4 py-3 lg:sticky lg:top-0 lg:z-20 lg:rounded-t-lg lg:bg-card", compactHeader && "justify-end")}>
+          <div className={cn("flex min-h-14 items-center justify-between gap-2 border-b border-[var(--pos-border-strong)] bg-[var(--pos-header)] px-4 py-3 text-[var(--pos-header-fg)] lg:sticky lg:top-0 lg:z-20 lg:rounded-t-[11px]", compactHeader && "justify-end")}>
             <div className={cn("flex min-w-0 items-center gap-2", compactHeader && "hidden")}>
               <ShoppingCart className="size-5 text-[var(--pos-action)]" />
-              <h2 className="text-base font-semibold text-[var(--pos-action)]">Keranjang</h2>
-              <span className="num whitespace-nowrap rounded-full bg-[var(--pos-action-soft)] px-2 py-1 text-xs font-medium text-[var(--pos-action)]">
+              <h2 className="text-base font-bold text-slate-900">Keranjang</h2>
+              <span className="num whitespace-nowrap rounded-full bg-[var(--pos-action-soft)] px-2.5 py-0.5 text-xs font-bold text-[var(--pos-action-text)]">
                 {cart.length} baris
               </span>
             </div>
@@ -125,7 +125,7 @@ export function CartPanel(props: {
                   value={groupId}
                   onChange={(event) => setGroupId(event.target.value)}
                   aria-label="Kelompok harga"
-                  className="h-11 max-w-[132px] rounded-md border border-input bg-background px-2 text-xs"
+                  className="h-11 max-w-[132px] rounded-md border border-input bg-background px-2 text-xs font-semibold text-foreground"
                 >
                   <option value="">Harga normal</option>
                   {groups.map((group) => (
@@ -138,10 +138,10 @@ export function CartPanel(props: {
                   href="/app/pos/ditahan"
                   aria-label={`Lihat ${heldCount} pesanan ditahan`}
                   title={`${heldCount} pesanan ditahan`}
-                  className="flex min-h-11 items-center gap-1 rounded-md px-2 text-sm font-medium text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="flex min-h-11 items-center gap-1 rounded-md px-2 text-sm font-medium text-slate-700 hover:bg-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <PauseCircle className="size-4" />
-                  <span className="num rounded-full bg-tone-amber-soft px-1.5 py-0.5 text-xs font-semibold text-tone-amber">
+                  <span className="num rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-bold text-amber-900">
                     {heldCount}
                   </span>
                 </a>
@@ -152,7 +152,7 @@ export function CartPanel(props: {
                   onClick={() => setConfirmClearCart(true)}
                   aria-label="Kosongkan keranjang"
                   title="Kosongkan keranjang"
-                  className="grid size-11 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="grid size-11 place-items-center rounded-md text-slate-600 hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <Trash2 className="size-4" />
                 </button>
@@ -163,7 +163,7 @@ export function CartPanel(props: {
 
           <div
             className={cn(
-              "border-b border-border px-4 py-3",
+              "border-b border-[var(--pos-border-strong)] bg-[var(--pos-header)] px-4 py-3",
               compactHeader && "hidden",
               "[@media(min-width:1024px)_and_(max-height:850px)]:hidden",
             )}
@@ -198,7 +198,7 @@ export function CartPanel(props: {
           </div>
 
           {availablePromotions.length > 0 && onApplyPromotion ? (
-            <div className="border-b border-border bg-tone-teal-soft/50 px-4 py-2.5">
+            <div className="border-b border-[var(--pos-border-strong)] bg-tone-teal-soft px-4 py-2.5">
               <p className="text-[11px] font-semibold text-tone-teal">Promo tersedia untuk keranjang ini</p>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {availablePromotions.map((promo) => (
@@ -226,14 +226,14 @@ export function CartPanel(props: {
             )}
           >
             {cart.length === 0 ? (
-              <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
-                <ShoppingCart className="size-7 text-muted-foreground/60" />
-                <p className="mt-2 text-sm text-muted-foreground">
+              <div className="flex flex-col items-center justify-center border-b border-slate-300 bg-[var(--pos-tray)] px-4 py-10 text-center">
+                <ShoppingCart className="size-7 text-muted-foreground" />
+                <p className="mt-2 text-sm font-medium text-muted-foreground">
                   Scan barcode atau pilih produk untuk mulai.
                 </p>
               </div>
             ) : (
-              <ul className="divide-y divide-border/70">
+              <ul className="divide-y divide-slate-300">
                 {cart.map((item) => {
                   const key = cartLineKey(item);
                   const line = quoteLine(item.productId, item.packagingId);
@@ -258,7 +258,7 @@ export function CartPanel(props: {
                   const tracked = line?.trackStock ?? cached?.trackStock ?? true;
                   const unitName = pack?.name ?? line?.packagingName ?? cached?.unitCode ?? "PCS";
                   return (
-                    <li key={key} className="px-4 py-3">
+                    <li key={key} className="px-4 py-3 transition-colors hover:bg-slate-50">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <p className="line-clamp-2 text-sm font-semibold">{line?.name ?? cached?.name ?? "Produk"}</p>
@@ -318,7 +318,7 @@ export function CartPanel(props: {
                             (pola area sentuh checkbox/switch). Tombol
                             Hapus di atas baris ini juga diperluas area
                             sentuhnya ke 44px tanpa mengubah visualnya. */}
-                        <div className="flex shrink-0 items-center rounded-md border border-border">
+                        <div className="flex shrink-0 items-center rounded-md border border-[var(--pos-border-strong)]">
                           <button
                             type="button"
                             onClick={() => setQty(key, item.qty - 1)}
@@ -338,7 +338,7 @@ export function CartPanel(props: {
                             decimals={line?.trackSerial ?? cached?.trackSerial ? 0 : undefined}
                             aria-label={`Jumlah ${unitName}`}
                             wrapperClassName="h-11 w-12 shrink-0"
-                            className="h-11 w-full rounded-none border-x border-y-0 border-border bg-transparent px-0 text-center text-sm font-semibold focus:border-border"
+                            className="h-11 w-full rounded-none border-x border-y-0 border-[var(--pos-border-strong)] bg-transparent px-0 text-center text-sm font-semibold focus:border-[var(--pos-action)]"
                           />
                           <button
                             type="button"
@@ -399,11 +399,11 @@ export function CartPanel(props: {
                       ) : null}
 
                       {discountTargetKey === key ? (
-                        <div className="mt-2 flex items-center gap-2 rounded-md border border-border bg-muted/40 p-2">
+                        <div className="mt-2 flex items-center gap-2 rounded-md border border-[var(--pos-border-strong)] bg-[var(--pos-surface-alt)] p-2">
                           <select
                             value={lineDiscType}
                             onChange={(e) => setLineDiscType(e.target.value as "percent" | "nominal")}
-                            className="h-11 rounded border border-input bg-background px-2 text-[12px] font-medium"
+                            className="h-11 rounded border border-[var(--pos-border-strong)] bg-background px-2 text-[12px] font-medium"
                           >
                             <option value="percent">% Persen</option>
                             <option value="nominal">Rp Nominal</option>
@@ -415,7 +415,7 @@ export function CartPanel(props: {
                             value={lineDiscVal}
                             onChange={(e) => setLineDiscVal(e.target.value)}
                             placeholder={lineDiscType === "percent" ? "Diskon %" : "Nominal Rp"}
-                            className="num h-11 w-24 rounded border border-input bg-background px-2 text-[12px]"
+                            className="num h-11 w-24 rounded border border-[var(--pos-border-strong)] bg-background px-2 text-[12px]"
                           />
                           <button
                             type="button"
@@ -470,7 +470,7 @@ export function CartPanel(props: {
                               />
                             ))
                           ) : (
-                            <div className="rounded-md border border-border bg-muted/30 p-2.5 text-xs">
+                            <div className="rounded-md border border-[var(--pos-border-strong)] bg-[var(--pos-surface-alt)] p-2.5 text-xs">
                               <div className="flex items-center justify-between gap-2">
                                 <span className="font-medium">
                                   Nomor Seri ({((item.serialNumbers ?? []).filter((s) => s.trim().length > 0)).length} / {Math.floor(baseQty)} terisi)
@@ -506,7 +506,7 @@ export function CartPanel(props: {
             )}
           </div>
 
-          <div className={cn("space-y-2 border-t border-border px-4 py-3 text-sm", compactHeader && "hidden")}>
+          <div className={cn("space-y-2 border-t border-[var(--pos-border-strong)] bg-[var(--pos-header)] px-4 py-3 text-sm", compactHeader && "hidden")}>
             <Row label="Subtotal" value={formatIDR(quote?.subtotal ?? 0)} />
             {(quote?.discountTotal ?? 0) > 0 ? (
               <Row label="Diskon" value={`−${formatIDR(quote?.discountTotal ?? 0)}`} tone="plum" />
@@ -520,9 +520,9 @@ export function CartPanel(props: {
                 value={`${(quote?.roundingAdjustment ?? 0) > 0 ? "+" : "−"}${formatIDR(Math.abs(quote?.roundingAdjustment ?? 0))}`}
               />
             ) : null}
-            <div className="flex items-center justify-between border-t border-border pt-2">
-              <span className="text-base font-bold text-[var(--pos-action)]">Total</span>
-              <span className="num text-2xl font-bold text-[var(--pos-action)]">{formatIDR(total)}</span>
+            <div className="flex items-center justify-between border-t border-[var(--pos-border-strong)] pt-2.5">
+              <span className="text-base font-bold text-slate-900">Total</span>
+              <span className="num text-2xl font-extrabold text-[var(--pos-action)]">{formatIDR(total)}</span>
             </div>
             {heldTotal !== null && Math.abs(total - heldTotal) > 0.01 ? (
               <p className="rounded bg-amber-500/10 p-1.5 text-xs text-amber-700 dark:text-amber-300">
@@ -581,7 +581,7 @@ export function CartPanel(props: {
                   <button
                     type="button"
                     onClick={() => setBulkSerialKey(null)}
-                    className="rounded-md border border-border px-3 py-1.5 text-xs font-semibold hover:bg-muted"
+                    className="rounded-md border border-[var(--pos-border-strong)] px-3 py-1.5 text-xs font-semibold hover:bg-muted"
                   >
                     Batal
                   </button>

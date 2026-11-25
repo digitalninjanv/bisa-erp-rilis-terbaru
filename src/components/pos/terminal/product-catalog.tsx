@@ -24,12 +24,12 @@ import { PrinterStatusButton } from "@/components/pos/printer-modal";
 // bukan sebagai fill penuh. Kartu tetap putih agar teks dan harga paling
 // mudah dibaca; warna hanya menjadi penanda kategori.
 const CATEGORY_TONES = [
-  { accent: "border-b-4 border-b-tone-teal" },
-  { accent: "border-b-4 border-b-tone-plum" },
-  { accent: "border-b-4 border-b-tone-amber" },
-  { accent: "border-b-4 border-b-tone-green" },
-  { accent: "border-b-4 border-b-tone-blue" },
-  { accent: "border-b-4 border-b-tone-red" },
+  { accent: "border-b-[4px] border-b-teal-600" },
+  { accent: "border-b-[4px] border-b-indigo-600" },
+  { accent: "border-b-[4px] border-b-amber-500" },
+  { accent: "border-b-[4px] border-b-emerald-600" },
+  { accent: "border-b-[4px] border-b-sky-600" },
+  { accent: "border-b-[4px] border-b-rose-600" },
 ] as const;
 
 /** Warna kartu deterministik dari nama kategori (Odoo category colors). */
@@ -158,11 +158,11 @@ export function ProductCatalog(props: {
       >
         <div
           className={cn(
-            "rounded-lg border border-border bg-card",
+            "overflow-hidden rounded-xl border border-[var(--pos-border-strong)] bg-[var(--pos-panel)] shadow-sm",
             fullscreen && "lg:flex lg:min-h-0 lg:flex-1 lg:flex-col",
           )}
         >
-          <div className="flex flex-wrap items-center gap-2 border-b border-border p-2.5">
+          <div className="flex flex-wrap items-center gap-2 border-b border-[var(--pos-border-strong)] bg-[var(--pos-header)] p-2.5">
             <div className="relative min-w-[180px] flex-[1_1_280px]">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <input
@@ -239,7 +239,7 @@ export function ProductCatalog(props: {
                 }}
                 placeholder="Pindai barcode / cari produk (F2)"
                 aria-label="Cari produk atau scan barcode"
-                className="h-12 w-full rounded-md border border-input bg-background pl-10 pr-12 text-[15px] outline-none transition-shadow placeholder:text-muted-foreground/80 focus:border-ring focus:ring-2 focus:ring-ring/20"
+                className="h-12 w-full rounded-lg border border-[var(--pos-border-strong)] bg-white pl-10 pr-12 text-[15px] font-medium text-foreground outline-none transition-shadow placeholder:text-slate-600 focus:border-[var(--pos-action)] focus:ring-2 focus:ring-[var(--pos-action)]/25"
               />
               {search ? (
                 <button
@@ -362,7 +362,7 @@ export function ProductCatalog(props: {
           </div>
 
           {categories.length > 0 ? (
-            <div className="flex snap-x gap-1.5 overflow-x-auto overscroll-x-contain border-t border-border px-2.5 py-2 pr-6 [mask-image:linear-gradient(to_right,black_calc(100%-28px),transparent)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="flex snap-x gap-1.5 overflow-x-auto overscroll-x-contain border-b border-[var(--pos-border-strong)] bg-[var(--pos-tray)] px-2.5 py-2 pr-6 [mask-image:linear-gradient(to_right,black_calc(100%-28px),transparent)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <button
                 type="button"
                 aria-pressed={selectedCategory === ""}
@@ -371,10 +371,10 @@ export function ProductCatalog(props: {
                   setSearch("");
                 }}
                 className={cn(
-                  "inline-flex h-11 shrink-0 items-center rounded-full px-4 text-sm font-semibold transition-colors",
+                  "inline-flex h-11 shrink-0 items-center rounded-full px-4 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   selectedCategory === ""
-                    ? "bg-[var(--pos-action)] text-[var(--pos-action-fg)]"
-                    : "border border-border bg-card text-muted-foreground hover:bg-muted",
+                    ? "border border-[var(--pos-action)] bg-[var(--pos-action)] text-[var(--pos-action-fg)] shadow-sm"
+                    : "border border-input bg-background text-foreground hover:bg-muted",
                 )}
               >
                 Semua
@@ -389,10 +389,10 @@ export function ProductCatalog(props: {
                     setSearch("");
                   }}
                   className={cn(
-                    "inline-flex h-11 shrink-0 items-center rounded-full px-4 text-sm font-semibold transition-colors",
+                    "inline-flex h-11 shrink-0 items-center rounded-full px-4 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                     selectedCategory === category.id
-                      ? "bg-[var(--pos-action)] text-[var(--pos-action-fg)]"
-                      : "border border-border bg-card text-muted-foreground hover:bg-muted",
+                      ? "border border-[var(--pos-action)] bg-[var(--pos-action)] text-[var(--pos-action-fg)] shadow-sm"
+                      : "border border-input bg-background text-foreground hover:bg-muted",
                   )}
                 >
                   {category.name}
@@ -404,9 +404,10 @@ export function ProductCatalog(props: {
           <div
             ref={gridRef}
             className={cn(
+              "bg-[var(--pos-tray)]",
               display.view === "list" ? "flex flex-col" : "grid",
               display.view === "grid" && POS_COLUMN_CLASS[display.columns],
-              display.density === "compact" ? "gap-1.5 p-1.5" : "gap-2 p-2.5",
+              display.density === "compact" ? "gap-1.5 p-2" : "gap-2.5 p-3",
               fullscreen && "lg:min-h-0 lg:flex-1 lg:overflow-y-auto",
             )}
           >
@@ -452,17 +453,17 @@ export function ProductCatalog(props: {
                       aria-current={highlighted || undefined}
                       onClick={() => addProduct(product)}
                       className={cn(
-                        "group flex min-h-12 w-full touch-manipulation items-center gap-3 border text-left transition-colors active:scale-[0.995] hover:border-primary/50 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        "group flex min-h-12 w-full touch-manipulation items-center gap-3 border text-left transition-all active:scale-[0.995] hover:border-slate-600 hover:bg-slate-50 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                         shape,
-                        "border-border bg-card shadow-sm",
+                        "border-[var(--pos-border-strong)] bg-white shadow-sm",
                         tone?.accent,
                         display.density === "compact" ? "px-2.5 py-1.5" : "px-3 py-2",
-                        soldOut && "cursor-not-allowed opacity-60 hover:border-border hover:bg-background",
-                        highlighted && "border-primary bg-accent/40 ring-2 ring-ring/40 hover:border-primary",
+                        soldOut && "cursor-not-allowed border-slate-400 bg-slate-100 text-slate-600 hover:border-slate-400 hover:bg-slate-100 hover:shadow-sm",
+                        highlighted && "border-[var(--pos-action)] ring-2 ring-[var(--pos-action)]/30 hover:border-[var(--pos-action)]",
                       )}
                     >
                       <span className="min-w-0 flex-1">
-                        <span className={cn("block truncate font-medium", font.name)}>{product.name}</span>
+                        <span className={cn("block truncate font-semibold text-foreground", font.name)}>{product.name}</span>
                         <span className="mt-0.5 flex flex-wrap items-center gap-1.5">
                           {display.showSku ? (
                             <span className={cn("num text-muted-foreground", font.meta)}>{product.sku}</span>
@@ -492,12 +493,12 @@ export function ProductCatalog(props: {
                         </span>
                       </span>
                       {quantity > 0 ? (
-                        <span className={cn("num shrink-0 rounded bg-[var(--pos-action-soft)] px-1.5 py-0.5 font-semibold text-[var(--pos-action)]", font.badge)}>
+                        <span className={cn("num shrink-0 rounded-md bg-[var(--pos-action)] px-2 py-0.5 font-bold text-[var(--pos-action-fg)] shadow-xs", font.badge)}>
                           ×{formatQty(quantity)}
                         </span>
                       ) : null}
                       {display.showPrice ? (
-                        <span className={cn("num shrink-0 font-semibold", font.price)}>{formatIDR(product.salePrice)}</span>
+                        <span className={cn("num shrink-0 font-bold text-foreground", font.price)}>{formatIDR(product.salePrice)}</span>
                       ) : null}
                       {display.showStock ? (
                         <span
@@ -507,7 +508,7 @@ export function ProductCatalog(props: {
                               ? "bg-destructive/10 font-semibold text-destructive"
                               : product.stock <= 0
                                 ? "font-semibold text-tone-amber"
-                                : "bg-muted text-muted-foreground",
+                                : "bg-slate-200 text-slate-800",
                             font.badge,
                           )}
                         >
@@ -532,19 +533,19 @@ export function ProductCatalog(props: {
                     aria-current={highlighted || undefined}
                     onClick={() => addProduct(product)}
                     className={cn(
-                      "group flex touch-manipulation flex-col justify-between border text-left transition-colors active:scale-[0.99] hover:border-primary/50 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      "group flex touch-manipulation flex-col justify-between border text-left transition-all active:scale-[0.99] hover:border-slate-600 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                       shape,
-                      "border-border bg-card shadow-sm",
+                      "border-[var(--pos-border-strong)] bg-white shadow-sm",
                       tone?.accent,
                       display.density === "compact" ? "p-2" : "p-2.5",
                       display.density === "compact" ? "min-h-[96px]" : "min-h-[120px]",
-                      quantity > 0 && "ring-2 ring-[var(--pos-action)]/25",
-                      soldOut && "cursor-not-allowed opacity-60 hover:border-border hover:bg-background",
+                      quantity > 0 && "border-[var(--pos-action)] bg-[var(--pos-action-soft)] ring-2 ring-[var(--pos-action)]/30",
+                      soldOut && "cursor-not-allowed border-slate-400 bg-slate-100 text-slate-600 hover:border-slate-400 hover:shadow-sm",
                       highlighted &&
-                        "border-primary bg-accent/40 ring-2 ring-ring/40 hover:border-primary",
+                        "border-[var(--pos-action)] ring-2 ring-[var(--pos-action)]/30 hover:border-[var(--pos-action)]",
                     )}
                   >
-                    <span className={cn("line-clamp-2 font-medium leading-snug", font.name)}>{product.name}</span>
+                    <span className={cn("line-clamp-2 font-semibold leading-snug text-foreground", font.name)}>{product.name}</span>
                     {display.showSku ? (
                       <span className={cn("num mt-0.5 truncate text-muted-foreground", font.meta)}>{product.sku}</span>
                     ) : null}
@@ -572,13 +573,13 @@ export function ProductCatalog(props: {
                     ) : null}
                     <span className="mt-1 flex flex-wrap items-end justify-between gap-1">
                       {display.showPrice ? (
-                        <span className={cn("num font-semibold", font.price)}>{formatIDR(product.salePrice)}</span>
+                        <span className={cn("num font-bold text-foreground", font.price)}>{formatIDR(product.salePrice)}</span>
                       ) : (
                         <span />
                       )}
                       <span className="flex shrink-0 items-center gap-1 whitespace-nowrap">
                         {quantity > 0 ? (
-                          <span className={cn("num rounded bg-[var(--pos-action-soft)] px-1.5 py-0.5 font-semibold text-[var(--pos-action)]", font.badge)}>
+                          <span className={cn("num rounded-md bg-[var(--pos-action)] px-2 py-0.5 font-bold text-[var(--pos-action-fg)] shadow-xs", font.badge)}>
                             ×{formatQty(quantity)}
                           </span>
                         ) : null}
@@ -592,7 +593,7 @@ export function ProductCatalog(props: {
                               className={cn(
                                 "num rounded px-1.5 py-0.5",
                                 product.stock > 0
-                                  ? "bg-muted text-muted-foreground"
+                                  ? "bg-slate-200 text-slate-800"
                                   : "font-semibold text-tone-amber",
                                 font.badge,
                               )}
@@ -615,17 +616,17 @@ export function ProductCatalog(props: {
 
           {/* POS-1: pagination kisi produk — halaman diganti lewat
               offset server; kata cari/gudang baru selalu mulai dari 1. */}
-          <div className="flex items-center justify-between gap-2 border-t border-border px-3 py-2">
-            <span className="text-xs text-muted-foreground">
+          <div className="flex items-center justify-between gap-2 border-t border-[var(--pos-border-strong)] bg-[var(--pos-header)] px-3 py-2">
+            <span className="text-xs font-semibold text-muted-foreground">
               Halaman {page} · {products.length} produk
               {!pageFull && page > 1 ? " · halaman terakhir" : ""}
             </span>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5">
               <button
                 type="button"
                 disabled={page <= 1 || searching}
                 onClick={() => goToPage(page - 1)}
-                className="flex h-11 items-center gap-1 rounded-md border border-border px-3 text-[13px] font-medium hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex h-11 items-center gap-1 rounded-md border border-input bg-background px-3 text-[13px] font-semibold text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-100 disabled:text-zinc-500 disabled:opacity-100"
               >
                 <ChevronLeft className="size-3.5" /> Sebelumnya
               </button>
@@ -633,7 +634,7 @@ export function ProductCatalog(props: {
                 type="button"
                 disabled={!pageFull || searching}
                 onClick={() => goToPage(page + 1)}
-                className="flex h-11 items-center gap-1 rounded-md border border-border px-3 text-[13px] font-medium hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex h-11 items-center gap-1 rounded-md border border-input bg-background px-3 text-[13px] font-semibold text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-100 disabled:text-zinc-500 disabled:opacity-100"
               >
                 Berikutnya <ChevronRight className="size-3.5" />
               </button>

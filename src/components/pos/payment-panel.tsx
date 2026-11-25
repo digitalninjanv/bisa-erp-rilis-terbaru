@@ -173,19 +173,19 @@ export function PaymentPanel(props: {
   const quickMethods = methods.filter((method) => method.id !== singleMethod).slice(0, 2);
   return (
       <>
-        <div className="rounded-lg border border-border bg-card">
-          <div className="flex min-h-14 items-center justify-between gap-3 border-b border-border bg-card px-3 py-2.5">
+        <div className="overflow-hidden rounded-xl border border-[var(--pos-border-strong)] bg-[var(--pos-panel)] shadow-sm">
+          <div className="flex min-h-14 items-center justify-between gap-3 border-b border-[var(--pos-border-strong)] bg-[var(--pos-header)] px-3 py-2 text-[var(--pos-header-fg)]">
             <div>
-              <h2 className="text-base font-semibold text-[var(--pos-action)]">Pembayaran</h2>
+              <h2 className="text-base font-bold text-slate-900">Pembayaran</h2>
             </div>
-            <div role="group" className="flex shrink-0 rounded-md border border-border bg-muted/50 p-1" aria-label="Mode pembayaran">
+            <div role="group" className="flex shrink-0 rounded-lg border border-[var(--pos-border-strong)] bg-slate-200 p-0.5" aria-label="Mode pembayaran">
               <button
                 type="button"
                 onClick={() => setMode("single")}
                 aria-pressed={mode === "single"}
                 className={cn(
-                  "min-h-11 rounded px-3 text-[13px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  mode === "single" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                  "min-h-10 rounded-md px-3 text-[13px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  mode === "single" ? "bg-white text-slate-950 shadow-sm" : "text-slate-600 hover:text-slate-950",
                 )}
               >
                 Tunggal
@@ -195,8 +195,8 @@ export function PaymentPanel(props: {
                 onClick={() => setMode("mixed")}
                 aria-pressed={mode === "mixed"}
                 className={cn(
-                  "min-h-11 rounded px-3 text-[13px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  mode === "mixed" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                  "min-h-10 rounded-md px-3 text-[13px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  mode === "mixed" ? "bg-white text-slate-950 shadow-sm" : "text-slate-600 hover:text-slate-950",
                 )}
               >
                 Campuran
@@ -204,17 +204,17 @@ export function PaymentPanel(props: {
             </div>
           </div>
 
-          <div className="space-y-3 p-3">
+          <div className="space-y-3 bg-[var(--pos-header)] p-3">
             {mode === "single" ? (
               <>
                 {!methodsExpanded ? (
                   <div className="flex items-stretch gap-2">
                     <div
                       className={cn(
-                        "flex min-h-12 min-w-0 flex-1 items-center justify-between gap-2 rounded-md border px-3 py-2.5 text-sm font-semibold",
+                        "flex min-h-12 min-w-0 flex-1 items-center justify-between gap-2 rounded-md border-2 px-3 py-2.5 text-sm font-bold",
                         activeMethodType
-                          ? "border-[var(--pos-action)] bg-[var(--pos-action-soft)] text-foreground ring-1 ring-inset ring-[var(--pos-action)]"
-                          : "border-border bg-background text-muted-foreground",
+                          ? "border-[var(--pos-action)] bg-[var(--pos-action-soft)] text-[var(--pos-action-text)]"
+                          : "border-[var(--pos-border-strong)] bg-background text-slate-700",
                       )}
                     >
                       <span className="truncate">{activeMethodName}</span>
@@ -238,7 +238,7 @@ export function PaymentPanel(props: {
                         onClick={() => setSingleMethod(method.id)}
                         title={method.name}
                         aria-label={`Pilih ${method.name}`}
-                        className="flex min-h-12 w-16 shrink-0 items-center justify-center rounded-md border border-border bg-background px-1 text-[11px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className="flex min-h-12 w-16 shrink-0 items-center justify-center rounded-md border border-input bg-background px-1 text-[11px] font-semibold text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         <span className="truncate">{quickMethodLabel(method.name)}</span>
                       </button>
@@ -248,7 +248,7 @@ export function PaymentPanel(props: {
                       onClick={() => setMethodsExpanded(true)}
                       aria-label="Metode pembayaran lain"
                       title="Metode pembayaran lain"
-                      className="flex min-h-12 w-12 shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="flex min-h-12 w-12 shrink-0 items-center justify-center rounded-md border border-input bg-background text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <CreditCard className="size-4" />
                     </button>
@@ -281,7 +281,7 @@ export function PaymentPanel(props: {
                             "flex min-h-12 items-center justify-between gap-2 rounded-md border px-3 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                             singleMethod === method.id
                               ? "border-[var(--pos-action)] bg-[var(--pos-action-soft)] text-foreground ring-1 ring-inset ring-[var(--pos-action)]"
-                              : "border-border bg-background text-muted-foreground hover:bg-muted",
+                              : "border-[var(--pos-border-strong)] bg-background text-slate-700 hover:bg-slate-100",
                           )}
                         >
                           <span>{method.name}</span>
@@ -313,7 +313,7 @@ export function PaymentPanel(props: {
                             "flex min-h-12 items-center justify-between gap-2 rounded-md border px-3 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                             singleMethod === debtMethod.id
                               ? "border-[var(--pos-action)] bg-[var(--pos-action-soft)] text-foreground ring-1 ring-inset ring-[var(--pos-action)]"
-                              : "border-border bg-background text-muted-foreground hover:bg-muted",
+                              : "border-[var(--pos-border-strong)] bg-background text-slate-700 hover:bg-slate-100",
                           )}
                         >
                           <span>Utang</span>
@@ -350,15 +350,17 @@ export function PaymentPanel(props: {
                           }))
                         }
                         placeholder={total > 0 ? `Pas: ${formatMoneyText(String(total))}` : "0"}
-                        className="text-sm font-semibold"
+                        className="h-12 border border-[var(--pos-border-strong)] bg-white text-base font-bold text-slate-950 focus:border-[var(--pos-action)]"
                       />
                     </label>
                     <label className="space-y-1">
                       <span className="text-xs font-semibold text-foreground">Kembalian</span>
                       <div
                         className={cn(
-                          "num flex h-12 items-center justify-end rounded-md bg-muted px-3 text-base font-bold",
-                          change < 0 ? "text-destructive" : "text-tone-teal",
+                          "num flex h-12 items-center justify-end rounded-md border px-3 text-base font-extrabold",
+                          change < 0
+                            ? "border-destructive/60 bg-tone-red-soft text-tone-red"
+                            : "border-tone-green/40 bg-tone-green-soft text-tone-green",
                         )}
                       >
                         {change < 0 ? `−${formatIDR(Math.abs(change))}` : formatIDR(change)}
@@ -400,7 +402,7 @@ export function PaymentPanel(props: {
                 ) : null}
 
                 {single?.type === "qris" ? (
-                  <div className="rounded-md border border-border bg-muted/40 p-3">
+                  <div className="rounded-md border border-[var(--pos-border-strong)] bg-white p-3">
                     {qrisImage ? (
                       <div className="mx-auto w-48 max-w-full overflow-hidden rounded-md bg-white p-1.5">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -427,7 +429,7 @@ export function PaymentPanel(props: {
                     per pembayaran dan nota mencetaknya — POS2-14);
                     jurnal tidak berubah. */}
                 {nonCashNeedsConfirm ? (
-                  <div className="space-y-2 rounded-md border border-border bg-muted/40 p-2">
+                  <div className="space-y-2 rounded-md border border-[var(--pos-border-strong)] bg-white p-2">
                     <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-md px-1 py-2 text-sm leading-5">
                       <input
                         type="checkbox"
@@ -611,12 +613,13 @@ export function PaymentPanel(props: {
         {/* Footer sengaja di luar kartu: sticky terhadap scrollport
             panel kanan, sehingga tombol Bayar tetap terlihat walau
             daftar baris atau detail pembayaran panjang. */}
-        <div className="sticky bottom-0 z-10 grid grid-cols-[1fr_auto] gap-2 rounded-lg border border-border bg-card px-3 py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] shadow-[0_-8px_24px_-20px_rgba(15,23,42,0.35)]">
+        {/* Footer berada di bawah panel pembayaran tanpa menumpuk konten di atasnya */}
+        <div className="sticky bottom-0 z-10 grid grid-cols-[1fr_auto] gap-2 rounded-xl border border-[var(--pos-border-strong)] bg-[var(--pos-panel)] px-3 py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] shadow-sm">
           <button
             type="button"
             onClick={checkout}
             disabled={payDisabled}
-            className="flex h-12 items-center justify-center gap-2 rounded-md bg-[var(--pos-action)] text-[15px] font-bold text-[var(--pos-action-fg)] transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex h-12 items-center justify-center gap-2 rounded-md bg-[var(--pos-action)] text-[15px] font-bold text-[var(--pos-action-fg)] shadow-sm transition-colors hover:bg-[var(--pos-action-deep)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:border disabled:border-slate-300 disabled:bg-slate-200 disabled:text-slate-600 disabled:shadow-none disabled:opacity-100"
           >
             {payLabel}
           </button>
@@ -624,7 +627,7 @@ export function PaymentPanel(props: {
             type="button"
             onClick={() => setHoldOpen(true)}
             disabled={cart.length === 0}
-            className="flex h-12 items-center justify-center gap-2 rounded-md border border-border px-4 text-sm font-semibold hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
+            className="flex h-12 items-center justify-center gap-2 rounded-lg border border-[var(--pos-border-strong)] bg-white px-4 text-sm font-semibold text-slate-900 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-100 disabled:text-slate-500 disabled:opacity-100"
             title="Tahan pesanan"
           >
             <PauseCircle className="size-4" /> Tahan

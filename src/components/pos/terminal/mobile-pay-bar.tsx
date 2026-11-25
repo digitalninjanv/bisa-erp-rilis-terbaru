@@ -22,7 +22,7 @@ export function MobilePayBar(props: {
 }) {
   const { cart, total, payDisabled, payLabel, checkout, onOpenCart, lastItemName = null } = props;
   return (
-      <div className="no-print fixed inset-x-0 bottom-0 z-20 flex items-center justify-between gap-3 border-t border-border bg-card px-3 pt-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] shadow-[0_-8px_24px_-16px_rgba(15,23,42,0.35)] lg:hidden">
+      <div className="no-print fixed inset-x-0 bottom-0 z-20 flex items-center justify-between gap-3 border-t-2 border-border bg-[var(--pos-panel)] px-3 pt-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] shadow-[0_-8px_24px_-16px_rgba(9,9,11,0.25)] lg:hidden">
         <button
           type="button"
           onClick={onOpenCart}
@@ -40,7 +40,7 @@ export function MobilePayBar(props: {
           type="button"
           onClick={checkout}
           disabled={payDisabled}
-          className="flex h-12 min-w-28 shrink-0 items-center justify-center rounded-md bg-[var(--pos-action)] px-5 text-[15px] font-semibold text-[var(--pos-action-fg)] transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex h-12 min-w-28 shrink-0 items-center justify-center rounded-md bg-[var(--pos-action)] px-5 text-[15px] font-bold text-[var(--pos-action-fg)] shadow-sm transition-colors hover:bg-[var(--pos-action-deep)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:border disabled:border-zinc-400 disabled:bg-zinc-200 disabled:text-zinc-600 disabled:shadow-none disabled:opacity-100"
         >
           {payLabel}
         </button>

@@ -131,3 +131,20 @@ This confirms the serialized lock is safe and that opposite cart order does not 
 - 13 key ERP pages (POS, history/session/hold, warehouse, receipt/valuation, opening-stock import, accounting/reports) returned 200 with no error screen.
 - Root cause of an initial React #441: disposable DB had not applied migration 0089 (`products.is_tax_exempt`); after `pnpm db:migrate`, POS opened normally. The server release tarball was rebuilt with 0089 and install/update scripts run `migrate.mjs` before serving.
 - Residual desktop gaps: LAN `http://IP` is not a secure context, so the PWA offline shell does not register there; kiosk scripts/runbook still carry Tauri-era paths; no auto-update/code signing and Windows NSIS was not built on this host. See `audit/modules/PLATFORM_SECURITY.md` (ELE-001…ELE-005).
+
+## Contrast & readability audit — 2026-11-25
+
+The POS palette was raised from a white-on-white hierarchy to a neutral canvas + white surfaces + strong component boundaries. Layout and workflow are unchanged.
+
+| Token/role | Value | Contrast |
+|---|---|---|
+| Main text / white | `#0f172a` / `#ffffff` | 17.85:1 |
+| Secondary text / white | `#475569` / `#ffffff` | 7.58:1 |
+| Field border / white | `#64748b` / `#ffffff` | 4.76:1 |
+| Component border / white | `#77869a` / `#ffffff` | 3.71:1 |
+| Component border / tray | `#77869a` / `#e9eef5` | 3.29:1 |
+| Action green / white | `#047857` / `#ffffff` | 5.48:1 |
+
+Changes: canvas `#e4eaf1`, tray `#e9eef5`, header `#e2e8f0`; product/payment/cart panels use `--pos-border-strong`; fields use `--input: #64748b`; accurate action primary darkened `#059669 → #047857`; selected cards use the full action-soft fill; stock badges use `slate-200/slate-800`; payment content is a tinted band; category bar and pagination footer are tinted; payment footer is sticky with a solid action button. `@media (prefers-contrast: more)` strengthens borders/backgrounds, and the existing forced-colors rules remain.
+
+Verification: axe-core WCAG 2 A/AA scan of `/app/pos` with two cart lines reports **0 violations** (`audit/checks/pos-axe-final.log`); screenshot `audit/checks/pos-contrast-after.png`; unit suite 1,249/1,249, typecheck/build/lint pass. No contrast claim is made for physical displays or unmeasured color-blind simulations.
