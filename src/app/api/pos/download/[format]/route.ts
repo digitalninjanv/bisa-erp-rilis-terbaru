@@ -31,6 +31,7 @@ const GITHUB_RELEASE_FALLBACK =
   "https://github.com/digitalninjanv/bisa-erp-rilis-terbaru/releases/latest/download";
 const FALLBACK_ASSETS: Record<string, string> = {
   appimage: "Bisa-POS-linux-x86_64.AppImage",
+  exe: "Bisa-POS-windows-x86_64-setup.exe",
 };
 
 export async function GET(

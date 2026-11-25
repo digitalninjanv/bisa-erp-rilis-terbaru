@@ -1,0 +1,67 @@
+name: POS Electron packages
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "pos-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  linux-appimage:
+    name: Linux AppImage
+    runs-on: ubuntu-latest
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.8.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Electron builder dependencies
+        working-directory: pos-electron
+        run: pnpm install --frozen-lockfile
+      - name: Build AppImage
+        working-directory: pos-electron
+        run: pnpm run package:linux
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: bisa-pos-linux-appimage
+          path: |
+            dist-release/pos-electron/*.AppImage
+            dist-release/pos-electron/*.AppImage.sha256
+          if-no-files-found: error
+
+  windows-nsis:
+    name: Windows NSIS
+    runs-on: windows-latest
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.8.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Electron builder dependencies
+        working-directory: pos-electron
+        run: pnpm install --frozen-lockfile
+      - name: Build NSIS installer
+        working-directory: pos-electron
+        run: pnpm run package:win
+      - name: Upload NSIS installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: bisa-pos-windows-nsis
+          path: |
+            dist-release/pos-electron/*.exe
+            dist-release/pos-electron/*.exe.sha256
+          if-no-files-found: error

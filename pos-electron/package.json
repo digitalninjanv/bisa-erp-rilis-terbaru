@@ -9,7 +9,9 @@
   "desktopName": "id.bisaerp.pos.desktop",
   "scripts": {
     "start": "electron .",
-    "package": "electron-builder && node scripts/write-checksum.mjs"
+    "package": "electron-builder && node scripts/write-checksum.mjs",
+    "package:linux": "electron-builder --linux AppImage && node scripts/write-checksum.mjs",
+    "package:win": "electron-builder --win nsis && node scripts/write-checksum.mjs"
   },
   "devDependencies": {
     "electron": "45.4.1",

@@ -15,10 +15,21 @@ describe("POS desktop download route", () => {
     );
   });
 
-  it("keeps the explicit 404 for formats without a published fallback", async () => {
+  it("redirects Windows NSIS to the published release asset", async () => {
     vi.stubEnv("BISA_POS_RELEASE_DIR", "");
     const response = await GET(new Request("http://localhost/api/pos/download/exe"), {
       params: Promise.resolve({ format: "exe" }),
+    });
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toContain(
+      "/releases/latest/download/Bisa-POS-windows-x86_64-setup.exe",
+    );
+  });
+
+  it("keeps the explicit 404 for formats without a published fallback", async () => {
+    vi.stubEnv("BISA_POS_RELEASE_DIR", "");
+    const response = await GET(new Request("http://localhost/api/pos/download/msi"), {
+      params: Promise.resolve({ format: "msi" }),
     });
     expect(response.status).toBe(404);
   });
