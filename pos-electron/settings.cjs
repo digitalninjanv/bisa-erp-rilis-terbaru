@@ -1,7 +1,7 @@
 const { readFileSync, renameSync, writeFileSync } = require("node:fs");
 const { join } = require("node:path");
 
-const DEFAULT_ORIGIN = "http://localhost:3000";
+const DEFAULT_ORIGIN = "https://ifi.lapak.my.id";
 
 function isPrivateOrLoopbackHost(hostname) {
   if (["localhost", "127.0.0.1", "[::1]"].includes(hostname)) return true;

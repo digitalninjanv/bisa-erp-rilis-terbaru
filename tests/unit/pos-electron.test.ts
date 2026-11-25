@@ -120,7 +120,7 @@ describe("pos-electron settings & origin parsing", () => {
     const dir = mkdtempSync(join(tmpdir(), "pos-test-"));
     try {
       const settings = loadSettings(dir);
-      expect(settings.origin).toBe("http://localhost:3000");
+      expect(settings.origin).toBe("https://ifi.lapak.my.id");
       expect(settings.printer).toBe("");
       expect(settings.width).toBe(80);
       expect(settings.autoPrint).toBe(true);

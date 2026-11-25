@@ -20,6 +20,19 @@ const RELEASE_FORMATS: Record<string, string> = {
   msi: ".msi",
 };
 
+/**
+ * Fallback unduhan untuk build resmi yang dipublikasikan sebagai aset
+ * GitHub Release. Direktori lokal (`BISA_POS_RELEASE_DIR`) selalu menang;
+ * fallback ini hanya dipakai bila server belum memiliki artefak lokal.
+ * Hanya AppImage yang tersedia sebagai aset rilis saat ini.
+ */
+const GITHUB_RELEASE_FALLBACK =
+  process.env.BISA_POS_DOWNLOAD_FALLBACK_URL?.trim() ||
+  "https://github.com/digitalninjanv/bisa-erp-rilis-terbaru/releases/latest/download";
+const FALLBACK_ASSETS: Record<string, string> = {
+  appimage: "Bisa-POS-linux-x86_64.AppImage",
+};
+
 export async function GET(
   _request: Request,
   context: { params: Promise<{ format: string }> },
@@ -56,6 +69,14 @@ export async function GET(
       // Fall through to the explicit 404 below. A filesystem error must
       // not turn into a misleading successful download.
     }
+  }
+
+  // Fallback resmi: AppImage dipublikasikan sebagai aset GitHub Release
+  // sehingga terminal tetap bisa mengunduh walau direktori rilis lokal
+  // belum disiapkan di server ini.
+  const fallbackAsset = FALLBACK_ASSETS[normalized];
+  if (fallbackAsset && GITHUB_RELEASE_FALLBACK) {
+    return Response.redirect(`${GITHUB_RELEASE_FALLBACK}/${fallbackAsset}`, 302);
   }
 
   return Response.json(

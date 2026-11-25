@@ -1,6 +1,6 @@
 # Bisa POS Desktop (Electron)
 
-Aplikasi desktop resmi untuk Bisa POS yang membuka terminal `/app/pos`. Data transaksi tersimpan pada layanan Bisa ERP dan PostgreSQL. Satu komputer dapat menjalankan layanan dan aplikasi kasir, atau kasir dapat terhubung ke server toko via jaringan lokal (LAN/IP privat) maupun HTTPS.
+Aplikasi desktop resmi untuk Bisa POS yang secara bawaan membuka terminal `https://ifi.lapak.my.id/app/pos`. Data transaksi tersimpan pada layanan Bisa ERP dan PostgreSQL. Satu komputer dapat menjalankan layanan dan aplikasi kasir, atau kasir dapat terhubung ke server toko via jaringan lokal (LAN/IP privat) maupun HTTPS.
 
 ## Fitur Desktop
 - **Cetak thermal terintegrasi**: Mendukung printer OS (USB, Network, Thermal 58mm & 80mm).
@@ -13,8 +13,8 @@ Aplikasi desktop resmi untuk Bisa POS yang membuka terminal `/app/pos`. Data tra
 
 1. Siapkan build Bisa ERP yang mencakup integrasi desktop ini. Di root repo jalankan `bash deploy/build-release.sh 0.1.0-pos-local --without-tauri-bundles`. Gunakan prosedur deployment ERP yang sudah dipakai toko. Installer systemd berbasis Debian dan jalur Docker dijelaskan di direktori `deploy/`.
 2. Di direktori `pos-electron/`, jalankan `pnpm install --frozen-lockfile` dan `pnpm run package --linux AppImage`. Untuk paket Windows, jalankan `pnpm run package --win nsis` di mesin build Windows. Hasil berada di `dist-release/pos-electron/`.
-3. Jalankan paket dengan `--erp-url=https://alamat-erp-toko` atau `--erp-url=http://192.168.1.100:3000` untuk menyimpan alamat ERP. URL juga bisa memakai `http://localhost:3000` jika server berjalan di komputer kasir yang sama. Alamat HTTPS harus memakai sertifikat yang dipercaya komputer kasir. Ganti alamat hanya saat jendela Bisa POS ditutup sepenuhnya.
-4. Untuk Linux, dari root repo jalankan `bash pos-electron/install-linux.sh "/path/ke/Bisa POS-0.1.0.AppImage"` untuk menambahkan ikon **Bisa POS** ke menu aplikasi pengguna. Jika sistem tidak menyediakan FUSE, jalankan AppImage dengan `--appimage-extract-and-run`.
+3. Build ini memakai bawaan `https://ifi.lapak.my.id`. Untuk server lain, jalankan dengan `--erp-url=https://alamat-erp-toko` atau ubah lewat **Atur printer & server**. Alamat HTTPS harus memakai sertifikat yang dipercaya komputer kasir.
+4. Untuk Linux, dari root repo jalankan `bash pos-electron/install-linux.sh "/path/ke/Bisa POS-0.1.1.AppImage"` untuk menambahkan ikon **Bisa POS** ke menu aplikasi pengguna. Jika sistem tidak menyediakan FUSE, jalankan AppImage dengan `--appimage-extract-and-run`.
 
 ## Printer
 
