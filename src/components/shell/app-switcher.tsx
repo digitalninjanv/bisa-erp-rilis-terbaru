@@ -54,7 +54,7 @@ export function AppSwitcher({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        aria-label={collapsed ? `Navigasi aplikasi — saat ini ${active.name}` : "Navigasi aplikasi"}
+        aria-label={`Navigasi aplikasi — ${active.name} ${active.tagline}`}
         title={collapsed ? `Area: ${active.name} — klik untuk berpindah` : undefined}
         className={cn(
           "flex cursor-pointer items-center gap-2.5 rounded-lg border border-sidebar-border bg-card text-left shadow-[var(--shadow-card)] outline-none transition-colors hover:bg-shell-hover",
@@ -70,7 +70,7 @@ export function AppSwitcher({
           <>
             <span className="min-w-0 flex-1 leading-tight">
               <span className="block truncate text-[13px] font-semibold text-shell-title">
-                {active.name}
+                {active.name}{" "}
               </span>
               <span className="block truncate text-[11px] text-shell-muted">{active.tagline}</span>
             </span>

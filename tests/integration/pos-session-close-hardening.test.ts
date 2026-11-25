@@ -9,14 +9,16 @@ import {
   branches,
   cashSessions,
   companySettings,
+  idempotencyKeys,
   journalEntries,
   journalLines,
   sales,
   user,
   warehouses,
 } from "@/db/schema";
-import { closeCashSession, openCashSession } from "@/server/pos";
+import { closeCashSession, issueReceiptPrintToken, openCashSession } from "@/server/pos";
 import { d } from "@/lib/money";
+import { withCompany } from "@/db/tenant";
 import { makeRollbackTransaction } from "../helpers/rollback-transaction";
 import { adminDb } from "@/db/admin";
 
@@ -265,6 +267,7 @@ describe("H-POS-04/05 — struk salinan & identitas sesi", () => {
     await adminDb.delete(warehouses).where(eq(warehouses.companyId, COPY_ORG));
     await adminDb.delete(branches).where(eq(branches.companyId, COPY_ORG));
     await adminDb.delete(companySettings).where(eq(companySettings.companyId, COPY_ORG));
+    await adminDb.delete(idempotencyKeys).where(eq(idempotencyKeys.companyId, COPY_ORG));
     await adminDb.delete(user).where(eq(user.id, COPY_KASIR));
   }
 
@@ -316,6 +319,20 @@ describe("H-POS-04/05 — struk salinan & identitas sesi", () => {
   it("cetakan asli tanpa parameter salinan TIDAK bertanda, identitas sesi tetap tercetak", async () => {
     const html = await renderNota({});
     expect(html).not.toContain("Salinan — bukan nota asli");
+    expect(html).toContain("01900000");
+  });
+
+  it("token cetak pertama dari checkout diterima sebagai nota asli", async () => {
+    const token = await withCompany(COPY_ORG, (tx) =>
+      issueReceiptPrintToken(tx, {
+        companyId: COPY_ORG,
+        userId: COPY_KASIR,
+        saleId: COPY_SALE_ID,
+      }),
+    );
+    const html = await renderNota({ printToken: token });
+    expect(html).not.toContain("Salinan — bukan nota asli");
+    expect(html).toContain("INV-UJI-SALINAN-001");
     expect(html).toContain("01900000");
   });
 });

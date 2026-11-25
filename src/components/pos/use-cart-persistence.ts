@@ -79,6 +79,10 @@ function readStoredCart(storageKey: string): StoredCart | null {
               parsedCustomer.creditLimit >= 0
                 ? parsedCustomer.creditLimit
                 : 0,
+            creditLimitUnlimited:
+              typeof parsedCustomer.creditLimitUnlimited === "boolean"
+                ? parsedCustomer.creditLimitUnlimited
+                : true,
           }
         : null;
     const products: Record<string, ProductOption> = {};

@@ -76,6 +76,7 @@ const returnActionSchema = z.object({
     productId: z.string().uuid(),
     saleLineId: z.string().uuid().nullish(),
     qty: returnQtySchema,
+    serialNumbers: z.array(z.string().trim().min(1).max(80)).max(500).optional(),
   })).min(1).max(100),
 }).refine(
   (input) => input.type === "exchange"

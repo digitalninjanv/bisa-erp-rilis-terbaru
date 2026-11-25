@@ -1,8 +1,8 @@
 "use client";
 
-import type { PrinterPreferences } from "./types";
+import type { PrinterPreferences, SerialBaudRate } from "./types";
 import { DEFAULT_PRINTER_PREFERENCES } from "./types";
-import { EscPosEncoder } from "./encoder";
+import { buildTestReceiptEscPos } from "./receipt-template";
 import { withPrinterWriteLock } from "./printer-write-lock";
 import {
   errorMessage,
@@ -368,7 +368,7 @@ export async function connectDirectUsbPrinter(): Promise<{
 /**
  * Hubungkan ke printer thermal via Web Serial (Virtual COM / CH340 / CP2102 / RS232).
  */
-export async function connectSerialPrinter(): Promise<{
+export async function connectSerialPrinter(baudRateOverride?: SerialBaudRate): Promise<{
   ok: boolean;
   name?: string;
   message?: string;
@@ -390,15 +390,20 @@ export async function connectSerialPrinter(): Promise<{
       return { ok: false, message: "Tidak ada port serial yang dipilih." };
     }
 
+    const baudRate = baudRateOverride ?? getPrinterPreferences().serialBaudRate ?? 9600;
     if (!port.readable && !port.writable) {
-      await port.open({ baudRate: 9600 });
+      await port.open({ baudRate });
     }
 
+    const info = port.getInfo?.();
     activeSerialPort = port;
-    const portName = "Serial / Virtual COM Printer";
+    const portName = `Serial / COM (${baudRate} bps)`;
     savePrinterPreferences({
       type: "serial",
       name: portName,
+      serialBaudRate: baudRate,
+      serialVendorId: info?.usbVendorId ?? null,
+      serialProductId: info?.usbProductId ?? null,
     });
 
     notifyStatusChange();
@@ -526,8 +531,34 @@ export async function tryAutoReconnect(): Promise<{ ok: boolean; name?: string }
     }
   }
 
-  // Browser serial ports have no stable per-device identifier. A new
-  // session needs an explicit port selection to avoid printing elsewhere.
+  if (prefs.type === "serial" && nav.serial?.getPorts) {
+    try {
+      const ports = await nav.serial.getPorts();
+      const matches =
+        prefs.serialVendorId != null && prefs.serialProductId != null
+          ? ports.filter((port) => {
+              const info = port.getInfo?.();
+              return (
+                info?.usbVendorId === prefs.serialVendorId &&
+                info?.usbProductId === prefs.serialProductId
+              );
+            })
+          : ports;
+      if (matches.length === 1) {
+        const [port] = matches;
+        const baudRate = prefs.serialBaudRate ?? 9600;
+        if (!port.readable && !port.writable) {
+          await port.open({ baudRate });
+        }
+        activeSerialPort = port;
+        notifyStatusChange();
+        return { ok: true, name: prefs.name };
+      }
+    } catch {
+      // Abaikan kegagalan background reconnect serial
+    }
+  }
+
   return { ok: false };
 }
 
@@ -697,37 +728,13 @@ async function sendEscPosToPrinterUnlocked(
  */
 export async function printTestReceipt(): Promise<{ ok: boolean; message?: string }> {
   const prefs = getPrinterPreferences();
-  const encoder = new EscPosEncoder(prefs.paperWidth);
-
-  encoder
-    .init()
-    .align("center")
-    .bold(true)
-    .size(false, true)
-    .line("BISA ERP POS")
-    .size(false, false)
-    .bold(false)
-    .line("Uji Coba Printer Thermal")
-    .divider("=")
-    .align("left")
-    .row("Status Koneksi :", "TERHUBUNG")
-    .row("Tipe Printer   :", prefs.type.toUpperCase())
-    .row("Lebar Kertas   :", prefs.paperWidth)
-    .row("Waktu Uji      :", new Date().toLocaleTimeString("id-ID"))
-    .divider("-")
-    .align("center")
-    .line("Printer siap digunakan!")
-    .line("Cetak cepat tanpa dialog aktif.")
-    .divider("=")
-    .feed(2);
-
-  if (prefs.cutPaper) {
-    encoder.cut();
-  } else {
-    encoder.feed(3);
-  }
-
-  return sendEscPosToPrinter(encoder.encode());
+  return sendEscPosToPrinter(
+    buildTestReceiptEscPos({
+      paperWidth: prefs.paperWidth,
+      type: prefs.type,
+      cutPaper: prefs.cutPaper,
+    }),
+  );
 }
 
 /**

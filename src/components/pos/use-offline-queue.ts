@@ -50,6 +50,9 @@ export function useOfflineQueue(params: {
         // per antrean, jadi antrean sebesar apa pun tersinkron; hasil
         // tiap potong langsung diterapkan sebelum potong berikutnya.
         const allResults: OfflineSyncItemResult[] = [];
+        let remainingCount = items.length;
+        let oldestIndex = 0;
+        const removedClientKeys = new Set<string>();
         let chunkFailed = false;
         for (let offset = 0; offset < items.length; offset += 25) {
           const result = await syncOfflineSalesAction({ items: items.slice(offset, offset + 25) });
@@ -58,20 +61,36 @@ export function useOfflineQueue(params: {
             chunkFailed = true;
             break;
           }
-          await applySyncResults(storage, result.data);
+          const applied = await applySyncResults(storage, result.data);
+          for (const clientKey of applied.removed) {
+            if (removedClientKeys.has(clientKey)) continue;
+            removedClientKeys.add(clientKey);
+            remainingCount = Math.max(0, remainingCount - 1);
+          }
           allResults.push(...result.data);
-          const summary = await getOfflineQueueSummary(storage);
-          setQueuedCount(summary.count);
-          setOldestQueuedAt(summary.oldestQueuedAt);
+          while (
+            oldestIndex < items.length &&
+            removedClientKeys.has(items[oldestIndex].clientKey)
+          ) {
+            oldestIndex += 1;
+          }
+          setQueuedCount(remainingCount);
+          setOldestQueuedAt(items[oldestIndex]?.queuedAt ?? null);
         }
         if (chunkFailed && allResults.length === 0) return;
         const synced = allResults.filter((row) => row.status === "synced").length;
         const duplicates = allResults.filter((row) => row.status === "duplicate").length;
+        const resolved = allResults.filter((row) => row.status === "resolved").length;
         const conflicts = allResults.filter((row) => row.status === "conflict").length;
         const failed = allResults.filter((row) => row.status === "failed").length;
         if (synced + duplicates > 0) {
           toast.success(
             `Sinkronisasi offline: ${synced} penjualan tercatat${duplicates ? `, ${duplicates} duplikat dilewati` : ""}.`,
+          );
+        }
+        if (resolved > 0) {
+          toast.info(
+            `${resolved} item yang sudah diputuskan supervisor dibersihkan dari antrean lokal.`,
           );
         }
         if (conflicts + failed > 0) {

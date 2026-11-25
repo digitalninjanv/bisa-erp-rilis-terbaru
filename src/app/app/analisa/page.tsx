@@ -1,7 +1,7 @@
 import { Fragment } from "react";
 import Link from "next/link";
 import { Search } from "lucide-react";
-import { withCompanyReadOnly } from "@/db/tenant";
+import { withCompanyReadOnlySnapshot } from "@/db/tenant";
 import { requirePermissionPage } from "@/lib/session";
 import { getBusinessAnalytics } from "@/server/analytics";
 import { getSalesByDay } from "@/server/reports";
@@ -97,7 +97,7 @@ export default async function AnalisaPage({
     : "terlaris";
   const term = params.q?.trim().toLowerCase() ?? "";
 
-  const [data, trendRows] = await withCompanyReadOnly(ctx.company.id, async (tx) =>
+  const [data, trendRows] = await withCompanyReadOnlySnapshot(ctx.company.id, async (tx) =>
     Promise.all([
       getBusinessAnalytics(tx, ctx.company.id, from, to),
       getSalesByDay(tx, ctx.company.id, { from, to }),

@@ -10,7 +10,7 @@ import {
   toProductExportRow,
 } from "@/server/catalog";
 import { can } from "@/lib/permissions";
-import { requirePermission } from "@/lib/session";
+import { requirePermissionInModule } from "@/lib/session";
 import { todayISO } from "@/lib/format";
 import { csvRow, csvStreamResponse } from "@/lib/csv";
 
@@ -24,7 +24,7 @@ export const dynamic = "force-dynamic";
  * ekspor dapat diimpor kembali (round-trip).
  */
 async function GETHandler(request?: Request) {
-  const ctx = await requirePermission("inventory.view");
+  const ctx = await requirePermissionInModule("inventory.view", "gudang");
   // AUD-013: harga beli (produk & kemasan) adalah data level-field
   // `inventory.cost`; tanpa izin itu kolom biaya tidak disertakan.
   const includeCost = can(ctx, "inventory.cost");

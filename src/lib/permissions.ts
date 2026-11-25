@@ -212,6 +212,14 @@ export function can(subject: PermissionSubject, permission: Permission): boolean
   return permissionsFor(subject.role).includes(permission);
 }
 
+/** Permission target yang tidak dimiliki actor (least privilege check). */
+export function missingPermissions(
+  actor: PermissionSubject,
+  target: readonly Permission[],
+): Permission[] {
+  return target.filter((permission) => !can(actor, permission));
+}
+
 export class PermissionError extends AppError {
   constructor(permission: Permission) {
     super("FORBIDDEN", `Tidak punya akses: ${PERMISSIONS[permission]}`);

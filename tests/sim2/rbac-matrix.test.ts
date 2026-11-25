@@ -86,11 +86,14 @@ vi.mock("@/lib/session", async () => {
 
 import {
   checkoutAction,
-  closeSessionAction,
   createReturnAction,
-  openSessionAction,
   voidSaleAction,
 } from "@/server/actions/pos";
+import {
+  closeSessionAction,
+  openSessionAction,
+  prepareSessionCloseAction,
+} from "@/server/actions/pos-sessions";
 import {
   deleteProductAction,
   saveProductAction,
@@ -339,7 +342,12 @@ describe("matriks RBAC — POS", () => {
     const opened = await openSessionAction({ openingCash: "100000" });
     expect(opened.ok).toBe(true);
     const sessionId = opened.ok ? (opened.data as { id: string }).id : "";
-    const closed = await closeSessionAction({ sessionId, countedCash: "100000" });
+    const prepared = await prepareSessionCloseAction({ sessionId, countedCash: "100000" });
+    const closed = await closeSessionAction({
+      sessionId,
+      countedCash: "100000",
+      countToken: prepared.ok ? prepared.data.token : "",
+    });
     expect(closed.ok).toBe(true);
 
     for (const role of ROLES) {
@@ -349,7 +357,15 @@ describe("matriks RBAC — POS", () => {
         expectGatePass(result);
         if (result.ok) {
           const id = (result as { data: { id: string } }).data.id;
-          await closeSessionAction({ sessionId: id, countedCash: "50000" });
+          const prep = await prepareSessionCloseAction({
+            sessionId: id,
+            countedCash: "50000",
+          });
+          await closeSessionAction({
+            sessionId: id,
+            countedCash: "50000",
+            countToken: prep.ok ? prep.data.token : "",
+          });
         }
       } else expectDenied(result);
     }

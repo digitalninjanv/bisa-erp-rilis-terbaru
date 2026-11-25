@@ -25,6 +25,20 @@ export function PosServiceWorker({ enabled }: { enabled: boolean }) {
     }
     navigator.serviceWorker
       .register("/pos-sw.js", { scope: "/app/pos" })
+      .then(async () => {
+        const registration = await navigator.serviceWorker.ready;
+        // CookieStore in a worker cannot read a cookie outside its script URL
+        // scope. The page can, so hand the non-authorizing cache id to the
+        // worker and let it remember the id in Cache Storage for offline reloads.
+        const cacheId = document.cookie
+          .split(";")
+          .map((part) => part.trim())
+          .find((part) => part.startsWith("pos_shell_cache_id="))
+          ?.slice("pos_shell_cache_id=".length);
+        if (cacheId && registration.active) {
+          registration.active.postMessage({ type: "pos-shell-cache-id", cacheId: decodeURIComponent(cacheId) });
+        }
+      })
       .catch(() => undefined);
   }, [enabled]);
   return null;

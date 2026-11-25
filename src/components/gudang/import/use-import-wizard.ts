@@ -157,7 +157,7 @@ export function useImportWizard<
     config.onRowsLoaded?.(result.data);
   }
 
-  async function analyze(options?: { warehouseId?: string; date?: string }) {
+  async function analyze(options?: { warehouseId?: string; date?: string; allowZeroCost?: boolean }) {
     if (!uploaded) return;
     setBusy(true);
     const result = await analyzeImportAction({ jobId: uploaded.jobId, mapping, ...options });

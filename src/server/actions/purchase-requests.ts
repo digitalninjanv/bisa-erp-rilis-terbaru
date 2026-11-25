@@ -27,6 +27,7 @@ function revalidatePrPaths(id?: string) {
 }
 
 const createSchema = z.object({
+  idempotencyKey: z.string().trim().min(8).max(120).optional(),
   requesterEmployeeId: z.string().uuid().nullish(),
   departmentId: z.string().uuid().nullish(),
   date: isoDateField,
@@ -55,6 +56,7 @@ export async function createPurchaseRequestAction(input: z.input<typeof createSc
         departmentId: data.departmentId ?? null,
         date: data.date,
         notes: data.notes ?? null,
+        idempotencyKey: data.idempotencyKey ?? null,
         lines: data.lines.map((line) => ({
           productId: line.productId,
           qty: line.qty,

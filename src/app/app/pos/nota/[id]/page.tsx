@@ -5,8 +5,10 @@ import { withCompany } from "@/db/tenant";
 import { saleReturns } from "@/db/schema";
 import { getSaleDetail } from "@/server/reports";
 import { getSettings } from "@/server/catalog";
+import { verifyReceiptPrintToken } from "@/server/pos";
 import { requirePermissionPage } from "@/lib/session";
 import { can } from "@/lib/permissions";
+import { invoiceHref } from "@/lib/pos/receipt-links";
 import { writeAudit } from "@/server/audit";
 import { formatIDR, formatQty } from "@/lib/money";
 import { formatDate, formatDateTime } from "@/lib/format";
@@ -32,7 +34,13 @@ export default async function ReceiptPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ autoprint?: string; salinan?: string; popup?: string; thermal?: string }>;
+  searchParams: Promise<{
+    autoprint?: string;
+    salinan?: string;
+    popup?: string;
+    thermal?: string;
+    printToken?: string;
+  }>;
 }) {
   const { id } = await params;
   const query = await searchParams;
@@ -42,19 +50,35 @@ export default async function ReceiptPage({
   // salinan) tidak bertanda dan tidak berubah.
   const isCopy = query.salinan === "1";
   const ctx = await requirePermissionPage("pos.sell");
-  if (isCopy && !can(ctx, "pos.receipt.reprint")) notFound();
+  const canReprint = can(ctx, "pos.receipt.reprint");
+  if (isCopy && !canReprint) notFound();
 
   const data = await withCompany(ctx.company.id, async (tx) => {
     const detail = await getSaleDetail(tx, ctx.company.id, id);
     if (!detail) return null;
-    if (isCopy) {
+    // Token hanya membuktikan cetak pertama dari checkout yang baru saja
+    // selesai. Tanpa token, halaman ini adalah cetak ulang historis dan
+    // tunduk pada izin + audit.
+    const fresh = await verifyReceiptPrintToken(tx, {
+      companyId: ctx.company.id,
+      userId: ctx.user.id,
+      saleId: id,
+      token: query.printToken,
+    });
+    const canPrint = canReprint || fresh;
+    const isHistorical = !fresh;
+    if ((isCopy || isHistorical) && canPrint) {
       await writeAudit(tx, {
         companyId: ctx.company.id,
         userId: ctx.user.id,
         action: "pos.receipt.reprint",
         entityType: "sale",
         entityId: id,
-        after: { number: detail.sale.number, autoprint: query.autoprint === "1" },
+        after: {
+          number: detail.sale.number,
+          autoprint: query.autoprint === "1",
+          transport: "web",
+        },
       });
     }
     const settings = await getSettings(tx, ctx.company.id);
@@ -62,10 +86,57 @@ export default async function ReceiptPage({
       .select({ id: saleReturns.id, number: saleReturns.number, total: saleReturns.total })
       .from(saleReturns)
       .where(and(eq(saleReturns.companyId, ctx.company.id), eq(saleReturns.saleId, id)));
-    return { ...detail, settings, returns };
+    return { ...detail, settings, returns, fresh, canPrint, isHistorical };
   });
 
   if (!data) notFound();
+  if (!data.canPrint) {
+    // Tampilan detail tanpa DOM nota yang dapat dicetak. Kasir tetap bisa
+    // membaca status/ringkasan; cetak ulang memerlukan izin supervisor.
+    return (
+      <div className="mx-auto max-w-xl">
+        <div className="rounded-lg border border-border bg-card p-5">
+          <p className="text-[13px] text-muted-foreground">Nota penjualan</p>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <h1 className="num text-[20px] font-semibold">{data.sale.number}</h1>
+            <StatusBadge status={data.sale.status} />
+          </div>
+          <dl className="mt-4 space-y-1.5 text-[12px]">
+            <div className="flex justify-between gap-3">
+              <dt className="text-muted-foreground">Tanggal</dt>
+              <dd>{formatDateTime(data.sale.createdAt)}</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-muted-foreground">Pelanggan</dt>
+              <dd>{data.customer?.name ?? "Umum"}</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-muted-foreground">Total</dt>
+              <dd className="num font-semibold">{formatIDR(data.sale.total)}</dd>
+            </div>
+          </dl>
+          <p className="mt-4 rounded-md bg-tone-amber-soft px-3 py-2 text-[12px] leading-5 text-tone-amber">
+            Cetak ulang nota historis memerlukan izin <strong>Cetak ulang nota</strong>.
+            Hubungi supervisor bila pelanggan membutuhkan salinan.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link
+              href="/app/pos/riwayat"
+              className="inline-flex h-11 items-center rounded-md border border-border bg-card px-3 text-[12px] hover:bg-muted lg:h-9"
+            >
+              Riwayat transaksi
+            </Link>
+            <Link
+              href="/app/pos"
+              className="inline-flex h-11 items-center rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/90 lg:h-9"
+            >
+              Kasir
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
   const { sale, lines, payments, settings, customer, cashier } = data;
   // Print Engine (T4-4, D-13): paper/template come from the shared print
   // settings; the legacy receipt width column no longer drives layout.
@@ -99,20 +170,20 @@ export default async function ReceiptPage({
               dokumen A4/A5 untuk pelanggan bisnis, dari data
               penjualan yang sama persis dengan struk ini. */}
           <Link
-            href={`/app/pos/nota/${sale.id}/faktur`}
-            className="inline-flex h-8 items-center rounded-md border border-border bg-card px-3 text-[12px] hover:bg-muted"
+            href={invoiceHref(sale.id, { copy: isCopy, printToken: query.printToken })}
+            className="inline-flex h-11 items-center rounded-md border border-border bg-card px-3 text-[12px] hover:bg-muted lg:h-8"
           >
             Faktur A4
           </Link>
           <Link
             href="/app/pos/riwayat"
-            className="inline-flex h-8 items-center rounded-md border border-border bg-card px-3 text-[12px] hover:bg-muted"
+            className="inline-flex h-11 items-center rounded-md border border-border bg-card px-3 text-[12px] hover:bg-muted lg:h-8"
           >
             Riwayat
           </Link>
           <Link
             href="/app/pos"
-            className="inline-flex h-8 items-center rounded-md border border-border bg-card px-3 text-[12px] hover:bg-muted"
+            className="inline-flex h-11 items-center rounded-md border border-border bg-card px-3 text-[12px] hover:bg-muted lg:h-8"
           >
             Kasir
           </Link>
@@ -122,7 +193,7 @@ export default async function ReceiptPage({
             // Hanya alur checkout (tanpa salinan) yang kembali ke kasir.
             // Cetak ulang dari riwayat membiarkan tab nota tetap terbuka.
             returnTo={
-              query.autoprint === "1" && query.salinan !== "1" ? "/app/pos" : undefined
+              query.autoprint === "1" && data.fresh ? "/app/pos" : undefined
             }
           />
         </div>

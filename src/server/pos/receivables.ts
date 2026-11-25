@@ -4,27 +4,24 @@
 
 import { and, eq, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
-import {
-  accounts,
-  cashMovements,
-  cashSessions,
-  idempotencyKeys,
-  partyPayments,
-  paymentMethods,
-  sales,
-} from "@/db/schema";
+import { accounts, cashMovements, cashSessions, idempotencyKeys, journalEntries, partyPayments, paymentMethods, sales } from "@/db/schema";
 import { AppError } from "@/lib/errors";
+import { todayISO } from "@/lib/format";
 import { d, toDb, type MoneyInput } from "@/lib/money";
-import { getAccountId, getAccountMap, listCashBankIds, postJournal } from "@/server/accounting";
+import { getAccountId, getAccountMap, listCashBankIds, postJournal, reverseJournalEntry } from "@/server/accounting";
 import { resolvePaymentFee } from "@/server/payment-fees";
 import { writeAudit } from "@/server/audit";
 import {
+  assertOriginCreditVoidable,
   consumePartyCredit,
   createPartyCredit,
   resolvePartyCreditForUse,
+  restorePartyCreditUsage,
   setPartyCreditJournal,
+  voidOriginPartyCredit,
 } from "@/server/party-credits";
 import { nextDocumentNumber } from "@/server/sequences";
+import { getOpenCashSession } from "./sessions";
 
 export async function payReceivable(
   tx: Tx,
@@ -56,6 +53,8 @@ export async function payReceivable(
     // setara checkout (POS-IDEM-01). Tanpa kunci, domain menerapkan
     // dedupe jendela pendek untuk panggilan yang persis identik.
     idempotencyKey?: string;
+    /** POS: cash receipt must enter an open drawer session. */
+    requireCashSession?: boolean;
   },
 ): Promise<{
   number: string;
@@ -316,16 +315,26 @@ export async function payReceivable(
     const [session] = await tx.select({ id: cashSessions.id }).from(cashSessions)
       .where(and(eq(cashSessions.companyId, input.companyId), eq(cashSessions.userId, input.userId), eq(cashSessions.status, "open")))
       .limit(1).for("update");
-    if (session) {
+    if (!session) {
+      if (input.requireCashSession) {
+        throw new AppError(
+          "VALIDATION",
+          "Penerimaan piutang tunai dari POS memerlukan sesi kas terbuka. Buka sesi kas terlebih dahulu agar uang masuk ke laci yang benar.",
+        );
+      }
+    } else {
       await tx.insert(cashMovements).values({
-        companyId: input.companyId,
-        sessionId: session.id,
-        type: "sale", // atau receivable_in, masuk ke perhitungan expectedCash
-        amount: toDb(amount),
-        referenceType: "payment",
-        referenceId: payment.id,
-        notes: `Penerimaan piutang ${sale.number} (${number})`,
-        createdBy: input.userId,
+      companyId: input.companyId,
+      sessionId: session.id,
+      // Penerimaan piutang adalah arus kas masuk laci, tetapi BUKAN
+      // penjualan POS. Tipe terpisah menjaga laporan sesi tidak
+      // mencampur koleksi piutang dengan omzet kasir.
+      type: "receivable",
+      amount: toDb(amount),
+      referenceType: "payment",
+      referenceId: payment.id,
+      notes: `Penerimaan piutang ${sale.number} (${number})`,
+      createdBy: input.userId,
       });
     }
   }
@@ -459,6 +468,137 @@ export async function payReceivable(
     warnings: journal.warnings,
     ...(creditNumber ? { creditNumber, creditAmount: toDb(excess) } : {}),
   };
+}
+
+export async function voidReceivablePayment(
+  tx: Tx,
+  input: {
+    companyId: string;
+    userId: string;
+    paymentId: string;
+    reason: string;
+    requireCashSession?: boolean;
+  },
+) {
+  const [payment] = await tx
+    .select()
+    .from(partyPayments)
+    .where(and(eq(partyPayments.companyId, input.companyId), eq(partyPayments.id, input.paymentId)))
+    .limit(1)
+    .for("update");
+  if (!payment) throw new AppError("NOT_FOUND", "Penerimaan pembayaran tidak ditemukan.");
+  if (payment.type !== "receivable" || !payment.saleId) {
+    throw new AppError("VALIDATION", "Pembayaran ini bukan penerimaan piutang penjualan.");
+  }
+  if (payment.status === "void") throw new AppError("INVALID_STATE", "Penerimaan sudah dibatalkan.");
+
+  await assertOriginCreditVoidable(tx, input.companyId, payment.id);
+
+  const [sale] = await tx
+    .select()
+    .from(sales)
+    .where(and(eq(sales.companyId, input.companyId), eq(sales.id, payment.saleId)))
+    .limit(1)
+    .for("update");
+  if (!sale) throw new AppError("NOT_FOUND", "Transaksi tidak ditemukan.");
+
+  const [entry] = await tx
+    .select({ id: journalEntries.id })
+    .from(journalEntries)
+    .where(
+      and(
+        eq(journalEntries.companyId, input.companyId),
+        eq(journalEntries.idempotencyKey, `ar:${sale.id}:${payment.number}`),
+        eq(journalEntries.status, "posted"),
+      ),
+    )
+    .limit(1);
+  if (!entry) {
+    throw new AppError(
+      "VALIDATION",
+      `Jurnal penerimaan ${payment.number} tidak ditemukan, sehingga jurnal pembalik tidak dapat dibuat. Pembatalan penerimaan dibatalkan agar daftar pembayaran dan buku besar tetap selaras; periksa jurnal penerimaan ini terlebih dahulu.`,
+    );
+  }
+  const { reversal } = await reverseJournalEntry(tx, {
+    companyId: input.companyId,
+    entryId: entry.id,
+    date: todayISO(),
+    description: `Pembatalan penerimaan piutang ${payment.number} — ${input.reason}`,
+    createdBy: input.userId,
+  });
+
+  await tx
+    .update(partyPayments)
+    .set({ status: "void" })
+    .where(and(eq(partyPayments.companyId, input.companyId), eq(partyPayments.id, payment.id)));
+
+  await restorePartyCreditUsage(tx, { companyId: input.companyId, userId: input.userId, payment });
+  await voidOriginPartyCredit(tx, {
+    companyId: input.companyId,
+    userId: input.userId,
+    paymentId: payment.id,
+  });
+
+  const diff = d(sale.paidTotal).minus(d(payment.amount));
+  const paid = diff.gt(0) ? diff : d(0);
+  await tx
+    .update(sales)
+    .set({
+      paidTotal: toDb(paid),
+      paymentStatus: paid.gte(d(sale.total)) ? "paid" : paid.gt(0) ? "partial" : "unpaid",
+    })
+    .where(and(eq(sales.companyId, input.companyId), eq(sales.id, sale.id)));
+
+  const [existingCashMovement] = await tx
+    .select()
+    .from(cashMovements)
+    .where(
+      and(
+        eq(cashMovements.companyId, input.companyId),
+        eq(cashMovements.referenceType, "payment"),
+        eq(cashMovements.referenceId, payment.id),
+      ),
+    )
+    .limit(1);
+  if (existingCashMovement) {
+    const processorSession = await getOpenCashSession(tx, input.companyId, input.userId);
+    if (!processorSession) {
+      if (input.requireCashSession) {
+        throw new AppError(
+          "INVALID_STATE",
+          "Pembatalan penerimaan piutang tunai dari POS memerlukan sesi kas terbuka agar uang keluar dari laci tercatat. Buka sesi kas lalu ulangi pembatalan.",
+        );
+      }
+    } else {
+      await tx.insert(cashMovements).values({
+        companyId: input.companyId,
+        sessionId: processorSession.id,
+        type: "refund",
+        amount: toDb(d(existingCashMovement.amount).neg()),
+        referenceType: "payment_void",
+        referenceId: payment.id,
+        notes: `Pembatalan penerimaan piutang ${payment.number} — ${input.reason}`,
+        createdBy: input.userId,
+      });
+    }
+  }
+
+  await writeAudit(tx, {
+    companyId: input.companyId,
+    userId: input.userId,
+    action: "ar.payment.void",
+    entityType: "party_payment",
+    entityId: payment.id,
+    after: {
+      number: payment.number,
+      saleNumber: sale.number,
+      amount: payment.amount,
+      reason: input.reason,
+      reversalNumber: reversal.number,
+    },
+  });
+
+  return { id: payment.id };
 }
 
 /** Constraint name of a Postgres unique violation in the error chain

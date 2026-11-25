@@ -79,12 +79,17 @@ export function MasterImportWizard({
   const [warehouseId, setWarehouseId] = useState(defaultWarehouseId || warehouses[0]?.id || "");
   // Tanggal cut-off impor stok awal; baris dengan kolom Tanggal menang.
   const [stockDate, setStockDate] = useState(todayISO());
+  // POS-IMP-02: biaya 0 hanya sah bila dikonfirmasi eksplisit.
+  const [allowZeroCost, setAllowZeroCost] = useState(false);
   const [receiptNumber, setReceiptNumber] = useState<string | null>(null);
 
   const flow = useImportWizard<MasterAnalysis, PreviewRow, RowsFilter>({
     parseEntity: entity,
     pageSize: ROWS_PAGE_SIZE,
-    onUploaded: () => setReceiptNumber(null),
+    onUploaded: () => {
+      setReceiptNumber(null);
+      setAllowZeroCost(false);
+    },
   });
   const {
     uploaded,
@@ -104,7 +109,7 @@ export function MasterImportWizard({
   } = flow;
 
   const analyze = () => flow.analyze(entity === "opening_stock"
-    ? { warehouseId: warehouseId || undefined, date: stockDate || undefined }
+    ? { warehouseId: warehouseId || undefined, date: stockDate || undefined, allowZeroCost }
     : undefined);
 
   async function commit() {
@@ -118,7 +123,7 @@ export function MasterImportWizard({
       buildInput: (base) => ({
         ...base,
         warehouseId: warehouseId || undefined,
-        ...(entity === "opening_stock" ? { date: stockDate || undefined } : {}),
+        ...(entity === "opening_stock" ? { date: stockDate || undefined, allowZeroCost } : {}),
       }),
       onBatch: (data) => {
         if (data.receiptNumber) setReceiptNumber(data.receiptNumber);
@@ -178,6 +183,22 @@ export function MasterImportWizard({
               />
             </span>
           </span>
+          <label
+            className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
+            title="Hanya centang bila stok memang gratis; nilai persediaan dan HPP akan 0."
+          >
+            <input
+              type="checkbox"
+              checked={allowZeroCost}
+              onChange={(event) => {
+                setAllowZeroCost(event.target.checked);
+                flow.setAnalysis(null);
+              }}
+              disabled={busy}
+              className="size-4 accent-primary"
+            />
+            Izinkan biaya 0 (stok gratis)
+          </label>
         </div>
       ) : null}
 

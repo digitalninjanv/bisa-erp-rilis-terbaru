@@ -1,7 +1,7 @@
 import type { Tx } from "@/db";
 import { idempotencyKeys } from "@/db/schema";
 import { createHash } from "node:crypto";
-import { and, eq, lt, sql } from "drizzle-orm";
+import { and, eq, lt, ne, sql } from "drizzle-orm";
 import { AppError } from "@/lib/errors";
 
 /**
@@ -181,6 +181,10 @@ export async function pruneExpiredIdempotencyKeys(
       and(
         eq(idempotencyKeys.companyId, input.companyId),
         lt(idempotencyKeys.createdAt, cutoff),
+        // Journal idempotency records carry the request fingerprint for the
+        // life of the append-only ledger. Pruning them would make a later
+        // replay with a changed payload silently return the original entry.
+        ne(idempotencyKeys.scope, "accounting.journal"),
       ),
     )
     .returning({ id: idempotencyKeys.id });

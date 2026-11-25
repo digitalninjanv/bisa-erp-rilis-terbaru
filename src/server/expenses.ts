@@ -4,7 +4,8 @@ import { accounts, expenses, partyPayments, suppliers } from "@/db/schema";
 import { AppError } from "@/lib/errors";
 import { todayISO } from "@/lib/format";
 import { d, lineTax, toDb, type MoneyInput } from "@/lib/money";
-import { getAccountId, postJournal, reverseSourceJournal } from "@/server/accounting";
+import { getAccountId, postJournal } from "@/server/accounting";
+import { reverseSourceJournalPreferringDate } from "@/server/accounting-reversal";
 import { writeAudit } from "@/server/audit";
 import { assertCashLikeAccount } from "@/server/employee-advances";
 import { claimIdempotencyKey } from "@/server/idempotency";
@@ -286,7 +287,8 @@ export async function voidExpense(
     .select()
     .from(expenses)
     .where(and(eq(expenses.companyId, input.companyId), eq(expenses.id, input.expenseId)))
-    .limit(1);
+    .limit(1)
+    .for("update");
   if (!expense) throw new AppError("NOT_FOUND", "Beban tidak ditemukan.");
   if (expense.status === "void") throw new AppError("INVALID_STATE", "Beban sudah dibatalkan.");
 
@@ -322,32 +324,15 @@ export async function voidExpense(
   // Bila periode asal sudah ditutup, pembalik jatuh ke hari ini dan
   // tanggalnya dicatat di audit.
   const originalDate = input.date ?? String(expense.date).slice(0, 10);
-  let reversalDate = originalDate;
-  let reversal;
-  try {
-    reversal = await reverseSourceJournal(tx, {
-      companyId: input.companyId,
-      sourceType: "expense",
-      sourceId: expense.id,
-      date: reversalDate,
-      description: `Pembatalan beban ${expense.number} — ${input.reason}`,
-      createdBy: input.userId,
-    });
-  } catch (error) {
-    if (error instanceof AppError && error.code === "PERIOD_CLOSED") {
-      reversalDate = todayISO();
-      reversal = await reverseSourceJournal(tx, {
-        companyId: input.companyId,
-        sourceType: "expense",
-        sourceId: expense.id,
-        date: reversalDate,
-        description: `Pembatalan beban ${expense.number} (periode asal tertutup) — ${input.reason}`,
-        createdBy: input.userId,
-      });
-    } else {
-      throw error;
-    }
-  }
+  const reversal = await reverseSourceJournalPreferringDate(tx, {
+    companyId: input.companyId,
+    sourceType: "expense",
+    sourceId: expense.id,
+    originalDate,
+    description: `Pembatalan beban ${expense.number} — ${input.reason}`,
+    createdBy: input.userId,
+  });
+  const reversalDate = reversal ? (originalDate) : originalDate;
   if (!reversal) {
     throw new AppError(
       "VALIDATION",

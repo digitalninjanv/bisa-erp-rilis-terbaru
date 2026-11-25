@@ -14,6 +14,7 @@ import { ensureFiscalPeriods } from "@/server/accounting";
 import {
   lockYearPeriods,
   postYearEndClosing,
+  reverseYearEndClosing,
 } from "@/server/year-end-closing";
 
 import { writeAudit } from "@/server/audit";
@@ -201,6 +202,38 @@ export async function postYearEndClosingAction(input: {
     revalidatePath("/app/akuntansi/periode");
     revalidatePath("/app/akuntansi/laporan");
     return entry;
+  });
+}
+
+/**
+ * Membalik jurnal penutup buku tahunan.
+ */
+export async function reverseYearEndClosingAction(input: {
+  year: number;
+  reason?: string;
+}) {
+  return guard(async () => {
+    const ctx = await requirePermissionInModule("accounting.manage", "akuntansi");
+    requireFreshSession(ctx);
+    const data = parseInput(
+      z.object({
+        year: z.number().int().min(2000).max(2100),
+        reason: z.string().trim().max(200).optional(),
+      }),
+      input,
+    );
+    const result = await withCompany(ctx.company.id, (tx) =>
+      reverseYearEndClosing(tx, {
+        companyId: ctx.company.id,
+        year: data.year,
+        userId: ctx.user.id,
+        reason: data.reason,
+      }),
+    );
+    revalidatePath("/app/akuntansi");
+    revalidatePath("/app/akuntansi/periode");
+    revalidatePath("/app/akuntansi/laporan");
+    return result;
   });
 }
 

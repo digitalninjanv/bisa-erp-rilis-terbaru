@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { searchProductsAction } from "@/server/actions/pos";
 import { cartProductsAction } from "@/server/actions/pos-cart";
 import type { CartItem, ProductOption } from "@/components/pos/terminal-types";
+import { findLocalProductMatch, mergeProductCache } from "@/lib/pos/product-cache";
 
 type CatalogProduct = Extract<Awaited<ReturnType<typeof searchProductsAction>>, { ok: true }>["data"][number];
 
@@ -48,6 +49,10 @@ export function useProductSearch(params: {
   setCache: Dispatch<SetStateAction<Record<string, ProductOption>>>;
 }) {
   const { initialProducts, initialWarehouse, selectedWarehouse, selectedCategory, setCache, checkoutInFlight, idempotencyKey } = params;
+  const cartProductIds = useRef<string[]>([]);
+  useEffect(() => {
+    cartProductIds.current = params.cart.map((line) => line.productId);
+  }, [params.cart]);
   const [results, setResults] = useState<ProductOption[]>(initialProducts);
   const [resultsFor, setResultsFor] = useState({ term: "", warehouse: initialWarehouse, category: "" });
   const [search, setSearch] = useState("");
@@ -68,7 +73,9 @@ export function useProductSearch(params: {
     void cartProductsAction({ warehouseId: selectedWarehouse, productIds: missingProductIds.split(",") })
       .then((result) => {
         if (cancelled || !result.ok) return;
-        setCache((current) => ({ ...current, ...Object.fromEntries(result.data.map((p) => [p.id, productOption(p)])) }));
+        setCache((current) =>
+          mergeProductCache(current, result.data.map(productOption), cartProductIds.current),
+        );
       }).catch(() => {
         if (!cancelled) toast.error("Data produk keranjang belum dapat dipulihkan. Periksa koneksi lalu muat ulang.");
       });
@@ -104,9 +111,7 @@ export function useProductSearch(params: {
         setPage(pageNum);
         setPageFull(mapped.length >= PRODUCT_PAGE_SIZE);
         setCache((current) => {
-          const next = { ...current };
-          for (const item of mapped) next[item.id] = item;
-          return next;
+          return mergeProductCache(current, mapped, cartProductIds.current);
         });
       }
       return mapped;
@@ -130,22 +135,10 @@ export function useProductSearch(params: {
     [runSearch],
   );
 
-function findLocalProductMatch(pool: ProductOption[], code: string): ProductOption | null {
-  for (const p of pool) {
-    if (p.barcode === code) return p;
-    if (p.packagings?.some((pkg) => pkg.barcode === code)) {
-      const pkg = p.packagings.find((k) => k.barcode === code);
-      return { ...p, matchedPackagingId: pkg?.id ?? null };
-    }
-    if (p.sku === code) return p;
-  }
-  return null;
-}
-
 // POS-SCAN-01: scanner mengirim kode + Enter jauh lebih cepat daripada
-// debounce 220 ms, jadi jalur barcode menjalankan pencarian segar dan
-// hanya menambahkan kecocokan persis (barcode, lalu SKU) — tidak pernah
-// menebak produk pertama dari hasil pencarian sebelumnya.
+// debounce 220 ms. Jika katalog lokal sudah sinkron dengan gudang aktif
+// dan barang cocok serta stok tersedia, langsung kembalikan tanpa menunggu
+// roundtrip server (quoteAction tetap memvalidasi stok & harga aktual).
 // S4: barcode kemasan juga kecocokan persis — produk ditemukan
 // membawa matchedPackagingId dan pemanggil menambahkan baris
 // KEMASAN itu, bukan 1 Pcs (mode gagal klasik satuan kemasan).
@@ -153,6 +146,13 @@ const scanBarcode = useCallback(
   async (code: string): Promise<ProductOption | null> => {
     if (checkoutInFlight.current) return null;
     const attempt = idempotencyKey.current;
+    const localPool = [...new Map([...Object.values(params.cache), ...params.initialProducts].map((item) => [item.id, item])).values()];
+    if (resultsFor.warehouse === selectedWarehouse) {
+      const fastHit = findLocalProductMatch(localPool, code);
+      if (fastHit && (!fastHit.trackStock || fastHit.stock > 0)) {
+        return fastHit;
+      }
+    }
     setSearching(true);
     try {
       // Pindai barcode selalu lintas kategori — filter chip tidak
@@ -166,10 +166,8 @@ const scanBarcode = useCallback(
         null;
       if (matched) return matched;
       // Fallback cache lokal (offline atau produk sudah tersimpan di memori terminal)
-      const localPool = [...Object.values(params.cache), ...params.initialProducts];
       return findLocalProductMatch(localPool, code);
     } catch {
-      const localPool = [...Object.values(params.cache), ...params.initialProducts];
       const local = findLocalProductMatch(localPool, code);
       if (local) return local;
       toast.error("Pencarian barcode gagal. Periksa koneksi lalu coba lagi.");
@@ -178,7 +176,7 @@ const scanBarcode = useCallback(
       setSearching(false);
     }
   },
-  [runSearch, checkoutInFlight, idempotencyKey, params.cache, params.initialProducts],
+  [runSearch, checkoutInFlight, idempotencyKey, params.cache, params.initialProducts, resultsFor.warehouse, selectedWarehouse],
 );
 
   // POS-1: setiap perubahan kata cari ATAU gudang (searchProducts

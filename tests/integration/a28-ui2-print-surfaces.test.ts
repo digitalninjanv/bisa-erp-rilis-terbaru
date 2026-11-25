@@ -15,6 +15,8 @@ import {
   warehouses,
 } from "@/db/schema";
 import { adminDb } from "@/db/admin";
+import ReceiptPage from "@/app/app/pos/nota/[id]/page";
+import SalesInvoicePage from "@/app/app/pos/nota/[id]/faktur/page";
 
 // A-28 UI-2 (UX-D01/D02/D03/D05) — permukaan cetak:
 //  - nota membaca kop/logo/kaki KUSTOM dari mesin cetak (dulu teks
@@ -40,11 +42,13 @@ vi.mock("@/lib/session", () => ({
   requirePermissionPage: async () => ({
     user: { id: KASIR, name: "Rani Kasir" },
     company: { id: ORG, name: "Uji Cetak UI-2" },
+    permissions: ["pos.sell", "pos.receipt.reprint"],
   }),
   requirePermission: async () => ({
     company: { id: ORG },
     user: { id: KASIR },
     role: "owner",
+    permissions: ["pos.sell", "pos.receipt.reprint"],
   }),
 }));
 
@@ -175,7 +179,6 @@ function compact(html: string): string {
 }
 
 async function renderNota(searchParams: Record<string, string> = {}) {
-  const { default: ReceiptPage } = await import("@/app/app/pos/nota/[id]/page");
   const element = await ReceiptPage({
     params: Promise.resolve({ id: SALE_ID }),
     searchParams: Promise.resolve(searchParams),
@@ -184,7 +187,6 @@ async function renderNota(searchParams: Record<string, string> = {}) {
 }
 
 async function renderFaktur(searchParams: Record<string, string> = {}) {
-  const { default: SalesInvoicePage } = await import("@/app/app/pos/nota/[id]/faktur/page");
   const element = await SalesInvoicePage({
     params: Promise.resolve({ id: SALE_ID }),
     searchParams: Promise.resolve(searchParams),

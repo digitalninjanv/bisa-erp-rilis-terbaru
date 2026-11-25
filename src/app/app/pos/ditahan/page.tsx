@@ -26,7 +26,7 @@ export default async function HeldPage() {
         title="Pesanan ditahan"
         description="Keranjang yang disimpan sementara. Stok belum berkurang sampai pembayaran diselesaikan."
         actions={
-          <Link href="/app/pos" className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/90">
+          <Link href="/app/pos" className="inline-flex h-11 items-center rounded-md bg-primary px-4 text-[12px] font-medium text-primary-foreground hover:bg-primary/90 lg:h-8">
             Ke kasir
           </Link>
         }

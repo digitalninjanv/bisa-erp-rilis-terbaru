@@ -13,7 +13,8 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { getDesktopPrintBridge } from "@/lib/pos/desktop-print";
+import { getDesktopPrintBridge, type DesktopPrinterConfig } from "@/lib/pos/desktop-print";
+import { receiptHref } from "@/lib/pos/receipt-links";
 import { renderReceiptHtml } from "@/lib/pos/receipt-html";
 import { formatIDR } from "@/lib/money";
 import { getPrinterPreferences } from "@/lib/escpos/printer-connection";
@@ -30,17 +31,25 @@ export interface CompletedSaleInfo {
   number: string;
   total: number;
   change: number;
+  /** Token cetak pertama dari checkout server; bukan izin cetak ulang. */
+  receiptToken?: string;
   offlineReceipt?: ReceiptData;
+  /** Snapshot struk online untuk cetak instan pertama (ESC/POS & Electron). */
+  instantReceipt?: ReceiptData;
+  /** Saat modal dibuka ulang dari tombol nota terakhir di terminal, jangan auto-cetak ulang otomatis. */
+  skipAutoPrint?: boolean;
 }
 
 export function CheckoutSuccessModal({
   sale,
   companyId,
+  userId,
   canReprint,
   onDismiss,
 }: {
   sale: CompletedSaleInfo | null;
   companyId: string;
+  userId: string;
   canReprint: boolean;
   onDismiss: () => void;
 }) {
@@ -54,10 +63,14 @@ export function CheckoutSuccessModal({
   const [confirmRetry, setConfirmRetry] = useState(false);
   const cancelRetryRef = useRef<HTMLButtonElement>(null);
   const [browserOpened, setBrowserOpened] = useState(false);
+  const [desktopConfig, setDesktopConfig] = useState<DesktopPrinterConfig | null>(null);
   const newSaleRef = useRef<HTMLButtonElement>(null);
+  const printBtnRef = useRef<HTMLButtonElement>(null);
+  const autoPrintedSaleId = useRef<string | null>(null);
 
   const triggerPrint = useCallback(async (saleId: string, saleNumber: string, retryConfirmed = false) => {
     if (submittingPrint.current) return;
+    const receiptSource = sale?.offlineReceipt ?? sale?.instantReceipt;
     const desktop = getDesktopPrintBridge();
     if (desktop) {
       if (desktopSent.current && !canReprint) return;
@@ -69,8 +82,19 @@ export function CheckoutSuccessModal({
       setPrintStatus("printing");
       setPrintMessage("Mengirim struk ke printer yang dipilih…");
       try {
-        const rawHtml = sale?.offlineReceipt ? renderReceiptHtml(sale.offlineReceipt) : undefined;
-        const result = await desktop.printReceipt(saleId, desktopSent.current, rawHtml);
+        // Cetak pertama memakai HTML lokal agar instan tanpa fetch SSR ulang;
+        // cetak ulang tetap memuat /app/pos/nota/[id]?salinan=1 agar tercatat audit.
+        const rawHtml =
+          !desktopSent.current && receiptSource
+            ? renderReceiptHtml({ ...receiptSource, copyIndex: 0 })
+            : undefined;
+        const result = await desktop.printReceipt(
+          saleId,
+          desktopSent.current,
+          rawHtml,
+          retryConfirmed,
+          sale?.receiptToken,
+        );
         desktopUncertain.current = Boolean(result.uncertain);
         if (result.ok) desktopSent.current = true;
         setPrintStatus(result.ok ? "success" : "error");
@@ -122,10 +146,12 @@ export function CheckoutSuccessModal({
             saleId,
             saleNumber,
             companyId,
+            userId,
             terminalId: getOrCreateDeviceId(),
             kind: latest ? "copy" : sale?.offlineReceipt ? "offline-receipt" : "receipt",
             copyIndex: latest ? undefined : 0,
-            receiptData: sale?.offlineReceipt,
+            printToken: latest ? null : (sale?.receiptToken ?? null),
+            receiptData: latest ? sale?.offlineReceipt : receiptSource,
           });
         }
       } catch {
@@ -148,7 +174,7 @@ export function CheckoutSuccessModal({
     if (currentPrefs.type === "kiosk" || currentPrefs.type === "none") {
       setPrintStatus("printing");
       setPrintMessage("Membuka jendela cetak nota...");
-      const opened = printReceiptViaPopup(saleId);
+      const opened = printReceiptViaPopup(saleId, sale?.receiptToken);
       if (opened) {
         setPrintStatus("idle");
         setBrowserOpened(true);
@@ -164,7 +190,7 @@ export function CheckoutSuccessModal({
 
     setPrintStatus("idle");
     setPrintMessage("Printer thermal belum terhubung");
-  }, [canReprint, companyId, sale]);
+  }, [canReprint, companyId, sale, userId]);
 
   // Status job cetak dipantau dari antrean, bukan dari durasi transport.
   useEffect(() => {
@@ -205,6 +231,8 @@ export function CheckoutSuccessModal({
 
   const isConnected =
     prefs.type === "bluetooth" || prefs.type === "usb" || prefs.type === "serial";
+  const desktopAutoPrintable = Boolean(desktopConfig?.printer);
+  const printerReady = desktopAutoPrintable || isConnected || prefs.type === "kiosk";
   const isPrinting = printStatus === "printing";
   const printed = printStatus === "success";
   const printLabel =
@@ -214,10 +242,70 @@ export function CheckoutSuccessModal({
         ? "Cetak ulang"
         : "Cetak struk";
 
-  // Sesudah struk tercetak, aksi utama berpindah ke transaksi berikutnya.
+  // Pantau konfigurasi printer Desktop agar perubahan dari menu Atur printer langsung terbaca.
   useEffect(() => {
-    if (printed && !configOpen) newSaleRef.current?.focus();
-  }, [printed, configOpen]);
+    const desktop = getDesktopPrintBridge();
+    if (!desktop) return;
+    let active = true;
+    void desktop.getPrinterConfig?.().then((cfg) => {
+      if (active && cfg) setDesktopConfig(cfg);
+    }).catch(() => undefined);
+    const unsub = desktop.onPrinterConfigChanged?.((cfg) => {
+      if (active) setDesktopConfig(cfg);
+    });
+    return () => {
+      active = false;
+      unsub?.();
+    };
+  }, []);
+
+  // Auto-cetak pasca bayar bila printer terkonfigurasi dan toggle aktif.
+  useEffect(() => {
+    if (!sale || sale.skipAutoPrint || autoPrintedSaleId.current === sale.id) return;
+    autoPrintedSaleId.current = sale.id;
+    let active = true;
+    const desktop = getDesktopPrintBridge();
+    if (desktop) {
+      void desktop.getPrinterConfig?.()
+        .then((cfg) => {
+          if (!active) return;
+          if (cfg) setDesktopConfig(cfg);
+          if (cfg?.printer && cfg?.autoPrint !== false) {
+            void triggerPrint(sale.id, sale.number);
+          }
+        })
+        .catch(() => undefined);
+      return () => {
+        active = false;
+      };
+    }
+    const currentPrefs = getPrinterPreferences();
+    const webReady =
+      currentPrefs.type === "bluetooth" ||
+      currentPrefs.type === "usb" ||
+      currentPrefs.type === "serial" ||
+      (currentPrefs.type === "kiosk" && !sale.offlineReceipt);
+    if (webReady && currentPrefs.autoPrint !== false) {
+      void Promise.resolve().then(() => {
+        if (active) void triggerPrint(sale.id, sale.number);
+      });
+    }
+    return () => {
+      active = false;
+    };
+  }, [sale, triggerPrint]);
+
+  // Ergonomi kasir: fokus Enter ke "Transaksi baru" setelah cetak berjalan/selesai
+  // atau bila belum ada printer; bila printer siap namun auto-cetak dimatikan,
+  // fokuskan ke "Cetak struk" agar Enter tidak melewati cetak struk.
+  useEffect(() => {
+    if (!sale || configOpen) return;
+    if (printed || isPrinting || browserOpened || !printerReady) {
+      newSaleRef.current?.focus();
+    } else if (printStatus === "idle") {
+      printBtnRef.current?.focus();
+    }
+  }, [sale, printed, isPrinting, browserOpened, printerReady, printStatus, configOpen]);
 
   const handleDismiss = () => {
     setPrintStatus("idle");
@@ -266,20 +354,21 @@ export function CheckoutSuccessModal({
             >
               <div className="flex items-start justify-between gap-4">
                 <span className="text-sm text-muted-foreground">Total belanja</span>
-                <strong className="num text-right text-lg font-semibold text-foreground">
+                <strong className="num text-right text-xl font-bold text-foreground">
                   {formatIDR(sale?.total ?? 0)}
                 </strong>
               </div>
               {sale && sale.change > 0 ? (
                 <div className="mt-3 flex items-center justify-between gap-4 border-t border-border pt-3">
-                  <span className="text-sm font-medium text-foreground">Kembalian</span>
-                  <strong className="num text-right text-2xl font-bold text-tone-teal">
+                  <span className="text-sm font-semibold text-foreground">Kembalian</span>
+                  <strong className="num text-right text-3xl font-extrabold tracking-tight text-tone-teal">
                     {formatIDR(sale.change)}
                   </strong>
                 </div>
               ) : (
-                <div className="mt-3 flex items-center gap-2 border-t border-border pt-3 text-sm font-medium text-tone-teal">
-                  <CheckCircle2 aria-hidden="true" className="size-4" /> {sale?.offlineReceipt ? "Tersimpan lokal" : "Transaksi tersimpan"}
+                <div className="mt-3 flex items-center gap-2 border-t border-border pt-3 text-sm font-semibold text-tone-teal">
+                  <CheckCircle2 aria-hidden="true" className="size-4" />{" "}
+                  {sale?.offlineReceipt ? "Tersimpan lokal · Lunas" : "Uang Pas · Transaksi tersimpan"}
                 </div>
               )}
             </section>
@@ -297,14 +386,19 @@ export function CheckoutSuccessModal({
                 )}
                 <p className={printStatus === "error" ? "text-tone-red" : "text-muted-foreground"}>
                   {printMessage ||
-                    (isConnected
-                      ? `Printer dipilih: ${prefs.name}`
-                      : "Struk belum dicetak. Cetak lewat dialog browser atau atur printer thermal.")}
+                    (desktopConfig
+                      ? desktopConfig.printer
+                        ? `Printer Desktop: ${desktopConfig.printer} (${desktopConfig.width} mm)`
+                        : "Printer Desktop belum dipilih — klik \"Atur printer\" di bawah."
+                      : isConnected
+                        ? `Printer dipilih: ${prefs.name}`
+                        : "Struk belum dicetak. Cetak lewat dialog browser atau atur printer thermal.")}
                 </p>
               </div>
 
               <button
                 type="button"
+                ref={printBtnRef}
                 onClick={() => sale && void triggerPrint(sale.id, sale.number)}
                 disabled={isPrinting || browserOpened || (printed && (!canReprint || Boolean(sale?.offlineReceipt)))}
                 className={
@@ -323,7 +417,7 @@ export function CheckoutSuccessModal({
 
               {sale && !sale.offlineReceipt && printStatus === "error" && (
                 <Link
-                  href={`/app/pos/nota/${sale.id}`}
+                  href={receiptHref(sale.id, { printToken: sale.receiptToken })}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="mr-3 inline-flex min-h-8 items-center text-sm text-primary underline"
@@ -353,16 +447,19 @@ export function CheckoutSuccessModal({
               type="button"
               ref={newSaleRef}
               onClick={handleDismiss}
-              autoFocus
               className={
-                printed
+                printed || isPrinting || browserOpened || !printerReady
                   ? "flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-tone-teal px-4 text-base font-semibold text-white transition-colors hover:bg-tone-teal/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   : "flex h-12 w-full items-center justify-center gap-2 rounded-lg border border-border bg-background px-4 text-base font-semibold text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               }
             >
-              <span>{printStatus === "idle" && !browserOpened ? "Tanpa cetak" : "Transaksi baru"}</span>
+              <span>
+                {printed || isPrinting || browserOpened || !printerReady
+                  ? "Transaksi baru"
+                  : "Lanjut tanpa cetak"}
+              </span>
               <span aria-label="Enter" className="rounded bg-black/10 px-1.5 py-0.5 text-xs font-medium">
-                Enter ↵
+                {printed || isPrinting || browserOpened || !printerReady ? "Enter ↵" : "Esc"}
               </span>
               <ArrowRight aria-hidden="true" className="size-4" />
             </button>
@@ -370,7 +467,7 @@ export function CheckoutSuccessModal({
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-sm">
               {sale && !sale.offlineReceipt ? (
                 <Link
-                  href={`/app/pos/nota/${sale.id}`}
+                  href={receiptHref(sale.id, { printToken: sale.receiptToken })}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex min-h-8 items-center gap-1 text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

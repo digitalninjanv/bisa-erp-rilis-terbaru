@@ -13,6 +13,7 @@ import {
   journalEntries,
   paymentMethods,
   importRows,
+  products,
   units,
   warehouses,
 } from "@/db/schema";
@@ -41,6 +42,10 @@ import { GET as exportInventoryRoute } from "@/app/api/export/inventory/route";
 vi.mock("next/cache", () => ({ revalidatePath: () => undefined }));
 vi.mock("@/lib/session", () => ({
   requirePermission: async () => ({
+    company: { id: "01900000-0000-7000-8000-000000000001" },
+    user: { id: "01900000-0000-7000-8000-000000000010" },
+  }),
+  requirePermissionInModule: async () => ({
     company: { id: "01900000-0000-7000-8000-000000000001" },
     user: { id: "01900000-0000-7000-8000-000000000010" },
   }),
@@ -287,6 +292,37 @@ describe("Excel master data — template & ekspor", () => {
       expect(JSON.stringify(guide), entity).toContain("Cara pakai");
       expect(JSON.stringify(guide), entity).toContain("Versi template");
     }
+  });
+
+  it("template stok awal memakai SKU produk nyata, bukan contoh fiktif", async () => {
+    const response = await importTemplateRoute(
+      new Request("http://localhost/api/import/template/opening_stock?format=xlsx"),
+      { params: Promise.resolve({ entity: "opening_stock" }) },
+    );
+    const workbook = await workbookFrom(response);
+    const data = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets.Data, {
+      header: 1,
+      raw: true,
+    });
+    const headers = (data[0] ?? []).map((cell) => String(cell ?? ""));
+    expect(headers).toEqual([
+      "SKU",
+      "Nama Produk",
+      "Gudang Saldo Awal",
+      "Kuantitas Saldo Awal",
+      "Nilai Satuan",
+      "Per Tanggal",
+    ]);
+    const sampleRow = data[1] as unknown[] | undefined;
+    expect(sampleRow?.[0]).toBeTruthy();
+    const [product] = await withCompanyReadOnly(ORG_ID, (tx) =>
+      tx
+        .select({ id: products.id })
+        .from(products)
+        .where(and(eq(products.companyId, ORG_ID), eq(products.sku, String(sampleRow?.[0] ?? ""))))
+        .limit(1),
+    );
+    expect(product).toBeDefined();
   });
 
   it("ekspor master XLSX tetap memakai header yang bisa diimpor ulang", async () => {

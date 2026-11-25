@@ -1,4 +1,4 @@
-import { and, asc, eq, ne } from "drizzle-orm";
+import { and, asc, eq, inArray, ne } from "drizzle-orm";
 import type { Tx } from "@/db";
 import {
   customers,
@@ -449,7 +449,12 @@ export type PartyCreditListRow = PartyCreditRow & {
 export async function listPartyCredits(
   tx: Tx,
   companyId: string,
-  filter?: { partyType?: PartyCreditPartyType; partyId?: string; status?: "open" | "settled" },
+  filter?: {
+    partyType?: PartyCreditPartyType;
+    partyId?: string;
+    partyIds?: string[];
+    status?: "open" | "settled";
+  },
 ): Promise<PartyCreditListRow[]> {
   const rows = await tx
     .select({
@@ -472,6 +477,7 @@ export async function listPartyCredits(
         ne(partyCredits.status, "void"),
         ...(filter?.partyType ? [eq(partyCredits.partyType, filter.partyType)] : []),
         ...(filter?.partyId ? [eq(partyCredits.partyId, filter.partyId)] : []),
+        ...(filter?.partyIds ? [inArray(partyCredits.partyId, filter.partyIds)] : []),
         ...(filter?.status ? [eq(partyCredits.status, filter.status)] : []),
       ),
     )

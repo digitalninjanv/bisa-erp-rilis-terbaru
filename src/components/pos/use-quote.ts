@@ -127,6 +127,7 @@ export function useQuote(params: {
                       stock: p.stock,
                       trackStock: p.trackStock ?? true,
                       trackSerial: p.trackSerial ?? false,
+                      isTaxExempt: p.isTaxExempt ?? false,
                       // S4: kemasan katalog lokal untuk quote baris berkemasan.
                       packagings: (p.packagings ?? []).map((pack) => ({
                         id: pack.id,
@@ -169,7 +170,7 @@ export function useQuote(params: {
               id: line.productId,
               name: line.name,
               sku: line.sku,
-              barcode: null,
+              barcode: next[line.productId]?.barcode ?? null,
               // S4: unitPrice baris BERKEMASAN adalah harga per
               // satuan dasar turunan (harga kemasan ÷ isi) — bukan
               // harga master produk; menimpakannya merusak harga
@@ -181,6 +182,7 @@ export function useQuote(params: {
               stock: line.stock,
               trackStock: line.trackStock,
               trackSerial: line.trackSerial,
+              isTaxExempt: line.taxRate === 0 && (next[line.productId]?.isTaxExempt ?? false),
               unitCode: next[line.productId]?.unitCode ?? "PCS",
               packagings: next[line.productId]?.packagings ?? [],
             };

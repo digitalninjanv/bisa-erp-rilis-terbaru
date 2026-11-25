@@ -38,7 +38,22 @@ function contentSecurityPolicy(nonce: string): string {
   ].join("; ");
 }
 
-export function proxy(request: NextRequest) {
+async function posShellUid(request: NextRequest): Promise<string | null> {
+  const session = request.cookies
+    .getAll()
+    .find((cookie) => cookie.name.includes("session_token"));
+  if (!session?.value) return null;
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(session.value),
+  );
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("")
+    .slice(0, 32);
+}
+
+export async function proxy(request: NextRequest) {
   const nonce = crypto.randomUUID().replace(/-/g, "");
   const policy = contentSecurityPolicy(nonce);
 
@@ -48,6 +63,53 @@ export function proxy(request: NextRequest) {
 
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("Content-Security-Policy", policy);
+
+  // Cookie hash sesi tetap HttpOnly. Service worker tidak dapat membaca
+  // header Cookie pada FetchEvent, jadi shell memakai ID acak khusus cache
+  // yang tidak pernah menjadi bukti autentikasi dan dibaca via Cookie Store.
+  const isPosPath =
+    request.nextUrl.pathname === "/app/pos" ||
+    request.nextUrl.pathname.startsWith("/app/pos/");
+  if (isPosPath || request.nextUrl.pathname === "/login") {
+    const uid = await posShellUid(request);
+    if (uid && isPosPath) {
+      const existingSessionUid = request.cookies.get("pos_shell_uid")?.value;
+      const existingCacheId = request.cookies.get("pos_shell_cache_id")?.value;
+      const cacheIdIsValid = Boolean(existingCacheId && /^[0-9a-f-]{36}$/i.test(existingCacheId));
+      const cacheId = existingSessionUid === uid && cacheIdIsValid
+        ? existingCacheId!
+        : crypto.randomUUID();
+      response.cookies.set("pos_shell_uid", uid, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/app/pos",
+      });
+      response.cookies.set("pos_shell_cache_id", cacheId, {
+        httpOnly: false,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/app/pos",
+      });
+      response.headers.set("x-pos-shell-cache-id", cacheId);
+    } else {
+      response.cookies.set("pos_shell_uid", "", {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/app/pos",
+        maxAge: 0,
+      });
+      response.cookies.set("pos_shell_cache_id", "", {
+        httpOnly: false,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/app/pos",
+        maxAge: 0,
+      });
+    }
+  }
+
   return response;
 }
 

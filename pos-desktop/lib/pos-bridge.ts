@@ -57,6 +57,7 @@ export type LocalProduct = {
   stock: number;
   trackStock: boolean;
   trackSerial: boolean;
+  isTaxExempt?: boolean;
   unitCode: string | null;
   packagings: LocalPackaging[];
 };

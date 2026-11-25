@@ -15,6 +15,11 @@ import { canonicalJournalAmounts } from "@/lib/akuntansi/journal-amounts";
 import { CHART_TEMPLATE } from "@/lib/akuntansi/chart-template";
 import { Decimal, d, formatIDR, sum, toDb, type MoneyInput } from "@/lib/money";
 import { nextDocumentNumber } from "@/server/sequences";
+import {
+  journalRequestFingerprint,
+  recordJournalIdempotency,
+  replayJournalIdempotency,
+} from "@/server/journal-idempotency";
 
 import { getCompanySettingsRow } from "@/server/settings";
 export type JournalLineInput = {
@@ -79,6 +84,18 @@ async function evaluateCashNegativeGuard(
   const cashLikeIds = await listCashBankIds(tx, companyId);
   const candidates = outflowAccountIds.filter((accountId) => cashLikeIds.has(accountId));
   if (candidates.length === 0) return [];
+
+  // Serialize balance checks for the same cash/bank account. The row
+  // lock is acquired before the aggregate so READ COMMITTED observes a
+  // concurrent posting after waiting instead of approving from a stale
+  // balance snapshot. Sort ids so journals touching multiple accounts
+  // acquire locks in a stable order.
+  await tx
+    .select({ id: accounts.id })
+    .from(accounts)
+    .where(and(eq(accounts.companyId, companyId), inArray(accounts.id, candidates)))
+    .orderBy(asc(accounts.id))
+    .for("update");
 
   const accountById = new Map(accountRows.map((row) => [row.id, row]));
   const warnings: string[] = [];
@@ -272,8 +289,10 @@ export async function assertPeriodOpen(
     );
   }
   if (period.status !== "open") {
-    if (options?.allowClosingEntry && period.status === "closed") {
-      // Jurnal penutup tahunan (year_end_closing) dan pembaliknya diizinkan diposting ke periode berstatus closed
+    if (options?.allowClosingEntry && (period.status === "closed" || period.status === "locked")) {
+      // Jurnal penutup tahunan (year_end_closing) dan pembaliknya diizinkan
+      // diposting ke periode closed/locked; keduanya status final yang sah
+      // untuk tutup buku. Jurnal biasa tetap ditolak.
       return;
     }
     throw new AppError(
@@ -297,19 +316,17 @@ export async function postJournal(
     lines: JournalLineInput[];
   },
 ): Promise<{ id: string; number: string; warnings: string[] }> {
+  const journalFingerprint = input.idempotencyKey
+    ? journalRequestFingerprint(input)
+    : null;
   if (input.idempotencyKey) {
-    const [existing] = await tx
-      .select({ id: journalEntries.id, number: journalEntries.number })
-      .from(journalEntries)
-      .where(
-        and(
-          eq(journalEntries.companyId, input.companyId),
-          eq(journalEntries.idempotencyKey, input.idempotencyKey),
-        ),
-      )
-      .limit(1);
-    // Replay idempoten: jurnal tidak diposting ulang, jadi tidak ada
-    // peringatan baru untuk jurnal ini.
+    const existing = await replayJournalIdempotency(
+      tx,
+      input,
+      input.idempotencyKey,
+      journalFingerprint!,
+    );
+    // Replay idempoten: jurnal tidak diposting ulang.
     if (existing) return { ...existing, warnings: [] };
   }
 
@@ -468,6 +485,14 @@ export async function postJournal(
       },
     });
 
+  if (input.idempotencyKey && journalFingerprint) {
+    await recordJournalIdempotency(
+      tx,
+      { companyId: input.companyId, key: input.idempotencyKey },
+      journalFingerprint,
+      entry,
+    );
+  }
   return { ...entry, warnings };
 }
 

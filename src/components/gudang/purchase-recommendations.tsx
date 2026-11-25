@@ -15,6 +15,7 @@ export type RecommendationRow = {
   sku: string;
   name: string;
   totalStock: string;
+  onOrderQty: string;
   minStock: string;
   suggestedQty: string;
   /** S6: petunjuk "≈ X Dus" dari kemasan bawaan beli (display-only). */
@@ -124,8 +125,8 @@ export function PurchaseRecommendations({ rows }: { rows: RecommendationRow[] })
         }
         footerNote={
           <>
-            Saran pesan mengisi stok sampai <strong>2× stok minimum</strong> (target = 2 × minimum − stok
-            saat ini). PO dibuat sebagai <strong>draft</strong>, satu PO per pemasok utama.
+            Saran pesan mengisi stok sampai <strong>2× stok minimum</strong> (target = 2 × minimum − (stok
+            saat ini + sisa PO terbuka)). PO dibuat sebagai <strong>draft</strong>, satu PO per pemasok utama.
           </>
         }
       >
@@ -143,6 +144,7 @@ export function PurchaseRecommendations({ rows }: { rows: RecommendationRow[] })
                 </th>
                 <th>Produk</th>
                 <th className="text-right">Stok total</th>
+                <th className="text-right">Dalam PO</th>
                 <th className="text-right">Stok minimum</th>
                 <th className="text-right">Saran pesan</th>
                 <th className="text-right">Harga pokok</th>
@@ -165,6 +167,9 @@ export function PurchaseRecommendations({ rows }: { rows: RecommendationRow[] })
                     <p className="num text-[10px] text-muted-foreground">{row.sku}</p>
                   </td>
                   <td className="num text-right">{formatQty(row.totalStock)}</td>
+                  <td className="num text-right text-muted-foreground">
+                    {Number(row.onOrderQty) > 0 ? formatQty(row.onOrderQty) : "—"}
+                  </td>
                   <td className="num text-right text-muted-foreground">{formatQty(row.minStock)}</td>
                   <td className="num text-right font-medium">
                     {formatQty(row.suggestedQty)}

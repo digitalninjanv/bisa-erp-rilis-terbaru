@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { createHash } from "node:crypto";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { cashMovements, cashSessions, warehouses } from "@/db/schema";
+import { cashMovements, cashSessions, outbox, warehouses } from "@/db/schema";
 import { withCompany, withCompanyReadOnly } from "@/db/tenant";
 import { AppError } from "@/lib/errors";
 import {
@@ -281,6 +281,21 @@ export async function syncPosDeviceSessionIntents(
           .for("update");
         if (!serverSession || serverSession.userId !== device.userId) {
           throw new AppError("NOT_FOUND", "Sesi kas server untuk penutupan terminal tidak ditemukan.");
+        }
+        const [unresolvedOutbox] = await tx
+          .select({ id: outbox.id })
+          .from(outbox)
+          .where(
+            and(
+              eq(outbox.companyId, device.companyId),
+              eq(outbox.eventType, "pos_offline_sale"),
+              isNull(outbox.processedAt),
+              sql`${outbox.payload}->'origin'->>'sessionId' = ${intent.localSessionId}`,
+            ),
+          )
+          .limit(1);
+        if (unresolvedOutbox) {
+          return "needsReview";
         }
         if (serverSession.status === "open") {
           await closeCashSession(tx, {

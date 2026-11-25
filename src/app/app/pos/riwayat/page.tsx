@@ -52,11 +52,11 @@ export default async function SalesHistoryPage({
       <PageHeader
         eyebrow="POS"
         title="Riwayat transaksi"
-        description="Semua nota penjualan, status pembayaran, cetak ulang, retur, dan void dengan otorisasi."
+        description="Semua nota penjualan, status pembayaran, cetak ulang, retur, dan pembatalan dengan otorisasi."
         actions={
           <Link
             href="/app/pos"
-            className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/90"
+            className="inline-flex h-11 items-center rounded-md bg-primary px-4 text-[12px] font-medium text-primary-foreground hover:bg-primary/90 lg:h-8"
           >
             Transaksi baru
           </Link>
@@ -113,7 +113,7 @@ export default async function SalesHistoryPage({
                   { label: "Semua", value: "" },
                   { label: "Selesai", value: "completed" },
                   { label: "Ditahan", value: "held" },
-                  { label: "Void", value: "void" },
+                  { label: "Batal", value: "void" },
                   { label: "Retur", value: "returned" },
                 ]}
               />
@@ -126,7 +126,7 @@ export default async function SalesHistoryPage({
             title="Belum ada transaksi"
             description="Transaksi yang dibuat di kasir akan muncul di sini lengkap dengan status dan aksi."
             action={
-              <Link href="/app/pos" className="text-[12px] font-medium text-primary hover:underline">
+              <Link href="/app/pos" className="inline-flex min-h-11 items-center text-[12px] font-medium text-primary hover:underline">
                 Mulai transaksi pertama
               </Link>
             }
@@ -160,7 +160,7 @@ export default async function SalesHistoryPage({
               {data.list.rows.map((sale) => (
                 <tr key={sale.id}>
                   <td>
-                    <Link href={`/app/pos/nota/${sale.id}?salinan=1`} prefetch={false} className="num font-medium hover:underline">
+                    <Link href={`/app/pos/nota/${sale.id}`} prefetch={false} className="num font-medium hover:underline">
                       {sale.number}
                     </Link>
                     <p className="text-[10px] text-muted-foreground">{formatDate(sale.date)}</p>
@@ -200,9 +200,9 @@ export default async function SalesHistoryPage({
             <div key={sale.id} className="px-4 py-3">
               <div className="flex items-baseline justify-between gap-2">
                 <Link
-                  href={`/app/pos/nota/${sale.id}?salinan=1`}
+                  href={`/app/pos/nota/${sale.id}`}
                   prefetch={false}
-                  className="num text-[12px] font-medium text-primary hover:underline"
+                  className="num inline-flex min-h-11 items-center text-[12px] font-medium text-primary hover:underline"
                 >
                   {sale.number}
                 </Link>

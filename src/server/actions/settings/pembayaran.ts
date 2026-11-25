@@ -254,6 +254,30 @@ export async function updatePaymentMethodAction(input: z.input<typeof methodUpda
         .where(and(eq(paymentMethods.companyId, ctx.company.id), eq(paymentMethods.id, data.id)))
         .limit(1);
       if (!existing) throw new AppError("NOT_FOUND", "Metode pembayaran tidak ditemukan.");
+      // SET-01: tipe/akun adalah makna historis pembayaran. sale_payments
+      // hanya menyimpan method_id dan laporan/refund memakai metode live;
+      // izinkan ubah nama/urutan/fee, tetapi bukan identitas kanal setelah
+      // metode dipakai. Buat metode baru bila kanal memang berubah.
+      const identityChanged =
+        data.type !== existing.type || data.accountId !== existing.accountId;
+      if (identityChanged) {
+        const [used] = await tx
+          .select({ id: salePayments.id })
+          .from(salePayments)
+          .where(
+            and(
+              eq(salePayments.companyId, ctx.company.id),
+              eq(salePayments.methodId, existing.id),
+            ),
+          )
+          .limit(1);
+        if (used) {
+          throw new AppError(
+            "CONFLICT",
+            `Metode ${existing.name} sudah dipakai transaksi. Tipe dan akun tidak dapat diubah agar laporan/refund historis tetap sesuai; buat metode baru untuk kanal berbeda.`,
+          );
+        }
+      }
       // SET-004: Validasi ketersediaan akun bank_fee sebelum menyimpan metode ber-fee
       const isFeeActive = data.feeEnabled ?? existing.feeEnabled;
       const feeType = data.feeType ?? existing.feeType;

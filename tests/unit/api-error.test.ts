@@ -51,4 +51,12 @@ describe("SEC-006 — mapper error route export/API", () => {
     });
     expect((await denied()).status).toBe(403);
   });
+
+  it("memetakan NEXT_REDIRECT menjadi 401 JSON (bukan 500)", async () => {
+    const redirectErr = Object.assign(new Error("NEXT_REDIRECT"), { digest: "NEXT_REDIRECT;replace;/login;307;" });
+    const response = apiErrorResponse(redirectErr);
+    expect(response.status).toBe(401);
+    const body = (await response.json()) as { code?: string };
+    expect(body.code).toBe("FORBIDDEN");
+  });
 });

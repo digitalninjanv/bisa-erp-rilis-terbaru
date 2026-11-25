@@ -52,19 +52,24 @@ export function TerminalCreateForm({
 
   async function submit() {
     setBusy(true);
-    const result = await createPosTerminalAction({
-      name,
-      warehouseId: warehouseId || null,
-      userId,
-    });
-    setBusy(false);
-    if (!result.ok) {
-      toast.error(result.message);
-      return;
+    try {
+      const result = await createPosTerminalAction({
+        name,
+        warehouseId: warehouseId || null,
+        userId,
+      });
+      if (!result.ok) {
+        toast.error(result.message);
+        return;
+      }
+      toast.success("Terminal dibuat. Terbitkan kode pasangan untuk memasangnya.");
+      setName("");
+      router.refresh();
+    } catch {
+      toast.error("Terminal belum dapat dibuat. Periksa koneksi lalu coba lagi.");
+    } finally {
+      setBusy(false);
     }
-    toast.success("Terminal dibuat. Terbitkan kode pasangan untuk memasangnya.");
-    setName("");
-    router.refresh();
   }
 
   return (
@@ -171,21 +176,26 @@ export function DesktopReleaseForm({
       return;
     }
     setBusy(true);
-    const result = await setDesktopReleaseAction({
-      version,
-      rolloutPercent: percent,
-      minVersion: minVersion.trim() ? minVersion.trim() : null,
-      notes: notes.trim() ? notes.trim() : null,
-    });
-    setBusy(false);
-    if (!result.ok) {
-      toast.error(result.message);
-      return;
+    try {
+      const result = await setDesktopReleaseAction({
+        version,
+        rolloutPercent: percent,
+        minVersion: minVersion.trim() ? minVersion.trim() : null,
+        notes: notes.trim() ? notes.trim() : null,
+      });
+      if (!result.ok) {
+        toast.error(result.message);
+        return;
+      }
+      toast.success(
+        `Rilis desktop ${result.data.version} ditetapkan — rollout ${result.data.rolloutPercent}%.`,
+      );
+      router.refresh();
+    } catch {
+      toast.error("Rilis belum dapat ditetapkan. Periksa koneksi lalu coba lagi.");
+    } finally {
+      setBusy(false);
     }
-    toast.success(
-      `Rilis desktop ${result.data.version} ditetapkan — rollout ${result.data.rolloutPercent}%.`,
-    );
-    router.refresh();
   }
 
   return (
@@ -355,46 +365,27 @@ export function DesktopDownloadSection() {
       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h3 className="flex items-center gap-1.5 text-[13px] font-semibold">
-            <Download className="size-4 text-primary" /> Unduh Aplikasi Bisa POS Desktop (Native)
+            <Download className="size-4 text-primary" /> Unduh Aplikasi Bisa POS Desktop
           </h3>
           <p className="mt-0.5 text-[11px] text-muted-foreground">
-            Aplikasi kasir mandiri berkecepatan tinggi dengan database SQLite lokal. Tetap dapat bertransaksi &amp; cetak struk tanpa koneksi internet.
+            Aplikasi desktop resmi (Electron) membuka terminal POS ini dengan printer thermal
+            terintegrasi, mode kios, serta dukungan LAN/HTTPS. Paket Tauri/SQLite lama sudah tidak
+            didukung.
           </p>
         </div>
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <div className="flex flex-col justify-between rounded-md border bg-muted/20 p-3">
           <div>
             <div className="flex items-center gap-1 text-xs font-semibold">
-              <span>Fedora / RHEL / CentOS</span>
-              <span className="rounded bg-blue-100 px-1.5 py-0.5 font-mono text-[10px] text-blue-800 dark:bg-blue-950 dark:text-blue-300">
-                .rpm
-              </span>
-            </div>
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              Paket native untuk sistem Linux berbasis RPM (Fedora, Red Hat, Rocky Linux).
-            </p>
-          </div>
-          <a
-            href="/api/pos/download/rpm"
-            download
-            className="mt-3 inline-flex items-center justify-center gap-1.5 rounded bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-          >
-            <Download className="size-3.5" /> Unduh Paket RPM (6.8 MB)
-          </a>
-        </div>
-
-        <div className="flex flex-col justify-between rounded-md border bg-muted/20 p-3">
-          <div>
-            <div className="flex items-center gap-1 text-xs font-semibold">
-              <span>Linux Universal</span>
+              <span>Linux x86-64</span>
               <span className="rounded bg-green-100 px-1.5 py-0.5 font-mono text-[10px] text-green-800 dark:bg-green-950 dark:text-green-300">
                 .AppImage
               </span>
             </div>
             <p className="mt-1 text-[11px] text-muted-foreground">
-              Portabel untuk semua distro Linux tanpa instalasi (langsung klik &amp; jalan).
+              Paket portabel resmi untuk komputer kasir Linux.
             </p>
           </div>
           <a
@@ -402,40 +393,40 @@ export function DesktopDownloadSection() {
             download
             className="mt-3 inline-flex items-center justify-center gap-1.5 rounded border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted"
           >
-            <Download className="size-3.5" /> Unduh AppImage (114 MB)
+            <Download className="size-3.5" /> Unduh AppImage
           </a>
         </div>
 
         <div className="flex flex-col justify-between rounded-md border bg-muted/20 p-3">
           <div>
             <div className="flex items-center gap-1 text-xs font-semibold">
-              <span>Ubuntu / Debian / Mint</span>
-              <span className="rounded bg-amber-100 px-1.5 py-0.5 font-mono text-[10px] text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-                .deb
+              <span>Windows x86-64</span>
+              <span className="rounded bg-blue-100 px-1.5 py-0.5 font-mono text-[10px] text-blue-800 dark:bg-blue-950 dark:text-blue-300">
+                .exe
               </span>
             </div>
             <p className="mt-1 text-[11px] text-muted-foreground">
-              Paket installer Debian untuk Ubuntu, Linux Mint, dan Debian.
+              Installer NSIS resmi untuk komputer kasir Windows.
             </p>
           </div>
           <a
-            href="/api/pos/download/deb"
+            href="/api/pos/download/exe"
             download
             className="mt-3 inline-flex items-center justify-center gap-1.5 rounded border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted"
           >
-            <Download className="size-3.5" /> Unduh Paket DEB
+            <Download className="size-3.5" /> Unduh Installer EXE
           </a>
         </div>
       </div>
 
       <div className="mt-3 space-y-1 rounded bg-muted/40 p-2.5 text-[11px] text-muted-foreground">
-        <p className="font-medium text-foreground">💡 Cara Menghubungkan Terminal Baru:</p>
-        <ol className="list-inside list-decimal space-y-0.5">
-          <li>Pasang dan jalankan aplikasi Bisa POS di komputer kasir.</li>
-          <li>Ketik URL Server ERP ini (contoh: <code className="font-mono font-semibold text-foreground">http://192.168.1.100:3000</code>).</li>
-          <li>Klik tombol <strong>Kode pasangan</strong> pada salah satu terminal aktif di tabel bawah, lalu masukkan 6 karakter kodenya.</li>
-          <li>Aplikasi kasir langsung aktif dan otomatis menyinkronkan seluruh katalog produk ke database SQLite lokal.</li>
-        </ol>
+        <p className="font-medium text-foreground">Catatan pemasangan:</p>
+        <ul className="list-inside list-disc space-y-0.5">
+          <li>Installer hanya tersedia bila administrator menerbitkannya ke <code className="font-mono font-semibold text-foreground">BISA_POS_RELEASE_DIR</code>.</li>
+          <li>Untuk build dari source, gunakan panduan resmi <code className="font-mono font-semibold text-foreground">pos-electron/README.md</code>.</li>
+          <li>Jalankan aplikasi dengan <code className="font-mono font-semibold text-foreground">--erp-url=https://alamat-erp-toko</code>, lalu pasangkan terminal dengan kode dari tabel di bawah.</li>
+          <li>Printer USB/LAN dipilih lewat menu <strong>Atur printer</strong> di aplikasi desktop.</li>
+        </ul>
       </div>
     </div>
   );

@@ -6,47 +6,40 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Endpoint publik untuk mengunduh installer Bisa POS Desktop.
- * Mendukung format: rpm, appimage, deb, exe, msi.
+ * Public download endpoint for the supported Electron desktop package.
+ *
+ * The retired Tauri prototype never serves from `src-tauri/target` here;
+ * operators publish Electron artifacts (AppImage / NSIS .exe / .msi) into
+ * `BISA_POS_RELEASE_DIR`, outside the repository. If the directory is not
+ * configured or the artifact is absent, the endpoint answers 404 instead
+ * of pretending a package exists.
  */
+const RELEASE_FORMATS: Record<string, string> = {
+  appimage: ".AppImage",
+  exe: ".exe",
+  msi: ".msi",
+};
+
 export async function GET(
   _request: Request,
   context: { params: Promise<{ format: string }> },
 ) {
   const { format } = await context.params;
   const normalized = format.toLowerCase().trim();
-
-  const searchDirs: { dir: string; ext: string }[] = [];
-  const root = process.cwd();
-
-  if (normalized === "rpm") {
-    searchDirs.push({ dir: join(root, "src-tauri/target/release/bundle/rpm"), ext: ".rpm" });
-  } else if (normalized === "appimage") {
-    searchDirs.push({ dir: join(root, "src-tauri/target/release/bundle/appimage"), ext: ".AppImage" });
-  } else if (normalized === "deb") {
-    searchDirs.push({ dir: join(root, "src-tauri/target/release/bundle/deb"), ext: ".deb" });
-  } else if (normalized === "exe" || normalized === "msi") {
-    searchDirs.push({ dir: join(root, "src-tauri/target/release/bundle/nsis"), ext: ".exe" });
-    searchDirs.push({ dir: join(root, "src-tauri/target/release/bundle/msi"), ext: ".msi" });
-  }
-
+  const ext = RELEASE_FORMATS[normalized];
   const releaseDir = process.env.BISA_POS_RELEASE_DIR?.trim();
-  if (releaseDir && existsSync(releaseDir)) {
-    searchDirs.unshift({ dir: releaseDir, ext: `.${normalized}` });
-  }
 
-  for (const { dir, ext } of searchDirs) {
-    if (!existsSync(dir)) continue;
+  if (ext && releaseDir && existsSync(releaseDir)) {
     try {
-      const files = readdirSync(dir);
+      const files = readdirSync(releaseDir);
       const match = files.find(
-        (f) =>
-          f.toLowerCase().endsWith(ext.toLowerCase()) &&
-          !f.endsWith(".sig") &&
-          !f.endsWith(".tar.gz"),
+        (file) =>
+          file.toLowerCase().endsWith(ext.toLowerCase()) &&
+          !file.endsWith(".sig") &&
+          !file.endsWith(".tar.gz"),
       );
       if (match) {
-        const fullPath = join(dir, match);
+        const fullPath = join(releaseDir, match);
         const stat = statSync(fullPath);
         if (stat.isFile()) {
           const stream = Readable.toWeb(createReadStream(fullPath));
@@ -60,15 +53,16 @@ export async function GET(
         }
       }
     } catch {
-      // Abaikan dan coba direktori berikutnya
+      // Fall through to the explicit 404 below. A filesystem error must
+      // not turn into a misleading successful download.
     }
   }
 
   return Response.json(
     {
       ok: false,
-      message: `Paket installer format ${format} belum dibuat atau belum tersedia di server.`,
-      availableFormats: ["rpm", "appimage", "deb"],
+      message: `Paket installer ${format} belum tersedia. Administrator harus menerbitkan paket Electron ke BISA_POS_RELEASE_DIR.`,
+      availableFormats: Object.keys(RELEASE_FORMATS),
     },
     { status: 404 },
   );

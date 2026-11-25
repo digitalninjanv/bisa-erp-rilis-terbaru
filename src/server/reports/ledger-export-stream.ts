@@ -1,6 +1,14 @@
 import { withCompanyReadOnlySnapshot } from "@/db/tenant";
 import type { LedgerInput } from "./ledger";
 import { ledgerCsvChunks } from "./ledger-csv-generator";
+import { AppError } from "@/lib/errors";
+
+const IDLE_DEMAND_TIMEOUT_MS = 60_000;
+const configuredExportLimit = Number(process.env.BISA_LEDGER_EXPORT_LIMIT ?? 4);
+const MAX_CONCURRENT_LEDGER_EXPORTS = Number.isFinite(configuredExportLimit)
+  ? Math.min(Math.max(Math.trunc(configuredExportLimit), 1), 16)
+  : 4;
+let activeLedgerExports = 0;
 
 export type LedgerCsvExport = {
   accountCode: string;
@@ -16,9 +24,26 @@ export type LedgerCsvExport = {
 export async function createLedgerCsvExport(
   company: { id: string; name: string },
   input: Omit<LedgerInput, "companyId" | "accountId"> & { accountId: string | null },
+  options?: { signal?: AbortSignal },
 ): Promise<LedgerCsvExport | null> {
+  if (activeLedgerExports >= MAX_CONCURRENT_LEDGER_EXPORTS) {
+    throw new AppError(
+      "CONFLICT",
+      "Terlalu banyak ekspor buku besar berjalan. Tunggu salah satu selesai lalu coba lagi.",
+    );
+  }
+  activeLedgerExports += 1;
+  let released = false;
+  let removeAbortListener: (() => void) | null = null;
+  const release = () => {
+    if (released) return;
+    released = true;
+    removeAbortListener?.();
+    removeAbortListener = null;
+    activeLedgerExports = Math.max(0, activeLedgerExports - 1);
+  };
   let controller: ReadableStreamDefaultController<Uint8Array> | null = null;
-  let cancelled = false;
+  let cancelled = options?.signal?.aborted ?? false;
   let requestedChunks = 0;
   let demandWaiter: (() => void) | null = null;
   let readySettled = false;
@@ -42,9 +67,19 @@ export async function createLedgerCsvExport(
   };
   const waitForDemand = async (): Promise<boolean> => {
     while (requestedChunks === 0 && !cancelled) {
-      await new Promise<void>((resolve) => {
-        demandWaiter = resolve;
+      const demand = await new Promise<boolean>((resolve) => {
+        const timeout = setTimeout(() => resolve(false), IDLE_DEMAND_TIMEOUT_MS);
+        demandWaiter = () => {
+          clearTimeout(timeout);
+          resolve(true);
+        };
       });
+      demandWaiter = null;
+      if (!demand) {
+        cancelled = true;
+        controller?.error(new Error("Ekspor buku besar dihentikan karena klien tidak meminta data."));
+        return false;
+      }
     }
     if (cancelled) return false;
     requestedChunks -= 1;
@@ -54,6 +89,19 @@ export async function createLedgerCsvExport(
     demandWaiter?.();
     demandWaiter = null;
   };
+  if (options?.signal) {
+    const onAbort = () => {
+      cancelled = true;
+      release();
+      wakeDemandWaiter();
+    };
+    if (options.signal.aborted) {
+      onAbort();
+    } else {
+      options.signal.addEventListener("abort", onAbort, { once: true });
+      removeAbortListener = () => options.signal?.removeEventListener("abort", onAbort);
+    }
+  }
 
   const body = new ReadableStream<Uint8Array>(
     {
@@ -84,9 +132,11 @@ export async function createLedgerCsvExport(
           }
         }).then(
           () => {
+            release();
             if (!cancelled) controller?.close();
           },
           (error: unknown) => {
+            release();
             failReady(error);
             if (!cancelled) controller?.error(error);
           },
@@ -98,6 +148,7 @@ export async function createLedgerCsvExport(
       },
       cancel() {
         cancelled = true;
+        release();
         wakeDemandWaiter();
         return streamTask;
       },

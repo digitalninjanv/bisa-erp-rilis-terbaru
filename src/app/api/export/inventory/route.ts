@@ -6,7 +6,7 @@ import {
   type InventoryValuationExportCursor,
 } from "@/server/reports";
 import { can } from "@/lib/permissions";
-import { requirePermission } from "@/lib/session";
+import { requirePermissionInModule } from "@/lib/session";
 import { todayISO } from "@/lib/format";
 import { csvRow, csvStreamResponse, moneyCsv } from "@/lib/csv";
 import { packagingBreakdownLabel, type PackagingSnapshot } from "@/lib/packaging";
@@ -19,7 +19,7 @@ const EXPORT_PAGE_SIZE = 500;
 const NUMERIC_HEADERS = new Set(["Stok", "HPP", "Nilai Persediaan", "Potensi Jual", "Stok Minimum"]);
 
 async function GETHandler(request: Request) {
-  const ctx = await requirePermission("inventory.view");
+  const ctx = await requirePermissionInModule("inventory.view", "gudang");
   // AUD-013: HPP dan Nilai Persediaan adalah data biaya level-field
   // `inventory.cost`; tanpa izin itu kedua kolom tidak disertakan.
   const includeCost = can(ctx, "inventory.cost");

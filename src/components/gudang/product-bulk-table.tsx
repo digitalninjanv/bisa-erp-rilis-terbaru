@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowDown, ArrowUp } from "lucide-react";
+import { ArrowDown, ArrowUp, Printer } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -250,6 +250,15 @@ export function ProductBulkTable({
             </button>
           ) : null}
           <span className="flex-1" />
+          {!allFiltered && selected.size > 0 ? (
+            <Link
+              href={`/app/gudang/produk/label?ids=${encodeURIComponent([...selected].join(","))}`}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-[11px] font-medium hover:bg-muted"
+            >
+              <Printer className="size-3.5" />
+              Cetak label ({selected.size})
+            </Link>
+          ) : null}
           <button
             type="button"
             onClick={() => {

@@ -1,10 +1,12 @@
 "use server";
 
+import { z } from "zod";
 import { withCompany, withCompanyReadOnly } from "@/db/tenant";
 import { requirePermission } from "@/lib/session";
 import { AppError, guard } from "@/lib/errors";
 import { getSaleDetail } from "@/server/reports";
 import { getSettings } from "@/server/catalog";
+import { verifyReceiptPrintToken } from "@/server/pos";
 import { toPrintSettings } from "@/components/print/types";
 import { formatDate } from "@/lib/format";
 import { writeAudit } from "@/server/audit";
@@ -16,16 +18,36 @@ import { d } from "@/lib/money";
  * Mengambil data terstruktur nota penjualan untuk dicetak langsung
  * ke printer thermal via ESC/POS tanpa dialog browser.
  */
-export async function getSaleReceiptDataAction(saleId: string, copyIndex = 0) {
+export async function getSaleReceiptDataAction(
+  saleId: string,
+  copyIndex = 0,
+  options?: { printToken?: string | null },
+) {
   return guard(async () => {
+    if (!z.string().uuid().safeParse(saleId).success) {
+      throw new AppError("VALIDATION", "ID transaksi penjualan tidak valid.");
+    }
     const ctx = await requirePermission("pos.sell");
     if (!Number.isSafeInteger(copyIndex) || copyIndex < 0) {
       throw new AppError("VALIDATION", "Nomor salinan tidak valid.");
     }
-    if (copyIndex > 0) await requirePermission("pos.receipt.reprint");
-    const withTenant = copyIndex > 0 ? withCompany : withCompanyReadOnly;
+    // Tanpa token cetak-awal yang valid (atau untuk copyIndex > 0), pemanggil
+    // wajib memiliki izin cetak ulang historis dan tercatat di log audit.
+    const result = await withCompany(ctx.company.id, async (tx) => {
+      const fresh =
+        copyIndex === 0 && options?.printToken
+          ? await verifyReceiptPrintToken(tx, {
+              companyId: ctx.company.id,
+              userId: ctx.user.id,
+              saleId,
+              token: options.printToken,
+            })
+          : false;
+      const isReprint = copyIndex > 0 || !fresh;
+      if (isReprint) {
+        await requirePermission("pos.receipt.reprint");
+      }
 
-    const result = await withTenant(ctx.company.id, async (tx) => {
       const [detail, settings] = await Promise.all([
         getSaleDetail(tx, ctx.company.id, saleId),
         getSettings(tx, ctx.company.id),
@@ -68,7 +90,7 @@ export async function getSaleReceiptDataAction(saleId: string, copyIndex = 0) {
         showQr: printSettings.showQr,
       };
 
-      if (copyIndex > 0) {
+      if (isReprint) {
         await writeAudit(tx, {
           companyId: ctx.company.id,
           userId: ctx.user.id,

@@ -4,12 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { newUuid } from "@/lib/uuid";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { formatIDR } from "@/lib/money";
 import { POS_ACTION_THEMES, useHydrated, usePosDisplayPrefs } from "@/components/pos/pos-display";
 import { searchProductsAction } from "@/server/actions/pos";
+import { mergeProductCache } from "@/lib/pos/product-cache";
 import { useGlobalBarcodeScan } from "@/components/pos/terminal/use-global-barcode-scan";
 import {
-  cartLineBaseQty, type CartItem, type CustomerOption, type Method, type PaymentEntry,
+  cartLineBaseQty, cartLineKey, type CartItem, type CustomerOption, type Method, type PaymentEntry,
   type ProductOption, type PosTerminalProps, type TerminalReservation,
 } from "@/components/pos/terminal-types";
 import { cartStorageKey, useCartPersistence } from "@/components/pos/use-cart-persistence";
@@ -34,16 +34,19 @@ import { PosCheckoutWorkspace } from "@/components/pos/terminal/pos-checkout-wor
 import { usePosCustomerActions } from "@/components/pos/terminal/use-pos-customer-actions";
 import { focusPosTenderedInput, useCloseMobileCartOnDesktop, useExitFullscreenOnEscape } from "@/components/pos/terminal/use-terminal-layout";
 import { useTerminalReset } from "@/components/pos/terminal/use-terminal-reset";
+import { useNewSaleReset } from "@/components/pos/terminal/use-new-sale-reset";
+import { terminalPayState } from "@/components/pos/terminal/use-terminal-pay-state";
 import { ConfirmDialog } from "@/components/blocks/confirm-dialog";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { useTerminalPromotions } from "@/components/pos/terminal/use-terminal-promotions";
 
 export type { TerminalReservation };
 
 export function PosTerminal({
   companyId, userId, canReprint, companyName, warehouseId, warehouses, categories, methods, creditMethod,
   debtMethod, initialProducts, qrisImage, groups, sessionOpen, sessionId = null,
-  heldCount, resumeId, posOfflineEnabled = false, offlineTaxRate = 0,
-  offlineRoundingMode = "none", receivableDefaultTermDays = 7, reservations = [],
+  heldCount, resumeId, prefillCreditNumber = null, posOfflineEnabled = false, offlineTaxRate = 0,
+  offlineRoundingMode = "none", receivableDefaultTermDays = 7, reservations = [], promotions = [],
   allowNegativeStock = false, receiptProfile,
 }: PosTerminalProps) {
   const storageKey = cartStorageKey(companyId, userId);
@@ -52,11 +55,8 @@ export function PosTerminal({
   const [cache, setCache] = useState<Record<string, ProductOption>>(
     Object.fromEntries(initialProducts.map((p) => [p.id, p])),
   );
-  // SIM-2 S7B-2 Batch 5: baris serial yang belum lengkap serinya tidak
-  // di-quote — status ini diturunkan (derived) dari cart+cache saat
-  // render, bukan dibersihkan lewat setState di dalam effect: selama
-  // ada baris serial yang belum lengkap, quote dianggap tidak ada dan
-  // kasir melihat petunjuk inline pada baris keranjang.
+  // Baris serial yang belum lengkap tidak di-quote; status diturunkan
+  // dari cart+cache agar tidak ada setState di dalam effect.
   const serialIncomplete = cart.some((line) => {
     if (!cache[line.productId]?.trackSerial) return false;
     const filled = (line.serialNumbers ?? []).filter((value) => value.trim()).length;
@@ -89,7 +89,7 @@ export function PosTerminal({
     methodId: string;
     total: number;
   } | null>(null);
-  const [lastSale, setLastSale] = useState<{ id: string; number: string } | null>(null);
+  const [lastSale, setLastSale] = useState<CompletedSaleInfo | null>(null);
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
 
   // POS-1 (D-19): keadaan panel utang (pelanggan, pencarian, jatuh tempo).
@@ -207,22 +207,10 @@ export function PosTerminal({
   }, [posOfflineEnabled, groups, groupId, cache, offlineTaxRate, offlineRoundingMode]);
 
   const {
-    quote,
-    quoting,
-    quoteError,
-    quoteBusy,
-    quoteLine,
-    setQuoteResult,
-    setQuoteNonce,
+    quote, quoting, quoteError, quoteBusy, quoteLine, setQuoteResult, setQuoteNonce,
   } = useQuote({
-    cart,
-    selectedWarehouse,
-    groupId,
-    reservationId,
-    cartSignature,
-    serialIncomplete,
-    setCache,
-    offlineQuote: offlineQuotePayload,
+    cart, selectedWarehouse, groupId, reservationId, cartSignature,
+    serialIncomplete, setCache, offlineQuote: offlineQuotePayload,
   });
   const total = quote?.total ?? 0;
   const clearQuoteForResume = useCallback(() => setQuoteResult(null), [setQuoteResult]);
@@ -258,9 +246,24 @@ export function PosTerminal({
     setDueDate,
     resumeGuardRef,
     storedActiveRef,
-    onHoldSuccess: resetNewSaleContext,
+    onHoldSuccess: () => {
+      resetNewSaleContext();
+      searchRef.current?.focus();
+    },
     onResumeApplied: resetPaymentInputs,
     clearQuote: clearQuoteForResume,
+  });
+
+  const resetNewSale = useNewSaleReset({
+    storageKey,
+    setCart,
+    resetNewSaleContext,
+    setGroupId,
+    setHeldSaleId,
+    setHeldTotal,
+    setReservationId,
+    setQuoteResult,
+    searchRef,
   });
 
   const {
@@ -327,11 +330,13 @@ export function PosTerminal({
       // menambahkan baris KEMASAN itu; klik kartu biasa tetap satuan
       // dasar. Baris digabung per (produk, kemasan).
       setCart((current) => addCartLine(current, product.id, packagingId ?? null));
-      setCache((current) => ({ ...current, [product.id]: product }));
+      setCache((current) =>
+        mergeProductCache(current, [product], cart.map((line) => line.productId)),
+      );
       setSearch("");
       searchRef.current?.focus();
     },
-    [setSearch, allowNegativeStock],
+    [setSearch, allowNegativeStock, cart],
   );
 
   const applyReservation = useCallback(
@@ -379,7 +384,7 @@ export function PosTerminal({
       }
       toast.success(`Reservasi ${reservation.number} ditautkan — stok tereservasi dipakai untuk penjualan ini.`);
     },
-    [addProduct, cache, selectedWarehouse],
+    [addProduct, cache, selectedWarehouse, setReservationId],
   );
 
   // T3R-4: sidik jari state pembayaran (metode + nominal + diterima +
@@ -421,30 +426,61 @@ export function PosTerminal({
   // S4: penyunting baris berkunci (produk, kemasan) — logika murninya
   // hidup di terminal/cart-lines.ts, komponen ini hanya mengikatnya
   // ke state keranjang.
-  const setQty = (key: string, qty: number) => setCart((c) => setCartLineQty(c, key, qty));
+  const setQty = (key: string, qty: number) =>
+    setCart((current) => {
+      const line = current.find((item) => cartLineKey(item) === key);
+      const product = line ? cache[line.productId] : undefined;
+      const serialCount =
+        line && product?.trackSerial
+          ? Math.max(0, Math.floor(cartLineBaseQty({ ...line, qty }, product)))
+          : undefined;
+      return setCartLineQty(current, key, qty, serialCount);
+    });
   const setSerial = (key: string, idx: number, val: string) => setCart((c) => setCartLineSerial(c, key, idx, val));
   const setLinePackaging = (key: string, packId: string | null) => setCart((c) => changeCartLinePackaging(c, key, packId));
   const setLineDiscount = (key: string, t: "percent" | "nominal" | null, v: number) => setCart((c) => setCartLineDiscount(c, key, t, v));
 
-  const { mixedPlan, change, outstanding, mixedShortfall, debtEntryAmount, debtActive, debtAmount, nonCashNeedsConfirm } =
-    usePaymentPlan({ mode, entries, methodById, total, singleMethod, single, isCreditSingle, cashTendered, debtMethod });
+  const {
+    mixedPlan,
+    change,
+    outstanding,
+    mixedShortfall,
+    cashShortfall,
+    hasCashUnderpay,
+    debtEntryAmount,
+    debtActive,
+    debtAmount,
+    nonCashNeedsConfirm,
+  } = usePaymentPlan({
+    mode,
+    entries,
+    methodById,
+    total,
+    singleMethod,
+    single,
+    isCreditSingle,
+    cashTendered,
+    debtMethod,
+  });
 
   const credit = useReturnCredit({
     creditMethod,
     total,
     mixedAppliedTotal: mixedPlan.appliedTotal,
+    prefillCreditNumber,
     entries,
     setEntries,
     setMode,
   });
   const { appliedCredit, resetCredit } = credit;
 
-  const { checkout, submitting, pendingCheckout, recoveryError, retryPendingCheckout } = useTerminalCheckout({
+  const { checkout, submitting, pendingCheckout, recoveryError, retryPendingCheckout, discardPendingCheckout } = useTerminalCheckout({
     cart, cartSignature, cartLoaded, sessionOpen, mode, singleMethod, single, cashTendered, entries, methodById,
     outstanding, debtActive, debtAmount, customer, dueDate, total, quote, cache, posOfflineEnabled,
     reservationId, selectedWarehouse, groupId, storageKey, sessionId, userId, companyId, receiptProfile,
-    receivableDefaultTermDays, appliedCredit, setCart, setEntries, setCustomer,
-    setCustomerQuery, setCustomerResults, setDueDate, resetCredit, setQuoteResult,
+    receivableDefaultTermDays, appliedCredit, setCart, setCustomer,
+    setCustomerQuery, setCustomerResults, setDueDate, resetCredit, resetPaymentInputs, setGroupId,
+    setQuoteResult,
     heldSaleId, setHeldSaleId, setHeldTotal, setLastSale, setReservationId, setQueuedCount,
     setOldestQueuedAt,
     idempotencyKeyRef: idempotencyKey, checkoutAttemptedRef: checkoutAttempted,
@@ -465,30 +501,26 @@ export function PosTerminal({
     enabled: !submitting && !pendingCheckout && !recoveryError && sessionOpen && !holdOpen && !resumeOffer && !completedSale,
   });
 
-  const payDisabled =
-    !cartLoaded || Boolean(pendingCheckout) || Boolean(recoveryError) ||
-    submitting ||
-    cart.length === 0 ||
-    !sessionOpen ||
-    quote === null ||
-    quoting ||
-    quoteError !== null ||
-    (nonCashNeedsConfirm && !nonCashConfirmed) ||
-    // A-28 UI-1 (UX-B07): campuran belum tertutup tidak dapat diklik.
-    mixedShortfall;
-  const payLabel = submitting
-    ? "Menyimpan…"
-    : cart.length === 0
-      ? "Bayar"
-      : serialIncomplete
-        ? "Lengkapi nomor seri"
-        : quoteError
-          ? "Perhitungan gagal"
-          : quoteBusy
-            ? "Menghitung…"
-            : mixedShortfall
-              ? `Bayar — sisa ${formatIDR(outstanding)}`
-              : `Bayar ${formatIDR(total)}`;
+  const { payDisabled, payLabel } = terminalPayState({
+    cartLoaded,
+    pendingCheckout,
+    recoveryError,
+    submitting,
+    cartCount: cart.length,
+    sessionOpen,
+    quote,
+    quoting,
+    quoteError,
+    quoteBusy,
+    nonCashNeedsConfirm,
+    nonCashConfirmed,
+    hasCashUnderpay,
+    cashShortfall,
+    mixedShortfall,
+    outstanding,
+    total,
+    serialIncomplete,
+  });
 
   // A-28 UI-1 (UX-B01/B03): pintasan global terminal (peta tombol di
   // lib/pos/terminal-shortcuts); ditahan selama dialog Tahan/Resume.
@@ -587,23 +619,29 @@ export function PosTerminal({
   });
 
   const selectedGroup = groups.find((g) => g.id === groupId);
+  const { availablePromotions, applyPromotion } = useTerminalPromotions({
+    promotions, cart, cache, quoteLine, setLineDiscount,
+  });
+
   const actionTheme = POS_ACTION_THEMES[display.actionTheme] ?? POS_ACTION_THEMES.odoo;
   const cartPanelProps = {
     cart, cache, quote, quoteLine, total, heldTotal, groupId, setGroupId, groups,
-    selectedGroup, heldCount, setCart, setQty, setSerial, setLinePackaging,
-    setLineDiscount, quoteBusy, allowNegativeStock,
+    selectedGroup, heldCount, setCart, onClearCart: resetNewSale, setQty, setSerial,
+    setLinePackaging, setLineDiscount, quoteBusy, allowNegativeStock,
+    availablePromotions, onApplyPromotion: applyPromotion,
   };
 
   const paymentPanelProps = {
     companyName, mode, setMode, methods, single, singleMethod, setSingleMethod,
-    entries, setEntries, total, change, isCreditSingle, debtMethod, debtActive,
+    entries, setEntries, total, change, cashShortfall, isCreditSingle, debtMethod, debtActive,
     debtAmount, qrisImage, nonCashNeedsConfirm, nonCashConfirmed, setNonCashConfirmedFor,
     creditMethod, credit, customer, setCustomer, customerQuery, setCustomerQuery,
     customerResults, customerSearching, quickAddOpen, setQuickAddOpen, quickName,
     setQuickName, quickPhone, setQuickPhone, quickBusy, quickAddCustomer, dueDate,
     setDueDate, outstanding, mixedPlan, fillDebtRemainder, cart, serialIncomplete,
     quoteError, quote, setQuoteNonce, payDisabled, payLabel, checkout, setHoldOpen,
-    sessionOpen, lastSale,
+    sessionOpen, lastSale, canReprint,
+    onReopenLastSale: () => lastSale && setCompletedSale({ ...lastSale, skipAutoPrint: true }),
   };
 
   useCloseMobileCartOnDesktop(setMobileCartOpen);
@@ -621,7 +659,7 @@ export function PosTerminal({
           "fixed inset-0 z-[65] h-dvh overflow-y-auto p-3 lg:overflow-hidden",
       )}
     >
-      <PosPrintQueue companyId={companyId} />
+      <PosPrintQueue companyId={companyId} userId={userId} />
       <div className="contents" inert={submitting}>
         <ProductCatalog
           searchRef={searchRef}
@@ -670,7 +708,7 @@ export function PosTerminal({
             "hidden min-w-0 lg:block lg:overflow-x-hidden",
             // POS2-04: panel keranjang sticky saat produk menggulir.
             !fullscreen &&
-              "lg:sticky lg:top-16 lg:max-h-[calc(100dvh-76px)] lg:self-start lg:overflow-y-auto lg:pr-1",
+              "lg:sticky lg:top-16 lg:h-[calc(100dvh-76px)] lg:self-start lg:overflow-y-auto lg:pr-1",
             fullscreen && "lg:min-h-0 lg:overflow-y-auto lg:pr-1",
           )}
         >
@@ -680,17 +718,17 @@ export function PosTerminal({
 
       <Sheet open={mobileCartOpen} onOpenChange={(open) => { if (!checkoutInFlight.current) setMobileCartOpen(open); }}>
         <SheetContent
-          side="right"
+          side="bottom"
           overlayClassName="z-[70]"
           showCloseButton={false}
           style={{
-            width: "100%",
+            height: "92dvh", width: "100%",
             "--pos-action": actionTheme.primary,
             "--pos-action-soft": actionTheme.soft,
             "--pos-action-fg": actionTheme.foreground,
           } as React.CSSProperties}
           aria-label="Keranjang dan pembayaran"
-          className="z-[71] w-full gap-3 overflow-x-hidden overflow-y-auto px-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-0 sm:w-[520px] sm:max-w-[520px] lg:hidden"
+          className="z-[71] w-full gap-3 overflow-x-hidden overflow-y-auto rounded-t-2xl px-3 pb-0 pt-0 sm:mx-auto sm:max-w-[560px] lg:hidden"
         >
           <div inert={submitting}>
             <PosCheckoutWorkspace
@@ -707,12 +745,12 @@ export function PosTerminal({
       <span className="sr-only" role="status">{submitting && !mobileCartOpen ? "Menyimpan transaksi…" : ""}</span>
       <div inert={submitting} className="contents">
         <MobilePayBar
-          cart={cart}
-          total={total}
+          cart={cart} total={total}
           payDisabled={payDisabled}
           payLabel={payLabel}
           checkout={checkout}
           onOpenCart={() => setMobileCartOpen(true)}
+          lastItemName={cache[cart[cart.length - 1]?.productId ?? ""]?.name ?? null}
         />
       </div>
 
@@ -731,10 +769,12 @@ export function PosTerminal({
         setCompletedSale={setCompletedSale}
         canReprint={canReprint}
         companyId={companyId}
+        userId={userId}
         pendingCheckout={pendingCheckout}
         recoveryError={recoveryError}
         submitting={submitting}
         retryPendingCheckout={() => void retryPendingCheckout()}
+        discardPendingCheckout={discardPendingCheckout}
         searchRef={searchRef}
         mobileCartOpen={mobileCartOpen}
       />
@@ -747,8 +787,7 @@ export function PosTerminal({
         confirmLabel="Kosongkan"
         danger
         onConfirm={() => {
-          setCart([]);
-          setCustomer(null);
+          resetNewSale();
           setClearCartConfirmOpen(false);
         }}
       />

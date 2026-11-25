@@ -33,11 +33,13 @@ import {
 } from "@/lib/escpos/printer-connection";
 import {
   DEFAULT_PRINTER_PREFERENCES,
+  SERIAL_BAUD_RATES,
   type PaperWidth,
   type PrinterPreferences,
+  type SerialBaudRate,
 } from "@/lib/escpos/types";
 import { toast } from "sonner";
-import { getDesktopPrintBridge } from "@/lib/pos/desktop-print";
+import { getDesktopPrintBridge, type DesktopPrinterConfig } from "@/lib/pos/desktop-print";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
@@ -47,8 +49,24 @@ export function PrinterStatusButton({ compact = false }: { compact?: boolean }) 
   // tersimpan di localStorage baru dibaca setelah komponen terhidrasi.
   const [prefs, setPrefs] = useState<PrinterPreferences>(DEFAULT_PRINTER_PREFERENCES);
   const [connected, setConnected] = useState(false);
+  const [desktopConfig, setDesktopConfig] = useState<DesktopPrinterConfig | null>(null);
 
   useEffect(() => {
+    const desktop = getDesktopPrintBridge();
+    if (desktop) {
+      let active = true;
+      void desktop.getPrinterConfig?.().then((cfg) => {
+        if (active && cfg) setDesktopConfig(cfg);
+      }).catch(() => undefined);
+      const unsubDesktop = desktop.onPrinterConfigChanged?.((cfg) => {
+        if (active) setDesktopConfig(cfg);
+      });
+      return () => {
+        active = false;
+        unsubDesktop?.();
+      };
+    }
+
     // Inisialisasi auto-reconnect dan event listeners browser
     const cleanupAuto = initPrinterAutoReconnect();
     const unsubscribe = subscribePrinterStatus((isConnected) => {
@@ -62,6 +80,26 @@ export function PrinterStatusButton({ compact = false }: { compact?: boolean }) 
     };
   }, []);
 
+  const ready = desktopConfig ? Boolean(desktopConfig.printer) : connected;
+  const labelText = desktopConfig
+    ? desktopConfig.printer
+      ? `${desktopConfig.printer} (${desktopConfig.width} mm)`
+      : "Pilih Printer Kasir"
+    : connected
+      ? `${prefs.name} (${prefs.paperWidth})`
+      : prefs.type === "kiosk"
+        ? "Printer Sistem"
+        : "Hubungkan Printer Kasir";
+  const ariaText = desktopConfig
+    ? desktopConfig.printer
+      ? `Printer desktop siap: ${desktopConfig.printer} (${desktopConfig.width} mm)`
+      : "Pilih printer kasir desktop"
+    : connected
+      ? `Printer siap: ${prefs.name} (${prefs.paperWidth})`
+      : prefs.type === "kiosk"
+        ? "Mode cetak sistem aktif"
+        : "Hubungkan printer kasir";
+
   return (
     <>
       <button
@@ -74,29 +112,25 @@ export function PrinterStatusButton({ compact = false }: { compact?: boolean }) 
             setOpen(true);
           }
         }}
-        aria-label={connected ? `Printer siap: ${prefs.name} (${prefs.paperWidth})` : prefs.type === "kiosk" ? "Mode cetak sistem aktif" : "Hubungkan printer kasir"}
+        aria-label={ariaText}
         className={cn(
           compact
             ? "grid size-11 place-items-center rounded-md border transition-colors"
             : "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[11px] font-medium transition-colors",
-          connected
+          ready
             ? "border-tone-teal/40 bg-tone-teal-soft/40 text-tone-teal hover:bg-tone-teal-soft/60"
             : "border-border bg-card text-foreground hover:bg-muted",
         )}
-        title={
-          connected
-            ? `Printer siap: ${prefs.name} (${prefs.paperWidth})`
-            : "Klik untuk menghubungkan printer thermal kasir"
-        }
+        title={ariaText}
       >
         <span
           className={`size-2 rounded-full ${
-            connected ? "bg-tone-teal animate-pulse" : "bg-amber-500 animate-ping"
+            ready ? "bg-tone-teal animate-pulse" : "bg-amber-500 animate-ping"
           }`}
         />
-        <Printer className={`size-3.5 ${connected ? "text-tone-teal" : "text-amber-600 dark:text-amber-400"}`} />
+        <Printer className={`size-3.5 ${ready ? "text-tone-teal" : "text-amber-600 dark:text-amber-400"}`} />
         <span className={compact ? "sr-only" : "hidden sm:inline"}>
-          {connected ? `${prefs.name} (${prefs.paperWidth})` : prefs.type === "kiosk" ? "Printer Sistem" : "Hubungkan Printer Kasir"}
+          {labelText}
         </span>
       </button>
 
@@ -236,6 +270,16 @@ export function PrinterConfigModal({ onClose }: { onClose: () => void }) {
     setPrefs(updated);
   }
 
+  function toggleAutoPrint() {
+    const updated = savePrinterPreferences({ autoPrint: prefs.autoPrint === false });
+    setPrefs(updated);
+  }
+
+  function updateBaudRate(serialBaudRate: SerialBaudRate) {
+    const updated = savePrinterPreferences({ serialBaudRate });
+    setPrefs(updated);
+  }
+
   const isKioskConfigured = prefs.type === "kiosk";
   const isConnected = connected;
 
@@ -348,7 +392,7 @@ export function PrinterConfigModal({ onClose }: { onClose: () => void }) {
               ) : null}
 
               <div className="rounded-lg border border-border bg-muted/30 p-3 text-[11px] leading-relaxed text-muted-foreground">
-                <strong className="text-foreground">Printer Wi‑Fi/LAN:</strong> POS web tidak dapat membuka koneksi TCP printer secara langsung. Gunakan aplikasi Bisa POS Desktop untuk mengatur IP printer dan port (default 9100). Pastikan terminal dan printer berada di jaringan yang sama. Mode Kiosk web memakai printer default sistem operasi.
+                <strong className="text-foreground">Printer Wi‑Fi/LAN:</strong> POS web tidak dapat membuka soket TCP mentah ke printer jaringan. Gunakan aplikasi Bisa POS Desktop untuk cetak senyap lewat printer yang terpasang di sistem operasi, atau aktifkan Mode Kiosk dengan printer default OS.
               </div>
 
               {/* 3 Opsi Pilihan Koneksi Perangkat Keras */}
@@ -431,7 +475,7 @@ export function PrinterConfigModal({ onClose }: { onClose: () => void }) {
                 <ol className="list-decimal pl-4 space-y-1">
                   <li>Nyalakan printer dan pastikan kertas thermal terpasang rapi.</li>
                   <li>Colokkan printer USB; untuk Bluetooth BLE, nyalakan printer; untuk Bluetooth Classic SPP, pasangkan printer lebih dulu di pengaturan Bluetooth komputer.</li>
-                  <li>Pilih tombol koneksi yang sesuai. Perangkat SPP dipilih dari tombol Serial / COM; koneksi serial memakai baud rate 9600.</li>
+                  <li>Pilih tombol koneksi yang sesuai. Perangkat SPP dipilih dari tombol Serial / COM sesuai baud rate printer (umumnya 9600 atau 115200 bps).</li>
                   <li>
                     Klik <strong>&ldquo;Uji Coba Cetak&rdquo;</strong> di bawah untuk memastikan struk keluar sempurna.
                   </li>
@@ -496,6 +540,36 @@ export function PrinterConfigModal({ onClose }: { onClose: () => void }) {
                     className="size-4 rounded border-input"
                   />
                 </label>
+
+                {/* Auto-Cetak Setelah Bayar */}
+                <label className="flex items-center justify-between text-[12px] cursor-pointer">
+                  <span className="flex items-center gap-1.5 text-muted-foreground">
+                    <Printer className="size-3.5" /> Cetak Struk Otomatis Setelah Bayar
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={prefs.autoPrint !== false}
+                    onChange={toggleAutoPrint}
+                    className="size-4 rounded border-input"
+                  />
+                </label>
+
+                {/* Kecepatan Serial (COM/SPP) */}
+                <div className="flex items-center justify-between gap-2 text-[12px]">
+                  <span className="text-muted-foreground">Baud Rate Serial / COM</span>
+                  <select
+                    value={prefs.serialBaudRate ?? 9600}
+                    onChange={(event) => updateBaudRate(Number(event.target.value) as SerialBaudRate)}
+                    aria-label="Baud Rate Serial"
+                    className="h-8 rounded-md border border-input bg-background px-2 text-[11px] font-medium"
+                  >
+                    {SERIAL_BAUD_RATES.map((rate) => (
+                      <option key={rate} value={rate}>
+                        {rate} bps
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
               </div>
 
@@ -571,14 +645,27 @@ export function PrinterConfigModal({ onClose }: { onClose: () => void }) {
               </div>
 
               {prefs.type === "kiosk" ? (
-                <button
-                  type="button"
-                  onClick={handleTestKioskPrint}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-muted/60 p-2.5 text-[12px] font-semibold text-foreground hover:bg-muted"
-                >
-                  <Play className="size-3.5 text-tone-teal" />
-                  <span>Uji Coba Cetak Kiosk (Driver OS)</span>
-                </button>
+                <>
+                  <label className="flex items-center justify-between rounded-lg border border-border bg-card p-3 text-[12px] cursor-pointer">
+                    <span className="flex items-center gap-1.5 font-medium text-foreground">
+                      <Printer className="size-3.5 text-primary" /> Cetak Struk Otomatis Setelah Bayar
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={prefs.autoPrint !== false}
+                      onChange={toggleAutoPrint}
+                      className="size-4 rounded border-input"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleTestKioskPrint}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-muted/60 p-2.5 text-[12px] font-semibold text-foreground hover:bg-muted"
+                  >
+                    <Play className="size-3.5 text-tone-teal" />
+                    <span>Uji Coba Cetak Kiosk (Driver OS)</span>
+                  </button>
+                </>
               ) : null}
 
               <div className="rounded-lg border border-border bg-muted/20 p-3.5 space-y-2">

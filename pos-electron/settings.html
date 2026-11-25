@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none';">
+  <title>Pengaturan Printer &amp; Server — Bisa POS</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f5f2;
+      --card: #ffffff;
+      --text: #1c1917;
+      --muted: #57534e;
+      --border: #d6d3d1;
+      --primary: #0f766e;
+      --primary-hover: #0d5e58;
+      --primary-fg: #ffffff;
+      --soft: #f0fdfa;
+      --danger: #b91c1c;
+      --danger-bg: #fef2f2;
+      --focus: #0284c7;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-size: 15px;
+      line-height: 1.5;
+      color: var(--text);
+      background: var(--bg);
+    }
+    main {
+      max-width: 520px;
+      margin: 0 auto;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+    }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    .subtitle { margin: 0 0 18px; font-size: 14px; color: var(--muted); }
+    .group { margin-bottom: 16px; }
+    label.field-label { display: block; font-weight: 600; margin-bottom: 6px; font-size: 14px; }
+    .row { display: flex; gap: 8px; align-items: center; }
+    select, input[type="url"] {
+      width: 100%;
+      min-height: 44px;
+      padding: 8px 12px;
+      font-size: 15px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--text);
+    }
+    select:focus-visible, input:focus-visible, button:focus-visible {
+      outline: 3px solid var(--focus);
+      outline-offset: 2px;
+    }
+    .radio-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .choice {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 48px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      background: #fff;
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .choice:has(input:checked) {
+      border-color: var(--primary);
+      background: var(--soft);
+      color: var(--primary);
+    }
+    .choice input { width: 18px; height: 18px; accent-color: var(--primary); flex-shrink: 0; }
+    .switch-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 48px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .switch-row input { width: 20px; height: 20px; accent-color: var(--primary); flex-shrink: 0; }
+    .hint { margin: 6px 0 0; font-size: 13px; color: var(--muted); }
+    .tip-box {
+      background: #f5f5f4;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 16px;
+    }
+    .status {
+      min-height: 24px;
+      margin-bottom: 12px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      display: none;
+    }
+    .status.ok { display: block; background: var(--soft); color: var(--primary); border: 1px solid #99f6e4; }
+    .status.err { display: block; background: var(--danger-bg); color: var(--danger); border: 1px solid #fecaca; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+    button {
+      min-height: 44px;
+      padding: 0 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--text);
+    }
+    button:hover:not(:disabled) { background: #f5f5f4; }
+    button.primary { background: var(--primary); border-color: var(--primary); color: var(--primary-fg); }
+    button.primary:hover:not(:disabled) { background: var(--primary-hover); }
+    button:disabled { opacity: 0.6; cursor: wait; }
+  </style>
+</head>
+<body>
+  <main aria-labelledby="title">
+    <h1 id="title">Pengaturan Printer &amp; Server</h1>
+    <p class="subtitle">Atur printer thermal kasir dan alamat server Bisa ERP.</p>
+
+    <div id="status" class="status" role="status" aria-live="polite"></div>
+
+    <form id="settingsForm">
+      <div class="group">
+        <label class="field-label" for="printerSelect">Printer Thermal (Terpasang di OS)</label>
+        <div class="row">
+          <select id="printerSelect" aria-label="Pilih printer sistem operasi"></select>
+          <button type="button" id="refreshBtn" title="Muat ulang daftar printer OS">Muat ulang</button>
+        </div>
+        <p class="hint">Pastikan printer USB atau LAN sudah ditambahkan di pengaturan printer Windows/Linux.</p>
+      </div>
+
+      <div class="group">
+        <span class="field-label">Lebar Kertas Thermal</span>
+        <div class="radio-grid" role="radiogroup" aria-label="Lebar kertas thermal">
+          <label class="choice">
+            <input type="radio" name="width" value="58">
+            <span>58 mm (Struk Kecil)</span>
+          </label>
+          <label class="choice">
+            <input type="radio" name="width" value="80">
+            <span>80 mm (Struk Lebar)</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="group">
+        <label class="switch-row">
+          <span>Cetak struk otomatis setelah bayar</span>
+          <input type="checkbox" id="autoPrintInput" checked>
+        </label>
+      </div>
+
+      <div class="tip-box">
+        <strong>Tips Laci Kasir (RJ-11):</strong> Aplikasi desktop mencetak lewat driver sistem operasi. Aktifkan opsi <em>Open Cash Drawer / Kick Drawer</em> pada pengaturan driver printer di Windows/CUPS agar laci terbuka otomatis.
+      </div>
+
+      <div class="group">
+        <label class="field-label" for="originInput">Alamat Server Bisa ERP</label>
+        <input id="originInput" type="url" required placeholder="http://localhost:3000">
+        <p class="hint">Gunakan HTTPS untuk server cloud, atau HTTP untuk jaringan lokal (localhost / 192.168.x.x / .local).</p>
+      </div>
+
+      <div class="actions">
+        <button type="button" id="testBtn">Uji Cetak 1 Lembar</button>
+        <button type="button" id="closeBtn">Tutup</button>
+        <button type="submit" id="saveBtn" class="primary">Simpan Pengaturan</button>
+      </div>
+    </form>
+  </main>
+
+  <script src="./settings-view.js"></script>
+</body>
+</html>

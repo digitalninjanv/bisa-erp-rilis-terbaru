@@ -92,6 +92,8 @@ export async function analyzeMasterImport(
     customFields?: CustomFieldDefinition[];
     warehouseId?: string;
     date?: string;
+    /** Konfirmasi eksplisit untuk saldo non-nol dengan biaya 0. */
+    allowZeroCost?: boolean;
   },
 ): Promise<{ summary: MasterSummary; preview: PreviewItem[] }> {
   const { companyId, job, mapping } = input;
@@ -655,7 +657,12 @@ export async function analyzeMasterImport(
           }
         }
       } else if (value.kind === "opening_stock" && stockContext) {
-        const found = resolveOpeningStockRow(value.value, stockContext, input.date);
+        const found = resolveOpeningStockRow(
+          value.value,
+          stockContext,
+          input.date,
+          input.allowZeroCost ?? false,
+        );
         if (found.error) {
           summary.invalidRows += 1;
           if (found.unknownProduct) summary.unknownProducts += 1;

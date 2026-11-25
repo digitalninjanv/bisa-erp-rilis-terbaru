@@ -1,0 +1,2 @@
+CREATE INDEX "outbox_pos_review_pending_created_idx" ON "outbox" USING btree ("company_id","event_type","created_at","id") WHERE "outbox"."processed_at" is null;--> statement-breakpoint
+CREATE INDEX "sale_returns_company_sale_created_idx" ON "sale_returns" USING btree ("company_id","sale_id","created_at");

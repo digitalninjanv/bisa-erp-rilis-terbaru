@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Printer } from "lucide-react";
-import { withCompanyReadOnly } from "@/db/tenant";
+import { withCompanyReadOnlySnapshot } from "@/db/tenant";
 import { requirePermissionPage } from "@/lib/session";
 import { can } from "@/lib/permissions";
 import { listPaymentAccounts } from "@/server/accounting";
@@ -91,7 +91,7 @@ export default async function ReceivablePayablePage({
   const canWriteOff = can(ctx, "accounting.manage");
   const canPay = can(ctx, "accounting.post") || can(ctx, "pos.sell");
 
-  const data = await withCompanyReadOnly(ctx.company.id, async (tx) => {
+  const data = await withCompanyReadOnlySnapshot(ctx.company.id, async (tx) => {
     const [receivablesPage, payablesPage, accounts, credits, settings, inactiveTabCount] = await Promise.all([
       tab === "piutang"
         ? listReceivablesPage(tx, ctx.company.id, { page, pageSize, status, q, today })

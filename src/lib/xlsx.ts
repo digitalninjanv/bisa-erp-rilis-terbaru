@@ -1,3 +1,5 @@
+import { safeDownloadFilename } from "@/lib/csv";
+
 /**
  * Serializer XLSX bersama untuk master data dan template impor.
  *
@@ -70,12 +72,13 @@ export async function buildXlsx(sheets: XlsxSheet[]): Promise<Buffer> {
 
 export async function xlsxResponse(filename: string, sheets: XlsxSheet[]): Promise<Response> {
   const workbook = await buildXlsx(sheets);
+  const safeName = safeDownloadFilename(filename, "export.xlsx");
   return new Response(new Uint8Array(workbook), {
     status: 200,
     headers: {
       "Content-Type":
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename="${filename}"`,
+      "Content-Disposition": `attachment; filename="${safeName}"`,
       "Cache-Control": "no-store",
     },
   });

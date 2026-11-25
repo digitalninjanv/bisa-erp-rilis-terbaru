@@ -1,9 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { withCompanyReadOnly } from "@/db/tenant";
+import { withCompany } from "@/db/tenant";
 import { getSaleDetail } from "@/server/reports";
 import { getSettings } from "@/server/catalog";
+import { writeAudit } from "@/server/audit";
+import { verifyReceiptPrintToken } from "@/server/pos";
 import { requirePermissionPage } from "@/lib/session";
+import { can } from "@/lib/permissions";
+import { receiptHref } from "@/lib/pos/receipt-links";
 import { d, formatIDR, formatQty } from "@/lib/money";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { ReceiptPrint } from "@/components/pos/receipt-print";
@@ -34,18 +38,45 @@ export default async function SalesInvoicePage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ autoprint?: string; salinan?: string }>;
+  searchParams: Promise<{ autoprint?: string; salinan?: string; printToken?: string }>;
 }) {
   const { id } = await params;
   const query = await searchParams;
+  // Faktur A4 dapat dibuka sebagai dokumen pertama dari checkout
+  // (membawa printToken) atau sebagai salinan historis (salinan=1,
+  // memerlukan izin cetak ulang + audit). Token tidak pernah
+  // menggantikan izin untuk salinan historis.
   const isCopy = query.salinan === "1";
   const ctx = await requirePermissionPage("pos.sell");
+  const canReprint = can(ctx, "pos.receipt.reprint");
+  if (isCopy && !canReprint) notFound();
 
-  const data = await withCompanyReadOnly(ctx.company.id, async (tx) => {
+  const data = await withCompany(ctx.company.id, async (tx) => {
+    const fresh = await verifyReceiptPrintToken(tx, {
+      companyId: ctx.company.id,
+      userId: ctx.user.id,
+      saleId: id,
+      token: query.printToken,
+    });
+    if (!fresh && !canReprint) return null;
     const detail = await getSaleDetail(tx, ctx.company.id, id);
     if (!detail) return null;
     const settings = await getSettings(tx, ctx.company.id);
-    return { ...detail, settings };
+    if (isCopy || !fresh) {
+      await writeAudit(tx, {
+        companyId: ctx.company.id,
+        userId: ctx.user.id,
+        action: "pos.receipt.reprint",
+        entityType: "sale",
+        entityId: id,
+        after: {
+          number: detail.sale.number,
+          autoprint: query.autoprint === "1",
+          transport: "faktur",
+        },
+      });
+    }
+    return { ...detail, settings, fresh };
   });
 
   if (!data) notFound();
@@ -69,14 +100,14 @@ export default async function SalesInvoicePage({
         </div>
         <div className="flex items-center gap-2">
           <Link
-            href={`/app/pos/nota/${sale.id}`}
-            className="inline-flex h-8 items-center rounded-md border border-border bg-card px-3 text-[12px] hover:bg-muted"
+            href={receiptHref(sale.id, { copy: isCopy, printToken: query.printToken })}
+            className="inline-flex h-11 items-center rounded-md border border-border bg-card px-3 text-[12px] hover:bg-muted lg:h-8"
           >
             Struk termal
           </Link>
           <Link
             href="/app/pos/riwayat"
-            className="inline-flex h-8 items-center rounded-md border border-border bg-card px-3 text-[12px] hover:bg-muted"
+            className="inline-flex h-11 items-center rounded-md border border-border bg-card px-3 text-[12px] hover:bg-muted lg:h-8"
           >
             Riwayat
           </Link>
@@ -85,7 +116,7 @@ export default async function SalesInvoicePage({
             // Hanya alur checkout (tanpa salinan) yang kembali ke kasir.
             // Cetak ulang dari riwayat membiarkan tab faktur tetap terbuka.
             returnTo={
-              query.autoprint === "1" && query.salinan !== "1" ? "/app/pos" : undefined
+              query.autoprint === "1" && !isCopy && data.fresh ? "/app/pos" : undefined
             }
           />
         </div>

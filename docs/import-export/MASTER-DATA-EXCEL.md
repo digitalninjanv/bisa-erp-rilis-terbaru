@@ -47,12 +47,19 @@ menerjemahkan header atau kehilangan nol di depan.
 1. Buka **Gudang → Impor data** (atau tombol **Impor Excel** di halaman master).
 2. Unduh **template Excel**. Sheet `Data` berisi contoh; sheet `Petunjuk`
    menjelaskan kolom wajib; sheet referensi berisi nilai yang dikenal sistem
-   (kategori, satuan, pemasok, akun, kunci pemetaan).
+   (kategori, satuan, pemasok, akun, kunci pemetaan). Untuk **Stok Awal**,
+   contoh memakai produk nyata yang aktif, stok-tracked, bukan serial/batch,
+   dan berbiaya > 0; qty selalu dalam satuan dasar.
 3. Isi data mulai baris 2, lalu unggah.
 4. Periksa pemetaan kolom dan tekan **Analisis**.
 5. Periksa baris valid/duplikat/error. Baris bermasalah bisa diperbaiki di
    berkas lalu diunggah ulang; baris valid bisa dipilih.
 6. Tekan **Impor**. Hasil per baris tersimpan dan bisa dilihat di riwayat.
+
+**Stok awal:** `Nilai Satuan` wajib untuk qty selain 0. Baris biaya 0 hanya
+diterima bila **Izinkan biaya 0** dicentang di wizard. Penerimaan dipecah
+internal per 500 baris agar tidak menabrak batas parameter PostgreSQL; satu
+job tetap menghasilkan satu penerimaan per kombinasi gudang+tanggal.
 
 ## Ekspor
 
@@ -80,6 +87,15 @@ Indonesia dan tipe sel yang benar. Ekspor CSV lama tetap tersedia lewat
 
 ## Celah berikutnya
 
-Belum ada impor massal untuk gudang/cabang, metode pembayaran, kelompok harga
-pelanggan, karyawan, dan aset tetap. Form tunggal untuk entitas tersebut tetap
-tersedia; kandidat berikutnya bila volume master data menuntut.
+- Impor master untuk gudang/cabang, metode pembayaran, kelompok harga
+  pelanggan, karyawan, dan aset tetap sudah tersedia; form tunggal tetap ada
+  untuk koreksi kecil.
+- **Stok awal**: commit masih satu transaksi per job. Baris penerimaan sudah
+  dipecah internal 500 baris agar tidak gagal karena batas parameter, tetapi
+  job besar masih dapat menahan lock produk dan belum menampilkan progres per
+  batch.
+- Belum ada unduhan baris gagal dari riwayat, detail job selesai, atau edit
+  baris untuk entitas selain produk. Pengguna masih harus memperbaiki berkas
+  sumber dan mengunggah ulang.
+- Produk serial/batch belum dapat menerima stok awal lewat impor; jalurnya
+  masih Penerimaan manual.

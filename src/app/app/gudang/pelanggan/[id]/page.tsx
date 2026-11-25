@@ -59,6 +59,7 @@ export default async function CustomerDetailPage({
               address: detail.party.address,
               groupId: detail.party.groupId ?? "",
               creditLimit: detail.party.creditLimit ?? "0",
+              creditLimitUnlimited: detail.party.creditLimitUnlimited,
               taxId: detail.party.taxId,
               paymentTermDays: detail.party.paymentTermDays,
             }}

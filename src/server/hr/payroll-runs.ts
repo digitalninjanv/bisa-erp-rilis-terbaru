@@ -11,7 +11,7 @@ import { journalEntries, payrollRuns } from "@/db/schema";
 import { AppError } from "@/lib/errors";
 import { todayISO } from "@/lib/format";
 import { d, toDb } from "@/lib/money";
-import { getAccountMap, postJournal } from "@/server/accounting";
+import { getAccountMap, listCashBankIds, postJournal } from "@/server/accounting";
 import { reverseSourceJournalPreferringDate } from "@/server/accounting-reversal";
 import { writeAudit } from "@/server/audit";
 import {
@@ -59,6 +59,16 @@ export async function payPayrollRun(
   }
 
   const map = await getAccountMap(tx, input.companyId);
+  // ACC-02: pembayaran gaji hanya boleh mengkredit akun kas/bank/kliring
+  // yang aktif dan postable. Tanpa ini akun pendapatan/piutang dapat
+  // dikredit dan run tetap ditandai paid tanpa arus kas keluar.
+  const cashBankIds = await listCashBankIds(tx, input.companyId);
+  if (!cashBankIds.has(input.accountId)) {
+    throw new AppError(
+      "VALIDATION",
+      "Akun pembayaran gaji harus akun kas, bank, atau kliring yang aktif dan dapat diposting.",
+    );
+  }
   const amount = d(run.totalNet);
   const entry = await postJournal(tx, {
     companyId: input.companyId,

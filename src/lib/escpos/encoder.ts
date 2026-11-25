@@ -59,7 +59,10 @@ export class EscPosEncoder {
 
     for (let i = 0; i < normalized.length; i++) {
       const code = normalized.charCodeAt(i);
-      this.buffer.push(code < 128 ? code : 0x20);
+      // Teks tidak boleh membawa byte kontrol: ESC/POS memakai ESC/GS
+      // sebagai awal perintah (mis. potong kertas). Newline ditangani
+      // line(), bukan text().
+      this.buffer.push(code < 0x20 || code === 0x7f ? 0x20 : code < 128 ? code : 0x20);
     }
     return this;
   }

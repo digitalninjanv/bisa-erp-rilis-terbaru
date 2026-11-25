@@ -51,6 +51,7 @@ export type CustomerInput = {
   address: string | null;
   groupId: string | null;
   creditLimit: string;
+  creditLimitUnlimited?: boolean;
   taxId?: string | null;
   paymentTermDays?: number | null;
   attributes?: Record<string, string> | null;
@@ -232,6 +233,7 @@ export function CustomerForm({
     address: customer?.address ?? "",
     groupId: customer?.groupId ?? "",
     creditLimit: customer?.creditLimit ?? "0",
+    creditLimitUnlimited: customer?.creditLimitUnlimited ?? true,
     taxId: customer?.taxId ?? "",
     paymentTermDays: customer?.paymentTermDays != null ? String(customer.paymentTermDays) : "",
   });
@@ -283,6 +285,7 @@ export function CustomerForm({
       address: form.address,
       groupId: form.groupId || null,
       creditLimit: form.creditLimit,
+      creditLimitUnlimited: form.creditLimitUnlimited,
       taxId: form.taxId,
       paymentTermDays: form.paymentTermDays.trim() === "" ? null : Number(form.paymentTermDays),
       attributes: customValues,
@@ -296,7 +299,7 @@ export function CustomerForm({
     if (!customer) {
       setForm({
         code: "", name: "", phone: "", email: "", address: "",
-        groupId: "", creditLimit: "0", taxId: "", paymentTermDays: "",
+        groupId: "", creditLimit: "0", creditLimitUnlimited: true, taxId: "", paymentTermDays: "",
       });
       setCustomValues({});
     }
@@ -344,6 +347,16 @@ export function CustomerForm({
                 aria-label="Limit kredit"
                 className="h-9 px-2.5 text-[12px]"
               />
+              <label className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={form.creditLimitUnlimited}
+                  onChange={(event) =>
+                    setForm({ ...form, creditLimitUnlimited: event.target.checked })
+                  }
+                />
+                Limit 0 = tanpa batas kredit
+              </label>
             </Field>
             <Field label="NPWP / NIK"><input value={form.taxId} onChange={(event) => setForm({ ...form, taxId: event.target.value })} className={`${fieldClass} num`} /></Field>
             <Field label="Termin pembayaran (hari)"><input value={form.paymentTermDays} onChange={(event) => setForm({ ...form, paymentTermDays: event.target.value })} inputMode="numeric" className={`${fieldClass} num text-right`} /></Field>

@@ -14,9 +14,12 @@ export type PrintJobInput = {
   saleId: string;
   saleNumber: string;
   companyId: string;
+  userId?: string;
   terminalId: string;
   kind: PrintJobKind;
   copyIndex?: number;
+  /** Token satu-kali untuk cetak pertama tanpa izin cetak ulang historis. */
+  printToken?: string | null;
   /** Snapshot nota untuk cetak offline; null/absen = ambil dari server. */
   receiptData?: ReceiptData | null;
 };
@@ -26,9 +29,12 @@ export type PrintJob = {
   saleId: string;
   saleNumber: string;
   companyId: string;
+  /** Absen pada job lama; job lama tidak diklaim oleh aktor baru. */
+  userId?: string;
   terminalId: string;
   kind: PrintJobKind;
   copyIndex: number;
+  printToken?: string | null;
   receiptData: ReceiptData | null;
   status: PrintJobStatus;
   attempts: number;
@@ -43,6 +49,11 @@ export interface PrintQueueStorage {
   put(job: PrintJob): Promise<void>;
   get(id: string): Promise<PrintJob | undefined>;
   list(): Promise<PrintJob[]>;
+  listBySaleId?(saleId: string): Promise<PrintJob[]>;
+  listByStatus?(status: PrintJobStatus): Promise<PrintJob[]>;
+  listByStatusBefore?(status: PrintJobStatus, createdBefore: string): Promise<PrintJob[]>;
+  listByStatusUpdatedBefore?(status: PrintJobStatus, updatedBefore: string): Promise<PrintJob[]>;
+  claimNext?(filters: { companyId?: string; userId?: string; terminalId?: string }): Promise<PrintJob | undefined>;
   delete(id: string): Promise<void>;
 }
 
@@ -65,6 +76,42 @@ export class MemoryPrintQueueStorage implements PrintQueueStorage {
     return [...this.items.values()];
   }
 
+  async listBySaleId(saleId: string): Promise<PrintJob[]> {
+    return [...this.items.values()].filter((job) => job.saleId === saleId);
+  }
+
+  async listByStatus(status: PrintJobStatus): Promise<PrintJob[]> {
+    return [...this.items.values()].filter((job) => job.status === status);
+  }
+
+  async listByStatusBefore(status: PrintJobStatus, createdBefore: string): Promise<PrintJob[]> {
+    return [...this.items.values()].filter(
+      (job) => job.status === status && job.createdAt <= createdBefore,
+    );
+  }
+
+  async listByStatusUpdatedBefore(status: PrintJobStatus, updatedBefore: string): Promise<PrintJob[]> {
+    return [...this.items.values()].filter(
+      (job) => job.status === status && job.updatedAt <= updatedBefore,
+    );
+  }
+
+  async claimNext(filters: { companyId?: string; userId?: string; terminalId?: string }): Promise<PrintJob | undefined> {
+    const next = [...this.items.values()]
+      .filter(
+        (job) =>
+          job.status === "pending" &&
+          (filters.companyId === undefined || job.companyId === filters.companyId) &&
+          (filters.userId === undefined || job.userId === filters.userId) &&
+          (filters.terminalId === undefined || job.terminalId === filters.terminalId),
+      )
+      .sort(byCreatedAt)[0];
+    if (!next) return undefined;
+    const claimed = { ...next, status: "printing" as const, attempts: next.attempts + 1, updatedAt: now() };
+    this.items.set(claimed.id, claimed);
+    return claimed;
+  }
+
   async delete(id: string): Promise<void> {
     this.items.delete(id);
   }
@@ -72,7 +119,7 @@ export class MemoryPrintQueueStorage implements PrintQueueStorage {
 
 const DB_NAME = "bisa-pos-print";
 const STORE_NAME = "jobs";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 export class IndexedDbPrintQueueStorage implements PrintQueueStorage {
   private dbPromise: Promise<IDBDatabase> | null = null;
@@ -86,11 +133,25 @@ export class IndexedDbPrintQueueStorage implements PrintQueueStorage {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
       request.onupgradeneeded = () => {
         const db = request.result;
-        if (!db.objectStoreNames.contains(STORE_NAME)) {
-          const store = db.createObjectStore(STORE_NAME, { keyPath: "id" });
-          store.createIndex("status", "status");
-          store.createIndex("saleId", "saleId");
-          store.createIndex("createdAt", "createdAt");
+        const store = db.objectStoreNames.contains(STORE_NAME)
+          ? request.transaction!.objectStore(STORE_NAME)
+          : db.createObjectStore(STORE_NAME, { keyPath: "id" });
+        if (!store.indexNames.contains("status")) store.createIndex("status", "status");
+        if (!store.indexNames.contains("saleId")) store.createIndex("saleId", "saleId");
+        if (!store.indexNames.contains("createdAt")) store.createIndex("createdAt", "createdAt");
+        if (!store.indexNames.contains("statusCreatedAt")) {
+          store.createIndex("statusCreatedAt", ["status", "createdAt"]);
+        }
+        if (!store.indexNames.contains("statusUpdatedAt")) {
+          store.createIndex("statusUpdatedAt", ["status", "updatedAt"]);
+        }
+        if (!store.indexNames.contains("companyTerminalStatusCreatedAt")) {
+          store.createIndex("companyTerminalStatusCreatedAt", [
+            "companyId",
+            "terminalId",
+            "status",
+            "createdAt",
+          ]);
         }
       };
       request.onsuccess = () => resolve(request.result);
@@ -136,6 +197,80 @@ export class IndexedDbPrintQueueStorage implements PrintQueueStorage {
     return this.run("readonly", (store) => store.getAll());
   }
 
+  async listBySaleId(saleId: string): Promise<PrintJob[]> {
+    return this.run("readonly", (store) => store.index("saleId").getAll(IDBKeyRange.only(saleId)));
+  }
+
+  async listByStatus(status: PrintJobStatus): Promise<PrintJob[]> {
+    return this.run("readonly", (store) => store.index("status").getAll(IDBKeyRange.only(status)));
+  }
+
+  async listByStatusBefore(status: PrintJobStatus, createdBefore: string): Promise<PrintJob[]> {
+    return this.run("readonly", (store) =>
+      store.index("statusCreatedAt").getAll(
+        IDBKeyRange.bound([status, ""], [status, createdBefore]),
+      ),
+    );
+  }
+
+  async listByStatusUpdatedBefore(status: PrintJobStatus, updatedBefore: string): Promise<PrintJob[]> {
+    return this.run("readonly", (store) =>
+      store.index("statusUpdatedAt").getAll(
+        IDBKeyRange.bound([status, ""], [status, updatedBefore]),
+      ),
+    );
+  }
+
+  /** Claim the oldest eligible pending job atomically across tabs/windows. */
+  async claimNext(
+    filters: { companyId?: string; userId?: string; terminalId?: string },
+  ): Promise<PrintJob | undefined> {
+    const db = await this.open();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, "readwrite");
+      const store = transaction.objectStore(STORE_NAME);
+      const scoped = filters.companyId !== undefined && filters.terminalId !== undefined;
+      const index = store.index(scoped ? "companyTerminalStatusCreatedAt" : "statusCreatedAt");
+      const lower = scoped
+        ? [filters.companyId!, filters.terminalId!, "pending", ""]
+        : ["pending", ""];
+      const upper = scoped
+        ? [filters.companyId!, filters.terminalId!, "pending", "\uffff"]
+        : ["pending", "\uffff"];
+      const request = index.openCursor(IDBKeyRange.bound(lower, upper), "next");
+      let claimed: PrintJob | undefined;
+      let failed = false;
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) return;
+        const job = cursor.value as PrintJob;
+        if (
+          (filters.companyId === undefined || job.companyId === filters.companyId) &&
+          (filters.userId === undefined || job.userId === filters.userId) &&
+          (filters.terminalId === undefined || job.terminalId === filters.terminalId)
+        ) {
+          claimed = { ...job, status: "printing", attempts: job.attempts + 1, updatedAt: now() };
+          cursor.update(claimed);
+          return;
+        }
+        cursor.continue();
+      };
+      request.onerror = () => {
+        failed = true;
+        reject(request.error ?? new Error("Gagal mencari job cetak pending."));
+      };
+      transaction.oncomplete = () => {
+        if (!failed) resolve(claimed);
+      };
+      transaction.onabort = () => {
+        if (!failed) reject(transaction.error ?? new Error("Claim job cetak dibatalkan."));
+      };
+      transaction.onerror = () => {
+        if (!failed) reject(transaction.error ?? new Error("Claim job cetak gagal."));
+      };
+    });
+  }
+
   async delete(id: string): Promise<void> {
     await this.run("readwrite", (store) => store.delete(id));
   }
@@ -162,9 +297,11 @@ export class PrintQueue {
       saleId: input.saleId,
       saleNumber: input.saleNumber,
       companyId: input.companyId,
+      userId: input.userId,
       terminalId: input.terminalId,
       kind: input.kind,
       copyIndex,
+      printToken: input.printToken ?? null,
       receiptData: input.receiptData ?? null,
       status: "pending",
       attempts: 0,
@@ -182,19 +319,34 @@ export class PrintQueue {
   }
 
   async nextCopyIndex(saleId: string): Promise<number> {
-    const jobs = (await this.storage.list()).filter((job) => job.saleId === saleId);
+    const jobs = this.storage.listBySaleId
+      ? await this.storage.listBySaleId(saleId)
+      : (await this.storage.list()).filter((job) => job.saleId === saleId);
     return jobs.reduce((max, job) => Math.max(max, job.copyIndex + 1), 0);
   }
 
   async latestForSale(saleId: string): Promise<PrintJob | undefined> {
-    return (await this.storage.list())
-      .filter((job) => job.saleId === saleId)
+    const jobs = this.storage.listBySaleId
+      ? await this.storage.listBySaleId(saleId)
+      : (await this.storage.list()).filter((job) => job.saleId === saleId);
+    return jobs
       .sort((a, b) => b.copyIndex - a.copyIndex || b.createdAt.localeCompare(a.createdAt))[0];
   }
 
-  async claimNext(companyId?: string): Promise<PrintJob | undefined> {
+  async claimNext(
+    companyId?: string,
+    userId?: string,
+    terminalId?: string,
+  ): Promise<PrintJob | undefined> {
+    if (this.storage.claimNext) return this.storage.claimNext({ companyId, userId, terminalId });
     const next = (await this.storage.list())
-      .filter((job) => job.status === "pending" && (companyId === undefined || job.companyId === companyId))
+      .filter(
+        (job) =>
+          job.status === "pending" &&
+          (companyId === undefined || job.companyId === companyId) &&
+          (userId === undefined || job.userId === userId) &&
+          (terminalId === undefined || job.terminalId === terminalId),
+      )
       .sort(byCreatedAt)[0];
     if (!next) return undefined;
     const claimed: PrintJob = {
@@ -255,9 +407,12 @@ export class PrintQueue {
   async resetStuck(olderThanMs: number): Promise<number> {
     const cutoff = Date.now() - olderThanMs;
     let reset = 0;
-    for (const job of await this.storage.list()) {
-      if (job.status !== "printing") continue;
-      if (new Date(job.updatedAt).getTime() > cutoff) continue;
+    const candidates = this.storage.listByStatusUpdatedBefore
+      ? await this.storage.listByStatusUpdatedBefore("printing", new Date(cutoff).toISOString())
+      : this.storage.listByStatus
+        ? await this.storage.listByStatus("printing")
+        : await this.storage.list();
+    for (const job of candidates) {
       await this.storage.put({
         ...job,
         status: "uncertain",
@@ -277,9 +432,20 @@ export class PrintQueue {
   async cleanup(maxAgeMs = 24 * 60 * 60 * 1000): Promise<number> {
     const cutoff = Date.now() - maxAgeMs;
     let removed = 0;
-    for (const job of await this.storage.list()) {
-      if (job.status === "pending" || job.status === "printing") continue;
-      if (new Date(job.createdAt).getTime() > cutoff) continue;
+    const cutoffISO = new Date(cutoff).toISOString();
+    const terminalJobs = await Promise.all(
+      (["sent", "failed", "uncertain"] as const).map((status) =>
+        this.storage.listByStatusBefore
+          ? this.storage.listByStatusBefore(status, cutoffISO)
+          : this.storage.listByStatus
+            ? this.storage.listByStatus(status)
+            : this.storage.list(),
+      ),
+    );
+    const seen = new Set<string>();
+    for (const job of terminalJobs.flat()) {
+      if (seen.has(job.id)) continue;
+      seen.add(job.id);
       await this.storage.delete(job.id);
       removed += 1;
     }
@@ -334,6 +500,8 @@ let lastCleanup = 0;
 export async function drainPrintQueue(
   handler: (job: PrintJob) => Promise<PrintHandlerResult>,
   companyId?: string,
+  userId?: string,
+  terminalId?: string,
 ): Promise<void> {
   if (draining) return;
   draining = true;
@@ -345,7 +513,7 @@ export async function drainPrintQueue(
       lastCleanup = Date.now();
     }
     for (let index = 0; index < 25; index += 1) {
-      const job = await queue.claimNext(companyId);
+      const job = await queue.claimNext(companyId, userId, terminalId);
       if (!job) break;
       try {
         const result = await handler(job);

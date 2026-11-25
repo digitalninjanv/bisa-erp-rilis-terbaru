@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { getCashSessionHistoryDetail } from "@/server/reports";
 import { requirePermissionPage } from "@/lib/session";
+import { can } from "@/lib/permissions";
 import { d, formatIDR } from "@/lib/money";
 import { formatDateTime } from "@/lib/format";
 import { PageHeader } from "@/components/blocks/page-header";
@@ -14,6 +15,7 @@ import {
   SessionStatusBadge,
   cashMovementLabel,
 } from "@/components/pos/session-history-list";
+import { ForceCloseSessionButton } from "@/components/pos/force-close-session";
 
 export const metadata = { title: "Rincian sesi kas" };
 export const dynamic = "force-dynamic";
@@ -35,12 +37,15 @@ export default async function SessionHistoryDetailPage({
   const { id } = await params;
   const ctx = await requirePermissionPage("pos.session");
   const detail = await withCompanyReadOnly(ctx.company.id, async (tx) =>
-    getCashSessionHistoryDetail(tx, ctx.company.id, id),
+    getCashSessionHistoryDetail(tx, ctx.company.id, id, { movementLimit: 500 }),
   );
   if (!detail) notFound();
 
   const { session, totals } = detail;
   const closed = session.status === "closed";
+  // Rincian sesi terbuka memuat expectedCash + seluruh mutasi; angka itu
+  // hanya boleh dibuka supervisor selama hitung kas belum ditutup.
+  if (!closed && !can(ctx, "pos.void")) notFound();
 
   return (
     <div>
@@ -55,12 +60,17 @@ export default async function SessionHistoryDetailPage({
         title="Rincian sesi kas"
         description={`${session.userName ?? "Kasir"}${session.branchName ? ` · ${session.branchName}` : ""} · dibuka ${formatDateTime(session.openedAt)}`}
         actions={
-          <Link
-            href={`/app/pos/sesi/riwayat/${session.id}/cetak`}
-            className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/90"
-          >
-            Cetak laporan Z
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            {!closed && can(ctx, "pos.void") ? (
+              <ForceCloseSessionButton sessionId={session.id} cashierName={session.userName} />
+            ) : null}
+            <Link
+              href={`/app/pos/sesi/riwayat/${session.id}/cetak`}
+              className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/90"
+            >
+              Cetak laporan Z
+            </Link>
+          </div>
         }
       />
 
@@ -79,6 +89,7 @@ export default async function SessionHistoryDetailPage({
           <SummaryItem label="Jumlah transaksi">{detail.transactionCount} penjualan</SummaryItem>
           <SummaryItem label="Modal awal">{formatIDR(session.openingCash)}</SummaryItem>
           <SummaryItem label="Penjualan tunai">{formatIDR(totals.salesTotal)}</SummaryItem>
+          <SummaryItem label="Penerimaan piutang">{formatIDR(totals.receivableTotal)}</SummaryItem>
           <SummaryItem label="Tarik dari bank">{formatIDR(totals.withdrawalsTotal)}</SummaryItem>
           <SummaryItem label="Total masuk">{formatIDR(totals.totalIn)}</SummaryItem>
           <SummaryItem label="Refund tunai">{formatIDR(totals.refundsTotal)}</SummaryItem>
@@ -113,7 +124,11 @@ export default async function SessionHistoryDetailPage({
           empty={
             <EmptyState title="Belum ada mutasi" description="Mutasi kas sesi ini akan tampil di sini." />
           }
-          footerNote="Semua pergerakan uang laci pada sesi ini, urut dari yang paling awal."
+          footerNote={
+            detail.movements.length >= 500
+              ? "Menampilkan 500 mutasi terbaru; cetak laporan Z untuk riwayat lengkap."
+              : "Semua pergerakan uang laci pada sesi ini, urut dari yang paling awal."
+          }
         >
           <div className="hidden overflow-x-auto lg:block">
             <table className="data-table">

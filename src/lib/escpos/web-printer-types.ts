@@ -42,6 +42,7 @@ export interface SerialWriterLike {
 export interface SerialPortLike {
   readable?: unknown;
   writable?: { getWriter(): SerialWriterLike } | null;
+  getInfo?: () => { usbVendorId?: number; usbProductId?: number };
   open(options: { baudRate: number }): Promise<void>;
   close(): Promise<void>;
 }

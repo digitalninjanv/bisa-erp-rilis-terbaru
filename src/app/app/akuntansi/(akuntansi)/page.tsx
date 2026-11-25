@@ -7,7 +7,7 @@ import {
   ClipboardCheck,
   HandCoins,
 } from "lucide-react";
-import { withCompanyReadOnly } from "@/db/tenant";
+import { withCompanyReadOnlySnapshot } from "@/db/tenant";
 import {
   getAccountingOnboardingState,
   getAccountingSummary,
@@ -172,7 +172,7 @@ export default async function AccountingDashboard({
   const { from, to, priorFrom, priorTo } = buildPeriod(periodKey, today);
   const range = { from: `${from}T00:00:00`, to: `${to}T23:59:59` };
 
-  const data = await withCompanyReadOnly(ctx.company.id, async (tx) => {
+  const data = await withCompanyReadOnlySnapshot(ctx.company.id, async (tx) => {
     const [
       summary,
       prior,

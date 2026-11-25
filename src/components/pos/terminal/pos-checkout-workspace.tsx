@@ -29,7 +29,7 @@ export function PosCheckoutWorkspace({
           onClose={onClose ?? (() => {})}
         />
       ) : null}
-      <CartPanel {...cartProps} scrollMode={mobile ? "page" : "contained"} compactHeader={mobile} />
+      <CartPanel {...cartProps} scrollMode="contained" compactHeader={mobile} />
       <PaymentPanel
         key={paymentProps.lastSale?.id ?? "payment-new"}
         {...paymentProps}

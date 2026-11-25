@@ -116,20 +116,20 @@ export function DataListToolbar({
           defaultValue={q}
           placeholder={placeholder}
           aria-label="Kata kunci pencarian"
-          className="field-control h-9 w-full rounded-md border border-input bg-background pl-8 pr-2.5 text-[13px] outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
+          className="field-control h-11 w-full rounded-md border border-input bg-background pl-8 pr-2.5 text-[13px] outline-none focus:border-ring focus:ring-2 focus:ring-ring/20 lg:h-9"
         />
       </div>
       {children}
       <button
         type="submit"
-        className="h-9 rounded-md border border-border bg-card px-2.5 text-[12px] font-medium transition-colors hover:bg-muted"
+        className="h-11 rounded-md border border-border bg-card px-3 text-[12px] font-medium transition-colors hover:bg-muted lg:h-9"
       >
         Cari
       </button>
       {resetHref ? (
         <Link
           href={resetHref}
-          className="inline-flex h-9 items-center px-1 text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+          className="inline-flex h-11 items-center px-2 text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground lg:h-9"
         >
           Atur ulang
         </Link>
@@ -144,7 +144,7 @@ export function DataListToolbar({
  * fieldWidths — select filter tidak lagi menyusut mengikuti isi
  * (penyebab lebar liar 118–227px antar bar filter terukur audit). */
 const dataListFilterBase =
-  "field-control h-9 rounded-md border border-input bg-background px-2 text-[12px] outline-none focus:border-ring focus:ring-2 focus:ring-ring/20";
+  "field-control h-11 rounded-md border border-input bg-background px-2 text-[12px] outline-none focus:border-ring focus:ring-2 focus:ring-ring/20 lg:h-9";
 export const dataListFilterClass = `${dataListFilterBase} ${fieldWidths.filter}`;
 /** Varian lebar untuk select berlabel panjang (mis. daftar akun). */
 export const dataListFilterWideClass = `${dataListFilterBase} ${fieldWidths.filterWide}`;

@@ -5,7 +5,7 @@
  */
 import { and, asc, count, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { customerGroups, customers, sales, suppliers } from "@/db/schema";
+import { customerGroups, customers, partyOpeningBalances, sales, suppliers } from "@/db/schema";
 import { d } from "@/lib/money";
 import {
   LIST_PAGE_SIZE,
@@ -220,6 +220,7 @@ export async function searchPosCustomersWithDebt(
       name: customers.name,
       phone: customers.phone,
       creditLimit: customers.creditLimit,
+      creditLimitUnlimited: customers.creditLimitUnlimited,
     })
     .from(customers)
     .where(
@@ -237,33 +238,58 @@ export async function searchPosCustomersWithDebt(
   if (rows.length === 0) return [];
 
   const customerIds = rows.map((r) => r.id);
-  const outstandingRows = await tx
-    .select({
-      customerId: sales.customerId,
-      outstanding: sql<string>`coalesce(sum(${sales.total} - ${sales.paidTotal}), 0)`,
-    })
-    .from(sales)
-    .where(
-      and(
-        eq(sales.companyId, companyId),
-        inArray(sales.customerId, customerIds),
-        inArray(sales.status, ["completed", "partial"]),
-        inArray(sales.paymentStatus, ["unpaid", "partial"]),
-      ),
-    )
-    .groupBy(sales.customerId);
+  const [outstandingRows, openingRows] = await Promise.all([
+    tx
+      .select({
+        customerId: sales.customerId,
+        outstanding: sql<string>`coalesce(sum(${sales.total} - ${sales.paidTotal}), 0)`,
+      })
+      .from(sales)
+      .where(
+        and(
+          eq(sales.companyId, companyId),
+          inArray(sales.customerId, customerIds),
+          inArray(sales.status, ["completed", "partial"]),
+          inArray(sales.paymentStatus, ["unpaid", "partial"]),
+        ),
+      )
+      .groupBy(sales.customerId),
+    tx
+      .select({
+        customerId: partyOpeningBalances.partyId,
+        outstanding: sql<string>`coalesce(sum(${partyOpeningBalances.amount} - ${partyOpeningBalances.paidAmount}), 0)`,
+      })
+      .from(partyOpeningBalances)
+      .where(
+        and(
+          eq(partyOpeningBalances.companyId, companyId),
+          eq(partyOpeningBalances.kind, "receivable"),
+          eq(partyOpeningBalances.status, "open"),
+          inArray(partyOpeningBalances.partyId, customerIds),
+        ),
+      )
+      .groupBy(partyOpeningBalances.partyId),
+  ]);
 
   const debtMap = new Map<string, number>();
-  for (const item of outstandingRows) {
+  for (const item of [...outstandingRows, ...openingRows]) {
     if (item.customerId) {
-      debtMap.set(item.customerId, d(item.outstanding).toNumber());
+      debtMap.set(
+        item.customerId,
+        (debtMap.get(item.customerId) ?? 0) + d(item.outstanding).toNumber(),
+      );
     }
   }
 
   return rows.map((row) => {
     const creditLimit = d(row.creditLimit).toNumber();
     const currentDebt = debtMap.get(row.id) ?? 0;
-    const remainingCredit = creditLimit > 0 ? Math.max(0, creditLimit - currentDebt) : 0;
+    const remainingCredit =
+      creditLimit > 0
+        ? Math.max(0, creditLimit - currentDebt)
+        : row.creditLimitUnlimited
+          ? 0
+          : 0;
     return {
       ...row,
       creditLimit,

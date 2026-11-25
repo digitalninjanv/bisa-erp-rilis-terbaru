@@ -156,6 +156,7 @@ export async function holdSale(
       packagingId: line.packagingId,
       qtyInput: toDb(line.qtyInput),
       isiSnapshot: line.isiSnapshot,
+      serialNumbers: line.serialNumbers,
     })),
   );
 

@@ -64,8 +64,15 @@ export function SaleRowActions({
   // (cetak/retur/void sejajar tanpa pemisah).
   const menuItems: RowMenuItem[] = [
     // A-28 UI-2 (UX-D03): faktur format dokumen dari riwayat —
-    // cetak ulang membawa salinan=1 seperti struk.
-    { key: "faktur", label: "Cetak faktur A4", href: `/app/pos/nota/${saleId}/faktur?salinan=1&autoprint=1` },
+    // hanya untuk pemegang izin cetak ulang; halaman faktur juga
+    // menegakkan izin & audit di server.
+    ...(canReprint
+      ? [{
+          key: "faktur",
+          label: "Cetak faktur A4",
+          href: `/app/pos/nota/${saleId}/faktur?salinan=1&autoprint=1`,
+        } satisfies RowMenuItem]
+      : []),
     ...(canReturn && status === "completed"
       ? [{ key: "retur", label: "Retur penjualan", href: `/app/pos/retur?sale=${saleId}` } satisfies RowMenuItem]
       : []),
@@ -73,7 +80,7 @@ export function SaleRowActions({
     // menolak void atas pesanan ditahan, jadi menampilkannya untuk
     // status held hanya menghasilkan aksi yang selalu gagal.
     ...(canVoid && status === "completed"
-      ? [{ key: "void", label: "Void transaksi", danger: true } satisfies RowMenuItem]
+      ? [{ key: "void", label: "Batalkan transaksi", danger: true } satisfies RowMenuItem]
       : []),
   ];
 
@@ -84,7 +91,7 @@ export function SaleRowActions({
           href={`/app/pos/nota/${saleId}?salinan=1&autoprint=1`}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex h-8 items-center gap-1.5 rounded border border-border bg-card px-2.5 text-[11px] font-medium text-foreground transition-colors hover:bg-muted"
+          className="inline-flex h-11 items-center gap-1.5 rounded border border-border bg-card px-3 text-[11px] font-medium text-foreground transition-colors hover:bg-muted lg:h-8 lg:px-2.5"
           aria-label={`Cetak nota ${number}`}
           onClick={(event) => {
             const desktop = getDesktopPrintBridge();
@@ -113,7 +120,7 @@ export function SaleRowActions({
         setOpen(next);
       }}>
         <DialogContent showCloseButton={false} initialFocus={cancelRef}>
-          <DialogTitle>Void transaksi {number}</DialogTitle>
+          <DialogTitle>Batalkan transaksi {number}</DialogTitle>
           <DialogDescription>
             Stok dikembalikan dan jurnal pembalik otomatis dibuat. Tindakan ini tercatat di audit log.
           </DialogDescription>
@@ -132,7 +139,7 @@ export function SaleRowActions({
               ref={cancelRef}
               disabled={busy}
               onClick={() => setOpen(false)}
-              className="h-8 rounded-md border border-border px-3 text-[12px] hover:bg-muted"
+              className="h-11 rounded-md border border-border px-4 text-[13px] hover:bg-muted"
             >
               Batal
             </button>
@@ -140,9 +147,9 @@ export function SaleRowActions({
               type="button"
               disabled={busy}
               onClick={submit}
-              className="h-8 rounded-md bg-destructive px-3 text-[12px] font-medium text-white disabled:opacity-50"
+              className="h-11 rounded-md bg-destructive px-4 text-[13px] font-medium text-white disabled:opacity-50"
             >
-              {busy ? "Memproses…" : "Void transaksi"}
+              {busy ? "Memproses…" : "Batalkan transaksi"}
             </button>
           </div>
         </DialogContent>

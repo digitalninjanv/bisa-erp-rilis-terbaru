@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Boxes, History, Warehouse } from "lucide-react";
+import { ArrowLeft, Boxes, History, Printer, Warehouse } from "lucide-react";
 import { and, eq } from "drizzle-orm";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { units as unitTable } from "@/db/schema";
@@ -125,35 +125,44 @@ export default async function ProductDetailPage({
         title={product.name}
         description={[product.barcode, product.notes].filter(Boolean).join(" · ") || "Detail produk dan kartu stok."}
         actions={
-          can(ctx, "inventory.manage") ? (
-            <ProductForm
-              product={{
-                id: product.id,
-                name: product.name,
-                sku: product.sku,
-                barcode: product.barcode,
-                categoryId: product.categoryId,
-                unitId: product.unitId,
-                supplierId: product.supplierId,
-                costPrice: product.costPrice,
-                salePrice: product.salePrice,
-                minStock: product.minStock,
-                trackStock: product.trackStock,
-                trackBatch: product.trackBatch,
-                trackSerial: product.trackSerial,
-                isActive: product.isActive,
-                notes: product.notes,
-                attributes: product.attributes ?? null,
-                packagings: data.packagings,
-              }}
-              categories={data.categories}
-              units={data.formUnits}
-              suppliers={data.suppliers}
-              allowCost={can(ctx, "inventory.cost")}
-              allowPrice={can(ctx, "inventory.price")}
-              customFields={data.customFields}
-            />
-          ) : null
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/app/gudang/produk/label?ids=${product.id}`}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] font-medium hover:bg-muted"
+            >
+              <Printer className="size-3.5" /> Cetak label
+            </Link>
+            {can(ctx, "inventory.manage") ? (
+              <ProductForm
+                product={{
+                  id: product.id,
+                  name: product.name,
+                  sku: product.sku,
+                  barcode: product.barcode,
+                  categoryId: product.categoryId,
+                  unitId: product.unitId,
+                  supplierId: product.supplierId,
+                  costPrice: product.costPrice,
+                  salePrice: product.salePrice,
+                  minStock: product.minStock,
+                  trackStock: product.trackStock,
+                  trackBatch: product.trackBatch,
+                  trackSerial: product.trackSerial,
+                  isTaxExempt: product.isTaxExempt,
+                  isActive: product.isActive,
+                  notes: product.notes,
+                  attributes: product.attributes ?? null,
+                  packagings: data.packagings,
+                }}
+                categories={data.categories}
+                units={data.formUnits}
+                suppliers={data.suppliers}
+                allowCost={can(ctx, "inventory.cost")}
+                allowPrice={can(ctx, "inventory.price")}
+                customFields={data.customFields}
+              />
+            ) : null}
+          </div>
         }
       />
 

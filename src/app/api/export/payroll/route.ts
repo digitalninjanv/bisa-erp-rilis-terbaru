@@ -9,6 +9,7 @@ import { d, toDb } from "@/lib/money";
 import { getPayrollRecap } from "@/server/payroll-indonesia";
 import { requirePermission } from "@/lib/session";
 import { requireFreshSession } from "@/lib/session-freshness";
+import { assertModuleEnabled } from "@/lib/modules";
 
 export const runtime = "nodejs";
 
@@ -44,6 +45,9 @@ async function GETHandler(request: NextRequest) {
   // izin ini sendiri ke peran kustom (mis. akuntan pemeriksa) tanpa
   // membuka seluruh halaman HR.
   const ctx = await requirePermission("payroll.salary");
+  // CORE-03: modul HR yang dimatikan harus menutup ekspor gaji juga,
+  // bukan hanya navigasi halaman. Izin field-level tetap dipertahankan.
+  assertModuleEnabled(ctx.enabledModules, "hr");
   // R3 K-5: ekspor massal angka gaji adalah titik sensitif — lapis
   // kedua sesudah izin adalah kesegaran sesi (maks 1 jam sejak masuk).
   requireFreshSession(ctx);

@@ -1,9 +1,7 @@
 import { useState } from "react";
-import Link from "next/link";
 import type { Dispatch, SetStateAction } from "react";
 import {
   AlertTriangle,
-  History,
   Minus,
   PauseCircle,
   Plus,
@@ -11,14 +9,13 @@ import {
   Tag,
   Trash2,
   UserRound,
-  Users,
-  Wallet,
   X,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { formatIDR, formatQty } from "@/lib/money";
 import type { QuoteResultPublic } from "@/server/pos";
+import type { PromotionRule } from "@/lib/pos/promotions";
 import { QtyInput } from "@/components/qty-input";
 import { ConfirmDialog } from "@/components/blocks/confirm-dialog";
 import {
@@ -53,6 +50,8 @@ export function CartPanel(props: {
   selectedGroup: PriceGroup | undefined;
   heldCount: number;
   setCart: Dispatch<SetStateAction<CartItem[]>>;
+  /** Reset konteks transaksi (keranjang, pelanggan, tahanan, reservasi). */
+  onClearCart?: () => void;
   /** S4: penyunting berkunci baris (produk, kemasan) — lihat cartLineKey. */
   setQty: (key: string, qty: number) => void;
   setSerial: (key: string, index: number, value: string) => void;
@@ -60,6 +59,8 @@ export function CartPanel(props: {
   setLineDiscount?: (key: string, type: "percent" | "nominal" | null, value: number) => void;
   quoteBusy: boolean;
   allowNegativeStock?: boolean;
+  availablePromotions?: PromotionRule[];
+  onApplyPromotion?: (promo: PromotionRule) => void;
   scrollMode?: "contained" | "page";
   /** Sheet mobile: judul sudah ada di header sheet, cukup aksi baris. */
   compactHeader?: boolean;
@@ -77,12 +78,15 @@ export function CartPanel(props: {
     selectedGroup,
     heldCount,
     setCart,
+    onClearCart,
     setQty,
     setSerial,
     setLinePackaging,
     setLineDiscount,
     quoteBusy,
     allowNegativeStock = false,
+    availablePromotions = [],
+    onApplyPromotion,
     scrollMode = "contained",
     compactHeader = false,
   } = props;
@@ -99,38 +103,36 @@ export function CartPanel(props: {
             <div className={cn("flex min-w-0 items-center gap-2", compactHeader && "hidden")}>
               <ShoppingCart className="size-5 text-[var(--pos-action)]" />
               <h2 className="text-base font-semibold text-[var(--pos-action)]">Keranjang</h2>
-              <span className="num rounded-full bg-[var(--pos-action-soft)] px-2 py-1 text-xs font-medium text-[var(--pos-action)]">
+              <span className="num whitespace-nowrap rounded-full bg-[var(--pos-action-soft)] px-2 py-1 text-xs font-medium text-[var(--pos-action)]">
                 {cart.length} baris
               </span>
             </div>
             <div className="flex shrink-0 items-center gap-1">
-              <Link
-                href="/app/pos/riwayat"
-                prefetch
-                aria-label="Riwayat transaksi"
-                title="Riwayat transaksi"
-                className="grid size-11 place-items-center rounded-md text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              {/* Di laptop pendek baris Harga penuh disembunyikan agar
+                  kolom Uang diterima tetap terlihat; selector ringkas
+                  ini memakai state yang sama. */}
+              <div
+                className={cn(
+                  "items-center",
+                  compactHeader
+                    ? "flex"
+                    : "hidden [@media(min-width:1024px)_and_(max-height:850px)]:flex",
+                )}
               >
-                <History className="size-4" />
-              </Link>
-              <Link
-                href="/app/pos/sesi"
-                prefetch
-                aria-label="Sesi kas"
-                title="Sesi kas"
-                className="grid size-11 place-items-center rounded-md text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <Wallet className="size-4" />
-              </Link>
-              <Link
-                href="/app/pos/piutang"
-                prefetch
-                aria-label="Piutang pelanggan"
-                title="Piutang pelanggan"
-                className="grid size-11 place-items-center rounded-md text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <Users className="size-4" />
-              </Link>
+                <label className="sr-only" htmlFor="pos-price-group-compact">Kelompok harga</label>
+                <select
+                  id="pos-price-group-compact"
+                  value={groupId}
+                  onChange={(event) => setGroupId(event.target.value)}
+                  aria-label="Kelompok harga"
+                  className="h-11 max-w-[132px] rounded-md border border-input bg-background px-2 text-xs"
+                >
+                  <option value="">Harga normal</option>
+                  {groups.map((group) => (
+                    <option key={group.id} value={group.id}>{group.name}</option>
+                  ))}
+                </select>
+              </div>
               {heldCount > 0 ? (
                 <a
                   href="/app/pos/ditahan"
@@ -159,7 +161,13 @@ export function CartPanel(props: {
           </div>
           ) : null}
 
-          <div className="border-b border-border px-4 py-3">
+          <div
+            className={cn(
+              "border-b border-border px-4 py-3",
+              compactHeader && "hidden",
+              "[@media(min-width:1024px)_and_(max-height:850px)]:hidden",
+            )}
+          >
             <div className="flex items-center gap-2">
               <label className="flex shrink-0 items-center gap-2 text-sm font-semibold text-foreground">
                 <UserRound className="size-4" /> Harga
@@ -189,10 +197,32 @@ export function CartPanel(props: {
             ) : null}
           </div>
 
+          {availablePromotions.length > 0 && onApplyPromotion ? (
+            <div className="border-b border-border bg-tone-teal-soft/50 px-4 py-2.5">
+              <p className="text-[11px] font-semibold text-tone-teal">Promo tersedia untuk keranjang ini</p>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {availablePromotions.map((promo) => (
+                  <button
+                    key={promo.id}
+                    type="button"
+                    onClick={() => onApplyPromotion(promo)}
+                    className="inline-flex min-h-8 items-center gap-1 rounded-md border border-tone-teal/30 bg-card px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-tone-teal-soft"
+                  >
+                    <Tag className="size-3 text-tone-teal" />
+                    <span>{promo.name}</span>
+                    <span className="num text-[10px] font-semibold text-tone-teal">
+                      ({promo.type === "percent" ? `-${promo.value}%` : `-${formatIDR(promo.value)}/unit`})
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
           <div
             className={cn(
               "min-h-[120px]",
-              scrollMode === "page" ? "overflow-visible" : "max-h-[42vh] overflow-y-auto",
+              scrollMode === "page" ? "overflow-visible" : "pos-cart-lines overflow-y-auto",
             )}
           >
             {cart.length === 0 ? (
@@ -305,6 +335,7 @@ export function CartPanel(props: {
                           <QtyInput
                             value={String(item.qty)}
                             onChange={(value) => setQty(key, value === "" ? 0 : Number(value))}
+                            decimals={line?.trackSerial ?? cached?.trackSerial ? 0 : undefined}
                             aria-label={`Jumlah ${unitName}`}
                             wrapperClassName="h-11 w-12 shrink-0"
                             className="h-11 w-full rounded-none border-x border-y-0 border-border bg-transparent px-0 text-center text-sm font-semibold focus:border-border"
@@ -359,7 +390,7 @@ export function CartPanel(props: {
                                 setLineDiscVal(item.discountValue ? String(item.discountValue) : "");
                               }
                             }}
-                            className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:underline"
+                            className="-ml-2 inline-flex min-h-11 items-center gap-1 rounded px-2 text-[12px] font-medium text-muted-foreground hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           >
                             <Tag className="size-3" />
                             {item.discountType && (item.discountValue ?? 0) > 0 ? "Ubah diskon" : "+ Diskon"}
@@ -372,7 +403,7 @@ export function CartPanel(props: {
                           <select
                             value={lineDiscType}
                             onChange={(e) => setLineDiscType(e.target.value as "percent" | "nominal")}
-                            className="h-8 rounded border border-input bg-background px-1.5 text-xs font-medium"
+                            className="h-11 rounded border border-input bg-background px-2 text-[12px] font-medium"
                           >
                             <option value="percent">% Persen</option>
                             <option value="nominal">Rp Nominal</option>
@@ -384,7 +415,7 @@ export function CartPanel(props: {
                             value={lineDiscVal}
                             onChange={(e) => setLineDiscVal(e.target.value)}
                             placeholder={lineDiscType === "percent" ? "Diskon %" : "Nominal Rp"}
-                            className="num h-8 w-24 rounded border border-input bg-background px-2 text-xs"
+                            className="num h-11 w-24 rounded border border-input bg-background px-2 text-[12px]"
                           />
                           <button
                             type="button"
@@ -397,14 +428,14 @@ export function CartPanel(props: {
                               }
                               setDiscountTargetKey(null);
                             }}
-                            className="h-8 rounded bg-primary px-2.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+                            className="h-11 rounded bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/90"
                           >
                             Simpan
                           </button>
                           <button
                             type="button"
                             onClick={() => setDiscountTargetKey(null)}
-                            className="h-8 rounded px-1.5 text-xs text-muted-foreground hover:bg-muted"
+                            className="h-11 rounded px-2 text-[12px] text-muted-foreground hover:bg-muted"
                           >
                             Batal
                           </button>
@@ -475,7 +506,7 @@ export function CartPanel(props: {
             )}
           </div>
 
-          <div className="space-y-2 border-t border-border px-4 py-3 text-sm">
+          <div className={cn("space-y-2 border-t border-border px-4 py-3 text-sm", compactHeader && "hidden")}>
             <Row label="Subtotal" value={formatIDR(quote?.subtotal ?? 0)} />
             {(quote?.discountTotal ?? 0) > 0 ? (
               <Row label="Diskon" value={`−${formatIDR(quote?.discountTotal ?? 0)}`} tone="plum" />
@@ -485,7 +516,7 @@ export function CartPanel(props: {
             ) : null}
             {(quote?.roundingAdjustment ?? 0) !== 0 ? (
               <Row
-                label={`Pembulatan total (${roundingLabel(quote?.cashRounding)})`}
+                label={`Pembulatan total semua metode (${roundingLabel(quote?.cashRounding)})`}
                 value={`${(quote?.roundingAdjustment ?? 0) > 0 ? "+" : "−"}${formatIDR(Math.abs(quote?.roundingAdjustment ?? 0))}`}
               />
             ) : null}
@@ -514,7 +545,8 @@ export function CartPanel(props: {
             cancelLabel="Batal"
             danger
             onConfirm={() => {
-              setCart([]);
+              if (onClearCart) onClearCart();
+              else setCart([]);
               setConfirmClearCart(false);
             }}
             onCancel={() => setConfirmClearCart(false)}

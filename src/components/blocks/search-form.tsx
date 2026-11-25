@@ -27,13 +27,13 @@ export function SearchForm({
           defaultValue={q}
           placeholder={placeholder}
           aria-label="Kata kunci pencarian"
-          className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-2.5 text-[13px] outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
+          className="h-11 w-full rounded-md border border-input bg-background pl-8 pr-2.5 text-[13px] outline-none focus:border-ring focus:ring-2 focus:ring-ring/20 lg:h-9"
         />
       </div>
       {children}
       <button
         type="submit"
-        className="h-8 rounded-md border border-border bg-card px-2.5 text-[12px] font-medium transition-colors hover:bg-muted"
+        className="h-11 rounded-md border border-border bg-card px-3 text-[12px] font-medium transition-colors hover:bg-muted lg:h-9"
       >
         Cari
       </button>
@@ -76,8 +76,8 @@ export function FilterChips({
             href={href}
             className={
               active
-                ? "inline-flex h-8 items-center rounded-full bg-foreground px-3 text-[11px] font-medium text-background"
-                : "inline-flex h-8 items-center rounded-full border border-border bg-card px-3 text-[11px] text-muted-foreground transition-colors hover:bg-muted"
+                ? "inline-flex h-11 items-center rounded-full bg-foreground px-3 text-[12px] font-medium text-background lg:h-8 lg:text-[11px]"
+                : "inline-flex h-11 items-center rounded-full border border-border bg-card px-3 text-[12px] text-muted-foreground transition-colors hover:bg-muted lg:h-8 lg:text-[11px]"
             }
           >
             {option.label}

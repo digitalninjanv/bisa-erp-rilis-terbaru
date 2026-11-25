@@ -103,6 +103,7 @@ export async function persistSaleDocument(
       packagingId: line.packagingId,
       qtyInput: toDb(line.qtyInput),
       isiSnapshot: line.isiSnapshot,
+      serialNumbers: line.serialNumbers,
     })),
   );
 

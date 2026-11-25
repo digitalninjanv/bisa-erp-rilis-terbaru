@@ -2,7 +2,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { withApiError } from "@/lib/api-error";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { products, units } from "@/db/schema";
-import { requirePermission } from "@/lib/session";
+import { requirePermissionInModule } from "@/lib/session";
 import { listWarehouses, pickDefaultWarehouseId, getSettings } from "@/server/catalog";
 import { todayISO } from "@/lib/format";
 import { xlsxResponse } from "@/lib/xlsx";
@@ -11,7 +11,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 async function GETHandler(request: Request) {
-  const ctx = await requirePermission("inventory.view");
+  const ctx = await requirePermissionInModule("inventory.view", "gudang");
   const url = new URL(request.url);
   const warehouseParam = url.searchParams.get("warehouse") || undefined;
 

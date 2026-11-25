@@ -15,10 +15,7 @@ import {
   journalLines,
   paymentMethods,
 } from "@/db/schema";
-import {
-  getAccountMap,
-  postJournal,
-} from "@/server/accounting";
+import { postOwnerCapital } from "@/server/accounting-capital";
 import {
   getAccountImpact,
   type AccountImpact,
@@ -754,6 +751,7 @@ const capitalSchema = z.object({
   equityAccountId: z.string().uuid().optional(),
   amount: moneyString("Nominal modal"),
   description: z.string().min(3).max(200),
+  idempotencyKey: z.string().trim().min(8).max(120).optional(),
 });
 
 /** Owner capital injection: debit cash/bank, credit equity. */
@@ -761,36 +759,13 @@ export async function createCapitalAction(input: z.input<typeof capitalSchema>) 
   return guard(async () => {
     const ctx = await requirePermissionInModule("accounting.post", "akuntansi");
     const data = parseInput(capitalSchema, input);
-    const amount = d(data.amount);
-    if (amount.lte(0)) throw new AppError("VALIDATION", "Nominal modal harus lebih dari nol.");
-
-    const result = await withCompany(ctx.company.id, async (tx) => {
-      const map = await getAccountMap(tx, ctx.company.id);
-      const equityAccountId = data.equityAccountId ?? map.equity;
-      if (!equityAccountId) throw new AppError("VALIDATION", "Akun ekuitas belum dipetakan di Pengaturan.");
-
-      const entry = await postJournal(tx, {
-        companyId: ctx.company.id,
-        date: data.date,
-        description: `Setoran modal — ${data.description}`,
-        sourceType: "capital",
-        createdBy: ctx.user.id,
-        lines: [
-          { accountId: data.accountId, debit: amount, description: data.description },
-          { accountId: equityAccountId, credit: amount, description: "Setoran modal pemilik" },
-        ],
-      });
-
-      await writeAudit(tx, {
+    const result = await withCompany(ctx.company.id, (tx) =>
+      postOwnerCapital(tx, {
         companyId: ctx.company.id,
         userId: ctx.user.id,
-        action: "capital.create",
-        entityType: "journal_entry",
-        entityId: entry.id,
-        after: { number: entry.number, amount: toDb(amount) },
-      });
-      return entry;
-    });
+        ...data,
+      }),
+    );
 
     revalidatePath("/app/akuntansi/bank");
     revalidatePath("/app/akuntansi/jurnal");

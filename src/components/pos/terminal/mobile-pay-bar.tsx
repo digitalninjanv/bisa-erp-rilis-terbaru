@@ -18,18 +18,21 @@ export function MobilePayBar(props: {
   payLabel: string;
   checkout: () => Promise<void>;
   onOpenCart: () => void;
+  lastItemName?: string | null;
 }) {
-  const { cart, total, payDisabled, payLabel, checkout, onOpenCart } = props;
+  const { cart, total, payDisabled, payLabel, checkout, onOpenCart, lastItemName = null } = props;
   return (
       <div className="no-print fixed inset-x-0 bottom-0 z-20 flex items-center justify-between gap-3 border-t border-border bg-card px-3 pt-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] shadow-[0_-8px_24px_-16px_rgba(15,23,42,0.35)] lg:hidden">
         <button
           type="button"
           onClick={onOpenCart}
-          className="min-w-0 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-muted"
+          className="min-h-11 min-w-0 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-muted"
           aria-label={`Buka keranjang, ${cart.length} baris`}
         >
-          <p className="text-xs font-semibold text-muted-foreground">
-            Keranjang · {cart.length} baris
+          <p className="truncate text-xs font-semibold text-muted-foreground">
+            {cart.length > 0
+              ? `${lastItemName ?? "Keranjang"} · ${cart.length} baris`
+              : "Keranjang · 0 baris"}
           </p>
           <p className="num truncate text-base font-bold text-foreground">{formatIDR(total)}</p>
         </button>

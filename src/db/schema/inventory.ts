@@ -316,6 +316,7 @@ export const stockReceiptLines = pgTable(
     productSku: text("product_sku"),
     qty: numeric("qty", { precision: 19, scale: 4 }).notNull(),
     unitCost: numeric("unit_cost", { precision: 19, scale: 4 }).notNull(),
+    stockUnitCost: numeric("stock_unit_cost", { precision: 19, scale: 4 }),
     /** Nilai baris SETELAH diskon (DPP bila PPN eksplisit). */
     lineTotal: numeric("line_total", { precision: 19, scale: 4 }).notNull(),
     // Diskon baris penerimaan. Berbeda dari sale_lines: `discount_value`
@@ -420,7 +421,6 @@ export const purchaseAdvanceAllocations = pgTable(
     index("purchase_advance_allocations_receipt_idx").on(t.receiptId),
   ],
 );
-
 /**
  * Supplier returns / purchase returns (A-9, D-20). A dedicated document —
  * NOT the adjustment family — because a return toward a supplier is a

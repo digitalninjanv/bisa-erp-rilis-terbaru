@@ -3,3 +3,6 @@ allowBuilds:
   electron-winstaller: false
 minimumReleaseAgeExclude:
   - electron@45.4.1
+overrides:
+  "app-builder-lib>minimatch": 11.0.1
+  "@electron/universal>minimatch": 11.0.1

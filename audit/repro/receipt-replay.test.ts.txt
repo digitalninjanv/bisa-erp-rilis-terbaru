@@ -1,0 +1,28 @@
+import { eq } from "drizzle-orm";
+import { expect, it } from "vitest";
+import { withCompany } from "@/db/tenant";
+import { products, stockOnHand, warehouses } from "@/db/schema";
+import { seedChartOfAccounts } from "@/server/accounting";
+import { createReceipt } from "@/server/inventory";
+import { todayISO } from "@/lib/format";
+
+it("accepts a changed receipt quantity with the same key but returns and retains the original receipt", async () => {
+  const companyId = crypto.randomUUID();
+  await withCompany(companyId, async (tx) => {
+    await seedChartOfAccounts(tx, companyId);
+    const [warehouse] = await tx.insert(warehouses)
+      .values({ companyId, code: "AUD", name: "Audit warehouse", isDefault: true }).returning();
+    const [product] = await tx.insert(products)
+      .values({ companyId, sku: "AUD-REPLAY", name: "Audit stock", costPrice: "100", salePrice: "200" }).returning();
+    const request = {
+      companyId, userId: "audit-fixture", warehouseId: warehouse.id, date: todayISO(),
+      source: "opening" as const, idempotencyKey: crypto.randomUUID(),
+      lines: [{ productId: product.id, qty: 2, unitCost: 100 }],
+    };
+    const first = await createReceipt(tx, request);
+    const changed = await createReceipt(tx, { ...request, lines: [{ ...request.lines[0], qty: 3 }] });
+    expect(changed.id).toBe(first.id);
+    const [balance] = await tx.select().from(stockOnHand).where(eq(stockOnHand.productId, product.id));
+    expect(Number(balance.qty)).toBe(2);
+  });
+});

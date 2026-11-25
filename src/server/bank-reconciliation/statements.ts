@@ -61,25 +61,29 @@ export async function importStatement(
     .returning({ id: bankStatementImports.id });
 
   let inserted = 0;
-  for (const row of parsed.rows) {
-    const [created] = await tx
+  const CHUNK_SIZE = 500;
+  for (let i = 0; i < parsed.rows.length; i += CHUNK_SIZE) {
+    const chunk = parsed.rows.slice(i, i + CHUNK_SIZE);
+    const createdRows = await tx
       .insert(bankStatementLines)
-      .values({
-        companyId: input.companyId,
-        importId: batch.id,
-        accountId: input.accountId,
-        date: row.date,
-        description: row.description,
-        debit: toDb(row.debit),
-        credit: toDb(row.credit),
-        fingerprint: statementFingerprint(input.accountId, row),
-        createdBy: input.userId,
-      })
+      .values(
+        chunk.map((row) => ({
+          companyId: input.companyId,
+          importId: batch.id,
+          accountId: input.accountId,
+          date: row.date,
+          description: row.description,
+          debit: toDb(row.debit),
+          credit: toDb(row.credit),
+          fingerprint: statementFingerprint(input.accountId, row),
+          createdBy: input.userId,
+        })),
+      )
       .onConflictDoNothing({
         target: [bankStatementLines.companyId, bankStatementLines.fingerprint],
       })
       .returning({ id: bankStatementLines.id });
-    if (created) inserted += 1;
+    inserted += createdRows.length;
   }
   const skipped = parsed.rows.length - inserted;
 

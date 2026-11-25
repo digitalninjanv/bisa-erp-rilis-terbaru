@@ -368,7 +368,11 @@ export function SettingsForm({
           <span>
             Mode offline POS
             <span className="block text-[10px] font-normal text-muted-foreground">
-              Kasir dapat mengantre penjualan saat koneksi putus; antrean disinkronkan lewat jalur checkout normal dengan kunci idempotensi per transaksi sesudah online kembali.
+              Kasir dapat mengantre penjualan saat koneksi putus; antrean disinkronkan lewat
+              jalur checkout normal dengan kunci idempotensi per transaksi sesudah online
+              kembali. Di terminal web, mode ini menyelesaikan keranjang yang produknya sudah
+              dimuat; katalog penuh, pelanggan, dan kredit retur offline tersedia di aplikasi
+              desktop POS.
             </span>
           </span>
         </label>

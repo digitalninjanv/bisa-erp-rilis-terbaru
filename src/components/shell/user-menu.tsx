@@ -27,6 +27,9 @@ export function UserMenu({
         keys.filter((key) => key.startsWith("bisa-pos-shell-")).map((key) => window.caches.delete(key)),
       )).catch(() => undefined);
     }
+    // ID ini hanya partition cache (bukan kredensial); cookie hash sesi
+    // tetap HttpOnly dan dihapus oleh proxy saat navigasi ke /login.
+    document.cookie = "pos_shell_cache_id=; Max-Age=0; path=/app/pos";
     window.location.replace("/login");
   }
 
@@ -56,7 +59,7 @@ export function UserMenu({
           {showSettings ? (
             <a
               href="/app/pengaturan"
-              className="flex items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-muted"
+              className="flex min-h-11 items-center gap-2 rounded px-2 text-xs hover:bg-muted"
             >
               <Settings className="size-3.5" /> Pengaturan
             </a>
@@ -64,7 +67,7 @@ export function UserMenu({
           <button
             type="button"
             onClick={signOut}
-            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-destructive hover:bg-destructive/10"
+            className="flex min-h-11 w-full items-center gap-2 rounded px-2 text-left text-xs text-destructive hover:bg-destructive/10"
           >
             <LogOut className="size-3.5" /> Keluar
           </button>

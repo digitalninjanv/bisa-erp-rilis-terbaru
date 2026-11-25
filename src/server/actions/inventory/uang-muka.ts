@@ -9,7 +9,7 @@ import {
   isoDateField,
   parseInput,
 } from "@/lib/action-validation";
-import { requirePermission } from "@/lib/session";
+import { requirePermissionInModule } from "@/lib/session";
 import {
   createPurchaseAdvance,
   listOpenPurchaseAdvancesForSupplier,
@@ -23,7 +23,7 @@ export async function listSupplierPurchaseAdvancesAction(
   input: z.input<typeof supplierSchema>,
 ) {
   return guard(async () => {
-    const ctx = await requirePermission("inventory.view");
+    const ctx = await requirePermissionInModule("inventory.view", "gudang");
     const data = parseInput(supplierSchema, input);
     return withCompanyReadOnly(ctx.company.id, (tx) =>
       listOpenPurchaseAdvancesForSupplier(tx, ctx.company.id, data.supplierId),
@@ -45,7 +45,7 @@ export async function createPurchaseAdvanceAction(
   input: z.input<typeof createSchema>,
 ) {
   return guard(async () => {
-    const ctx = await requirePermission("accounting.post");
+    const ctx = await requirePermissionInModule("accounting.post", "gudang");
     const data = parseInput(createSchema, input);
     const result = await withCompany(ctx.company.id, (tx) =>
       createPurchaseAdvance(tx, {
@@ -77,7 +77,7 @@ export async function voidPurchaseAdvanceAction(
   input: z.input<typeof voidSchema>,
 ) {
   return guard(async () => {
-    const ctx = await requirePermission("accounting.post");
+    const ctx = await requirePermissionInModule("accounting.post", "gudang");
     const data = parseInput(voidSchema, input);
     await withCompany(ctx.company.id, (tx) =>
       voidPurchaseAdvance(tx, {

@@ -4,6 +4,7 @@ import { formatIDR } from "@/lib/money";
 import type { StoredCart } from "@/components/pos/use-cart-persistence";
 import type { ResumeData } from "@/components/pos/use-held-sales";
 import { CheckoutSuccessModal, type CompletedSaleInfo } from "@/components/pos/terminal/checkout-success-modal";
+import { ConfirmDialog } from "@/components/blocks/confirm-dialog";
 
 export function CheckoutRecoveryDialog(props: {
   open: boolean;
@@ -11,27 +12,55 @@ export function CheckoutRecoveryDialog(props: {
   error: string | null;
   canRetry: boolean;
   retry: () => void;
+  discard: () => void;
   returnFocus: RefObject<HTMLInputElement | null>;
 }) {
   const retryRef = useRef<HTMLButtonElement>(null);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   return (
-    <Dialog open={props.open} disablePointerDismissal onOpenChange={(_, event) => event.cancel()}>
-      <DialogContent showCloseButton={false} initialFocus={retryRef} finalFocus={props.returnFocus}>
-        <DialogTitle>Pembayaran belum terkonfirmasi</DialogTitle>
-        <DialogDescription>
-          Periksa pembayaran sebelumnya sebelum melayani transaksi berikutnya. Pemeriksaan ini
-          melanjutkan pembayaran yang sama dan tidak membuat pembayaran kedua.
-        </DialogDescription>
-        {props.error ? <p role="alert" className="text-sm text-destructive">{props.error}</p> : null}
-        <button ref={retryRef} type="button" disabled={props.busy || !props.canRetry} onClick={props.retry}
-          className="h-11 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground disabled:opacity-50">
-          {props.busy ? "Memeriksa pembayaran…" : "Periksa pembayaran"}
-        </button>
-        <a href="/app/pos/riwayat" target="_blank" rel="noopener noreferrer" className="text-sm underline">
-          Buka riwayat transaksi
-        </a>
-      </DialogContent>
-    </Dialog>
+    <>
+      <Dialog open={props.open} disablePointerDismissal onOpenChange={(_, event) => event.cancel()}>
+        <DialogContent showCloseButton={false} initialFocus={retryRef} finalFocus={props.returnFocus}>
+          <DialogTitle>Pembayaran belum terkonfirmasi</DialogTitle>
+          <DialogDescription>
+            Periksa pembayaran sebelumnya sebelum melayani transaksi berikutnya. Pemeriksaan ini
+            melanjutkan pembayaran yang sama dan tidak membuat pembayaran kedua.
+          </DialogDescription>
+          {props.error ? <p role="alert" className="text-sm text-destructive">{props.error}</p> : null}
+          <button ref={retryRef} type="button" disabled={props.busy || !props.canRetry} onClick={props.retry}
+            className="h-11 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground disabled:opacity-50">
+            {props.busy ? "Memeriksa pembayaran…" : "Periksa pembayaran"}
+          </button>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <a href="/app/pos/riwayat" target="_blank" rel="noopener noreferrer" className="text-sm underline">
+              Buka riwayat transaksi
+            </a>
+            <button
+              type="button"
+              disabled={props.busy}
+              onClick={() => setConfirmDiscard(true)}
+              className="text-sm text-muted-foreground underline underline-offset-2 hover:text-destructive"
+            >
+              Batalkan percobaan
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <ConfirmDialog
+        open={confirmDiscard}
+        title="Batalkan percobaan pembayaran?"
+        description="Lakukan ini hanya setelah memastikan transaksi tidak ada di riwayat. Setelah dibatalkan, transaksi berikutnya memakai kunci baru."
+        confirmLabel="Ya, batalkan percobaan"
+        cancelLabel="Kembali"
+        danger
+        busy={props.busy}
+        onConfirm={() => {
+          setConfirmDiscard(false);
+          props.discard();
+        }}
+        onCancel={() => setConfirmDiscard(false)}
+      />
+    </>
   );
 }
 
@@ -70,14 +99,14 @@ export function HoldDialog(props: {
           disabled={busy}
           placeholder="Nama pesanan (opsional)"
           aria-label="Label pesanan ditahan"
-          className="mt-3 h-9 w-full rounded-md border border-input bg-background px-2.5 text-[13px] outline-none focus:border-ring"
+          className="mt-3 h-11 w-full rounded-md border border-input bg-background px-3 text-[13px] outline-none focus:border-ring"
         />
         <div className="mt-4 flex justify-end gap-2">
           <button
             type="button"
             onClick={() => setHoldOpen(false)}
             disabled={busy}
-            className="h-8 rounded-md border border-border px-3 text-[12px] hover:bg-muted"
+            className="h-11 rounded-md border border-border px-4 text-[13px] hover:bg-muted"
           >
             Batal
           </button>
@@ -85,7 +114,7 @@ export function HoldDialog(props: {
             type="button"
             onClick={() => void submitHold()}
             disabled={busy}
-            className="h-8 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground disabled:cursor-wait disabled:opacity-60"
+            className="h-11 rounded-md bg-primary px-4 text-[13px] font-medium text-primary-foreground disabled:cursor-wait disabled:opacity-60"
           >
             {busy ? "Menyimpan…" : "Simpan pesanan"}
           </button>
@@ -121,7 +150,7 @@ export function ResumeDialog(props: {
             type="button"
             onClick={resumeHoldActiveFirst}
             disabled={resumeHolding}
-            className="h-9 w-full rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            className="h-11 w-full rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
             {resumeHolding
               ? "Menahan keranjang aktif…"
@@ -131,7 +160,7 @@ export function ResumeDialog(props: {
             type="button"
             onClick={() => applyResume(resumeOffer.data)}
             disabled={resumeHolding}
-            className="h-9 w-full rounded-md border border-border px-3 text-[12px] font-medium hover:bg-muted disabled:opacity-50"
+            className="h-11 w-full rounded-md border border-border px-3 text-[13px] font-medium hover:bg-muted disabled:opacity-50"
           >
             Ganti keranjang aktif
           </button>
@@ -140,7 +169,7 @@ export function ResumeDialog(props: {
             ref={cancelRef}
             onClick={resumeCancel}
             disabled={resumeHolding}
-            className="h-9 w-full rounded-md px-3 text-[12px] text-muted-foreground hover:bg-muted disabled:opacity-50"
+            className="h-11 w-full rounded-md px-3 text-[13px] text-muted-foreground hover:bg-muted disabled:opacity-50"
           >
             Batal — tetap di keranjang aktif
           </button>
@@ -165,18 +194,20 @@ export function PosTerminalModals(props: {
   setCompletedSale: (sale: CompletedSaleInfo | null) => void;
   canReprint: boolean;
   companyId: string;
+  userId: string;
   pendingCheckout: unknown;
   recoveryError: string | null;
   submitting: boolean;
   retryPendingCheckout: () => void;
+  discardPendingCheckout: () => void;
   searchRef: RefObject<HTMLInputElement | null>;
   mobileCartOpen: boolean;
 }) {
   const {
     holdOpen, holdLabel, setHoldLabel, setHoldOpen, hold,
     resumeOffer, resumeHolding, resumeHoldActiveFirst, applyResume, resumeCancel,
-    completedSale, setCompletedSale, canReprint, companyId,
-    pendingCheckout, recoveryError, submitting, retryPendingCheckout,
+    completedSale, setCompletedSale, canReprint, companyId, userId,
+    pendingCheckout, recoveryError, submitting, retryPendingCheckout, discardPendingCheckout,
     searchRef, mobileCartOpen,
   } = props;
 
@@ -208,6 +239,7 @@ export function PosTerminalModals(props: {
         sale={completedSale}
         canReprint={canReprint}
         companyId={companyId}
+        userId={userId}
         onDismiss={() => {
           setCompletedSale(null);
           searchRef.current?.focus();
@@ -219,6 +251,7 @@ export function PosTerminalModals(props: {
         error={recoveryError}
         canRetry={Boolean(pendingCheckout)}
         retry={() => void retryPendingCheckout()}
+        discard={discardPendingCheckout}
         returnFocus={searchRef}
       />
     </>

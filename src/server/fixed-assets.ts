@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, ne, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
 import {
   accounts,
@@ -11,10 +11,101 @@ import {
 } from "@/db/schema";
 import { AppError } from "@/lib/errors";
 import { Decimal, d, toDb, type MoneyInput } from "@/lib/money";
-import { ensureSystemAccounts } from "@/server/system-accounts";
 import { nextDocumentNumber } from "@/server/sequences";
 import { listJournalNumbersById } from "@/server/catalog";
+import { ensureSystemAccounts } from "@/server/system-accounts";
 import { postJournal, reverseSourceJournal } from "./accounting";
+
+type AccountSpec = {
+  key: string;
+  code: string;
+  fallbackCode: string;
+  name: string;
+  type: "asset" | "expense" | "revenue";
+  normalBalance: "debit" | "credit";
+  section: string;
+  cashFlowGroup: string;
+};
+
+const FIXED_ASSET_ACCOUNT_SPECS: AccountSpec[] = [
+  { key: "fixed_asset", code: "1500", fallbackCode: "1500-AST", name: "Aset Tetap", type: "asset", normalBalance: "debit", section: "non_current_asset", cashFlowGroup: "investing" },
+  { key: "accumulated_depreciation", code: "1510", fallbackCode: "1510-AKM", name: "Akumulasi Penyusutan", type: "asset", normalBalance: "credit", section: "non_current_asset", cashFlowGroup: "investing" },
+  { key: "depreciation_expense", code: "6090", fallbackCode: "6090-SST", name: "Beban Penyusutan", type: "expense", normalBalance: "debit", section: "operating_expense", cashFlowGroup: "operating" },
+  { key: "asset_disposal_gain", code: "4030", fallbackCode: "4030-LPS", name: "Pendapatan Lain-lain", type: "revenue", normalBalance: "credit", section: "other_income", cashFlowGroup: "operating" },
+  { key: "asset_disposal_loss", code: "6070", fallbackCode: "6070-RPS", name: "Beban Lain-lain", type: "expense", normalBalance: "debit", section: "other_expense", cashFlowGroup: "operating" },
+];
+
+export async function ensureFixedAssetAccounts(
+  tx: Tx,
+  companyId: string,
+): Promise<Record<string, string>> {
+  const map = new Map(
+    Object.entries(await ensureSystemAccounts(tx, companyId, FIXED_ASSET_ACCOUNT_SPECS)),
+  );
+  const fixedAssetId = map.get("fixed_asset");
+  const accumulatedId = map.get("accumulated_depreciation");
+  if (fixedAssetId && accumulatedId && fixedAssetId !== accumulatedId) {
+    await tx
+      .update(accounts)
+      .set({ isContra: true, contraOf: fixedAssetId })
+      .where(
+        and(
+          eq(accounts.companyId, companyId),
+          eq(accounts.id, accumulatedId),
+          eq(accounts.isContra, false),
+        ),
+      );
+  }
+  return Object.fromEntries(map);
+}
+
+export async function assertPostableAccount(
+  tx: Tx,
+  companyId: string,
+  accountId: string,
+  label: string,
+) {
+  const [account] = await tx
+    .select({ id: accounts.id, isPostable: accounts.isPostable, isActive: accounts.isActive })
+    .from(accounts)
+    .where(and(eq(accounts.companyId, companyId), eq(accounts.id, accountId)))
+    .limit(1);
+  if (!account || !account.isPostable || !account.isActive) {
+    throw new AppError("VALIDATION", `${label} harus akun aktif yang dapat diposting.`);
+  }
+}
+
+export type AssetAccountSet = {
+  assetAccountId: string;
+  accumulatedAccountId: string;
+  expenseAccountId: string;
+};
+
+export async function resolveAssetAccounts(
+  tx: Tx,
+  companyId: string,
+  categoryId: string | null,
+): Promise<AssetAccountSet> {
+  const map = await ensureFixedAssetAccounts(tx, companyId);
+  let category: typeof fixedAssetCategories.$inferSelect | null = null;
+  if (categoryId) {
+    const [row] = await tx
+      .select()
+      .from(fixedAssetCategories)
+      .where(and(eq(fixedAssetCategories.companyId, companyId), eq(fixedAssetCategories.id, categoryId)))
+      .limit(1);
+    category = row ?? null;
+  }
+  const resolved = {
+    assetAccountId: category?.assetAccountId ?? map.fixed_asset,
+    accumulatedAccountId: category?.accumulatedAccountId ?? map.accumulated_depreciation,
+    expenseAccountId: category?.expenseAccountId ?? map.depreciation_expense,
+  };
+  if (!resolved.assetAccountId || !resolved.accumulatedAccountId || !resolved.expenseAccountId) {
+    throw new AppError("VALIDATION", "Pemetaan akun aset tetap belum lengkap.");
+  }
+  return resolved;
+}
 
 /**
  * SIM-2 S7B-2 Batch 2 — Aset tetap & penyusutan (§8).
@@ -36,77 +127,6 @@ export const FIXED_ASSET_STATUS_LABELS: Record<string, string> = {
   active: "Aktif",
   disposed: "Dilepas",
 };
-
-type AccountSpec = {
-  key: string;
-  code: string;
-  fallbackCode: string;
-  name: string;
-  type: "asset" | "expense" | "revenue";
-  normalBalance: "debit" | "credit";
-  // FIX-R2 Tahap 3 (AK2-04): akun sistem yang dibuat jalur ensure ini
-  // membawa kelompok laporannya secara eksplisit — fallback laporan
-  // tidak lagi menebak dari kode akun.
-  section: string;
-  cashFlowGroup: string;
-};
-
-const FIXED_ASSET_ACCOUNT_SPECS: AccountSpec[] = [
-  { key: "fixed_asset", code: "1500", fallbackCode: "1500-AST", name: "Aset Tetap", type: "asset", normalBalance: "debit", section: "non_current_asset", cashFlowGroup: "investing" },
-  { key: "accumulated_depreciation", code: "1510", fallbackCode: "1510-AKM", name: "Akumulasi Penyusutan", type: "asset", normalBalance: "credit", section: "non_current_asset", cashFlowGroup: "investing" },
-  { key: "depreciation_expense", code: "6090", fallbackCode: "6090-SST", name: "Beban Penyusutan", type: "expense", normalBalance: "debit", section: "operating_expense", cashFlowGroup: "operating" },
-  { key: "asset_disposal_gain", code: "4030", fallbackCode: "4030-LPS", name: "Pendapatan Lain-lain", type: "revenue", normalBalance: "credit", section: "other_income", cashFlowGroup: "operating" },
-  { key: "asset_disposal_loss", code: "6070", fallbackCode: "6070-RPS", name: "Beban Lain-lain", type: "expense", normalBalance: "debit", section: "other_expense", cashFlowGroup: "operating" },
-];
-
-/**
- * Pastikan akun & pemetaan aset tetap ada (pola ensure S2): pemetaan
- * yang sudah ada tidak pernah ditimpa. Akun dicari dulu berdasarkan
- * kode standar bagan akun (1500/1510 memang akun aset tetap bawaan),
- * lalu nama, barulah dibuat baru (kode standar atau kode awalan bila
- * kode standar dipakai akun lain).
- */
-export async function ensureFixedAssetAccounts(
-  tx: Tx,
-  companyId: string,
-): Promise<Record<string, string>> {
-  // R3 K-2: algoritma ensure kini hidup SATU di server/system-accounts
-  // (mekanik peta-memori berkas inilah yang menjadi mekanik gabungan);
-  // berkas ini menyimpan daftar spec + pasca-langkah kontranya.
-  const map = new Map(
-    Object.entries(await ensureSystemAccounts(tx, companyId, FIXED_ASSET_ACCOUNT_SPECS)),
-  );
-  // A-27 B5: akumulasi penyusutan adalah akun KONTRA dari aset tetap —
-  // tandai dari pasangan kunci pemetaannya (satu-satunya pasangan
-  // kontra yang lahir dari jalur ensure ini), termasuk bila akunnya
-  // sudah ada dari sebelum B5 (update idempoten, hanya mengisi).
-  const fixedAssetId = map.get("fixed_asset");
-  const accumulatedId = map.get("accumulated_depreciation");
-  if (fixedAssetId && accumulatedId && fixedAssetId !== accumulatedId) {
-    await tx
-      .update(accounts)
-      .set({ isContra: true, contraOf: fixedAssetId })
-      .where(
-        and(
-          eq(accounts.companyId, companyId),
-          eq(accounts.id, accumulatedId),
-          eq(accounts.isContra, false),
-        ),
-      );
-  }
-  return Object.fromEntries(map);
-}
-
-async function assertPostableAccount(tx: Tx, companyId: string, accountId: string, label: string) {
-  const [account] = await tx
-    .select({ id: accounts.id, isPostable: accounts.isPostable, isActive: accounts.isActive })
-    .from(accounts)
-    .where(and(eq(accounts.companyId, companyId), eq(accounts.id, accountId)))
-    .limit(1);
-  if (!account || !account.isPostable || !account.isActive) {
-    throw new AppError("VALIDATION", `${label} harus akun aktif yang dapat diposting.`);
-  }
-}
 
 // ─── Kategori ──────────────────────────────────────────────────────────
 
@@ -131,6 +151,15 @@ export async function saveFixedAssetCategory(tx: Tx, input: FixedAssetCategoryIn
   }
   if (input.defaultUsefulLifeMonths != null && input.defaultUsefulLifeMonths < 1) {
     throw new AppError("VALIDATION", "Umur manfaat bawaan kategori minimal 1 bulan.");
+  }
+  if (input.assetAccountId) {
+    await assertPostableAccount(tx, input.companyId, input.assetAccountId, "Akun aset kategori");
+  }
+  if (input.accumulatedAccountId) {
+    await assertPostableAccount(tx, input.companyId, input.accumulatedAccountId, "Akun akumulasi penyusutan kategori");
+  }
+  if (input.expenseAccountId) {
+    await assertPostableAccount(tx, input.companyId, input.expenseAccountId, "Akun beban penyusutan kategori");
   }
   const values = {
     companyId: input.companyId,
@@ -171,42 +200,6 @@ export async function listFixedAssetCategories(tx: Tx, companyId: string) {
     .from(fixedAssetCategories)
     .where(eq(fixedAssetCategories.companyId, companyId))
     .orderBy(asc(fixedAssetCategories.code));
-}
-
-type AssetAccountSet = {
-  assetAccountId: string;
-  accumulatedAccountId: string;
-  expenseAccountId: string;
-};
-
-/**
- * Akun aset/akumulasi/beban untuk satu aset: akun pada kategorinya
- * mengalahkan pemetaan perusahaan; pemetaan dilengkapi ensure (D-25).
- */
-export async function resolveAssetAccounts(
-  tx: Tx,
-  companyId: string,
-  categoryId: string | null,
-): Promise<AssetAccountSet> {
-  const map = await ensureFixedAssetAccounts(tx, companyId);
-  let category: typeof fixedAssetCategories.$inferSelect | null = null;
-  if (categoryId) {
-    const [row] = await tx
-      .select()
-      .from(fixedAssetCategories)
-      .where(and(eq(fixedAssetCategories.companyId, companyId), eq(fixedAssetCategories.id, categoryId)))
-      .limit(1);
-    category = row ?? null;
-  }
-  const resolved = {
-    assetAccountId: category?.assetAccountId ?? map.fixed_asset,
-    accumulatedAccountId: category?.accumulatedAccountId ?? map.accumulated_depreciation,
-    expenseAccountId: category?.expenseAccountId ?? map.depreciation_expense,
-  };
-  if (!resolved.assetAccountId || !resolved.accumulatedAccountId || !resolved.expenseAccountId) {
-    throw new AppError("VALIDATION", "Pemetaan akun aset tetap belum lengkap.");
-  }
-  return resolved as AssetAccountSet;
 }
 
 // ─── Registrasi aset ───────────────────────────────────────────────────
@@ -389,6 +382,7 @@ export function monthlyDepreciationAmount(
   const depreciable = d(asset.cost).minus(asset.residualValue);
   const remaining = depreciable.minus(accumulatedBefore);
   if (remaining.lte(0)) return d(0);
+  if (elapsed === asset.usefulLifeMonths) return remaining;
   const monthly = depreciable.div(asset.usefulLifeMonths).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
   return monthly.lt(remaining) ? monthly : remaining;
 }
@@ -419,7 +413,8 @@ export async function runFixedAssetDepreciation(
     .select()
     .from(fixedAssets)
     .where(and(eq(fixedAssets.companyId, input.companyId), eq(fixedAssets.status, "active")))
-    .orderBy(asc(fixedAssets.acquisitionDate));
+    .orderBy(asc(fixedAssets.acquisitionDate), asc(fixedAssets.id))
+    .for("update");
 
   type Planned = {
     asset: (typeof assets)[number];
@@ -470,12 +465,22 @@ export async function runFixedAssetDepreciation(
     })),
   );
 
+  const [defaultMap, catRows] = await Promise.all([
+    ensureFixedAssetAccounts(tx, input.companyId),
+    tx.select().from(fixedAssetCategories).where(eq(fixedAssetCategories.companyId, input.companyId)),
+  ]);
+  const categoryById = new Map(catRows.map((c) => [c.id, c]));
   const debitByAccount = new Map<string, ReturnType<typeof d>>();
   const creditByAccount = new Map<string, ReturnType<typeof d>>();
   for (const row of planned) {
-    const resolved = await resolveAssetAccounts(tx, input.companyId, row.asset.categoryId);
-    debitByAccount.set(resolved.expenseAccountId, (debitByAccount.get(resolved.expenseAccountId) ?? d(0)).plus(row.amount));
-    creditByAccount.set(resolved.accumulatedAccountId, (creditByAccount.get(resolved.accumulatedAccountId) ?? d(0)).plus(row.amount));
+    const category = row.asset.categoryId ? categoryById.get(row.asset.categoryId) : undefined;
+    const expenseAccountId = category?.expenseAccountId ?? defaultMap.depreciation_expense;
+    const accumulatedAccountId = category?.accumulatedAccountId ?? defaultMap.accumulated_depreciation;
+    if (!expenseAccountId || !accumulatedAccountId) {
+      throw new AppError("VALIDATION", "Pemetaan akun aset tetap belum lengkap.");
+    }
+    debitByAccount.set(expenseAccountId, (debitByAccount.get(expenseAccountId) ?? d(0)).plus(row.amount));
+    creditByAccount.set(accumulatedAccountId, (creditByAccount.get(accumulatedAccountId) ?? d(0)).plus(row.amount));
   }
   const journal = await postJournal(tx, {
     companyId: input.companyId,
@@ -513,9 +518,45 @@ export async function voidFixedAssetDepreciationRun(
     .select()
     .from(fixedAssetDepreciationRuns)
     .where(and(eq(fixedAssetDepreciationRuns.companyId, input.companyId), eq(fixedAssetDepreciationRuns.id, input.runId)))
-    .limit(1);
+    .limit(1)
+    .for("update");
   if (!run) throw new AppError("NOT_FOUND", "Proses penyusutan tidak ditemukan.");
   if (run.status === "void") throw new AppError("CONFLICT", "Proses penyusutan ini sudah dibatalkan.");
+  const [laterRun] = await tx
+    .select({ period: fixedAssetDepreciationRuns.period })
+    .from(fixedAssetDepreciationRuns)
+    .where(
+      and(
+        eq(fixedAssetDepreciationRuns.companyId, input.companyId),
+        ne(fixedAssetDepreciationRuns.status, "void"),
+        gt(fixedAssetDepreciationRuns.period, run.period),
+      ),
+    )
+    .limit(1);
+  if (laterRun) {
+    throw new AppError(
+      "CONFLICT",
+      `Penyusutan periode ${laterRun.period} sudah diproses. Batalkan periode yang lebih baru terlebih dahulu.`,
+    );
+  }
+  const [disposedAsset] = await tx
+    .select({ number: fixedAssets.number })
+    .from(fixedAssetDepreciations)
+    .innerJoin(fixedAssets, eq(fixedAssetDepreciations.assetId, fixedAssets.id))
+    .where(
+      and(
+        eq(fixedAssetDepreciations.companyId, input.companyId),
+        eq(fixedAssetDepreciations.runId, run.id),
+        eq(fixedAssets.status, "disposed"),
+      ),
+    )
+    .limit(1);
+  if (disposedAsset) {
+    throw new AppError(
+      "CONFLICT",
+      `Aset ${disposedAsset.number} dalam proses penyusutan ini sudah dilepas sehingga penyusutan historisnya tidak dapat dibatalkan.`,
+    );
+  }
   await reverseSourceJournal(tx, {
     companyId: input.companyId,
     sourceType: "fixed_asset_depreciation",
@@ -545,6 +586,128 @@ export async function listDepreciationRuns(tx: Tx, companyId: string) {
     .orderBy(asc(fixedAssetDepreciationRuns.period));
 }
 
+// ─── Laporan nilai buku ────────────────────────────────────────────────
+
+export async function getFixedAssetBookValues(tx: Tx, companyId: string) {
+  const assets = await tx
+    .select({
+      asset: fixedAssets,
+      categoryName: fixedAssetCategories.name,
+    })
+    .from(fixedAssets)
+    .leftJoin(fixedAssetCategories, eq(fixedAssets.categoryId, fixedAssetCategories.id))
+    .where(eq(fixedAssets.companyId, companyId))
+    .orderBy(asc(fixedAssets.acquisitionDate), asc(fixedAssets.number));
+
+  const rows: Array<{
+    id: string;
+    number: string;
+    name: string;
+    categoryName: string | null;
+    acquisitionDate: string;
+    cost: string;
+    residualValue: string;
+    usefulLifeMonths: number;
+    status: string;
+    disposalDate: string | null;
+    accumulated: string;
+    bookValue: string;
+    journalId: string | null;
+    journalNumber: string | null;
+    disposalJournalId: string | null;
+    disposalJournalNumber: string | null;
+  }> = [];
+
+  const journalNumbers = await listJournalNumbersById(
+    tx,
+    companyId,
+    assets
+      .flatMap((row) => [row.asset.journalId, row.asset.disposalJournalId])
+      .filter((id): id is string => Boolean(id)),
+  );
+  const accumulatedByAsset = await getAccumulatedDepreciationMap(
+    tx,
+    companyId,
+    assets.map((row) => row.asset.id),
+  );
+
+  for (const row of assets) {
+    const accumulated = accumulatedByAsset.get(row.asset.id) ?? d(0);
+    rows.push({
+      id: row.asset.id,
+      number: row.asset.number,
+      name: row.asset.name,
+      categoryName: row.categoryName,
+      acquisitionDate: row.asset.acquisitionDate,
+      cost: row.asset.cost,
+      residualValue: row.asset.residualValue,
+      usefulLifeMonths: row.asset.usefulLifeMonths,
+      status: row.asset.status,
+      disposalDate: row.asset.disposalDate,
+      accumulated: toDb(accumulated),
+      bookValue: toDb(d(row.asset.cost).minus(accumulated)),
+      journalId: row.asset.journalId,
+      journalNumber: row.asset.journalId ? (journalNumbers.get(row.asset.journalId) ?? null) : null,
+      disposalJournalId: row.asset.disposalJournalId,
+      disposalJournalNumber: row.asset.disposalJournalId
+        ? (journalNumbers.get(row.asset.disposalJournalId) ?? null)
+        : null,
+    });
+  }
+
+  const totals = rows.reduce(
+    (acc, row) => ({
+      cost: acc.cost.plus(row.cost),
+      accumulated: acc.accumulated.plus(row.accumulated),
+      bookValue: acc.bookValue.plus(row.bookValue),
+    }),
+    { cost: d(0), accumulated: d(0), bookValue: d(0) },
+  );
+  return {
+    rows,
+    totals: {
+      cost: toDb(totals.cost),
+      accumulated: toDb(totals.accumulated),
+      bookValue: toDb(totals.bookValue),
+    },
+  };
+}
+
+/** Saldo GL (kredit-normal) seluruh akun akumulasi yang dipakai aset perusahaan — untuk tie-out laporan. */
+export async function getAccumulatedDepreciationGlBalance(tx: Tx, companyId: string) {
+  const map = await ensureFixedAssetAccounts(tx, companyId);
+  const categories = await tx
+    .select({ accumulatedAccountId: fixedAssetCategories.accumulatedAccountId })
+    .from(fixedAssetCategories)
+    .where(eq(fixedAssetCategories.companyId, companyId));
+  const accountIds = [
+    ...new Set(
+      [
+        map.accumulated_depreciation,
+        ...categories.map((row: { accumulatedAccountId: string | null }) => row.accumulatedAccountId),
+      ].filter(Boolean),
+    ),
+  ] as string[];
+  if (accountIds.length === 0) return "0";
+  const lines = await tx
+    .select({ debit: journalLines.debit, credit: journalLines.credit })
+    .from(journalLines)
+    .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
+    .where(
+      and(
+        eq(journalEntries.companyId, companyId),
+        eq(journalEntries.status, "posted"),
+        inArray(journalLines.accountId, accountIds),
+      ),
+    );
+  const balance = lines.reduce(
+    (sum: ReturnType<typeof d>, row: { debit: string; credit: string }) =>
+      sum.plus(row.credit).minus(row.debit),
+    d(0),
+  );
+  return toDb(balance);
+}
+
 // ─── Pelepasan ─────────────────────────────────────────────────────────
 
 export async function disposeFixedAsset(
@@ -568,6 +731,12 @@ export async function disposeFixedAsset(
     .for("update");
   if (!asset) throw new AppError("NOT_FOUND", "Aset tidak ditemukan.");
   if (asset.status !== "active") throw new AppError("CONFLICT", "Aset ini sudah dilepas.");
+  if (input.date < asset.acquisitionDate) {
+    throw new AppError(
+      "VALIDATION",
+      `Tanggal pelepasan (${input.date}) tidak boleh lebih awal dari tanggal perolehan aset (${asset.acquisitionDate}).`,
+    );
+  }
 
   // WF-024: Maker-checker pelepasan aset — pembuat aset tidak dapat melepas asetnya sendiri
   if (
@@ -630,120 +799,4 @@ export async function disposeFixedAsset(
     .where(and(eq(fixedAssets.companyId, input.companyId), eq(fixedAssets.id, asset.id)))
     .returning();
   return updated;
-}
-
-// ─── Laporan nilai buku ────────────────────────────────────────────────
-
-export async function getFixedAssetBookValues(tx: Tx, companyId: string) {
-  const assets = await tx
-    .select({
-      asset: fixedAssets,
-      categoryName: fixedAssetCategories.name,
-    })
-    .from(fixedAssets)
-    .leftJoin(fixedAssetCategories, eq(fixedAssets.categoryId, fixedAssetCategories.id))
-    .where(eq(fixedAssets.companyId, companyId))
-    .orderBy(asc(fixedAssets.acquisitionDate), asc(fixedAssets.number));
-  const rows: Array<{
-    id: string;
-    number: string;
-    name: string;
-    categoryName: string | null;
-    acquisitionDate: string;
-    cost: string;
-    residualValue: string;
-    usefulLifeMonths: number;
-    status: string;
-    disposalDate: string | null;
-    accumulated: string;
-    bookValue: string;
-    // A-24 T4: jurnal perolehan & pelepasan aset (id tersimpan di
-    // baris aset; nomor diselesaikan batch di bawah).
-    journalId: string | null;
-    journalNumber: string | null;
-    disposalJournalId: string | null;
-    disposalJournalNumber: string | null;
-  }> = [];
-  const journalNumbers = await listJournalNumbersById(
-    tx,
-    companyId,
-    assets.flatMap((row) => [row.asset.journalId, row.asset.disposalJournalId]).filter(
-      (id): id is string => Boolean(id),
-    ),
-  );
-  const accumulatedByAsset = await getAccumulatedDepreciationMap(
-    tx,
-    companyId,
-    assets.map((row) => row.asset.id),
-  );
-  for (const row of assets) {
-    const accumulated = accumulatedByAsset.get(row.asset.id) ?? d(0);
-    rows.push({
-      id: row.asset.id,
-      number: row.asset.number,
-      name: row.asset.name,
-      categoryName: row.categoryName,
-      acquisitionDate: row.asset.acquisitionDate,
-      cost: row.asset.cost,
-      residualValue: row.asset.residualValue,
-      usefulLifeMonths: row.asset.usefulLifeMonths,
-      status: row.asset.status,
-      disposalDate: row.asset.disposalDate,
-      accumulated: toDb(accumulated),
-      bookValue: toDb(d(row.asset.cost).minus(accumulated)),
-      journalId: row.asset.journalId,
-      journalNumber: row.asset.journalId ? (journalNumbers.get(row.asset.journalId) ?? null) : null,
-      disposalJournalId: row.asset.disposalJournalId,
-      disposalJournalNumber: row.asset.disposalJournalId
-        ? (journalNumbers.get(row.asset.disposalJournalId) ?? null)
-        : null,
-    });
-  }
-  const totals = rows.reduce(
-    (acc, row) => ({
-      cost: acc.cost.plus(row.cost),
-      accumulated: acc.accumulated.plus(row.accumulated),
-      bookValue: acc.bookValue.plus(row.bookValue),
-    }),
-    { cost: d(0), accumulated: d(0), bookValue: d(0) },
-  );
-  return {
-    rows,
-    totals: {
-      cost: toDb(totals.cost),
-      accumulated: toDb(totals.accumulated),
-      bookValue: toDb(totals.bookValue),
-    },
-  };
-}
-
-/** Saldo GL (kredit-normal) seluruh akun akumulasi yang dipakai aset perusahaan — untuk tie-out laporan. */
-export async function getAccumulatedDepreciationGlBalance(tx: Tx, companyId: string) {
-  const map = await ensureFixedAssetAccounts(tx, companyId);
-  const categories = await tx
-    .select({ accumulatedAccountId: fixedAssetCategories.accumulatedAccountId })
-    .from(fixedAssetCategories)
-    .where(eq(fixedAssetCategories.companyId, companyId));
-  const accountIds = [
-    ...new Set(
-      [map.accumulated_depreciation, ...categories.map((row: { accumulatedAccountId: string | null }) => row.accumulatedAccountId)].filter(Boolean),
-    ),
-  ] as string[];
-  if (accountIds.length === 0) return "0";
-  const lines = await tx
-    .select({ debit: journalLines.debit, credit: journalLines.credit })
-    .from(journalLines)
-    .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
-    .where(
-      and(
-        eq(journalEntries.companyId, companyId),
-        eq(journalEntries.status, "posted"),
-        inArray(journalLines.accountId, accountIds),
-      ),
-    );
-  const balance = lines.reduce(
-    (sum: ReturnType<typeof d>, row: { debit: string; credit: string }) => sum.plus(row.credit).minus(row.debit),
-    d(0),
-  );
-  return toDb(balance);
 }

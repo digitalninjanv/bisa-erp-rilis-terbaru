@@ -77,6 +77,11 @@ vi.mock("@/lib/session", () => ({
     user: { id: "01900000-0000-7000-8000-000000000010" },
     role: "owner",
   }),
+  requirePermissionInModule: async () => ({
+    company: { id: hoisted.companyId },
+    user: { id: "01900000-0000-7000-8000-000000000010" },
+    role: "owner",
+  }),
   // A-23 SIS-04: halaman cetak kini memakai penjaga halaman
   // (requirePermissionPage) — ganda uji mengembalikan ctx owner yang
   // sama seperti requirePermission di atas.

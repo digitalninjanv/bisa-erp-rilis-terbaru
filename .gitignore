@@ -81,4 +81,7 @@ pos-native-keys/
 # Disposable verification build
 /.next-remediation/
 
+# Audit run logs / screenshots generated locally (not source; large)
+/audit/checks/
+
 /pos-electron/node_modules/

@@ -364,7 +364,7 @@
     @apply w-full border-collapse text-[13px];
   }
   .data-table thead th {
-    @apply whitespace-nowrap border-b border-border bg-muted/60 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground;
+    @apply whitespace-nowrap border-b border-border bg-muted/60 px-3 py-2 text-left text-[12px] font-semibold uppercase tracking-wide text-muted-foreground;
   }
   .data-table tbody td {
     @apply whitespace-nowrap border-b border-border/70 px-3 py-2.5 align-middle;
@@ -726,5 +726,24 @@
   }
   .pos-print-hint {
     display: block !important;
+  }
+}
+
+/* POS: batasi daftar baris agar panel pembayaran tetap terlihat pada
+   laptop 1366x768/1280x720. Hanya berlaku di desktop (mobile memakai
+   scrollMode="page" di dalam sheet). */
+.pos-cart-lines {
+  max-height: 320px;
+}
+
+@media (max-width: 1023px) {
+  .pos-cart-lines {
+    max-height: 200px;
+  }
+}
+
+@media (min-width: 1024px) and (max-height: 850px) {
+  .pos-cart-lines {
+    max-height: 180px;
   }
 }

@@ -2,7 +2,7 @@ import { withApiError } from "@/lib/api-error";
 import { asc, eq } from "drizzle-orm";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { accountMappings, accounts } from "@/db/schema";
-import { requirePermission } from "@/lib/session";
+import { requirePermissionInModule } from "@/lib/session";
 import { todayISO } from "@/lib/format";
 import { csvResponse, toCsv } from "@/lib/csv";
 import { xlsxResponse } from "@/lib/xlsx";
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 /** Ekspor pemetaan akun: kunci, label, grup, dan akun yang dipakai. */
 async function GETHandler(request: Request) {
-  const ctx = await requirePermission("accounting.view");
+  const ctx = await requirePermissionInModule("accounting.view", "akuntansi");
   const format = new URL(request.url).searchParams.get("format") === "xlsx" ? "xlsx" : "csv";
   const rows = await withCompanyReadOnly(ctx.company.id, (tx) =>
     tx

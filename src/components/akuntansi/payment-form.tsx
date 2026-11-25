@@ -71,6 +71,7 @@ export function PaymentForm({
   withholdingEnabled = false,
   canWriteOff = false,
   writeOffMaxAmount = "0",
+  cashDrawerContext = false,
 }: {
   kind: PaymentKind;
   id: string;
@@ -87,6 +88,8 @@ export function PaymentForm({
   /** A-22 K4 (Pola 5): ambang write-off perusahaan (string desimal);
    * "0" = fitur mati. Syarat & penjaga penuh tetap di domain A-21. */
   writeOffMaxAmount?: string;
+  /** Dipakai halaman POS: penerimaan tunai wajib masuk sesi laci. */
+  cashDrawerContext?: boolean;
 }) {
   const router = useRouter();
   const comboboxAccounts: ComboboxAccount[] = accounts.map((row) => ({ ...row, type: "asset" }));
@@ -214,7 +217,17 @@ export function PaymentForm({
     setBusy(true);
     const result =
       kind === "receivable"
-        ? await payReceivableAction({ saleId: id, amount, ...fundingInput, ...feeInput, date, notes: notes || undefined, reference: reference.trim() || undefined, idempotencyKey: paymentKey || undefined })
+        ? await payReceivableAction({
+            saleId: id,
+            amount,
+            ...fundingInput,
+            ...feeInput,
+            date,
+            notes: notes || undefined,
+            reference: reference.trim() || undefined,
+            idempotencyKey: paymentKey || undefined,
+            source: cashDrawerContext ? "pos" : "accounting",
+          })
         : kind === "payable"
           ? await payPayableAction({ receiptId: id, idempotencyKey: paymentKey, amount, ...fundingInput, ...feeInput, ...withholdingInput, date, notes: notes || undefined, reference: reference.trim() || undefined })
           : kind === "expense-payable"
@@ -642,7 +655,7 @@ export function PartyPaymentVoidButton({
     const result = opening
       ? await voidOpeningPaymentAction({ paymentId, reason })
       : kind === "receivable"
-        ? await voidReceivablePaymentAction({ paymentId, reason })
+        ? await voidReceivablePaymentAction({ paymentId, reason, source: "accounting" })
         : await voidPayablePaymentAction({ paymentId, reason });
     setBusy(false);
     setOpen(false);

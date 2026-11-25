@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { History } from "lucide-react";
 import { withCompanyReadOnly } from "@/db/tenant";
-import { listCompanyAuditTrail } from "@/server/audit";
+import { HR_AUDIT_ENTITY_TYPES, listCompanyAuditTrail } from "@/server/audit";
 import { requirePermissionPage } from "@/lib/session";
+import { can } from "@/lib/permissions";
 import { formatDate, formatDateTime, monthStartISO, todayISO } from "@/lib/format";
 import { LIST_PAGE_SIZE } from "@/lib/pagination";
 import { summarizeAuditChange } from "@/components/blocks/audit-history";
@@ -151,6 +152,10 @@ export default async function AccountingHistoryPage({
   const from = params.from || monthStartISO();
   const to = params.to || todayISO();
   const page = Math.max(1, Number(params.page ?? 1) || 1);
+  const canSeeHr =
+    can(ctx, "payroll.view") ||
+    can(ctx, "payroll.manage") ||
+    can(ctx, "payroll.salary");
 
   const data = await withCompanyReadOnly(ctx.company.id, (tx) =>
     listCompanyAuditTrail(tx, ctx.company.id, {
@@ -159,6 +164,9 @@ export default async function AccountingHistoryPage({
       action: params.action,
       entityType: params.entity,
       userId: params.user,
+      // CORE-06: feed akuntansi tidak boleh membocorkan event HR/payroll
+      // (termasuk nominal pinjaman) ke pembaca tanpa izin HR.
+      excludeEntityTypes: canSeeHr ? undefined : [...HR_AUDIT_ENTITY_TYPES],
       page,
       pageSize: LIST_PAGE_SIZE,
     }),

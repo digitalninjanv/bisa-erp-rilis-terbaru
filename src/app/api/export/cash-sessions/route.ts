@@ -1,7 +1,7 @@
 import { withApiError } from "@/lib/api-error";
 import { withCompanyReadOnly } from "@/db/tenant";
-import { requirePermission } from "@/lib/session";
-import { csvResponse } from "@/lib/csv";
+import { requirePermissionInModule } from "@/lib/session";
+import { csvResponse, toCsv } from "@/lib/csv";
 import { xlsxResponse } from "@/lib/xlsx";
 import { listCashSessionHistory } from "@/server/reports";
 
@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 async function GETHandler(request: Request) {
-  const ctx = await requirePermission("pos.session");
+  const ctx = await requirePermissionInModule("pos.session", "pos");
   const url = new URL(request.url);
   const format = url.searchParams.get("format") === "xlsx" ? "xlsx" : "csv";
   const status = url.searchParams.get("status") === "open" || url.searchParams.get("status") === "closed"
@@ -35,7 +35,7 @@ async function GETHandler(request: Request) {
       }),
     );
     rows.push(...result.rows);
-    if (rows.length >= result.total) break;
+    if (rows.length >= result.total || result.rows.length === 0 || page >= 500) break;
     page += 1;
   }
 
@@ -47,6 +47,7 @@ async function GETHandler(request: Request) {
     "Status",
     "Transaksi",
     "Penjualan non-tunai",
+    "Penerimaan piutang",
     "Modal awal",
     "Masuk",
     "Keluar",
@@ -62,6 +63,7 @@ async function GETHandler(request: Request) {
     row.status === "open" ? "Masih terbuka" : "Ditutup",
     row.transactionCount,
     row.nonCashSalesTotal ?? "0",
+    row.receivableTotal ?? "0",
     row.openingCash,
     row.totalIn,
     row.totalOut,
@@ -80,8 +82,7 @@ async function GETHandler(request: Request) {
     ]);
   }
 
-  const csv = [headers.join(","), ...dataRows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))].join("\n");
-  return csvResponse("riwayat-sesi-kasir.csv", csv);
+  return csvResponse("riwayat-sesi-kasir.csv", toCsv(headers, dataRows));
 }
 
 export const GET = withApiError(GETHandler);

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { toast } from "sonner";
 import { formatIDR } from "@/lib/money";
@@ -22,11 +22,20 @@ export function useReturnCredit(params: {
   creditMethod: { id: string; name: string } | null;
   total: number;
   mixedAppliedTotal: number;
+  prefillCreditNumber?: string | null;
   entries: Record<string, PaymentEntry>;
   setEntries: Dispatch<SetStateAction<Record<string, PaymentEntry>>>;
   setMode: Dispatch<SetStateAction<"single" | "mixed">>;
 }) {
-  const { creditMethod, total, mixedAppliedTotal, entries, setEntries, setMode } = params;
+  const {
+    creditMethod,
+    total,
+    mixedAppliedTotal,
+    prefillCreditNumber = null,
+    entries,
+    setEntries,
+    setMode,
+  } = params;
   // D-12: alur "Pakai Kredit Retur" — metode customer_credit tidak ada
   // di daftar metode biasa; kredit dipakai lewat nomor dokumen retur.
   const [creditOpen, setCreditOpen] = useState(false);
@@ -36,6 +45,61 @@ export function useReturnCredit(params: {
   const [creditBusy, setCreditBusy] = useState(false);
 
   const appliedCredit = creditMethod ? entries[creditMethod.id] : undefined;
+  const prefillAppliedRef = useRef<string | null>(null);
+
+  // Voucher exchange/store-credit membawa nomor retur di URL. Terapkan
+  // otomatis setelah keranjang punya total; kasir tidak perlu mengetik
+  // ulang nomor yang baru saja dicetak.
+  useEffect(() => {
+    if (!creditMethod || !prefillCreditNumber || total <= 0) return;
+    if (prefillAppliedRef.current === prefillCreditNumber) return;
+    prefillAppliedRef.current = prefillCreditNumber;
+    void (async () => {
+      setCreditBusy(true);
+      try {
+        const result = await getReturnCreditAction(prefillCreditNumber);
+        if (!result.ok) {
+          toast.error(result.message);
+          return;
+        }
+        if (!result.data) {
+          toast.error(`Retur ${prefillCreditNumber} tidak memiliki kredit yang dapat dipakai.`);
+          return;
+        }
+        const info = result.data;
+        const cap = Math.min(info.available, total);
+        if (!(cap > 0)) {
+          toast.error(`Sisa kredit ${prefillCreditNumber} sudah habis.`);
+          return;
+        }
+        setCreditInfo(info);
+        setCreditNumber(info.number);
+        setCreditAmount(String(cap));
+        setMode("mixed");
+        setEntries((current) => ({
+          ...current,
+          [creditMethod.id]: {
+            amount: String(cap),
+            tendered: "",
+            reference: info.number,
+          },
+        }));
+        toast.success(
+          `Kredit retur ${info.number} diterapkan sebesar ${formatIDR(cap)}.`,
+        );
+      } catch {
+        toast.error("Kredit retur belum dapat diterapkan. Periksa koneksi lalu coba lagi.");
+      } finally {
+        setCreditBusy(false);
+      }
+    })();
+  }, [
+    creditMethod,
+    prefillCreditNumber,
+    total,
+    setEntries,
+    setMode,
+  ]);
 
   // D-12: periksa sisa kredit dokumen retur lewat server — angka yang
   // ditampilkan selalu angka server, bukan tebakan klien.

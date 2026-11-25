@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { FileText, Package, ReceiptText, Search, LayoutGrid } from "lucide-react";
 import { filterPalettePages, type PalettePage } from "@/lib/palette";
 import { searchPaletteAction } from "@/server/actions/palette";
@@ -34,6 +34,10 @@ const EMPTY_ENTITIES: { products: PaletteEntity[]; sales: PaletteEntity[]; docum
 
 export function CommandPalette({ pages }: { pages: PalettePage[] }) {
   const router = useRouter();
+  const pathname = usePathname();
+  // Di POS mobile, pencarian produk di terminal adalah pencarian utama.
+  // Palet global tetap tersedia di desktop dan di modul lain.
+  const hideOnPosMobile = pathname.startsWith("/app/pos");
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   // Hasil entitas disimpan bersama istilahnya: hasil untuk istilah
@@ -117,12 +121,14 @@ export function CommandPalette({ pages }: { pages: PalettePage[] }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex h-8 w-44 items-center gap-2 rounded-md border border-border bg-card px-2.5 text-[12px] text-muted-foreground transition-colors hover:bg-muted sm:w-56"
-        aria-label="Buka pencarian cepat (Ctrl K)"
+        className={`h-8 w-44 items-center gap-2 rounded-md border border-border bg-card px-2.5 text-[12px] text-muted-foreground transition-colors hover:bg-muted sm:w-56 ${
+          hideOnPosMobile ? "hidden lg:flex" : "flex"
+        }`}
+        aria-label="Cari apa saja — Ctrl K"
       >
         <Search className="size-3.5" />
         <span className="min-w-0 flex-1 truncate text-left">Cari apa saja…</span>
-        <kbd className="rounded border border-border bg-muted px-1 text-[10px]">Ctrl K</kbd>
+        <kbd className="hidden rounded border border-border bg-muted px-1 text-[10px] sm:inline">Ctrl K</kbd>
       </button>
 
       {open ? (

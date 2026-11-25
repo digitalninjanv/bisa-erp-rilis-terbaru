@@ -1,10 +1,89 @@
 import { describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { loadSettings, parseOrigin, saveSettings, isPrivateOrLoopbackHost } from "../../pos-electron/settings.cjs";
 import { normalizeBarcode } from "@/lib/import/import-cells";
 import { renderReceiptHtml } from "@/lib/pos/receipt-html";
+
+const loadCjs = createRequire(import.meta.url);
+const { createPrintScheduler } = loadCjs("../../pos-electron/print-scheduler.cjs") as {
+  createPrintScheduler: () => {
+    enqueue: <T>(
+      key: string,
+      retryConfirmed: boolean,
+      execute: (release: () => void) => Promise<T>,
+    ) => Promise<T | { ok: false; uncertain: true; message: string }>;
+    inFlightCount: () => number;
+  };
+};
+
+describe("pos-electron package & bundled assets", () => {
+  it("bundles every script and local UI file referenced by main.cjs", () => {
+    const pkg = JSON.parse(readFileSync(join(process.cwd(), "pos-electron", "package.json"), "utf8")) as {
+      build?: { files?: string[] };
+    };
+    const files = pkg.build?.files ?? [];
+    for (const required of [
+      "main.cjs",
+      "preload.cjs",
+      "settings.cjs",
+      "print-callback.cjs",
+      "print-scheduler.cjs",
+      "settings-preload.cjs",
+      "settings.html",
+      "settings-view.js",
+      "offline.html",
+      "offline-view.js",
+    ]) {
+      expect(files).toContain(required);
+      expect(existsSync(join(process.cwd(), "pos-electron", required))).toBe(true);
+    }
+  });
+});
+
+describe("pos-electron FIFO print scheduler", () => {
+  it("serializes different transactions in FIFO order while guarding same-sale duplicates", async () => {
+    const scheduler = createPrintScheduler();
+    const order: string[] = [];
+    let releaseFirst!: () => void;
+
+    const first = scheduler.enqueue("sale-1:orig", false, async (release) => {
+      order.push("start-1");
+      await new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+      order.push("end-1");
+      release();
+      return { ok: true };
+    });
+
+    // Transaksi yang sama saat masih aktif → ditolak dengan uncertain
+    const dup = await scheduler.enqueue("sale-1:orig", false, async (release) => {
+      release();
+      return { ok: true };
+    });
+    expect(dup).toMatchObject({ ok: false, uncertain: true });
+
+    // Transaksi berbeda → antre FIFO dan tetap dijalankan setelah pertama selesai
+    const second = scheduler.enqueue("sale-2:orig", false, async (release) => {
+      order.push("start-2");
+      release();
+      order.push("end-2");
+      return { ok: true };
+    });
+
+    await Promise.resolve();
+    expect(order).toEqual(["start-1"]);
+    releaseFirst();
+
+    await expect(first).resolves.toEqual({ ok: true });
+    await expect(second).resolves.toEqual({ ok: true });
+    expect(order).toEqual(["start-1", "end-1", "start-2", "end-2"]);
+    expect(scheduler.inFlightCount()).toBe(0);
+  });
+});
 
 describe("pos-electron settings & origin parsing", () => {
   it("allows loopback HTTP origins", () => {
@@ -44,6 +123,7 @@ describe("pos-electron settings & origin parsing", () => {
       expect(settings.origin).toBe("http://localhost:3000");
       expect(settings.printer).toBe("");
       expect(settings.width).toBe(80);
+      expect(settings.autoPrint).toBe(true);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -56,11 +136,13 @@ describe("pos-electron settings & origin parsing", () => {
         origin: "http://192.168.1.200:3000",
         printer: "EPSON_TM_T82",
         width: 58,
+        autoPrint: false,
       });
       const settings = loadSettings(dir);
       expect(settings.origin).toBe("http://192.168.1.200:3000");
       expect(settings.printer).toBe("EPSON_TM_T82");
       expect(settings.width).toBe(58);
+      expect(settings.autoPrint).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -114,5 +196,39 @@ describe("renderReceiptHtml offline receipt builder", () => {
     expect(html).toContain("Croissant");
     expect(html).toContain("TOTAL:");
     expect(html).toContain("Kembalian:");
+  });
+
+  it("renders 58mm dense layout, NPWP, SALINAN banner, debt & payment reference", () => {
+    const html = renderReceiptHtml({
+      companyName: "Minimarket Nusantara",
+      taxId: "01.234.567.8-901.000",
+      saleNumber: "POS-2026-0099",
+      date: "2026-11-25",
+      dueDate: "2026-12-02",
+      customerName: "Budi",
+      paperWidth: "58mm",
+      copyIndex: 1,
+      roundingAdjustment: -100,
+      lines: [{ name: "Air Mineral (Dus)", qty: 1, unit: "Dus", price: 42000, subtotal: 42000 }],
+      subtotal: 42000,
+      total: 41900,
+      outstanding: 21900,
+      payments: [
+        { methodName: "QRIS", methodType: "qris", amount: 20000, reference: "REF-8812" },
+        { methodName: "Utang", methodType: "credit", amount: 21900 },
+      ],
+      change: 0,
+    });
+
+    expect(html).toContain('data-paper="thermal58"');
+    expect(html).toContain("size: 58mm 297mm");
+    expect(html).toContain("width: 54mm");
+    expect(html).toContain("SALINAN — BUKAN NOTA ASLI");
+    expect(html).toContain("NPWP: 01.234.567.8-901.000");
+    expect(html).toContain("Ref:");
+    expect(html).toContain("REF-8812");
+    expect(html).toContain("Pembulatan:");
+    expect(html).toContain("Sisa utang:");
+    expect(html).toContain("BELUM LUNAS");
   });
 });

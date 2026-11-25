@@ -6,7 +6,9 @@ import { formatDate, formatDateTime } from "@/lib/format";
 import {
   OFFLINE_REVIEW_KIND_LABELS,
   OFFLINE_SYNC_STATUS_LABELS,
-  listOfflineReviewQueue,
+  getOfflineReviewQueueSummary,
+  listOfflineReviewQueuePage,
+  parseOfflineReviewCursor,
 } from "@/server/pos-offline";
 import { PageHeader } from "@/components/blocks/page-header";
 import { DataList } from "@/components/blocks/data-list";
@@ -18,24 +20,36 @@ import { OfflineResolveButtons } from "@/components/pos/offline-review-panel";
 export const metadata = { title: "Peninjauan Offline POS" };
 export const dynamic = "force-dynamic";
 
-export default async function PosOfflinePage() {
+export default async function PosOfflinePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ cursor?: string; direction?: string }>;
+}) {
   const ctx = await requirePermissionPage("pos.sell");
-  const queue = await withCompanyReadOnly(ctx.company.id, (tx) =>
-    listOfflineReviewQueue(tx, ctx.company.id),
-  );
+  const params = await searchParams;
+  const cursor = parseOfflineReviewCursor(params.cursor);
+  const direction = params.direction === "newer" ? "newer" : "older";
   // FIX-POS Tahap 2 (POS3-06): mengelola peninjauan (posting
   // penyelesaian, tandai selesai, buang) adalah tindakan supervisor —
-  // kasir biasa hanya melihat status antrean.
+  // kasir biasa hanya melihat status antrean. Muatan lengkap hanya
+  // dikirim ke pemegang pos.void; UI yang menyembunyikan detail bukan
+  // batas keamanan.
   const canManage = can(ctx, "pos.void");
-  const conflicts = queue.filter((row) => row.payload.status === "conflict");
-  const failed = queue.filter((row) => row.payload.status === "failed");
+  const { queue, summary } = await withCompanyReadOnly(ctx.company.id, async (tx) => ({
+    queue: await listOfflineReviewQueuePage(tx, ctx.company.id, {
+      includePayload: canManage,
+      cursor,
+      direction,
+    }),
+    summary: await getOfflineReviewQueueSummary(tx, ctx.company.id),
+  }));
 
   return (
     <div>
       <PageHeader
         eyebrow="POS"
         title="Peninjauan Sinkronisasi Offline"
-        description="Penjualan offline yang tidak dapat disinkronkan otomatis — konflik stok tidak dipaksakan masuk. Supervisor dapat memposting ulang, menyelesaikan pada harga struk offline / ke sesi asal yang tertutup, menandai selesai, atau membuang dengan catatan; semua tindakan teraudit."
+        description="Penjualan offline yang tidak dapat disinkronkan otomatis — konflik stok tidak dipaksakan masuk. Supervisor dapat memposting ulang, menyelesaikan pada harga struk offline / ke sesi asal yang tertutup, menandai selesai, atau membuang dengan catatan; semua tindakan teraudit. Antrean lokal terminal web hanya mencakup produk yang sudah dimuat; katalog penuh offline ada di aplikasi desktop POS."
       />
 
       {/* A-25 U8: daftar memakai DataList bersama (KPI di slot
@@ -48,26 +62,26 @@ export default async function PosOfflinePage() {
             items={[
               {
                 label: "Menunggu peninjauan",
-                value: String(queue.length),
+                value: String(summary.total),
                 hint: "Antrean belum tuntas",
-                tone: queue.length > 0 ? "amber" : "default",
+                tone: summary.total > 0 ? "amber" : "default",
               },
               {
                 label: "Konflik stok",
-                value: String(conflicts.length),
+                value: String(summary.conflicts),
                 hint: "Stok habis saat sinkron",
-                tone: conflicts.length > 0 ? "red" : "default",
+                tone: summary.conflicts > 0 ? "red" : "default",
               },
               {
                 label: "Gagal lain",
-                value: String(failed.length),
+                value: String(summary.failed),
                 hint: "Dapat dicoba lagi dari terminal",
-                tone: failed.length > 0 ? "amber" : "default",
+                tone: summary.failed > 0 ? "amber" : "default",
               },
             ]}
           />
         }
-        isEmpty={queue.length === 0}
+        isEmpty={summary.total === 0}
         empty={
           <EmptyState title="Tidak ada antrean bermasalah" description="Semua penjualan offline berhasil disinkronkan atau belum ada penjualan offline." />
         }
@@ -88,7 +102,7 @@ export default async function PosOfflinePage() {
               </tr>
             </thead>
             <tbody>
-              {queue.map((row) => (
+              {queue.items.map((row) => (
                 <tr key={row.id}>
                   <td className="text-[11px] text-muted-foreground">{formatDateTime(row.createdAt)}</td>
                   <td className="num max-w-[160px] truncate text-[11px] text-muted-foreground">{row.payload.clientKey}</td>
@@ -148,6 +162,26 @@ export default async function PosOfflinePage() {
             </tbody>
           </table>
         </div>
+        {(queue.newerCursor || queue.olderCursor) ? (
+          <nav aria-label="Halaman peninjauan offline" className="mt-4 flex justify-between gap-3">
+            {queue.newerCursor ? (
+              <a
+                className="rounded border border-border px-3 py-2 text-sm hover:bg-muted"
+                href={`?direction=newer&cursor=${encodeURIComponent(queue.newerCursor)}`}
+              >
+                Lebih baru
+              </a>
+            ) : <span />}
+            {queue.olderCursor ? (
+              <a
+                className="rounded border border-border px-3 py-2 text-sm hover:bg-muted"
+                href={`?direction=older&cursor=${encodeURIComponent(queue.olderCursor)}`}
+              >
+                Lebih lama
+              </a>
+            ) : null}
+          </nav>
+        ) : null}
       </DataList>
     </div>
   );

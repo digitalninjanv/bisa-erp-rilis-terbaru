@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   PERMISSIONS,
   can,
+  missingPermissions,
   modulesFor,
   permissionsFor,
   sanitizeModules,
@@ -126,5 +127,20 @@ describe("sanitizers", () => {
   it("handles non-array input", () => {
     expect(sanitizePermissions(null)).toEqual([]);
     expect(sanitizeModules("pos")).toEqual([]);
+  });
+});
+
+describe("missingPermissions (least privilege role assignment)", () => {
+  it("returns permissions the actor does not hold", () => {
+    expect(
+      missingPermissions(
+        { role: "cashier", permissions: ["pos.sell", "pos.return", "pos.session"] },
+        ["pos.sell", "pos.discount", "payroll.salary"],
+      ),
+    ).toEqual(["pos.discount", "payroll.salary"]);
+  });
+
+  it("owner can manage every permission", () => {
+    expect(missingPermissions({ role: "owner", permissions: permissionsFor("owner") }, permissionsFor("manager"))).toEqual([]);
   });
 });

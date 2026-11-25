@@ -64,6 +64,14 @@ export async function listWarehouseOptions(tx: Tx, companyId: string) {
     .orderBy(asc(warehouses.name));
 }
 
+export async function listBranchOptions(tx: Tx, companyId: string) {
+  return tx
+    .select({ id: branches.id, name: branches.name })
+    .from(branches)
+    .where(eq(branches.companyId, companyId))
+    .orderBy(asc(branches.name));
+}
+
 export async function getSettingsPageData(tx: Tx, companyId: string) {
   const [settingsRow, methods, groups, warehouseRows, branchRows, mappings, accountRows] =
     await Promise.all([

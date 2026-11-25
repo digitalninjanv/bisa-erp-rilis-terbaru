@@ -4,7 +4,7 @@
 // A-26 Q8b: baca kredit retur pindah ke returns-credit.ts dan penyelesaian
 // refund ke returns-settlement.ts; berkas ini memuat pembuatan retur.
 
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
 import { cashMovements, saleLines, saleReturnLines, saleReturns, sales } from "@/db/schema";
 import { AppError } from "@/lib/errors";
@@ -18,11 +18,17 @@ import { getAccountMap, postJournal } from "@/server/accounting";
 import { claimIdempotencyKey, paymentRequestFingerprint, readIdempotencyResultRef, writeIdempotencyResultRef } from "@/server/idempotency";
 import { writeAudit } from "@/server/audit";
 import { applyStockMovement } from "@/server/inventory";
-import { restoreSerialsForSale, serialTrackFlags } from "@/server/serials";
+import {
+  normalizeSerialNumbers,
+  restoreSerialsForSale,
+  serialTrackFlags,
+} from "@/server/serials";
+import { restoreSaleSerials } from "@/server/serial-restore";
 import { nextDocumentNumber } from "@/server/sequences";
 import { batchTrackFlags, restoreSaleLineBatches, trackStockFlags } from "./sales-stock";
 import type { SaleRow } from "./sales-void";
 import { resolveReturnSettlement, type CreateSaleReturnInput, type RefundSettlement } from "./returns-settlement";
+import { attributeReturnedByLine } from "./return-history";
 
 export async function createSaleReturn(tx: Tx, input: CreateSaleReturnInput) {
   if (!input.reason.trim()) throw new AppError("VALIDATION", "Alasan retur wajib diisi.");
@@ -81,7 +87,13 @@ export async function createSaleReturn(tx: Tx, input: CreateSaleReturnInput) {
       : refundDue;
   await tx
     .update(saleReturns)
-    .set({ total: toDb(documentTotal), costTotal: toDb(costPortion) })
+    .set({
+      total: toDb(documentTotal),
+      // Nilai barang yang mengurangi penjualan selalu refundDue, bukan
+      // nilai voucher kredit (excess) untuk store_credit/exchange.
+      goodsTotal: toDb(refundDue),
+      costTotal: toDb(costPortion),
+    })
     .where(eq(saleReturns.id, ret.id));
 
   const returnJournal = await postSaleReturnJournal(
@@ -184,71 +196,26 @@ type ComputedReturnLine = {
   lineTotal: Decimal;
   cost: Decimal;
   tracked: boolean;
+  serialNumbers: string[];
 };
 
 
 type ReturnOrigin = {
   sale: SaleRow;
   originalLines: SaleLineRow[];
-  /** S4: baris asal per id baris (retur kini berbasis baris, bukan produk). */
   originalById: Map<string, SaleLineRow>;
-  /** S4: baris-baris asal per produk, urut nomor baris (alokasi FIFO warisan). */
   originalByProduct: Map<string, SaleLineRow[]>;
   returnProductIds: string[];
   trackStock: Map<string, boolean>;
   trackBatch: Map<string, boolean>;
+  trackSerial: Map<string, boolean>;
   map: Awaited<ReturnType<typeof getAccountMap>>;
-  /** S4: qty dasar yang sudah diretur, per BARIS asal. */
   returnedByLine: Map<string, Decimal>;
+  priorReturnTotal: Decimal;
 };
 
-/**
- * S4: atribusi baris retur tersimpan ke baris penjualan asal.
- * Baris retur S4 membawa sale_line_id-nya; baris warisan (null)
- * diatribusikan ke baris asal produknya bila produk itu hanya punya
- * SATU baris pada penjualan ini — selalu benar untuk penjualan
- * pra-S4 (quote lama menolak produk ganda) — sehingga sisa retur
- * penjualan lama tetap terhitung persis.
- */
-function attributeReturnedByLine(
-  originalLines: SaleLineRow[],
-  rows: { saleLineId: string | null; productId: string; qty: string }[],
-): Map<string, Decimal> {
-  const byProduct = new Map<string, SaleLineRow[]>();
-  for (const line of originalLines) {
-    const list = byProduct.get(line.productId) ?? [];
-    list.push(line);
-    byProduct.set(line.productId, list);
-  }
-  const result = new Map<string, Decimal>();
-  for (const row of rows) {
-    let targetId = row.saleLineId;
-    if (!targetId) {
-      const candidates = byProduct.get(row.productId) ?? [];
-      if (candidates.length === 1) targetId = candidates[0].id;
-    }
-    if (!targetId) continue;
-    result.set(targetId, (result.get(targetId) ?? d(0)).plus(d(row.qty)));
-  }
-  return result;
-}
-
-/**
- * FIX-ARS Tahap 4: fase dari createSaleReturn — badan dipindah apa adanya;
- * muat konteks asal — penjualan dikunci lebih dulu (POS-RET-01),
- * baris asal, flag pelacakan, peta akun, dan snapshot qty yang
- * sudah diretur dibaca di bawah kunci itu.
- */
-
-
 async function loadReturnOrigin(tx: Tx, input: CreateSaleReturnInput): Promise<ReturnOrigin> {
-  // POS-RET-01 (+ R-5 review Tahap 2): lock the origin sale row FIRST. The
-  // already-returned snapshot below and the batch restore plan are only
-  // trustworthy while this lock is held — without it two concurrent returns
-  // of the same sale can both validate against the same remaining qty and
-  // over-return. (The SALE_RETURN document sequence accidentally serialized
-  // same-year returns; backdated returns in another fiscal year raced for
-  // real.)
+  // POS-RET-01: lock the origin sale row FIRST before snapshot & batch checks.
   const [sale] = await tx
     .select()
     .from(sales)
@@ -273,6 +240,7 @@ async function loadReturnOrigin(tx: Tx, input: CreateSaleReturnInput): Promise<R
   const returnProductIds = [...new Set(input.lines.map((line) => line.productId))];
   const trackStock = await trackStockFlags(tx, input.companyId, returnProductIds, sale.id);
   const trackBatch = await batchTrackFlags(tx, input.companyId, returnProductIds, sale.id);
+  const trackSerial = await serialTrackFlags(tx, input.companyId, returnProductIds, sale.id);
 
   const map = await getAccountMap(tx, input.companyId);
   const alreadyReturned = await tx
@@ -284,10 +252,15 @@ async function loadReturnOrigin(tx: Tx, input: CreateSaleReturnInput): Promise<R
     .from(saleReturnLines)
     .innerJoin(saleReturns, eq(saleReturnLines.returnId, saleReturns.id))
     .where(and(eq(saleReturns.companyId, input.companyId), eq(saleReturns.saleId, sale.id)));
+  const [priorTotalRow] = await tx
+    .select({ total: sql<string>`coalesce(sum(${saleReturns.total}), 0)` })
+    .from(saleReturns)
+    .where(and(eq(saleReturns.companyId, input.companyId), eq(saleReturns.saleId, sale.id)));
+  const priorReturnTotal = d(priorTotalRow?.total ?? 0);
   const returnedByLine = attributeReturnedByLine(originalLines, alreadyReturned);
   return {
     sale, originalLines, originalById, originalByProduct, returnProductIds,
-    trackStock, trackBatch, map, returnedByLine,
+    trackStock, trackBatch, trackSerial, map, returnedByLine, priorReturnTotal,
   };
 }
 
@@ -315,7 +288,16 @@ type ReturnAmounts = {
 
 
 function computeReturnLines(input: CreateSaleReturnInput, origin: ReturnOrigin): ReturnAmounts {
-  const { sale, originalLines, originalById, originalByProduct, returnedByLine, trackStock } = origin;
+    const {
+    sale,
+    originalLines,
+    originalById,
+    originalByProduct,
+    returnedByLine,
+    priorReturnTotal,
+    trackStock,
+    trackSerial,
+  } = origin;
   // POS1-01: agregatkan baris permintaan SEBELUM validasi — penjaga
   // sisa menilai tiap baris terhadap snapshot yang dibaca sekali;
   // dua baris untuk sasaran yang sama dalam satu permintaan tidak
@@ -329,15 +311,25 @@ function computeReturnLines(input: CreateSaleReturnInput, origin: ReturnOrigin):
   //   dikonversi isi_snapshot baris itu (master tidak dibaca);
   // - warisan per produk: qty satuan dasar, diagregat per produk
   //   (POS1-01) lalu dialokasikan FIFO ke baris-baris asal produk.
-  type Slice = { original: SaleLineRow; qtyInput: Decimal; qty: Decimal };
+  type Slice = {
+    original: SaleLineRow;
+    qtyInput: Decimal;
+    qty: Decimal;
+    serialNumbers: string[];
+  };
   const slices: Slice[] = [];
   const allocatedByLine = new Map<string, Decimal>();
   const remainingOf = (original: SaleLineRow) =>
     d(original.qty)
       .minus(returnedByLine.get(original.id) ?? d(0))
       .minus(allocatedByLine.get(original.id) ?? d(0));
-  const pushSlice = (original: SaleLineRow, qtyInput: Decimal, qtyBase: Decimal) => {
-    slices.push({ original, qtyInput, qty: qtyBase });
+  const pushSlice = (
+    original: SaleLineRow,
+    qtyInput: Decimal,
+    qtyBase: Decimal,
+    serialNumbers: string[] = [],
+  ) => {
+    slices.push({ original, qtyInput, qty: qtyBase, serialNumbers });
     allocatedByLine.set(original.id, (allocatedByLine.get(original.id) ?? d(0)).plus(qtyBase));
   };
 
@@ -363,7 +355,39 @@ function computeReturnLines(input: CreateSaleReturnInput, origin: ReturnOrigin):
         `Jumlah retur ${original.productName} melebihi sisa yang bisa diretur (${remainingShown}).`,
       );
     }
-    pushSlice(original, qtyInput, qtyBase);
+    const requestedSerials = normalizeSerialNumbers(line.serialNumbers ?? []);
+    if (trackSerial.get(original.productId)) {
+      if (requestedSerials.length > 0) {
+        if (!qtyBase.isInteger() || requestedSerials.length !== qtyBase.toNumber()) {
+          throw new AppError(
+            "VALIDATION",
+            `Pilih tepat ${qtyBase.toString()} nomor seri untuk retur ${original.productName}.`,
+          );
+        }
+        if (new Set(requestedSerials).size !== requestedSerials.length) {
+          throw new AppError(
+            "VALIDATION",
+            `Nomor seri retur ${original.productName} dipilih lebih dari sekali.`,
+          );
+        }
+        const originalSerials = normalizeSerialNumbers(original.serialNumbers ?? []);
+        if (originalSerials.length > 0) {
+          const unknown = requestedSerials.find((serial) => !originalSerials.includes(serial));
+          if (unknown) {
+            throw new AppError(
+              "VALIDATION",
+              `Nomor seri ${unknown} bukan bagian dari penjualan ${original.productName} ini.`,
+            );
+          }
+        }
+      } else if ((original.serialNumbers ?? []).length > 0) {
+        throw new AppError(
+          "VALIDATION",
+          `Pilih nomor seri yang dikembalikan untuk ${original.productName}.`,
+        );
+      }
+    }
+    pushSlice(original, qtyInput, qtyBase, requestedSerials);
   }
 
   const legacyByProduct = new Map<string, Decimal>();
@@ -374,6 +398,12 @@ function computeReturnLines(input: CreateSaleReturnInput, origin: ReturnOrigin):
   for (const [productId, wanted] of legacyByProduct) {
     const candidates = originalByProduct.get(productId) ?? [];
     if (candidates.length === 0) throw new AppError("VALIDATION", "Produk tidak ada pada transaksi asal.");
+    if (trackSerial.get(productId) && candidates.some((c) => (c.serialNumbers ?? []).length > 0)) {
+      throw new AppError(
+        "VALIDATION",
+        `Pilih baris penjualan dan nomor seri yang dikembalikan untuk ${candidates[0].productName}.`,
+      );
+    }
     if (wanted.lte(0)) throw new AppError("VALIDATION", "Jumlah retur harus lebih dari nol.");
     const capacityTotal = candidates.reduce(
       (acc, original) => acc.plus(d(original.qty).minus(returnedByLine.get(original.id) ?? d(0))),
@@ -409,8 +439,12 @@ function computeReturnLines(input: CreateSaleReturnInput, origin: ReturnOrigin):
       if (existing) {
         existing.qty = existing.qty.plus(slice.qty);
         existing.qtyInput = existing.qtyInput.plus(slice.qtyInput);
+        existing.serialNumbers = [
+          ...existing.serialNumbers,
+          ...slice.serialNumbers,
+        ];
       } else {
-        byLine.set(slice.original.id, { ...slice });
+        byLine.set(slice.original.id, { ...slice, serialNumbers: [...slice.serialNumbers] });
       }
     }
     aggregatedSlices.push(...byLine.values());
@@ -455,6 +489,7 @@ function computeReturnLines(input: CreateSaleReturnInput, origin: ReturnOrigin):
       lineTotal,
       cost,
       tracked,
+      serialNumbers: slice.serialNumbers,
     });
   }
 
@@ -469,10 +504,16 @@ function computeReturnLines(input: CreateSaleReturnInput, origin: ReturnOrigin):
   // basis yang sama dengan porsi baris lain), sehingga retur penuh
   // mereversi seluruh penyesuaian.
   const preRoundingTotal = originalLines.reduce((acc, line) => acc.plus(d(line.lineTotal)), d(0));
-  const roundingPortion = preRoundingTotal.gt(0)
+  let roundingPortion = preRoundingTotal.gt(0)
     ? d(sale.roundingAdjustment).mul(returnTotal.div(preRoundingTotal))
     : d(0);
-  const refundDue = returnTotal.plus(roundingPortion);
+  let refundDue = returnTotal.plus(roundingPortion);
+  const allRemainingReturned = originalLines.every((original) => remainingOf(original).lte(0));
+  const maxRefundable = D.max(d(sale.total).minus(priorReturnTotal), d(0));
+  if (allRemainingReturned && refundDue.gt(maxRefundable) && refundDue.minus(maxRefundable).lte("0.05")) {
+    refundDue = maxRefundable;
+    roundingPortion = refundDue.minus(returnTotal);
+  }
 
   // FIX-P1 (AK2-01/AK4-03): penyelesaian atas penjualan BERPIUTANG
   // selalu memotong piutang lebih dulu sampai sisa piutang penjualan
@@ -537,6 +578,7 @@ async function insertSaleReturnDocument(
     packagingId: line.original.packagingId,
     qtyInput: toDb(line.qtyInput),
     isiSnapshot: line.original.isiSnapshot,
+    serialNumbers: line.serialNumbers,
   }));
   await tx.insert(saleReturnLines).values(lineValues);
   return ret;
@@ -566,18 +608,27 @@ async function restoreReturnedStock(
   // gerakan penjualan per produk) — irisan-irisan satu produk dari
   // beberapa baris asal digabung lebih dulu; unitCost per satuan
   // dasar satu penjualan satu produk selalu sama (satu quote).
-  const restoreLines: { productId: string; qty: Decimal; original: SaleLineRow; tracked: boolean }[] = [];
+  const restoreLines: {
+    productId: string;
+    qty: Decimal;
+    original: SaleLineRow;
+    tracked: boolean;
+    serialNumbers: string[];
+  }[] = [];
   {
     const byProduct = new Map<string, (typeof restoreLines)[number]>();
     for (const line of computedLines) {
       const existing = byProduct.get(line.productId);
-      if (existing) existing.qty = existing.qty.plus(line.qty);
-      else {
+      if (existing) {
+        existing.qty = existing.qty.plus(line.qty);
+        existing.serialNumbers = [...existing.serialNumbers, ...line.serialNumbers];
+      } else {
         const entry = {
           productId: line.productId,
           qty: line.qty,
           original: line.original,
           tracked: line.tracked,
+          serialNumbers: [...line.serialNumbers],
         };
         byProduct.set(line.productId, entry);
         restoreLines.push(entry);
@@ -588,19 +639,35 @@ async function restoreReturnedStock(
   for (const line of restoreLines) {
     if (!line.tracked) continue;
     if (trackSerialReturn.get(line.productId)) {
-      // SIM-2 S7B-2 Batch 5: seri yang diretur (sebanyak qty retur,
-      // dari seri yang keluar oleh penjualan asal) kembali in_stock.
-      await restoreSerialsForSale(tx, {
-        companyId: input.companyId,
-        userId: input.userId,
-        saleId: sale.id,
-        productId: line.productId,
-        warehouseId: sale.warehouseId,
-        qty: line.qty,
-        referenceType: "sale_return",
-        referenceId: ret.id,
-        referenceNumber: ret.number,
-      });
+      // Seri eksplisit dari kasir dipulihkan persis. Penjualan lama yang
+      // belum menyimpan snapshot seri memakai fallback FIFO lama; penjualan
+      // baru selalu membawa pilihan seri sehingga unit yang salah tidak
+      // pernah ditandai kembali.
+      if (line.serialNumbers.length > 0) {
+        await restoreSaleSerials(tx, {
+          companyId: input.companyId,
+          userId: input.userId,
+          saleId: sale.id,
+          productId: line.productId,
+          warehouseId: sale.warehouseId,
+          serialNumbers: line.serialNumbers,
+          referenceType: "sale_return",
+          referenceId: ret.id,
+          referenceNumber: ret.number,
+        });
+      } else {
+        await restoreSerialsForSale(tx, {
+          companyId: input.companyId,
+          userId: input.userId,
+          saleId: sale.id,
+          productId: line.productId,
+          warehouseId: sale.warehouseId,
+          qty: line.qty,
+          referenceType: "sale_return",
+          referenceId: ret.id,
+          referenceNumber: ret.number,
+        });
+      }
     }
     if (trackBatch.get(line.productId)) {
       await restoreSaleLineBatches(tx, {
@@ -716,70 +783,4 @@ async function postSaleReturnJournal(
     lines: activeLines,
   });
   return returnJournal;
-}
-
-// ---------------------------------------------------------------------------
-// Fungsi baca halaman (FIX-ARS Tahap 6, ARS1-01): kueri riwayat retur &
-// akumulasi qty ter-retur yang dulu inline di halaman retur penjualan
-// kini tinggal di modul retur; badan kueri dipindah apa adanya.
-// ---------------------------------------------------------------------------
-
-export async function listRecentSaleReturns(tx: Tx, companyId: string, limit = 20) {
-  return tx
-    .select({
-      id: saleReturns.id,
-      number: saleReturns.number,
-      date: saleReturns.date,
-      type: saleReturns.type,
-      refundMethod: saleReturns.refundMethod,
-      total: saleReturns.total,
-      creditUsed: saleReturns.creditUsed,
-      reason: saleReturns.reason,
-      saleNumber: sql<string>`(select number from sales s where s.id = ${saleReturns.saleId})`,
-    })
-    .from(saleReturns)
-    .where(eq(saleReturns.companyId, companyId))
-    .orderBy(desc(saleReturns.createdAt))
-    .limit(limit);
-}
-
-export async function getReturnedQtyByProduct(tx: Tx, companyId: string, saleId: string) {
-  const rows = await tx.execute(sql`
-    select srl.product_id, coalesce(sum(srl.qty), 0) as qty
-    from sale_return_lines srl
-    join sale_returns sr on sr.id = srl.return_id
-    where sr.company_id = ${companyId} and sr.sale_id = ${saleId}
-    group by srl.product_id
-  `);
-  return new Map(
-    (rows as unknown as { product_id: string; qty: string }[]).map((row) => [
-      row.product_id,
-      Number(row.qty),
-    ]),
-  );
-}
-
-/**
- * S4: qty dasar yang sudah diretur per BARIS penjualan asal (peta
- * saleLineId → qty dasar) — halaman retur menilai sisa per baris
- * karena satu produk kini dapat mempunyai dua baris asal. Atribusi
- * baris warisan sama dengan domain retur (attributeReturnedByLine).
- */
-export async function getReturnedQtyBySaleLine(tx: Tx, companyId: string, saleId: string) {
-  const originalLines = await tx
-    .select()
-    .from(saleLines)
-    .where(eq(saleLines.saleId, saleId))
-    .orderBy(asc(saleLines.lineNo));
-  const rows = await tx
-    .select({
-      saleLineId: saleReturnLines.saleLineId,
-      productId: saleReturnLines.productId,
-      qty: saleReturnLines.qty,
-    })
-    .from(saleReturnLines)
-    .innerJoin(saleReturns, eq(saleReturnLines.returnId, saleReturns.id))
-    .where(and(eq(saleReturns.companyId, companyId), eq(saleReturns.saleId, saleId)));
-  const attributed = attributeReturnedByLine(originalLines, rows);
-  return new Map([...attributed.entries()].map(([id, qty]) => [id, qty.toNumber()]));
 }

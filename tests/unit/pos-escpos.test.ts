@@ -163,4 +163,18 @@ describe("ESC/POS Encoder & Thermal Receipt Engine", () => {
     expect(text).toContain("KAS FISIK LACI");
     expect(text).toContain("PAS");
   });
+
+  it("menetralkan karakter kontrol dari teks pengguna (tidak bisa menyuntik perintah)", () => {
+    const bytes = new EscPosEncoder("58mm")
+      .text("Produk A\u001b@\u001dV\u0000Produk B")
+      .encode();
+    // Hanya ESC @ dari init yang boleh tersisa sebagai kontrol.
+    const controls = bytes.filter((byte) => byte < 0x20 && byte !== 0x0a);
+    expect(Array.from(controls)).toEqual([0x1b]); // hanya ESC dari init
+    const text = Buffer.from(bytes).toString("latin1");
+    expect(text).toContain("Produk A");
+    expect(text).toContain("Produk B");
+    // GS V (potong kertas) dari input tidak boleh muncul.
+    expect(text).not.toContain("\u001dV");
+  });
 });

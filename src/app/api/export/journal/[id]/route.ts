@@ -1,7 +1,9 @@
+import { z } from "zod";
 import { withApiError } from "@/lib/api-error";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { getJournalDetail } from "@/server/reports";
-import { requirePermission } from "@/lib/session";
+import { requirePermissionInModule } from "@/lib/session";
+import { AppError } from "@/lib/errors";
 import { csvResponse, moneyCsv, toCsv } from "@/lib/csv";
 import { xlsxResponse } from "@/lib/xlsx";
 
@@ -10,8 +12,11 @@ export const dynamic = "force-dynamic";
 
 async function GETHandler(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
+  if (!z.string().uuid().safeParse(id).success) {
+    throw new AppError("VALIDATION", "ID jurnal tidak valid.");
+  }
   const format = new URL(request.url).searchParams.get("format") === "xlsx" ? "xlsx" : "csv";
-  const ctx = await requirePermission("accounting.view");
+  const ctx = await requirePermissionInModule("accounting.view", "akuntansi");
   const data = await withCompanyReadOnly(ctx.company.id, (tx) =>
     getJournalDetail(tx, ctx.company.id, id),
   );

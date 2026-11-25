@@ -49,6 +49,7 @@ export type ProductInput = {
   trackStock: boolean;
   trackBatch: boolean;
   trackSerial: boolean;
+  isTaxExempt?: boolean;
   isActive: boolean;
   notes: string | null;
   attributes?: Record<string, string> | null;
@@ -96,6 +97,7 @@ export function ProductForm({
     trackStock: product?.trackStock ?? true,
     trackBatch: product?.trackBatch ?? false,
     trackSerial: product?.trackSerial ?? false,
+    isTaxExempt: product?.isTaxExempt ?? false,
     isActive: product?.isActive ?? true,
     notes: product?.notes ?? "",
   });
@@ -108,6 +110,7 @@ export function ProductForm({
     form.supplierId !== (product?.supplierId ?? "") ||
     form.costPrice !== (product?.costPrice ?? "0") ||
     form.salePrice !== (product?.salePrice ?? "0") ||
+    form.isTaxExempt !== (product?.isTaxExempt ?? false) ||
     form.notes !== (product?.notes ?? "");
   const [customValues, setCustomValues] = useState<Record<string, string>>(
     () => ({ ...(product?.attributes ?? {}) }),
@@ -188,6 +191,7 @@ export function ProductForm({
       trackStock: form.trackStock,
       trackBatch: form.trackBatch,
       trackSerial: form.trackSerial,
+      isTaxExempt: form.isTaxExempt,
       isActive: form.isActive,
       notes: form.notes || undefined,
       attributes: customValues,
@@ -420,6 +424,20 @@ export function ProductForm({
                   Lacak nomor seri
                   <span className="block text-[10px] font-normal text-muted-foreground">
                     Penerimaan wajib daftar nomor seri unik per unit; penjualan memilih seri yang tersedia dan seri yang sama tidak bisa keluar dua kali. Stok lama tanpa seri tidak bisa dijual per seri sampai diterima ulang dengan seri.
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2 text-[12px]">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={form.isTaxExempt}
+                  onChange={(event) => setForm({ ...form, isTaxExempt: event.target.checked })}
+                />
+                <span>
+                  Bebas PPN (Non-BKP)
+                  <span className="block text-[10px] font-normal text-muted-foreground">
+                    Tarif PPN otomatis 0% di kasir untuk produk sembako/bebas pajak meskipun PPN perusahaan aktif.
                   </span>
                 </span>
               </label>

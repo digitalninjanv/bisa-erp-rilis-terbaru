@@ -449,6 +449,53 @@ export function toProductExportRow(
   return cells;
 }
 
+/**
+ * POS-SCAN-02: resolve an exact code through the unique indexes
+ * (products.barcode, product_packagings.barcode, products.sku) instead
+ * of one OR predicate. The OR forced a sequential scan of all products
+ * on every barcode scan — S4 measured 185 ms p50 at 100k products
+ * (docs/sim2/S4-BENCHMARK.md). Priority stays the same as the old
+ * ORDER BY: product barcode → packaging barcode → SKU.
+ */
+async function resolveExactCodeProductId(
+  tx: Tx,
+  input: { companyId: string; q: string; categoryId?: string },
+): Promise<string | null> {
+  const category = input.categoryId
+    ? sql`and p.category_id = ${input.categoryId}`
+    : sql``;
+  const rows = await tx.execute(sql`
+    select coalesce(
+      (select p.id
+         from products p
+        where p.company_id = ${input.companyId}
+          and p.barcode = ${input.q}
+          and p.is_active
+          ${category}
+        limit 1),
+      (select pp.product_id
+         from product_packagings pp
+         join products p
+           on p.company_id = pp.company_id
+          and p.id = pp.product_id
+        where pp.company_id = ${input.companyId}
+          and pp.barcode = ${input.q}
+          and pp.is_active
+          and p.is_active
+          ${category}
+        limit 1),
+      (select p.id
+         from products p
+        where p.company_id = ${input.companyId}
+          and p.sku = ${input.q}
+          and p.is_active
+          ${category}
+        limit 1)
+    ) as id
+  `);
+  return (rows as unknown as Array<{ id: string | null }>)[0]?.id ?? null;
+}
+
 export async function searchProducts(
   tx: Tx,
   // POS-1: offset mendukung pagination kisi produk terminal (halaman
@@ -498,10 +545,22 @@ export async function searchProducts(
     // untuk memblokir penambahan produk berstok habis.
     trackStock: products.trackStock,
     trackSerial: products.trackSerial,
+    isTaxExempt: products.isTaxExempt,
     stock: stockSql,
   };
 
-  const rows = !q
+  // POS-SCAN-02: exact-code scans use the unique indexes; the generic
+  // OR/ILIKE branch below remains for typed text search.
+  const exactProductId = input.exactCode
+    ? await resolveExactCodeProductId(tx, {
+        companyId: input.companyId,
+        q,
+        categoryId: input.categoryId,
+      })
+    : null;
+  if (input.exactCode && !exactProductId) return [];
+
+  const rows = !q || input.exactCode
     ? await tx
         .select(projection)
         .from(products)
@@ -511,6 +570,7 @@ export async function searchProducts(
           and(
             eq(products.companyId, input.companyId),
             eq(products.isActive, true),
+            input.exactCode ? eq(products.id, exactProductId ?? "") : undefined,
             input.categoryId ? eq(products.categoryId, input.categoryId) : undefined,
             input.productIds ? inArray(products.id, input.productIds) : undefined,
           ),
@@ -616,6 +676,7 @@ export async function getProduct(tx: Tx, companyId: string, id: string) {
       trackStock: products.trackStock,
       trackBatch: products.trackBatch,
       trackSerial: products.trackSerial,
+      isTaxExempt: products.isTaxExempt,
       attributes: products.attributes,
       isActive: products.isActive,
       notes: products.notes,
@@ -632,4 +693,49 @@ export async function listProductOptions(tx: Tx, companyId: string) {
     .from(products)
     .where(eq(products.companyId, companyId))
     .orderBy(asc(products.name));
+}
+
+export async function listProductsForPriceLabels(
+  tx: Tx,
+  companyId: string,
+  requestedIds: string[],
+) {
+  const rows = await tx
+    .select({
+      id: products.id,
+      sku: products.sku,
+      barcode: products.barcode,
+      name: products.name,
+      salePrice: products.salePrice,
+      isTaxExempt: products.isTaxExempt,
+      unitCode: units.code,
+    })
+    .from(products)
+    .leftJoin(units, eq(products.unitId, units.id))
+    .where(
+      and(
+        eq(products.companyId, companyId),
+        eq(products.isActive, true),
+        requestedIds.length > 0 ? inArray(products.id, requestedIds) : undefined,
+      ),
+    )
+    .orderBy(asc(products.name))
+    .limit(requestedIds.length > 0 ? 100 : 24);
+
+  const packagings = await listPackagingsForProducts(
+    tx,
+    companyId,
+    rows.map((row) => row.id),
+  );
+  return rows.map((row) => ({
+    ...row,
+    packagings: (packagings.get(row.id) ?? [])
+      .filter((pack) => pack.isActive)
+      .map((pack) => ({
+        id: pack.id,
+        name: pack.name,
+        isi: pack.isi,
+        salePrice: pack.salePrice,
+      })),
+  }));
 }

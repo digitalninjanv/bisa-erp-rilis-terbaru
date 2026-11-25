@@ -4,6 +4,7 @@ import { withCompanyReadOnly } from "@/db/tenant";
 import { branches } from "@/db/schema";
 import { listCashSessionCashiers, listCashSessionHistory } from "@/server/reports";
 import { requirePermissionPage } from "@/lib/session";
+import { can } from "@/lib/permissions";
 import { PageHeader } from "@/components/blocks/page-header";
 import { DataList, dataListFilterClass } from "@/components/blocks/data-list";
 import { EmptyState } from "@/components/blocks/empty-state";
@@ -60,18 +61,18 @@ export default async function SessionHistoryPage({
       <DataList
         headerActions={
           <div className="flex flex-wrap items-center gap-2">
-            <Link href="/app/pos/sesi" className="text-[12px] font-medium text-foreground hover:underline">
+            <Link href="/app/pos/sesi" className="inline-flex min-h-11 items-center rounded px-2 text-[12px] font-medium text-foreground hover:bg-muted hover:underline lg:min-h-8 lg:px-0">
               Buka / tutup sesi
             </Link>
             <a
               href={`/api/export/cash-sessions?format=csv${status ? `&status=${status}` : ""}${userId ? `&kasir=${userId}` : ""}${branchId ? `&cabang=${branchId}` : ""}${from ? `&dari=${from}` : ""}${to ? `&sampai=${to}` : ""}`}
-              className="text-[12px] font-medium text-foreground hover:underline"
+              className="inline-flex min-h-11 items-center rounded px-2 text-[12px] font-medium text-foreground hover:bg-muted hover:underline lg:min-h-8 lg:px-0"
             >
               Ekspor CSV
             </a>
             <a
               href={`/api/export/cash-sessions?format=xlsx${status ? `&status=${status}` : ""}${userId ? `&kasir=${userId}` : ""}${branchId ? `&cabang=${branchId}` : ""}${from ? `&dari=${from}` : ""}${to ? `&sampai=${to}` : ""}`}
-              className="text-[12px] font-medium text-foreground hover:underline"
+              className="inline-flex min-h-11 items-center rounded px-2 text-[12px] font-medium text-foreground hover:bg-muted hover:underline lg:min-h-8 lg:px-0"
             >
               Ekspor XLSX
             </a>
@@ -121,7 +122,7 @@ export default async function SessionHistoryPage({
             />
             <button
               type="submit"
-              className="h-8 rounded-md border border-border bg-card px-2.5 text-[12px] font-medium transition-colors hover:bg-muted"
+              className="h-11 rounded-md border border-border bg-card px-3 text-[12px] font-medium transition-colors hover:bg-muted lg:h-8"
             >
               Terapkan
             </button>
@@ -145,7 +146,10 @@ export default async function SessionHistoryPage({
         }
         footerNote={`Terbaru dulu · ${pageSize} sesi per halaman.`}
       >
-        <SessionHistoryTable rows={data.history.rows} />
+        <SessionHistoryTable
+          rows={data.history.rows}
+          showOpenExpected={can(ctx, "pos.void")}
+        />
       </DataList>
     </div>
   );

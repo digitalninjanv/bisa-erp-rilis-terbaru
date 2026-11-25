@@ -252,7 +252,8 @@ export async function voidBankTransfer(
     .select()
     .from(bankTransfers)
     .where(and(eq(bankTransfers.companyId, input.companyId), eq(bankTransfers.id, input.transferId)))
-    .limit(1);
+    .limit(1)
+    .for("update");
   if (!transfer) throw new AppError("NOT_FOUND", "Transfer bank tidak ditemukan.");
   if (transfer.status === "void") throw new AppError("INVALID_STATE", "Transfer sudah dibatalkan.");
   if (transfer.status !== "posted") {

@@ -27,6 +27,10 @@ const eslintConfig = defineConfig([
     "pos-desktop/.next/**",
     "pos-desktop/out/**",
     "src-tauri/target/**",
+    // Generated Playwright transform caches / reports are not source.
+    "audit/checks/tmp/**",
+    "test-results/**",
+    "playwright-report/**",
   ]),
 ]);
 

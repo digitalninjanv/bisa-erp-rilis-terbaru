@@ -1,6 +1,7 @@
 import { withApiError } from "@/lib/api-error";
 import { withCompanyReadOnly } from "@/db/tenant";
-import { requirePermission } from "@/lib/session";
+import { requirePermissionInModule } from "@/lib/session";
+import { AppError } from "@/lib/errors";
 import { todayISO } from "@/lib/format";
 import { csvStreamResponse } from "@/lib/csv";
 import {
@@ -26,7 +27,7 @@ export const dynamic = "force-dynamic";
 // bawah tetap byte-identik dengan format warisan di atas.
 
 async function GETHandler(request: Request) {
-  const ctx = await requirePermission("accounting.view");
+  const ctx = await requirePermissionInModule("accounting.view", "akuntansi");
   const url = new URL(request.url);
   const type = url.searchParams.get("type") ?? "laba-rugi";
   // AK-P3-05(d): "catatan" is free text (reportNotes), not a table — never
@@ -40,6 +41,9 @@ async function GETHandler(request: Request) {
   const format = url.searchParams.get("format") === "xlsx" ? "xlsx" : "csv";
   const from = url.searchParams.get("from") || `${todayISO().slice(0, 7)}-01`;
   const to = url.searchParams.get("to") || todayISO();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+    throw new AppError("VALIDATION", "Format tanggal laporan harus YYYY-MM-DD.");
+  }
 
   // A-28 UI-3 (AKT-09): saklar akun nol yang sama dengan layar —
   // `nol=1` berarti pengguna menyalakan "Tampilkan akun bersaldo nol".

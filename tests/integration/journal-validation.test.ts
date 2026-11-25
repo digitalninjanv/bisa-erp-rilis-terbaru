@@ -252,32 +252,42 @@ describe("postJournal account validation (AK-P1-02)", () => {
     expect(result.reversal.number).toMatch(/^JE-/);
   });
 
-  it("keeps idempotent replay behaviour: an existing key returns the original entry without re-validating lines", async () => {
+  it("replays an identical payload and rejects the same key with different lines", async () => {
     const result = await rollbackTransaction(async (tx) => {
       const cash = await seededAccount(tx, "110107");
       const equity = await seededAccount(tx, "300001");
       const key = "uji-ak-p1-02:replay";
+      const lines = [
+        { accountId: cash!.id, debit: 1000 },
+        { accountId: equity!.id, credit: 1000 },
+      ];
 
       const first = await postJournal(tx, {
-        ...journalInput([
-          { accountId: cash!.id, debit: 1000 },
-          { accountId: equity!.id, credit: 1000 },
-        ]),
+        ...journalInput(lines),
         idempotencyKey: key,
       });
-      // Replay with the same key must return the stored entry as before,
-      // even if the replayed payload is different/invalid.
       const replay = await postJournal(tx, {
-        ...journalInput([
-          { accountId: cash!.id, debit: 2000 },
-          { accountId: MISSING_ACCOUNT_ID, credit: 2000 },
-        ]),
+        ...journalInput(lines),
         idempotencyKey: key,
       });
-      return { first, replay };
+      let conflict: unknown;
+      try {
+        await postJournal(tx, {
+          ...journalInput([
+            { accountId: cash!.id, debit: 2000 },
+            { accountId: MISSING_ACCOUNT_ID, credit: 2000 },
+          ]),
+          idempotencyKey: key,
+        });
+      } catch (error) {
+        conflict = error;
+      }
+      return { first, replay, conflict };
     });
 
     expect(result.replay.id).toBe(result.first.id);
     expect(result.replay.number).toBe(result.first.number);
+    expect(result.conflict).toBeInstanceOf(AppError);
+    if (result.conflict instanceof AppError) expect(result.conflict.code).toBe("CONFLICT");
   });
 });

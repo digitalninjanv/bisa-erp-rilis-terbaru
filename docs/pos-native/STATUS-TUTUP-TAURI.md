@@ -1,5 +1,7 @@
 # Status Tutup — POS Native Tauri v2 (Langkah 1–8 SELESAI, 2026-11-07)
 
+> **Retired (2026-11-23):** the Tauri path is no longer the supported desktop product. The official shell is `pos-electron/`. The Tauri source was deleted from the working tree; the stale release workflow and release script have been removed. This document is historical.
+
 Program dibangun berurutan dari RENCANA-TAURI.md (keputusan D1–D8) sesudah riset dua putaran. Gerbang penutup diverifikasi ulang Pemimpin dari reseed bersih: **suite 1898/1898 (201 berkas) exit 0, ekspor statis desktop exit 0**; per langkah: e2e 22/22, typecheck/lint/build 0, harness Rust akhir **59/59**, test API perangkat **15/15** lewat route sungguhan.
 
 ## Per langkah

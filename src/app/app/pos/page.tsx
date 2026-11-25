@@ -9,7 +9,7 @@ import {
   listWarehouses,
   searchProducts,
 } from "@/server/catalog";
-import { countHeldSales, getOpenCashSession } from "@/server/pos";
+import { countHeldSales, getOpenCashSession, listActivePosPromotions } from "@/server/pos";
 import { listReservations } from "@/server/reservations";
 import { requirePermissionPage } from "@/lib/session";
 import { can } from "@/lib/permissions";
@@ -22,51 +22,58 @@ export const dynamic = "force-dynamic";
 export default async function PosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ resume?: string; forbidden?: string }>;
+  searchParams: Promise<{ resume?: string; forbidden?: string; credit?: string }>;
 }) {
   const params = await searchParams;
   const ctx = await requirePermissionPage("pos.sell");
 
   const data = await withCompany(ctx.company.id, async (tx) => {
-    const settings = await getSettings(tx, ctx.company.id);
-    const warehouses = await listWarehouses(tx, ctx.company.id);
-    const categories = await listCategories(tx, ctx.company.id);
-    const methods = await listPaymentMethods(tx, ctx.company.id);
-    // POS-GRP-01: kasir hanya ditawari kelompok aktif — kelompok nonaktif
-    // ditolak quoteCart sehingga menampilkannya hanya membuat error.
-    const groups = await listCustomerGroups(tx, ctx.company.id, { activeOnly: true });
+    // Pembacaan referensi terminal tidak saling bergantung; jalankan
+    // paralel agar TTFB terminal tidak menjadi jumlah latensi sembilan
+    // query berurutan.
+    const [settings, warehouses, categories, methods, groups] = await Promise.all([
+      getSettings(tx, ctx.company.id),
+      listWarehouses(tx, ctx.company.id),
+      listCategories(tx, ctx.company.id),
+      listPaymentMethods(tx, ctx.company.id),
+      // POS-GRP-01: kasir hanya ditawari kelompok aktif — kelompok nonaktif
+      // ditolak quoteCart sehingga menampilkannya hanya membuat error.
+      listCustomerGroups(tx, ctx.company.id, { activeOnly: true }),
+    ]);
     const warehouseId =
       warehouses.find((w) => w.id === settings?.defaultWarehouseId)?.id ??
       warehouses.find((w) => w.isDefault)?.id ??
       warehouses[0]?.id ??
       "";
-    const initialProducts = await searchProducts(tx, {
-      companyId: ctx.company.id,
-      warehouseId,
-      q: "",
-      limit: 24,
-      // POS3-10: konsisten dengan searchProductsAction — harga pokok
-      // hanya dimuat untuk pemegang inventory.cost.
-      includeCost: can(ctx, "inventory.cost"),
-    });
-    const session = await getOpenCashSession(tx, ctx.company.id, ctx.user.id);
 
-    const heldCount = await countHeldSales(tx, ctx.company.id);
-
-    // FIX-GDG Tahap 4 (butir b): reservasi AKTIF untuk pemilih di
-    // terminal — hanya yang masih berlaku yang ditawarkan ke kasir.
-    const activeReservations = (await listReservations(tx, ctx.company.id, true))
-      .map((row) => ({
-        id: row.id,
-        number: row.number,
-        warehouseId: row.warehouseId,
-        productId: row.productId,
-        productName: row.productName,
-        productSku: row.productSku,
-        qty: row.qty,
-        expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
-        reason: row.reason,
-      }));
+    const [initialProducts, session, heldCount, reservationRows, promotions] = await Promise.all([
+      searchProducts(tx, {
+        companyId: ctx.company.id,
+        warehouseId,
+        q: "",
+        limit: 24,
+        // POS3-10: konsisten dengan searchProductsAction — harga pokok
+        // hanya dimuat untuk pemegang inventory.cost.
+        includeCost: can(ctx, "inventory.cost"),
+      }),
+      getOpenCashSession(tx, ctx.company.id, ctx.user.id),
+      countHeldSales(tx, ctx.company.id),
+      // FIX-GDG Tahap 4 (butir b): reservasi AKTIF untuk pemilih di
+      // terminal — hanya yang masih berlaku yang ditawarkan ke kasir.
+      listReservations(tx, ctx.company.id, true),
+      listActivePosPromotions(tx, ctx.company.id),
+    ]);
+    const activeReservations = reservationRows.map((row) => ({
+      id: row.id,
+      number: row.number,
+      warehouseId: row.warehouseId,
+      productId: row.productId,
+      productName: row.productName,
+      productSku: row.productSku,
+      qty: row.qty,
+      expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
+      reason: row.reason,
+    }));
 
     return {
       settings,
@@ -90,6 +97,7 @@ export default async function PosPage({
       session,
       heldCount,
       activeReservations,
+      promotions,
     };
   });
 
@@ -105,6 +113,7 @@ export default async function PosPage({
   const printSettings = toPrintSettings(data.settings, "nota");
   const receiptProfile = {
     companyName: data.settings?.legalName ?? ctx.company.name,
+    taxId: data.settings?.taxId ?? null,
     address: data.settings?.address ?? null,
     phone: data.settings?.phone ?? null,
     headerText: printSettings.headerText,
@@ -182,6 +191,7 @@ export default async function PosPage({
         stock: "stock" in p ? Number((p as { stock?: string }).stock ?? 0) : 0,
         trackStock: (p as { trackStock?: boolean }).trackStock ?? true,
         trackSerial: (p as { trackSerial?: boolean }).trackSerial ?? false,
+        isTaxExempt: (p as { isTaxExempt?: boolean }).isTaxExempt ?? false,
         unitCode: (p as { unitCode?: string | null }).unitCode ?? "PCS",
         // S4: kemasan aktif produk untuk pemilih satuan & quote lokal.
         packagings: (p.packagings ?? []).map((pack) => ({
@@ -199,7 +209,9 @@ export default async function PosPage({
       sessionId={data.session?.id ?? null}
       heldCount={data.heldCount}
       reservations={data.activeReservations}
+      promotions={data.promotions}
       resumeId={params.resume ?? null}
+      prefillCreditNumber={params.credit ?? null}
       posOfflineEnabled={data.settings?.posOfflineEnabled ?? false}
       offlineTaxRate={data.settings?.taxEnabled ? Number(data.settings?.taxRate ?? 0) : 0}
       offlineRoundingMode={data.settings?.roundingMode ?? "none"}

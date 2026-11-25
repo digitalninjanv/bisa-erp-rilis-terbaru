@@ -47,7 +47,7 @@ export const fieldWidths = {
   /** Tanggal tunggal (dd/mm/yyyy + ruang ketik longgar). */
   date: "w-[9.5rem]",
   /** Tiap sisi DateRangeField di bar filter. */
-  dateRange: "w-[7.5rem]",
+  dateRange: "w-36",
   /** Select filter baku di bar daftar. */
   filter: "w-44",
   /** Select filter berlabel panjang (mis. daftar akun). */

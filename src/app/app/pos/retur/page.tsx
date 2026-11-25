@@ -91,6 +91,8 @@ export default async function ReturnsPage({
                 qty: Number(line.qtyInput),
                 remaining: remainingBase / isi,
                 unitPrice: Number(line.unitPrice) * isi,
+                isi,
+                serialNumbers: line.serialNumbers ?? [],
                 // lineTotal sudah termasuk pajak; estimasi refund di form
                 // diturunkan dari nilai ini (POS-RCPT-01).
                 lineTotal: Number(line.lineTotal),
@@ -142,7 +144,7 @@ export default async function ReturnsPage({
             <EmptyState title="Transaksi tidak ditemukan" description="Ubah kata kunci atau selesaikan transaksi di kasir terlebih dahulu." />
           ) : (
             <>
-              <div className="hidden overflow-x-auto sm:block">
+              <div className="hidden overflow-x-auto lg:block">
                 <table className="data-table">
                   <thead>
                     <tr>
@@ -165,7 +167,7 @@ export default async function ReturnsPage({
                         <td className="text-right">
                           <Link
                             href={`/app/pos/retur?sale=${sale.id}`}
-                            className="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11px] font-medium text-foreground transition-colors hover:bg-muted"
+                            className="inline-flex h-9 items-center gap-1 rounded-md border border-border px-3 text-[11px] font-medium text-foreground transition-colors hover:bg-muted"
                           >
                             <RotateCcw className="size-3" /> Retur
                           </Link>
@@ -175,7 +177,7 @@ export default async function ReturnsPage({
                   </tbody>
                 </table>
               </div>
-              <div className="divide-y divide-border/70 sm:hidden">
+              <div className="divide-y divide-border/70 lg:hidden">
                 {data.recent.rows.map((sale) => (
                   <Link
                     key={sale.id}
@@ -190,7 +192,9 @@ export default async function ReturnsPage({
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="num text-[12px] font-semibold">{formatIDR(sale.total)}</span>
-                      <RotateCcw className="size-3.5 text-muted-foreground" />
+                      <span className="inline-flex items-center gap-1 text-[12px] font-medium text-primary">
+                        <RotateCcw className="size-3.5" /> Retur
+                      </span>
                     </div>
                   </Link>
                 ))}

@@ -1,5 +1,7 @@
 # Runbook Rilis Bisa POS Desktop (Tauri v2 — Langkah 7, D4)
 
+> **RETIRED (2026-11-23).** The Tauri native desktop path is no longer the supported desktop product. The official, supported desktop shell is **`pos-electron/`** (see `pos-electron/README.md`). The Tauri source/config was removed from the working tree, and the stale `pos-desktop-release.yml` workflow plus `scripts/release-pos-desktop.sh` were deleted so CI cannot claim a native release that cannot be built. This runbook is kept as historical evidence only; do not use it to publish a new fleet. Use the Electron packaging/installation procedure instead.
+
 Prosedur menerbitkan pembaruan aplikasi desktop POS: dari build bertanda tangan sampai terminal memasangnya sendiri saat tutup shift. Baca juga `RENCANA-TAURI.md` (keputusan D4/D8) dan `~/workspace/pos-native-keys/README-KUSTODI.md` (kustodi kunci — folder itu DI LUAR repo).
 
 ## Gambaran alur

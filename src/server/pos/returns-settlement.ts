@@ -39,6 +39,8 @@ export type CreateSaleReturnInput = {
      * dialokasikan FIFO ke baris-baris asal produk itu.
      */
     saleLineId?: string | null;
+    /** Seri aktual yang dikembalikan; wajib untuk produk track_serial. */
+    serialNumbers?: string[];
   }[];
 };
 

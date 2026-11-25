@@ -91,7 +91,7 @@ describe("laporan PPN — DPP dan dokumen sumber", () => {
           cashierId: USER,
           status: "completed",
           subtotal: "110",
-          discountTotal: "10",
+          discountTotal: "0",
           taxTotal: "10",
           total: "110",
         })

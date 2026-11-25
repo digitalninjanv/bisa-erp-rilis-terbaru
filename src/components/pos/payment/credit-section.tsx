@@ -42,7 +42,7 @@ export function ReturnCreditSection(props: {
                     <button
                       type="button"
                       onClick={removeCredit}
-                      className="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted"
+                      className="min-h-9 shrink-0 rounded px-2 text-[11px] text-muted-foreground hover:bg-muted"
                     >
                       Hapus
                     </button>
@@ -52,7 +52,7 @@ export function ReturnCreditSection(props: {
                     <button
                       type="button"
                       onClick={() => setCreditOpen((value) => !value)}
-                      className="flex w-full items-center justify-between text-[12px] font-medium"
+                      className="flex min-h-11 w-full items-center justify-between text-[12px] font-medium"
                     >
                       <span className="flex items-center gap-1.5">
                         <Wallet className="size-3.5" /> Pakai Kredit Retur
@@ -67,13 +67,13 @@ export function ReturnCreditSection(props: {
                             onChange={(event) => setCreditNumber(event.target.value)}
                             placeholder="Nomor retur, mis. RTN-2026-00001"
                             aria-label="Nomor dokumen retur untuk kredit pelanggan"
-                            className="num h-9 min-w-0 flex-1 rounded border border-input bg-background px-2 text-[12px]"
+                            className="num h-11 min-w-0 flex-1 rounded border border-input bg-background px-2 text-[12px]"
                           />
                           <button
                             type="button"
                             onClick={lookupCredit}
                             disabled={creditBusy}
-                            className="h-8 shrink-0 rounded-md border border-border px-2.5 text-[12px] font-medium hover:bg-muted disabled:opacity-50"
+                            className="h-11 shrink-0 rounded-md border border-border px-3 text-[12px] font-medium hover:bg-muted disabled:opacity-50"
                           >
                             {creditBusy ? "Memeriksa…" : "Periksa"}
                           </button>
@@ -105,12 +105,12 @@ export function ReturnCreditSection(props: {
                                 placeholder="Nominal dipakai"
                                 aria-label="Nominal kredit retur yang dipakai"
                                 inputMode="numeric"
-                                className="num h-9 min-w-0 flex-1 rounded border border-input bg-background px-2 text-right text-[12px]"
+                                className="num h-11 min-w-0 flex-1 rounded border border-input bg-background px-2 text-right text-[12px]"
                               />
                               <button
                                 type="button"
                                 onClick={applyCredit}
-                                className="h-8 shrink-0 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-foreground hover:bg-primary/90"
+                                className="h-11 shrink-0 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/90"
                               >
                                 Gunakan
                               </button>

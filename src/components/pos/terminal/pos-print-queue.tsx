@@ -11,6 +11,7 @@ import {
   type PrintHandlerResult,
   type PrintJob,
 } from "@/lib/pos/print-queue";
+import { getOrCreateDeviceId } from "@/lib/pos-offline";
 
 function isDirectPrinter() {
   const type = getPrinterPreferences().type;
@@ -26,7 +27,9 @@ async function handleJob(job: PrintJob): Promise<PrintHandlerResult> {
 
   let receipt = job.receiptData;
   if (!receipt) {
-    const result = await getSaleReceiptDataAction(job.saleId, job.copyIndex);
+    const result = await getSaleReceiptDataAction(job.saleId, job.copyIndex, {
+      printToken: job.printToken,
+    });
     if (!result.ok) {
       recordPosTelemetry("print.fail", { saleId: job.saleId, reason: "receipt_fetch" });
       return { ok: false, message: result.message };
@@ -56,7 +59,13 @@ async function handleJob(job: PrintJob): Promise<PrintHandlerResult> {
  * Worker tunggal antrean cetak. Dipasang sekali di terminal POS; job
  * tetap tersimpan bila tab ditutup dan dilanjutkan saat terminal dibuka.
  */
-export function PosPrintQueue({ companyId }: { companyId: string }) {
+export function PosPrintQueue({
+  companyId,
+  userId,
+}: {
+  companyId: string;
+  userId: string;
+}) {
   const running = useRef(false);
 
   useEffect(() => {
@@ -66,7 +75,8 @@ export function PosPrintQueue({ companyId }: { companyId: string }) {
       if (cancelled || running.current || !isDirectPrinter()) return;
       running.current = true;
       try {
-        const drain = () => drainPrintQueue(handleJob, companyId);
+        const drain = () =>
+          drainPrintQueue(handleJob, companyId, userId, getOrCreateDeviceId());
         if (typeof navigator !== "undefined" && navigator.locks) {
           await navigator.locks.request("bisa-pos-print", drain);
         } else {
@@ -102,7 +112,7 @@ export function PosPrintQueue({ companyId }: { companyId: string }) {
       window.removeEventListener("error", onError);
       window.removeEventListener("unhandledrejection", onRejection);
     };
-  }, [companyId]);
+  }, [companyId, userId]);
 
   return null;
 }

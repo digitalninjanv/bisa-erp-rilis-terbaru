@@ -330,7 +330,23 @@ export const outbox = pgTable(
     processedAt: timestamp("processed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("outbox_pending_idx").on(t.processedAt, t.createdAt)],
+  (t) => [
+    index("outbox_pending_idx").on(t.processedAt, t.createdAt),
+    index("outbox_pos_client_key_idx").on(
+      t.companyId,
+      t.eventType,
+      sql`(${t.payload}->>'clientKey')`,
+      t.processedAt,
+    ),
+    index("outbox_pos_settlement_session_idx").on(
+      t.companyId,
+      t.eventType,
+      sql`(${t.payload}->'settlement'->>'sessionId')`,
+    ),
+    index("outbox_pos_review_pending_created_idx")
+      .on(t.companyId, t.eventType, t.createdAt, t.id)
+      .where(sql`${t.processedAt} is null`),
+  ],
 );
 
 /** Promosi POS sederhana untuk terminal desktop (diskon baris). */

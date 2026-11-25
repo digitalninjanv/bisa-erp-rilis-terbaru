@@ -24,15 +24,20 @@ export function HeldActions({
 
   async function remove() {
     setBusy(true);
-    const result = await deleteHeldSaleAction(id);
-    setBusy(false);
-    setConfirming(false);
-    if (!result.ok) {
-      toast.error(result.message);
-      return;
+    try {
+      const result = await deleteHeldSaleAction(id);
+      setConfirming(false);
+      if (!result.ok) {
+        toast.error(result.message);
+        return;
+      }
+      toast.success("Pesanan ditahan dihapus.");
+      router.refresh();
+    } catch {
+      toast.error("Status penghapusan belum pasti. Muat ulang daftar sebelum mencoba lagi.");
+    } finally {
+      setBusy(false);
     }
-    toast.success("Pesanan ditahan dihapus.");
-    router.refresh();
   }
 
   return (

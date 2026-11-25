@@ -10,7 +10,12 @@ import { d, toDb } from "@/lib/money";
 import { getAccountMap, postJournal } from "@/server/accounting";
 import { getCompanySettingsRow } from "@/server/settings";
 import { writeAudit } from "@/server/audit";
-import { claimIdempotencyKey, readIdempotencyResultRef, writeIdempotencyResultRef } from "@/server/idempotency";
+import {
+  claimIdempotencyKey,
+  paymentRequestFingerprint,
+  readIdempotencyResultRef,
+  writeIdempotencyResultRef,
+} from "@/server/idempotency";
 import { todayISO } from "@/lib/format";
 
 function uniqueViolationConstraint(error: unknown): string | null {
@@ -62,6 +67,12 @@ export async function openCashSession(
     if (sameSession) {
       if (sameSession.userId !== input.userId) {
         throw new AppError("CONFLICT", "ID sesi kas terminal sudah digunakan oleh kasir lain.");
+      }
+      if (sameSession.status !== "open") {
+        throw new AppError(
+          "INVALID_STATE",
+          "Sesi kas terminal ini sudah ditutup. Buka sesi baru untuk melanjutkan.",
+        );
       }
       return { id: sameSession.id };
     }
@@ -124,6 +135,44 @@ export async function openCashSession(
 }
 
 
+/**
+ * Pratinjau tutup sesi dua fase: hitung `expected` di server TANPA
+ * mengirimkannya ke terminal sampai kasir menyerahkan hitungan fisik.
+ * Dipakai aksi `prepareSessionCloseAction`; tidak mengubah state.
+ */
+export async function previewCashSession(
+  tx: Tx,
+  input: { companyId: string; userId: string; sessionId: string },
+) {
+  const [session] = await tx
+    .select({
+      id: cashSessions.id,
+      userId: cashSessions.userId,
+      status: cashSessions.status,
+    })
+    .from(cashSessions)
+    .where(
+      and(
+        eq(cashSessions.companyId, input.companyId),
+        eq(cashSessions.id, input.sessionId),
+        eq(cashSessions.userId, input.userId),
+      ),
+    )
+    .limit(1);
+  if (!session) throw new AppError("NOT_FOUND", "Sesi kas tidak ditemukan.");
+  if (session.status !== "open") throw new AppError("INVALID_STATE", "Sesi kas sudah ditutup.");
+  const [movement] = await tx
+    .select({ total: sql<string>`coalesce(sum(${cashMovements.amount}), 0)` })
+    .from(cashMovements)
+    .where(eq(cashMovements.sessionId, session.id));
+  const settingsRow = await getCompanySettingsRow(tx, input.companyId);
+  return {
+    session,
+    expected: d(movement?.total),
+    tolerance: d(settingsRow?.posSessionDifferenceTolerance ?? "0"),
+  };
+}
+
 export async function closeCashSession(
   tx: Tx,
   input: {
@@ -133,21 +182,25 @@ export async function closeCashSession(
     countedCash: string | number;
     notes?: string;
     differenceReason?: string;
+    /** Supervisor force-close: target session may belong to another cashier. */
+    allowAnyUser?: boolean;
+    /** Nilai expected yang disetujui saat hitungan dikunci (token preview). */
+    expectedGuard?: string | number;
   },
 ) {
   // POS-SES-01: a cashier can only close their OWN session. Filtering by
   // the actor makes a foreign session indistinguishable from a missing
-  // one (NOT_FOUND), so its existence is not leaked.
+  // one (NOT_FOUND), so its existence is not leaked. A supervisor with
+  // pos.void may explicitly force-close any session (audited).
+  const sessionConditions = [
+    eq(cashSessions.companyId, input.companyId),
+    eq(cashSessions.id, input.sessionId),
+    ...(input.allowAnyUser ? [] : [eq(cashSessions.userId, input.userId)]),
+  ];
   const [session] = await tx
     .select()
     .from(cashSessions)
-    .where(
-      and(
-        eq(cashSessions.companyId, input.companyId),
-        eq(cashSessions.id, input.sessionId),
-        eq(cashSessions.userId, input.userId),
-      ),
-    )
+    .where(and(...sessionConditions))
     .limit(1)
     .for("update");
   if (!session) throw new AppError("NOT_FOUND", "Sesi kas tidak ditemukan.");
@@ -155,7 +208,7 @@ export async function closeCashSession(
 
   // Pesanan ditahan dimiliki oleh kasir pembuatnya (`sales.cashier_id`).
   // Sesi kasir ini hanya boleh tertahan oleh pesanan milik kasir yang sama.
-  const heldCount = await countHeldSales(tx, input.companyId, input.userId);
+  const heldCount = await countHeldSales(tx, input.companyId, session.userId);
   if (heldCount > 0) {
     throw new AppError(
       "INVALID_STATE",
@@ -168,7 +221,16 @@ export async function closeCashSession(
     .from(cashMovements)
     .where(eq(cashMovements.sessionId, session.id));
   const expected = d(movement?.total);
+  if (input.expectedGuard != null && !expected.eq(d(input.expectedGuard))) {
+    throw new AppError(
+      "CONFLICT",
+      "Mutasi kas berubah setelah hitungan dikunci. Hitung ulang dan tinjau kembali sebelum menutup sesi.",
+    );
+  }
   const counted = d(input.countedCash);
+  if (counted.lt(0)) {
+    throw new AppError("VALIDATION", "Uang dihitung tidak boleh negatif.");
+  }
   const difference = counted.minus(expected);
 
   // A-28 Tahap 1 (H-POS-02): disiplin selisih tutup sesi ditegakkan di
@@ -235,6 +297,8 @@ export async function closeCashSession(
       difference: toDb(difference),
       differenceReason: differenceReason === "" ? null : differenceReason,
       differenceTolerance: toDb(tolerance),
+      targetUserId: session.userId,
+      forced: Boolean(input.allowAnyUser && session.userId !== input.userId),
     },
   });
 
@@ -254,25 +318,60 @@ export async function cashDrawerMovement(
     idempotencyKey?: string;
   },
 ) {
+  let idempotencyFingerprint: string | null = null;
   if (input.idempotencyKey) {
     // Retry setelah respons hilang: mutasi yang sudah commit tidak
-    // diulang. Hasil disimpan di idempotency_keys pada transaksi yang
-    // sama, jadi klaim yang ada tanpa hasil berarti kegagalan lama
-    // (transaksi rollback) dan kunci boleh dipakai lagi.
-    const replayed = await readIdempotencyResultRef(tx, {
-      companyId: input.companyId,
-      key: input.idempotencyKey,
-      scope: "pos.cash_movement",
+    // diulang. Fingerprint membedakan retry identik dari pemakaian ulang
+    // kunci untuk data berbeda (mis. nominal diubah setelah error).
+    const fingerprint = paymentRequestFingerprint({
+      userId: input.userId,
+      sessionId: input.sessionId,
+      type: input.type,
+      amount: toDb(d(input.amount)),
+      notes: input.notes?.trim() ?? "",
     });
-    if (replayed) return;
+    const readReplay = async (): Promise<boolean> => {
+      const stored = await readIdempotencyResultRef(tx, {
+        companyId: input.companyId,
+        key: input.idempotencyKey!,
+        scope: "pos.cash_movement",
+      });
+      if (!stored) return false;
+      try {
+        const parsed = JSON.parse(stored) as {
+          type?: string;
+          fingerprint?: string;
+        };
+        if (parsed?.type === "pos.cash_movement.result") {
+          if (parsed.fingerprint !== fingerprint) {
+            throw new AppError(
+              "CONFLICT",
+              "Kunci mutasi kas sudah dipakai untuk data yang berbeda.",
+            );
+          }
+          return true;
+        }
+      } catch (error) {
+        if (error instanceof AppError) throw error;
+        // Baris lama menyimpan ID movement mentah; perlakukan sebagai
+        // replay tanpa fingerprint (tidak bisa dibandingkan).
+      }
+      return true;
+    };
+    if (await readReplay()) return;
     const claimed = await claimIdempotencyKey(tx, {
       companyId: input.companyId,
       key: input.idempotencyKey,
       scope: "pos.cash_movement",
     });
     if (!claimed) {
+      if (await readReplay()) return;
       throw new AppError("CONFLICT", "Mutasi kas dengan kunci ini sedang diproses.");
     }
+    // Simpan fingerprint setelah movement dibuat; variabel dipakai di
+    // bagian akhir fungsi. Klaim tanpa hasil tetap dianggap kegagalan lama
+    // dan akan dilepas oleh rollback transaksi.
+    idempotencyFingerprint = fingerprint;
   }
   // POS-SES-01: drawer movements are likewise limited to the actor's
   // own session; a foreign session reads as "not active", like a closed
@@ -358,12 +457,16 @@ export async function cashDrawerMovement(
     after: { amount: toDb(amount) },
   });
 
-  if (input.idempotencyKey) {
+  if (input.idempotencyKey && idempotencyFingerprint) {
     await writeIdempotencyResultRef(tx, {
       companyId: input.companyId,
       key: input.idempotencyKey,
       scope: "pos.cash_movement",
-      resultRef: movement.id,
+      resultRef: JSON.stringify({
+        type: "pos.cash_movement.result",
+        fingerprint: idempotencyFingerprint,
+        movementId: movement.id,
+      }),
     });
   }
 }

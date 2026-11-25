@@ -12,7 +12,7 @@ import {
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import type { Tx } from "@/db";
-import { withCompany } from "@/db/tenant";
+import { withCompany, withCompanyReadOnly } from "@/db/tenant";
 import {
   accounts,
   customers,
@@ -344,8 +344,10 @@ export async function saveJournalDraftAction(input: z.input<typeof journalDraftS
             date: data.date,
             description: data.description?.trim() || "Jurnal umum (draf)",
           })
-          .where(eq(journalEntries.id, draft.id));
-        await tx.delete(journalLines).where(eq(journalLines.entryId, draft.id));
+          .where(and(eq(journalEntries.companyId, ctx.company.id), eq(journalEntries.id, draft.id)));
+        await tx
+          .delete(journalLines)
+          .where(and(eq(journalLines.companyId, ctx.company.id), eq(journalLines.entryId, draft.id)));
       } else {
         number = `DRAFT-${data.date.replaceAll("-", "")}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
         const [created] = await tx
@@ -529,15 +531,22 @@ export async function listJournalAccountsForForm() {
 export async function trialBalanceCheckAction() {
   return guard(async () => {
     const ctx = await requirePermission("accounting.view");
-    return withCompany(ctx.company.id, async (tx) => {
+    return withCompanyReadOnly(ctx.company.id, async (tx) => {
       const [row] = await tx
         .select({
           debit: sql<string>`coalesce(sum(${journalLines.debit}), 0)`,
           credit: sql<string>`coalesce(sum(${journalLines.credit}), 0)`,
         })
         .from(journalLines)
-        .where(eq(journalLines.companyId, ctx.company.id));
-      return { debit: Number(row?.debit ?? 0), credit: Number(row?.credit ?? 0) };
+        .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
+        .where(
+          and(
+            eq(journalLines.companyId, ctx.company.id),
+            eq(journalEntries.companyId, ctx.company.id),
+            eq(journalEntries.status, "posted"),
+          ),
+        );
+      return { debit: d(row?.debit ?? 0).toNumber(), credit: d(row?.credit ?? 0).toNumber() };
     });
   });
 }

@@ -33,10 +33,13 @@ function loadSettings(directory) {
       origin: parseOrigin(value.origin),
       printer: typeof value.printer === "string" ? value.printer : "",
       width: value.width === 58 ? 58 : 80,
+      autoPrint: typeof value.autoPrint === "boolean" ? value.autoPrint : true,
     };
   } catch (error) {
-    if (error.code !== "ENOENT") throw error;
-    return { origin: DEFAULT_ORIGIN, printer: "", width: 80 };
+    if (error.code !== "ENOENT") {
+      console.warn("[bisa-pos] pos-settings.json rusak, kembali ke bawaan:", error.message || error);
+    }
+    return { origin: DEFAULT_ORIGIN, printer: "", width: 80, autoPrint: true };
   }
 }
 

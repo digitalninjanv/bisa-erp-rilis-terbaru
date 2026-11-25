@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { and, eq, sql } from "drizzle-orm";
 import { withCompany, withCompanyReadOnly } from "@/db/tenant";
-import { accounts, companySettings, journalLines, paymentMethods, products, saleReturns, sales, stockMovements, suppliers, warehouses } from "@/db/schema";
+import { accounts, companySettings, journalEntries, journalLines, paymentMethods, products, saleReturns, sales, stockMovements, suppliers, warehouses } from "@/db/schema";
 import { postJournal, seedChartOfAccounts } from "@/server/accounting";
 import { createReceipt } from "@/server/inventory";
 import { createSale, createSaleReturn, holdSale, openCashSession } from "@/server/pos";
@@ -17,12 +17,13 @@ vi.mock("@/lib/session", () => {
   return { requirePermission: context, requirePermissionInModule: context, requireAuth: context };
 });
 const date = todayISO();
-let warehouseId = "", supplierId = "", methodId = "";
+let warehouseId = "", supplierId = "", methodId = "", equityAccountId = "";
 
 beforeAll(async () => {
   state.companyId = crypto.randomUUID();
   await withCompany(state.companyId, async tx => {
     const map = await seedChartOfAccounts(tx, state.companyId);
+    equityAccountId = map.equity;
     await tx.insert(companySettings).values({ companyId: state.companyId, legalName: "Synthetic remediation", taxEnabled: false, roundingMode: "none" });
     const [warehouse] = await tx.insert(warehouses).values({ companyId: state.companyId, code: "MAIN", name: "Synthetic warehouse", isDefault: true }).returning();
     const [supplier] = await tx.insert(suppliers).values({ companyId: state.companyId, code: "SUP", name: "Synthetic supplier" }).returning();
@@ -88,6 +89,72 @@ describe("committed concurrency and DB lifecycle (disposable fixtures)", () => {
     ]))).rejects.toThrow();
     const rows = await withCompanyReadOnly(state.companyId, tx => tx.select().from(journalLines).where(eq(journalLines.entryId, original.entryId)));
     expect(rows).toHaveLength(2);
+  });
+  it("cash negative blocking serializes concurrent outflows against one balance", async () => {
+    let testCashAccountId = "";
+    await withCompany(state.companyId, async (tx) => {
+      await tx.update(companySettings)
+        .set({ cashNegativePolicy: "block" })
+        .where(eq(companySettings.companyId, state.companyId));
+      const [testCash] = await tx.insert(accounts).values({
+        companyId: state.companyId,
+        code: `CASH-GUARD-${crypto.randomUUID()}`,
+        name: "Isolated guard cash",
+        type: "asset",
+        normalBalance: "debit",
+        cashBankKind: "cash",
+      }).returning({ id: accounts.id });
+      testCashAccountId = testCash.id;
+      await postJournal(tx, {
+        companyId: state.companyId,
+        date,
+        description: "Seed cash before concurrent withdrawals",
+        sourceType: "manual",
+        lines: [
+          { accountId: testCashAccountId, debit: 1_000 },
+          { accountId: equityAccountId, credit: 1_000 },
+        ],
+      });
+    });
+
+    const expenseAccount = await withCompany(state.companyId, async (tx) => {
+      const [row] = await tx.insert(accounts).values({
+        companyId: state.companyId,
+        code: `EXP-${crypto.randomUUID()}`,
+        name: "Concurrent cash expense",
+        type: "expense",
+        normalBalance: "debit",
+      }).returning({ id: accounts.id });
+      return row.id;
+    });
+    const attempt = (label: string) => withCompany(state.companyId, (tx) =>
+      postJournal(tx, {
+        companyId: state.companyId,
+        date,
+        description: label,
+        sourceType: "manual",
+        lines: [
+          { accountId: expenseAccount, debit: 700 },
+          { accountId: testCashAccountId, credit: 700 },
+        ],
+      }),
+    );
+    const results = await Promise.allSettled([attempt("Concurrent withdrawal A"), attempt("Concurrent withdrawal B")]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    const balance = await withCompanyReadOnly(state.companyId, async (tx) => {
+      const rows = await tx
+        .select({ debit: journalLines.debit, credit: journalLines.credit })
+        .from(journalLines)
+        .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
+        .where(and(
+          eq(journalLines.companyId, state.companyId),
+          eq(journalLines.accountId, testCashAccountId),
+          eq(journalEntries.status, "posted"),
+        ));
+      return rows.reduce((total, row) => total + Number(row.debit) - Number(row.credit), 0);
+    });
+    expect(balance).toBeCloseTo(300, 2);
   });
   it("F17 held checkout survives concurrent and sequential replay", async () => {
     const productId = await product();

@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray, gte, lte } from "drizzle-orm";
 import type { Tx } from "@/db";
 import { accounts, expenses, journalEntries, journalLines, sales, stockReceipts } from "@/db/schema";
+import { d } from "@/lib/money";
 import { getAccountMap } from "@/server/accounting";
 
 /**
@@ -117,13 +118,15 @@ export async function getVatReport(
         number: sales.number,
         subtotal: sales.subtotal,
         discountTotal: sales.discountTotal,
+        taxTotal: sales.taxTotal,
       })
       .from(sales)
       .where(and(eq(sales.companyId, companyId), inArray(sales.id, saleIds)));
     for (const row of saleRows) {
       sourceById.set(`sale:${row.id}`, {
         number: row.number,
-        dpp: Number(row.subtotal) - Number(row.discountTotal),
+        // POS menyimpan subtotal & total inklusif PPN; DPP bersih = subtotal - diskon - taxTotal.
+        dpp: d(row.subtotal).minus(row.discountTotal).minus(row.taxTotal).toNumber(),
         href: `/app/pos/nota/${row.id}`,
       });
     }
@@ -165,17 +168,27 @@ export async function getVatReport(
     }
   }
 
-  let output = 0;
-  let input = 0;
+  let outputDec = d(0);
+  let inputDec = d(0);
   const entryIds = new Set<string>();
   const lines = rows.map((row): VatReportLine => {
-    const debit = Number(row.debit);
-    const credit = Number(row.credit);
+    const debitDec = d(row.debit);
+    const creditDec = d(row.credit);
     const direction = row.accountId === outputId ? "output" : "input";
-    const amount = direction === "output" ? credit - debit : debit - credit;
-    if (direction === "output") output += amount;
-    else input += amount;
+    const amountDec = direction === "output" ? creditDec.minus(debitDec) : debitDec.minus(creditDec);
+    if (direction === "output") outputDec = outputDec.plus(amountDec);
+    else inputDec = inputDec.plus(amountDec);
     entryIds.add(row.entryId);
+    const sourceMeta =
+      row.sourceId && baseSource(row.sourceType) === "sale"
+        ? sourceById.get(`sale:${row.sourceId}`)
+        : row.sourceId && ["purchase", "receipt_opening", "receipt_bonus", "receipt_customer_return", "receipt_other"].includes(baseSource(row.sourceType))
+          ? sourceById.get(`receipt:${row.sourceId}`)
+          : row.sourceId && baseSource(row.sourceType) === "expense"
+            ? sourceById.get(`expense:${row.sourceId}`)
+            : undefined;
+    const isReversal = row.sourceType.endsWith("_reversal");
+    const rawDpp = sourceMeta?.dpp ?? null;
     return {
       id: row.id,
       entryId: row.entryId,
@@ -185,41 +198,24 @@ export async function getVatReport(
       sourceType: row.sourceType,
       accountId: row.accountId,
       direction,
-      debit,
-      credit,
-      amount,
-      sourceNumber:
-        row.sourceId && baseSource(row.sourceType) === "sale"
-          ? (sourceById.get(`sale:${row.sourceId}`)?.number ?? null)
-          : row.sourceId && ["purchase", "receipt_opening", "receipt_bonus", "receipt_customer_return", "receipt_other"].includes(baseSource(row.sourceType))
-            ? (sourceById.get(`receipt:${row.sourceId}`)?.number ?? null)
-            : row.sourceId && baseSource(row.sourceType) === "expense"
-              ? (sourceById.get(`expense:${row.sourceId}`)?.number ?? null)
-              : null,
-      sourceHref:
-        row.sourceId && baseSource(row.sourceType) === "sale"
-          ? (sourceById.get(`sale:${row.sourceId}`)?.href ?? null)
-          : row.sourceId && ["purchase", "receipt_opening", "receipt_bonus", "receipt_customer_return", "receipt_other"].includes(baseSource(row.sourceType))
-            ? (sourceById.get(`receipt:${row.sourceId}`)?.href ?? null)
-            : null,
-      dpp:
-        row.sourceId && baseSource(row.sourceType) === "sale"
-          ? (sourceById.get(`sale:${row.sourceId}`)?.dpp ?? null)
-          : row.sourceId && ["purchase", "receipt_opening", "receipt_bonus", "receipt_customer_return", "receipt_other"].includes(baseSource(row.sourceType))
-            ? (sourceById.get(`receipt:${row.sourceId}`)?.dpp ?? null)
-            : row.sourceId && baseSource(row.sourceType) === "expense"
-              ? (sourceById.get(`expense:${row.sourceId}`)?.dpp ?? null)
-              : null,
+      debit: debitDec.toNumber(),
+      credit: creditDec.toNumber(),
+      amount: amountDec.toNumber(),
+      sourceNumber: sourceMeta?.number ?? null,
+      sourceHref: baseSource(row.sourceType) === "expense" ? null : (sourceMeta?.href ?? null),
+      dpp: rawDpp === null ? null : isReversal ? -Math.abs(rawDpp) : rawDpp,
     };
   });
 
+  const output = outputDec.toNumber();
+  const input = inputDec.toNumber();
   return {
     mapped: true,
     outputAccount,
     inputAccount,
     output,
     input,
-    net: output - input,
+    net: outputDec.minus(inputDec).toNumber(),
     lines,
     entryCount: entryIds.size,
   };

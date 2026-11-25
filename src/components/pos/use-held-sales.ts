@@ -18,6 +18,7 @@ export type ResumeData = {
     packagingId?: string | null;
     discountType: string | null;
     discountValue: string;
+    serialNumbers?: string[];
   }[];
   warehouseId: string | null;
   customerId: string | null;
@@ -134,6 +135,7 @@ export function useHeldSales(params: {
           qty: Number(line.qty),
           discountType: (line.discountType as "percent" | "nominal" | null) ?? null,
           discountValue: Number(line.discountValue),
+          serialNumbers: line.serialNumbers ?? [],
         })),
       );
       if (data.warehouseId) setSelectedWarehouse(data.warehouseId);

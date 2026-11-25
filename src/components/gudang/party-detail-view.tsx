@@ -53,7 +53,14 @@ export function PartyDetailView({
         : "—",
     ]);
   } else {
-    profileRows.push(["Batas kredit", party.creditLimit ? formatIDR(party.creditLimit) : "—"]);
+    profileRows.push([
+      "Batas kredit",
+      party.creditLimit && Number(party.creditLimit) > 0
+        ? formatIDR(party.creditLimit)
+        : party.creditLimitUnlimited === false
+          ? "Kredit tidak diizinkan"
+          : "Tanpa batas",
+    ]);
   }
   profileRows.push(["Status", party.isActive ? "Aktif" : "Nonaktif"]);
   if (party.notes) profileRows.push(["Catatan", party.notes]);

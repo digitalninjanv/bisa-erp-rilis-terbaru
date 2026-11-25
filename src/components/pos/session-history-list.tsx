@@ -32,6 +32,7 @@ export function cashMovementLabel(type: string): string {
     {
       opening: "Modal awal",
       sale: "Penjualan tunai",
+      receivable: "Penerimaan piutang",
       refund: "Refund",
       deposit: "Setor ke bank",
       withdrawal: "Tarik dari bank",
@@ -73,102 +74,130 @@ export function DifferenceText({ difference }: { difference: string | null }) {
   );
 }
 
-export function SessionHistoryTable({ rows }: { rows: SessionHistoryRowData[] }) {
+export function SessionHistoryTable({
+  rows,
+  showOpenExpected = false,
+}: {
+  rows: SessionHistoryRowData[];
+  showOpenExpected?: boolean;
+}) {
   return (
     <>
-    <div className="hidden overflow-x-auto lg:block">
+    <div className="hidden lg:block">
       <table className="data-table">
         <thead>
           <tr>
             <th scope="col">Kasir</th>
-            <th scope="col">Dibuka</th>
-            <th scope="col">Ditutup</th>
-            <th scope="col" className="text-right">Transaksi</th>
-            <th scope="col" className="text-right">Non-tunai</th>
-            <th scope="col" className="text-right">Modal awal</th>
-            <th scope="col" className="text-right">
-              Masuk
-              <span className="block text-[10px] font-normal text-muted-foreground">
-                jual + tarik bank
-              </span>
+            <th scope="col">
+              Waktu
+              <span className="block text-[10px] font-normal text-muted-foreground">buka / tutup</span>
             </th>
             <th scope="col" className="text-right">
-              Keluar
-              <span className="block text-[10px] font-normal text-muted-foreground">
-                refund + setor bank
-              </span>
+              Transaksi
+              <span className="block text-[10px] font-normal text-muted-foreground">non-tunai</span>
+            </th>
+            <th scope="col" className="text-right">Modal awal</th>
+            <th scope="col" className="text-right">
+              Mutasi
+              <span className="block text-[10px] font-normal text-muted-foreground">masuk / keluar</span>
             </th>
             <th scope="col" className="text-right">Seharusnya</th>
             <th scope="col" className="text-right">Dihitung</th>
             <th scope="col" className="text-right">Selisih</th>
-            <th scope="col">Status</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
+          {rows.map((row) => {
+            const maskOpen = row.status === "open" && !showOpenExpected;
+            return (
             <tr key={row.id}>
               <td>
-                <Link
-                  href={`/app/pos/sesi/riwayat/${row.id}`}
-                  className="text-[12px] font-medium text-foreground hover:underline"
-                >
-                  {row.userName ?? "Kasir"}
-                </Link>
+                {maskOpen ? (
+                  <span className="text-[12px] font-medium text-foreground">
+                    {row.userName ?? "Kasir"}
+                  </span>
+                ) : (
+                  <Link
+                    href={`/app/pos/sesi/riwayat/${row.id}`}
+                    className="text-[12px] font-medium text-foreground hover:underline"
+                  >
+                    {row.userName ?? "Kasir"}
+                  </Link>
+                )}
                 {row.branchName ? (
                   <span className="block text-[11px] text-muted-foreground">{row.branchName}</span>
                 ) : null}
+                <span className="mt-1 block">
+                  <SessionStatusBadge status={row.status} />
+                </span>
+                {row.longOpen ? (
+                  <span className="mt-0.5 block text-[10px] font-medium text-destructive">
+                    Terbuka &gt;24 jam
+                  </span>
+                ) : null}
               </td>
               <td className="num text-[11px] whitespace-nowrap text-muted-foreground">
-                {formatDateTime(row.openedAt)}
+                <span className="block">{formatDateTime(row.openedAt)}</span>
+                <span className="block">
+                  {row.status === "open" ? (
+                    <span className="font-medium text-tone-teal">Masih terbuka</span>
+                  ) : row.closedAt ? (
+                    formatDateTime(row.closedAt)
+                  ) : (
+                    "—"
+                  )}
+                </span>
               </td>
-              <td className="num text-[11px] whitespace-nowrap text-muted-foreground">
-                {row.status === "open" ? (
-                  <span className="font-medium text-tone-teal">Masih terbuka</span>
-                ) : row.closedAt ? (
-                  formatDateTime(row.closedAt)
-                ) : (
-                  "—"
-                )}
+              <td className="num text-right">
+                <span className="block">{row.transactionCount}</span>
+                <span className="block text-[10px] text-muted-foreground">
+                  {formatIDR(row.nonCashSalesTotal ?? "0")}
+                </span>
               </td>
-              <td className="num text-right">{row.transactionCount}</td>
-              <td className="num text-right">{formatIDR(row.nonCashSalesTotal ?? "0")}</td>
               <td className="num text-right">{formatIDR(row.openingCash)}</td>
-              <td className="num text-right">{formatIDR(row.totalIn)}</td>
-              <td className="num text-right">{formatIDR(row.totalOut)}</td>
-              <td className="num text-right font-medium">{formatIDR(row.expectedCash)}</td>
-              <td className="num text-right">
-                {row.countedCash != null ? formatIDR(row.countedCash) : "—"}
+              <td className="num text-right text-[11px]">
+                <span className="block">+{formatIDR(row.totalIn)}</span>
+                <span className="block text-muted-foreground">−{formatIDR(row.totalOut)}</span>
+              </td>
+              <td className="num text-right font-medium">
+                {maskOpen ? "—" : formatIDR(row.expectedCash)}
               </td>
               <td className="num text-right">
-                <DifferenceText difference={row.difference} />
-                {row.difference != null && row.totalIn && d(row.totalIn).gt(0) ? (
+                {maskOpen ? "—" : row.countedCash != null ? formatIDR(row.countedCash) : "—"}
+              </td>
+              <td className="num text-right">
+                {maskOpen ? "—" : <DifferenceText difference={row.difference} />}
+                {!maskOpen && row.difference != null && row.totalIn && d(row.totalIn).gt(0) ? (
                   <span className="block text-[10px] text-muted-foreground">
                     {d(row.difference).div(d(row.totalIn)).mul(100).toFixed(1)}%
                   </span>
                 ) : null}
               </td>
-              <td>
-                <SessionStatusBadge status={row.status} />
-                {row.longOpen ? (
-                  <span className="block text-[10px] font-medium text-destructive">Terbuka &gt;24 jam</span>
-                ) : null}
-              </td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     </div>
 
     <div className="divide-y divide-border/70 lg:hidden">
-      {rows.map((row) => (
+      {rows.map((row) => {
+        const maskOpen = row.status === "open" && !showOpenExpected;
+        return (
         <div key={row.id} className="px-4 py-3">
           <div className="flex items-baseline justify-between gap-2">
-            <Link
-              href={`/app/pos/sesi/riwayat/${row.id}`}
-              className="text-[12px] font-medium text-primary hover:underline"
-            >
-              {row.userName ?? "Kasir"}
-            </Link>
+            {maskOpen ? (
+              <span className="text-[12px] font-medium text-foreground">
+                {row.userName ?? "Kasir"}
+              </span>
+            ) : (
+              <Link
+                href={`/app/pos/sesi/riwayat/${row.id}`}
+                className="inline-flex min-h-11 min-w-11 items-center text-[12px] font-medium text-primary hover:underline"
+              >
+                {row.userName ?? "Kasir"}
+              </Link>
+            )}
             <SessionStatusBadge status={row.status} />
           </div>
           <p className="mt-0.5 text-[11px] text-muted-foreground">
@@ -187,15 +216,17 @@ export function SessionHistoryTable({ rows }: { rows: SessionHistoryRowData[] })
             </div>
             <div className="flex justify-between gap-2">
               <dt className="text-muted-foreground">Seharusnya</dt>
-              <dd className="num">{formatIDR(row.expectedCash)}</dd>
+              <dd className="num">{maskOpen ? "—" : formatIDR(row.expectedCash)}</dd>
             </div>
             <div className="flex justify-between gap-2">
               <dt className="text-muted-foreground">Dihitung</dt>
-              <dd className="num">{row.countedCash != null ? formatIDR(row.countedCash) : "—"}</dd>
+              <dd className="num">
+                {maskOpen ? "—" : row.countedCash != null ? formatIDR(row.countedCash) : "—"}
+              </dd>
             </div>
             <div className="flex justify-between gap-2">
               <dt className="text-muted-foreground">Selisih</dt>
-              <dd><DifferenceText difference={row.difference} /></dd>
+              <dd>{maskOpen ? "—" : <DifferenceText difference={row.difference} />}</dd>
             </div>
             <div className="flex justify-between gap-2">
               <dt className="text-muted-foreground">Modal</dt>
@@ -206,7 +237,8 @@ export function SessionHistoryTable({ rows }: { rows: SessionHistoryRowData[] })
             <p className="mt-1 text-[10px] font-medium text-destructive">Terbuka &gt;24 jam</p>
           ) : null}
         </div>
-      ))}
+        );
+      })}
     </div>
     </>
   );

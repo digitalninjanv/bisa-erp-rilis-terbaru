@@ -14,6 +14,7 @@ import {
 } from "@/server/member-permissions";
 import {
   assertOfflineEnabled,
+  getOfflineReviewOriginCashierId,
   listOfflineReviewQueue,
   postOfflineReviewItem,
   processOfflineSaleItem,
@@ -91,7 +92,11 @@ export async function syncOfflineSalesAction(input: z.input<typeof syncSchema>) 
 export async function listOfflineReviewAction() {
   return guard(async () => {
     const ctx = await requirePermission("pos.sell");
-    return withCompany(ctx.company.id, (tx) => listOfflineReviewQueue(tx, ctx.company.id));
+    return withCompany(ctx.company.id, (tx) =>
+      listOfflineReviewQueue(tx, ctx.company.id, {
+        includePayload: can(ctx, "pos.void"),
+      }),
+    );
   });
 }
 
@@ -111,11 +116,13 @@ export async function postOfflineReviewItemAction(input: z.input<typeof postRevi
     const ctx = await requirePermissionInModule("pos.void", "pos");
     const data = parseInput(postReviewSchema, input);
     const outcome = await withCompany(ctx.company.id, async (tx) => {
-      const rows = await listOfflineReviewQueue(tx, ctx.company.id);
-      const target = rows.find((row) => row.id === data.outboxId);
-      const stored = target?.payload.sale as OfflineSalePayload | undefined;
+      const originCashierId = await getOfflineReviewOriginCashierId(
+        tx,
+        ctx.company.id,
+        data.outboxId,
+      );
       const originEntitlements = await resolveEntitlements(ctx.company.id, [
-        stored?.cashierId ?? ctx.user.id,
+        originCashierId ?? ctx.user.id,
       ]);
       const result = await postOfflineReviewItem(tx, {
         companyId: ctx.company.id,
@@ -136,7 +143,7 @@ export async function postOfflineReviewItemAction(input: z.input<typeof postRevi
           saleId: result.saleId ?? null,
           saleNumber: result.saleNumber ?? null,
           overageAbsorbed: result.overageAbsorbed ?? null,
-          originCashierId: stored?.cashierId ?? null,
+          originCashierId,
         },
       });
       return result;

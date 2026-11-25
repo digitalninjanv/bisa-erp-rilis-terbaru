@@ -596,6 +596,41 @@
       "when": 1794800000000,
       "tag": "0084_pos_promotions",
       "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1795228617105,
+      "tag": "0085_receipt_goods_values",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1795238334756,
+      "tag": "0086_aromatic_boomer",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1795358295652,
+      "tag": "0087_pos_offline_outbox_query_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1795393395694,
+      "tag": "0088_clammy_bruce_banner",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1795558204853,
+      "tag": "0089_product_tax_exempt_and_promo_grants",
+      "breakpoints": true
     }
   ]
 }

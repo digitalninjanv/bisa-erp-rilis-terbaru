@@ -69,6 +69,8 @@ export async function* ledgerCsvChunks(
     outputRows.push(`${first ? "\uFEFF" : "\r\n"}${csvRow(values)}`);
   };
 
+  const formatDecimalCsv = (value: ReturnType<typeof d>) => (value.isZero() ? "0.00" : value.toFixed(2));
+
   try {
     appendRow([heading, period, "", "", "", ""], true);
     appendRow([
@@ -77,7 +79,7 @@ export async function* ledgerCsvChunks(
       "",
       "",
       "",
-      moneyCsv(summary.opening.toNumber()),
+      formatDecimalCsv(summary.opening),
     ]);
     yield { accountCode: account.code, bytes: flush() };
 
@@ -95,9 +97,9 @@ export async function* ledgerCsvChunks(
           date,
           row.number,
           row.description ?? "",
-          moneyCsv(debit.toNumber()),
-          moneyCsv(credit.toNumber()),
-          moneyCsv(balance.toNumber()),
+          formatDecimalCsv(debit),
+          formatDecimalCsv(credit),
+          formatDecimalCsv(balance),
         ]);
 
         if (outputRows.length >= OUTPUT_BATCH_ROWS) {
@@ -115,7 +117,7 @@ export async function* ledgerCsvChunks(
       "",
       "",
       "",
-      moneyCsv(summary.closing.toNumber()),
+      formatDecimalCsv(summary.closing),
     ]);
     if (outputRows.length > 0) {
       yield { accountCode: account.code, bytes: flush() };

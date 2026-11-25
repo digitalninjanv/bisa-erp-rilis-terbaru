@@ -5,7 +5,8 @@ import { can } from "@/lib/permissions";
 import { listPaymentAccounts } from "@/server/accounting";
 import { getSettings } from "@/server/catalog";
 import { listPartyCredits } from "@/server/party-credits";
-import { listReceivables } from "@/server/reports";
+import { listReceivablesPage } from "@/server/reports";
+import { parsePageParam } from "@/lib/pagination";
 import { formatIDR } from "@/lib/money";
 import { formatDate, todayISO } from "@/lib/format";
 import { addDaysISO } from "@/lib/due-date";
@@ -65,59 +66,48 @@ export default async function PosReceivablesPage({
   const ctx = await requirePermissionPage("pos.sell");
   const canWriteOff = can(ctx, "accounting.manage");
 
+  const page = parsePageParam(params.page);
+  const pageSize = 30;
   const data = await withCompanyReadOnly(ctx.company.id, async (tx) => {
-    const [receivables, accounts, credits, settings] = await Promise.all([
-      listReceivables(tx, ctx.company.id),
+    const [receivablePage, accounts, settings] = await Promise.all([
+      listReceivablesPage(tx, ctx.company.id, {
+        page,
+        pageSize,
+        status,
+        q,
+        today,
+      }),
       listPaymentAccounts(tx, ctx.company.id),
-      listPartyCredits(tx, ctx.company.id),
       getSettings(tx, ctx.company.id),
     ]);
-    return { receivables, accounts, credits, settings };
+    const partyIds = [
+      ...new Set(
+        receivablePage.rows
+          .map((row) => row.partyId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const credits =
+      partyIds.length > 0
+        ? await listPartyCredits(tx, ctx.company.id, {
+            partyType: "customer",
+            partyIds,
+            status: "open",
+          })
+        : [];
+    return { receivablePage, accounts, credits, settings };
   });
 
-  const allRows = data.receivables.map((row) => ({
-    ...row,
-    partyId: row.customerId,
-    partyName: row.customerName,
-  }));
-
-  const openCredits = data.credits.filter(
-    (row) => row.status === "open" && Number(row.remaining) > 0.004,
-  );
-  const creditsForTab = openCredits.filter((row) => row.partyType === "customer");
+  const openCredits = data.credits.filter((row) => Number(row.remaining) > 0.004);
   const creditByParty = new Map<string, { id: string; number: string; remaining: number }[]>();
-  for (const row of creditsForTab) {
+  for (const row of openCredits) {
     const key = `customer:${row.partyId}`;
     const list = creditByParty.get(key) ?? [];
     list.push({ id: row.id, number: row.number, remaining: Number(row.remaining) });
     creditByParty.set(key, list);
   }
 
-  const dueState = (dueDate: string | null): string => {
-    if (!dueDate) return "";
-    if (dueDate < today) return "terlambat";
-    if (dueDate <= addDaysISO(today, 7)) return "segera";
-    return "";
-  };
-  const totalOutstanding = allRows.reduce((acc, row) => acc + row.outstanding, 0);
-  const overdue = allRows.filter((row) => dueState(row.dueDate) === "terlambat");
-  const soon = allRows.filter((row) => dueState(row.dueDate) === "segera");
-  const overdueTotal = overdue.reduce((acc, row) => acc + row.outstanding, 0);
-  const soonTotal = soon.reduce((acc, row) => acc + row.outstanding, 0);
-
-  const rows = allRows.filter((row) => {
-    if (status && dueState(row.dueDate) !== status) return false;
-    if (!q) return true;
-    return (
-      row.number.toLowerCase().includes(q) ||
-      (row.partyName ?? "").toLowerCase().includes(q)
-    );
-  });
-
-  const page = Math.max(1, Number(params.page) || 1);
-  const pageSize = 30;
-  const total = rows.length;
-  const pagedRows = rows.slice((page - 1) * pageSize, page * pageSize);
+  const { summary, rows: pagedRows, total } = data.receivablePage;
 
   return (
     <div>
@@ -131,20 +121,20 @@ export default async function PosReceivablesPage({
         items={[
           {
             label: "Piutang terbuka",
-            value: formatIDR(totalOutstanding),
-            hint: `${allRows.length} dokumen`,
+            value: formatIDR(summary.totalOutstanding),
+            hint: `${summary.openCount} dokumen`,
           },
           {
             label: "Lewat jatuh tempo",
-            value: formatIDR(overdueTotal),
-            hint: `${overdue.length} dokumen`,
-            tone: overdue.length > 0 ? "red" : "green",
+            value: formatIDR(summary.overdueTotal),
+            hint: `${summary.overdueCount} dokumen`,
+            tone: summary.overdueCount > 0 ? "red" : "green",
           },
           {
             label: "Jatuh tempo ≤ 7 hari",
-            value: formatIDR(soonTotal),
-            hint: `${soon.length} dokumen`,
-            tone: soon.length > 0 ? "amber" : "green",
+            value: formatIDR(summary.soonTotal),
+            hint: `${summary.soonCount} dokumen`,
+            tone: summary.soonCount > 0 ? "amber" : "green",
           },
         ]}
       />
@@ -173,7 +163,7 @@ export default async function PosReceivablesPage({
               />
             </DataListToolbar>
           }
-          isEmpty={rows.length === 0}
+          isEmpty={total === 0}
           empty={
             <EmptyState
               size="compact"
@@ -191,7 +181,7 @@ export default async function PosReceivablesPage({
               pageSize={pageSize}
               total={total}
               basePath="/app/pos/piutang"
-              params={{ status: status || undefined, q: q || undefined }}
+              params={{ status: status || undefined, q: params.q || undefined }}
             />
           }
         >
@@ -210,7 +200,7 @@ export default async function PosReceivablesPage({
               </thead>
               <tbody>
                 {pagedRows.map((row) => {
-                  const partyId = row.customerId;
+                  const partyId = row.partyId;
                   const partyKey = `customer:${partyId ?? ""}`;
                   const credits = creditByParty.get(partyKey) ?? [];
                   const paymentKind =
@@ -241,9 +231,9 @@ export default async function PosReceivablesPage({
                       </td>
                       <td className="text-[12px]">
                         <span className="block">{row.partyName ?? "—"}</span>
-                        {row.customerId ? (
+                        {row.partyId ? (
                           <Link
-                            href={`/app/pos/piutang/cetak?customerId=${row.customerId}`}
+                            href={`/app/pos/piutang/cetak?customerId=${row.partyId}`}
                             className="text-[10px] font-medium text-primary hover:underline"
                           >
                             Cetak statement
@@ -273,6 +263,7 @@ export default async function PosReceivablesPage({
                               withholdingEnabled={Boolean(data.settings?.withholdingEnabled)}
                               canWriteOff={canWriteOff}
                               writeOffMaxAmount={data.settings?.writeoffMaxAmount ?? "0"}
+                              cashDrawerContext
                             />
                           ) : (
                             <Link
@@ -293,7 +284,7 @@ export default async function PosReceivablesPage({
 
           <div className="divide-y divide-border/70 lg:hidden">
             {pagedRows.map((row) => {
-              const partyKey = `customer:${row.customerId ?? ""}`;
+              const partyKey = `customer:${row.partyId ?? ""}`;
               const credits = creditByParty.get(partyKey) ?? [];
               const paymentKind =
                 row.source === "opening" ? "opening-receivable" : "receivable";
@@ -336,9 +327,9 @@ export default async function PosReceivablesPage({
                     </p>
                   </div>
                   <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
-                    {row.customerId ? (
+                    {row.partyId ? (
                       <Link
-                        href={`/app/pos/piutang/cetak?customerId=${row.customerId}`}
+                        href={`/app/pos/piutang/cetak?customerId=${row.partyId}`}
                         className="text-[11px] font-medium text-primary hover:underline"
                       >
                         Statement
@@ -355,6 +346,7 @@ export default async function PosReceivablesPage({
                         withholdingEnabled={Boolean(data.settings?.withholdingEnabled)}
                         canWriteOff={canWriteOff}
                         writeOffMaxAmount={data.settings?.writeoffMaxAmount ?? "0"}
+                        cashDrawerContext
                       />
                     ) : (
                       <Link

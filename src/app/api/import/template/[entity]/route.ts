@@ -54,6 +54,54 @@ async function sampleMatrix(csv: string): Promise<{ headers: string[]; rows: Xls
   return { headers, rows };
 }
 
+/**
+ * POS-IMP-03: template stok awal memakai produk nyata milik perusahaan.
+ * Contoh statis lama menunjuk produk fiktif, sehingga unduhan pertama
+ * selalu gagal validasi. Bila belum ada produk yang layak, sheet Data
+ * hanya berisi header (pengguna mengisi sendiri).
+ */
+async function openingStockSample(companyId: string): Promise<{
+  headers: string[];
+  rows: XlsxCell[][];
+}> {
+  const headers = [
+    "SKU",
+    "Nama Produk",
+    "Gudang Saldo Awal",
+    "Kuantitas Saldo Awal",
+    "Nilai Satuan",
+    "Per Tanggal",
+  ];
+  return withCompanyReadOnly(companyId, async (tx) => {
+    const [productRows, warehouseRows] = await Promise.all([
+      tx
+        .select({ sku: products.sku, name: products.name, costPrice: products.costPrice })
+        .from(products)
+        .where(
+          and(
+            eq(products.companyId, companyId),
+            eq(products.isActive, true),
+            eq(products.trackStock, true),
+            eq(products.trackSerial, false),
+            eq(products.trackBatch, false),
+          ),
+        )
+        .orderBy(asc(products.name))
+        .limit(100),
+      listWarehouses(tx, companyId),
+    ]);
+    const product = productRows.find((row) => Number(row.costPrice) > 0) ?? null;
+    const warehouse =
+      warehouseRows.find((row) => row.isDefault) ?? warehouseRows[0] ?? null;
+    return {
+      headers,
+      rows: product
+        ? [[product.sku, product.name, warehouse?.name ?? "", 10, product.costPrice, ""]]
+        : [],
+    };
+  });
+}
+
 const INSTRUCTIONS: Record<string, string[]> = {
   products:
     [
@@ -129,8 +177,9 @@ const INSTRUCTIONS: Record<string, string[]> = {
   ],
   opening_stock: [
     "Produk harus sudah ada dan dicocokkan dari SKU atau nama.",
-    "Qty wajib > 0 dan biaya satuan wajib. Tanggal memakai format YYYY-MM-DD.",
-    "Gudang harus sudah ada; bila kolom gudang kosong, wizard memakai gudang yang dipilih.",
+    "Qty wajib diisi dalam SATUAN DASAR produk (PCS/kg/...); isi 0 untuk saldo nol.",
+    "Biaya satuan wajib untuk qty selain 0. Bila stok memang gratis, centang \"Izinkan biaya 0\" di wizard sebelum validasi.",
+    "Gudang dan tanggal opsional; bila kosong, wizard memakai gudang/tanggal cut-off yang dipilih. Format tanggal YYYY-MM-DD.",
   ],
   opening_payables: [
     "Pemasok harus sudah ada dan dicocokkan dari nama atau kode.",
@@ -160,8 +209,13 @@ export async function GET(
         return customFieldDefinitionsFor(settings?.customFields, customEntity);
       })
     : [];
+  const openingSample =
+    entity === "opening_stock" ? await openingStockSample(ctx.company.id) : null;
 
   if (format === "csv") {
+    if (openingSample) {
+      return csvResponse(sample.fileName, toCsv(openingSample.headers, openingSample.rows));
+    }
     if (customFields.length === 0) return csvResponse(sample.fileName, sample.csv);
     const sampleData = await sampleMatrix(sample.csv);
     const headers = [...sampleData.headers, ...customFields.map(customFieldImportHeader)];
@@ -338,7 +392,7 @@ export async function GET(
     return [];
   });
 
-  const sampleData = await sampleMatrix(sample.csv);
+  const sampleData = openingSample ?? (await sampleMatrix(sample.csv));
   const fileBase = sample.fileName.replace(/\.csv$/i, "");
   const customFieldInstructions = customFields.map((field) => {
     const type =

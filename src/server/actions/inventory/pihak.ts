@@ -209,6 +209,8 @@ const customerSchema = z.object({
   address: z.string().max(300).optional(),
   groupId: z.string().uuid().nullish(),
   creditLimit: z.union([z.string(), z.number()]).optional(),
+  /** true = limit 0 berarti tanpa batas; false = 0 berarti kredit dilarang. */
+  creditLimitUnlimited: z.boolean().optional(),
   // S3 (§18D): NPWP/NIK & termin pembayaran bawaan.
   taxId: z.string().max(40).optional(),
   paymentTermDays: z.number().int().min(0).max(3650).nullish(),
@@ -234,11 +236,17 @@ export async function saveCustomerAction(input: z.input<typeof customerSchema>) 
       }
 
       // MD-023: Pengubahan atau penetapan batas kredit memerlukan izin akuntansi atau owner/admin
-      if (data.creditLimit !== undefined) {
-        const requestedLimit = toDb(data.creditLimit);
+      if (
+        data.creditLimit !== undefined ||
+        data.creditLimitUnlimited !== undefined
+      ) {
+        const requestedLimit = toDb(data.creditLimit ?? current?.creditLimit ?? 0);
         const currentLimit = current?.creditLimit ?? "0";
+        const requestedUnlimited =
+          data.creditLimitUnlimited ?? current?.creditLimitUnlimited ?? true;
+        const currentUnlimited = current?.creditLimitUnlimited ?? true;
         if (
-          requestedLimit !== currentLimit &&
+          (requestedLimit !== currentLimit || requestedUnlimited !== currentUnlimited) &&
           ctx.role &&
           !can(ctx, "accounting.manage") &&
           ctx.role !== "owner" &&
@@ -297,6 +305,8 @@ export async function saveCustomerAction(input: z.input<typeof customerSchema>) 
         address: data.address,
         groupId: data.groupId ?? null,
         creditLimit: toDb(data.creditLimit ?? 0),
+        creditLimitUnlimited:
+          data.creditLimitUnlimited ?? (data.id ? undefined : true),
         // Field §18D: tidak dikirim = pertahankan; kosong = null.
         taxId: data.taxId === undefined ? undefined : data.taxId.trim() || null,
         paymentTermDays: data.paymentTermDays,
@@ -310,6 +320,7 @@ export async function saveCustomerAction(input: z.input<typeof customerSchema>) 
         address: string | null;
         groupId: string | null;
         creditLimit: string;
+        creditLimitUnlimited: boolean;
         taxId: string | null;
         paymentTermDays: number | null;
         isActive: boolean;
@@ -322,6 +333,7 @@ export async function saveCustomerAction(input: z.input<typeof customerSchema>) 
         address: row.address,
         groupId: row.groupId,
         creditLimit: row.creditLimit,
+        creditLimitUnlimited: row.creditLimitUnlimited,
         taxId: row.taxId,
         paymentTermDays: row.paymentTermDays,
         isActive: row.isActive,
@@ -346,9 +358,13 @@ export async function saveCustomerAction(input: z.input<typeof customerSchema>) 
         });
         return updated;
       }
+      const insertValues = {
+        ...values,
+        creditLimitUnlimited: values.creditLimitUnlimited ?? true,
+      };
       const [created] = await tx
         .insert(customers)
-        .values({ companyId: ctx.company.id, ...values })
+        .values({ companyId: ctx.company.id, ...insertValues })
         .returning({ id: customers.id });
       await writeAudit(tx, {
         companyId: ctx.company.id,
@@ -357,7 +373,7 @@ export async function saveCustomerAction(input: z.input<typeof customerSchema>) 
         entityType: "customer",
         entityId: created.id,
         after: snapshot({
-          ...values,
+          ...insertValues,
           phone: values.phone ?? null,
           email: values.email ?? null,
           address: values.address ?? null,

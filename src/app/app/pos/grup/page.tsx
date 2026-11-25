@@ -26,7 +26,7 @@ export default async function PosGroupsPage() {
         actions={
           <Link
             href="/app/pos"
-            className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/90"
+            className="inline-flex h-11 items-center gap-1.5 rounded-md bg-primary px-4 text-[12px] font-medium text-primary-foreground hover:bg-primary/90 lg:h-8"
           >
             <Search className="size-3.5" /> Ke kasir
           </Link>
@@ -39,7 +39,7 @@ export default async function PosGroupsPage() {
           description="Buat kelompok dan atur harga produknya di Pengaturan → Grup pelanggan."
           icon={<Users className="size-5" />}
           action={
-            <Link href="/app/pengaturan?tab=grup" className="text-[12px] font-medium text-primary hover:underline">
+            <Link href="/app/pengaturan?tab=grup" className="inline-flex min-h-11 items-center text-[12px] font-medium text-primary hover:underline">
               Buka pengaturan kelompok
             </Link>
           }

@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatIDR } from "@/lib/money";
+import { receiptHref } from "@/lib/pos/receipt-links";
 import { formatMoneyText } from "@/lib/money-input";
 import { MoneyInput } from "@/components/money-input";
 import { paymentMethodTypeLabel } from "@/lib/format";
@@ -36,6 +37,12 @@ const methodTone: Record<string, string> = {
   credit: "bg-tone-amber-soft text-tone-amber",
 };
 
+/** Label pendek untuk tombol metode cepat; nama penuh tetap di title. */
+function quickMethodLabel(name: string): string {
+  const first = name.trim().split(/\s+/)[0] ?? name;
+  return first.length <= 9 ? first : `${first.slice(0, 8)}…`;
+}
+
 // FIX-ARS Tahap 5 (ARS2-01): panel pembayaran — kartu pembayaran
 // (tunggal/campuran, konfirmasi non-tunai & referensi, kredit retur,
 // panel utang, status quote, Bayar/Tahan); JSX dipindah apa adanya
@@ -53,6 +60,8 @@ export function PaymentPanel(props: {
   setEntries: Dispatch<SetStateAction<Record<string, PaymentEntry>>>;
   total: number;
   change: number;
+  /** Total kekurangan uang tunai yang benar-benar diserahkan (0 = aman). */
+  cashShortfall?: number;
   isCreditSingle: boolean;
   debtMethod: { id: string; name: string } | null;
   debtActive: boolean;
@@ -92,7 +101,9 @@ export function PaymentPanel(props: {
   checkout: () => Promise<void>;
   setHoldOpen: Dispatch<SetStateAction<boolean>>;
   sessionOpen: boolean;
-  lastSale: { id: string; number: string } | null;
+  lastSale: { id: string; number: string; receiptToken?: string } | null;
+  canReprint?: boolean;
+  onReopenLastSale?: () => void;
 }) {
   const {
     tenderedInputId = "pos-tendered-input",
@@ -106,6 +117,7 @@ export function PaymentPanel(props: {
     setEntries,
     total,
     change,
+    cashShortfall = 0,
     isCreditSingle,
     debtMethod,
     debtActive,
@@ -146,6 +158,8 @@ export function PaymentPanel(props: {
     setHoldOpen,
     sessionOpen,
     lastSale,
+    canReprint = false,
+    onReopenLastSale,
   } = props;
   const tenderedAmount = Number(entries[singleMethod]?.tendered ?? 0);
   // Default minimalis: hanya metode aktif (biasanya Tunai) yang tampil;
@@ -154,9 +168,13 @@ export function PaymentPanel(props: {
   const isDebtMethod = Boolean(debtMethod && singleMethod === debtMethod.id);
   const activeMethodName = isDebtMethod ? "Utang" : (single?.name ?? "Pilih metode");
   const activeMethodType = isDebtMethod ? "credit" : (single?.type ?? null);
+  // Dua metode alternatif tercepat: kasir bisa pindah Tunai ↔ QRIS/Bank
+  // tanpa membuka panel "Metode lain".
+  const quickMethods = methods.filter((method) => method.id !== singleMethod).slice(0, 2);
   return (
+      <>
         <div className="rounded-lg border border-border bg-card">
-          <div className="flex min-h-16 items-center justify-between gap-3 border-b border-border bg-card px-4 py-3">
+          <div className="flex min-h-14 items-center justify-between gap-3 border-b border-border bg-card px-3 py-2.5">
             <div>
               <h2 className="text-base font-semibold text-[var(--pos-action)]">Pembayaran</h2>
             </div>
@@ -166,7 +184,7 @@ export function PaymentPanel(props: {
                 onClick={() => setMode("single")}
                 aria-pressed={mode === "single"}
                 className={cn(
-                  "min-h-10 rounded px-3 text-[13px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "min-h-11 rounded px-3 text-[13px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   mode === "single" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
                 )}
               >
@@ -177,7 +195,7 @@ export function PaymentPanel(props: {
                 onClick={() => setMode("mixed")}
                 aria-pressed={mode === "mixed"}
                 className={cn(
-                  "min-h-10 rounded px-3 text-[13px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "min-h-11 rounded px-3 text-[13px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   mode === "mixed" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
                 )}
               >
@@ -186,7 +204,7 @@ export function PaymentPanel(props: {
             </div>
           </div>
 
-          <div className="space-y-3 p-4">
+          <div className="space-y-3 p-3">
             {mode === "single" ? (
               <>
                 {!methodsExpanded ? (
@@ -213,12 +231,26 @@ export function PaymentPanel(props: {
                         </span>
                       ) : null}
                     </div>
+                    {quickMethods.map((method) => (
+                      <button
+                        key={method.id}
+                        type="button"
+                        onClick={() => setSingleMethod(method.id)}
+                        title={method.name}
+                        aria-label={`Pilih ${method.name}`}
+                        className="flex min-h-12 w-16 shrink-0 items-center justify-center rounded-md border border-border bg-background px-1 text-[11px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <span className="truncate">{quickMethodLabel(method.name)}</span>
+                      </button>
+                    ))}
                     <button
                       type="button"
                       onClick={() => setMethodsExpanded(true)}
-                      className="flex min-h-12 shrink-0 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-semibold text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      aria-label="Metode pembayaran lain"
+                      title="Metode pembayaran lain"
+                      className="flex min-h-12 w-12 shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
-                      <CreditCard className="size-4" /> Metode lain
+                      <CreditCard className="size-4" />
                     </button>
                   </div>
                 ) : (
@@ -317,7 +349,7 @@ export function PaymentPanel(props: {
                             },
                           }))
                         }
-                        placeholder={formatMoneyText(String(total))}
+                        placeholder={total > 0 ? `Pas: ${formatMoneyText(String(total))}` : "0"}
                         className="text-sm font-semibold"
                       />
                     </label>
@@ -521,6 +553,15 @@ export function PaymentPanel(props: {
                   Coba lagi
                 </button>
               </div>
+            ) : cashShortfall > 0.004 ? (
+              <p className="flex items-start gap-2 rounded-md bg-tone-red-soft px-3 py-2 text-sm leading-5 text-tone-red">
+                <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                <span>
+                  Uang tunai yang diserahkan kurang{" "}
+                  <span className="num font-semibold">{formatIDR(cashShortfall)}</span>. Lengkapi
+                  nominal Diterima sebelum menekan Bayar.
+                </span>
+              </p>
             ) : nonCashNeedsConfirm && !nonCashConfirmed && quote ? (
               <p className="flex items-start gap-2 rounded-md bg-tone-amber-soft px-3 py-2 text-sm leading-5 text-tone-amber">
                 <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
@@ -540,35 +581,55 @@ export function PaymentPanel(props: {
               </a>
             ) : null}
 
-            <div className="sticky bottom-0 -mx-4 -mb-4 grid grid-cols-[1fr_auto] gap-2 border-t border-border bg-card px-4 py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] shadow-[0_-8px_24px_-20px_rgba(15,23,42,0.35)]">
-              <button
-                type="button"
-                onClick={checkout}
-                disabled={payDisabled}
-                className="flex h-12 items-center justify-center gap-2 rounded-md bg-[var(--pos-action)] text-[15px] font-bold text-[var(--pos-action-fg)] transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {payLabel}
-              </button>
-              <button
-                type="button"
-                onClick={() => setHoldOpen(true)}
-                disabled={cart.length === 0}
-                className="flex h-12 items-center justify-center gap-2 rounded-md border border-border px-4 text-sm font-semibold hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
-                title="Tahan pesanan"
-              >
-                <PauseCircle className="size-4" /> Tahan
-              </button>
-            </div>
-
-            {lastSale ? (
-              <a
-                href={`/app/pos/nota/${lastSale.id}?autoprint=1&salinan=1`}
-                className="flex min-h-11 items-center justify-center text-sm text-muted-foreground underline underline-offset-2"
-              >
-                Cetak ulang {lastSale.number}
-              </a>
+            {lastSale && (canReprint || lastSale.receiptToken) ? (
+              onReopenLastSale ? (
+                <button
+                  type="button"
+                  onClick={onReopenLastSale}
+                  className="flex min-h-11 w-full items-center justify-center text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  Cetak / lihat nota {lastSale.number}
+                </button>
+              ) : (
+                <a
+                  href={receiptHref(lastSale.id, {
+                    autoprint: true,
+                    printToken: lastSale.receiptToken,
+                    copy: !lastSale.receiptToken,
+                  })}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex min-h-11 items-center justify-center text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                >
+                  Cetak / lihat nota {lastSale.number}
+                </a>
+              )
             ) : null}
           </div>
         </div>
+
+        {/* Footer sengaja di luar kartu: sticky terhadap scrollport
+            panel kanan, sehingga tombol Bayar tetap terlihat walau
+            daftar baris atau detail pembayaran panjang. */}
+        <div className="sticky bottom-0 z-10 grid grid-cols-[1fr_auto] gap-2 rounded-lg border border-border bg-card px-3 py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] shadow-[0_-8px_24px_-20px_rgba(15,23,42,0.35)]">
+          <button
+            type="button"
+            onClick={checkout}
+            disabled={payDisabled}
+            className="flex h-12 items-center justify-center gap-2 rounded-md bg-[var(--pos-action)] text-[15px] font-bold text-[var(--pos-action-fg)] transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {payLabel}
+          </button>
+          <button
+            type="button"
+            onClick={() => setHoldOpen(true)}
+            disabled={cart.length === 0}
+            className="flex h-12 items-center justify-center gap-2 rounded-md border border-border px-4 text-sm font-semibold hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
+            title="Tahan pesanan"
+          >
+            <PauseCircle className="size-4" /> Tahan
+          </button>
+        </div>
+      </>
   );
 }

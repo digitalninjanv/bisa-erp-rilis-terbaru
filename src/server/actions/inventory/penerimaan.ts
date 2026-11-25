@@ -85,7 +85,8 @@ const receiptSchema = z
           serialNumbers: z.array(z.string().trim().min(1).max(80)).max(500).optional(),
         }),
       )
-      .min(1),
+      .min(1)
+      .max(500, "Maksimal 500 baris per penerimaan."),
   })
   .superRefine((data, ctx) => {
     const source = data.source ?? "purchase";

@@ -12,7 +12,10 @@ import { toast } from "sonner";
 import { checkoutAction } from "@/server/actions/pos";
 import { formatIDR } from "@/lib/money";
 import { clearCheckoutAttempt, readCheckoutAttempt, storeCheckoutAttempt, type CheckoutAttempt } from "@/lib/pos/checkout-attempt";
-import { formatDate, todayISO } from "@/lib/format";
+import { isDefinitiveCheckoutError, isHeldSaleUnavailableMessage } from "@/lib/pos/checkout-recovery";
+import { todayISO } from "@/lib/format";
+import { receiptHref } from "@/lib/pos/receipt-links";
+import { buildTerminalReceiptData } from "@/lib/pos/build-receipt-data";
 import type { CompletedSaleInfo } from "./checkout-success-modal";
 import type { ReceiptData } from "@/lib/escpos/types";
 import {
@@ -83,17 +86,19 @@ export function useTerminalCheckout(params: {
   receivableDefaultTermDays: number;
   appliedCredit: PaymentEntry | undefined;
   setCart: Dispatch<SetStateAction<CartItem[]>>;
-  setEntries: Dispatch<SetStateAction<Record<string, PaymentEntry>>>;
   setCustomer: Dispatch<SetStateAction<CustomerOption | null>>;
   setCustomerQuery: Dispatch<SetStateAction<string>>;
   setCustomerResults: Dispatch<SetStateAction<CustomerOption[]>>;
   setDueDate: Dispatch<SetStateAction<string>>;
   resetCredit: ReturnCreditApi["resetCredit"];
+  /** Reset input pembayaran + konfirmasi non-tunai setelah transaksi selesai. */
+  resetPaymentInputs: () => void;
+  setGroupId: Dispatch<SetStateAction<string>>;
   setQuoteResult: ReturnType<typeof useQuote>["setQuoteResult"];
   heldSaleId: string | null;
   setHeldSaleId: Dispatch<SetStateAction<string | null>>;
   setHeldTotal: Dispatch<SetStateAction<number | null>>;
-  setLastSale: Dispatch<SetStateAction<{ id: string; number: string } | null>>;
+  setLastSale: Dispatch<SetStateAction<CompletedSaleInfo | null>>;
   setReservationId: Dispatch<SetStateAction<string | null>>;
   setQueuedCount: Dispatch<SetStateAction<number>>;
   setOldestQueuedAt: Dispatch<SetStateAction<string | null>>;
@@ -111,7 +116,7 @@ export function useTerminalCheckout(params: {
   const [submitting, setSubmitting] = useState(false);
   const [pendingCheckout, setPendingCheckout] = useState<CheckoutAttempt | null>(null);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
-  const { cart, sessionOpen, mode, singleMethod, single, cashTendered, entries, methodById, outstanding, debtActive, customer, dueDate, total, quote, cache, posOfflineEnabled, reservationId, selectedWarehouse, groupId, storageKey, sessionId, userId, companyId, receiptProfile, receivableDefaultTermDays, appliedCredit, setCart, setEntries, setCustomer, setCustomerQuery, setCustomerResults, setDueDate, resetCredit, setQuoteResult, heldSaleId, setHeldSaleId, setHeldTotal, setLastSale, setReservationId, setQueuedCount, setOldestQueuedAt, idempotencyKeyRef, checkoutAttemptedRef, inFlightRef, onSaleQueued, onCheckoutSuccess } = params;
+  const { cart, sessionOpen, mode, singleMethod, single, cashTendered, entries, methodById, outstanding, debtActive, customer, dueDate, total, quote, cache, posOfflineEnabled, reservationId, selectedWarehouse, groupId, storageKey, sessionId, userId, companyId, receiptProfile, receivableDefaultTermDays, appliedCredit, setCart, setCustomer, setCustomerQuery, setCustomerResults, setDueDate, resetCredit, resetPaymentInputs, setGroupId, setQuoteResult, heldSaleId, setHeldSaleId, setHeldTotal, setLastSale, setReservationId, setQueuedCount, setOldestQueuedAt, idempotencyKeyRef, checkoutAttemptedRef, inFlightRef, onSaleQueued, onCheckoutSuccess } = params;
 
   useEffect(() => {
     if (!params.cartLoaded) return;
@@ -119,25 +124,44 @@ export function useTerminalCheckout(params: {
       try {
         setPendingCheckout(readCheckoutAttempt(storageKey));
       } catch (error) {
-        setRecoveryError(error instanceof Error ? error.message : "Penyimpanan pembayaran tidak dapat dibaca.");
+        // Snapshot rusak tidak dapat dipakai untuk retry apa pun. Buang agar
+        // terminal tidak terkunci oleh dialog yang tidak punya jalan keluar.
+        clearCheckoutAttempt(storageKey);
+        toast.error(
+          error instanceof Error
+            ? `${error.message} Data percobaan rusak telah dibuang; periksa riwayat sebelum menjual ulang.`
+            : "Data percobaan pembayaran rusak telah dibuang; periksa riwayat sebelum menjual ulang.",
+        );
       }
     })();
   }, [params.cartLoaded, storageKey]);
 
-  function completeCheckout(sale: { id: string; number: string; total: number; change: number }, attempt: CheckoutAttempt) {
+  function completeCheckout(
+    sale: {
+      id: string;
+      number: string;
+      total: number;
+      change: number;
+      receiptToken?: string;
+    },
+    attempt: CheckoutAttempt,
+    instantReceipt?: ReceiptData,
+  ) {
     clearCheckoutAttempt(storageKey);
     setPendingCheckout(null);
     setRecoveryError(null);
-    setLastSale({ id: sale.id, number: sale.number });
+    const completed: CompletedSaleInfo = { ...sale, instantReceipt };
+    setLastSale(completed);
     // Another tab may have saved a different cart while this payment was unresolved.
     if (attempt.cartSignature === params.cartSignature) {
       clearStoredCart(storageKey);
       setCart([]);
-      setEntries({});
+      resetPaymentInputs();
       setCustomer(null);
       setCustomerQuery("");
       setCustomerResults([]);
       setDueDate(defaultDueDate(receivableDefaultTermDays));
+      setGroupId("");
       resetCredit();
       setQuoteResult(null);
       setHeldSaleId(null);
@@ -146,8 +170,8 @@ export function useTerminalCheckout(params: {
     }
     idempotencyKeyRef.current = newUuid();
     checkoutAttemptedRef.current = false;
-    if (onCheckoutSuccess) onCheckoutSuccess(sale);
-    else router.push(`/app/pos/nota/${sale.id}`);
+    if (onCheckoutSuccess) onCheckoutSuccess(completed);
+    else router.push(receiptHref(sale.id, { printToken: sale.receiptToken }));
   }
 
   async function retryPendingCheckout() {
@@ -158,12 +182,17 @@ export function useTerminalCheckout(params: {
       const result = await checkoutAction(pendingCheckout.request);
       if (result.ok) completeCheckout(result.data, pendingCheckout);
       else {
-        setRecoveryError(result.message);
-        if (["VALIDATION", "NOT_FOUND", "INVALID_STATE"].includes(result.code)) {
+        if (isDefinitiveCheckoutError(result.code)) {
           clearCheckoutAttempt(storageKey);
           setPendingCheckout(null);
           setRecoveryError(null);
+          if (isHeldSaleUnavailableMessage(result.message)) {
+            setHeldSaleId(null);
+            setHeldTotal(null);
+          }
           toast.error(result.message);
+        } else {
+          setRecoveryError(result.message);
         }
       }
     } catch {
@@ -172,6 +201,15 @@ export function useTerminalCheckout(params: {
       inFlightRef.current = false;
       setSubmitting(false);
     }
+  }
+
+  function discardPendingCheckout() {
+    clearCheckoutAttempt(storageKey);
+    setPendingCheckout(null);
+    setRecoveryError(null);
+    idempotencyKeyRef.current = newUuid();
+    checkoutAttemptedRef.current = false;
+    toast.info("Percobaan pembayaran dibatalkan. Periksa riwayat bila dana mungkin sudah masuk.");
   }
 
   // A-24 T6 (T6-01/T6-02): antrekan penjualan ini ke antrean offline
@@ -249,63 +287,19 @@ export function useTerminalCheckout(params: {
       queuedAt: new Date().toISOString(),
     };
     const offlineSaleNumber = `OFF-${clientKey.slice(0, 8).toUpperCase()}`;
-    const receiptData: ReceiptData = {
-      companyName: receiptProfile.companyName,
-      address: receiptProfile.address,
-      phone: receiptProfile.phone,
-      headerText: receiptProfile.headerText,
-      footerText: receiptProfile.footerText,
+    const receiptData = buildTerminalReceiptData({
       saleNumber: offlineSaleNumber,
-      date: formatDate(todayISO()),
-      cashierName: receiptProfile.cashierName,
+      cart,
+      quote,
+      cache,
+      payments,
+      methodById,
+      receiptProfile,
       customerName: debtActive ? (customer?.name ?? null) : null,
-      lines: cart.map((line) => {
-        const quoted = quote?.lines.find(
-          (row) =>
-            row.productId === line.productId &&
-            (row.packagingId ?? null) === (line.packagingId ?? null),
-        );
-        const pack = line.packagingId
-          ? cache[line.productId]?.packagings?.find((row) => row.id === line.packagingId)
-          : undefined;
-        const name = cache[line.productId]?.name ?? "Produk";
-        const price = pack
-          ? quoted
-            ? quoted.groupUnitPrice * Number(quoted.isiSnapshot)
-            : Number(pack.salePrice ?? 0)
-          : (quoted?.groupUnitPrice ?? Number(cache[line.productId]?.salePrice ?? 0));
-        return {
-          name: pack ? `${name} (${pack.name})` : name,
-          qty: line.qty,
-          unit: pack?.name ?? null,
-          price,
-          subtotal: quoted ? quoted.lineTotal : price * line.qty,
-          discount: quoted?.discountAmount ?? 0,
-        };
-      }),
-      subtotal: quote?.subtotal ?? total,
-      taxTotal: quote?.taxTotal ?? 0,
-      discountTotal: quote?.discountTotal ?? 0,
+      dueDate: debtActive ? dueDate : null,
       total,
       outstanding: params.debtAmount,
-      payments: payments.map((payment) => ({
-        methodName: methodById.get(payment.methodId)?.name ?? "Pembayaran",
-        methodType: methodById.get(payment.methodId)?.type,
-        amount: payment.amount,
-        tendered: payment.tendered,
-      })),
-      change: Math.max(
-        0,
-        payments.reduce((sum, payment) => sum + Number(payment.tendered ?? payment.amount), 0) - total,
-      ),
-      paperWidth: receiptProfile.paperWidth,
-      showTax: receiptProfile.showTax,
-      showCashier: receiptProfile.showCashier,
-      showCustomer: receiptProfile.showCustomer,
-      showQr: receiptProfile.showQr,
-      openCashDrawer: receiptProfile.openCashDrawer,
-      cutPaper: receiptProfile.cutPaper,
-    };
+    });
     try {
       const storage = getBrowserOfflineStorage({
         companyId,
@@ -328,25 +322,28 @@ export function useTerminalCheckout(params: {
     setPendingCheckout(null);
     clearStoredCart(storageKey);
     setCart([]);
-    setEntries({});
+    resetPaymentInputs();
     setCustomer(null);
     setCustomerQuery("");
     setCustomerResults([]);
     setDueDate(defaultDueDate(receivableDefaultTermDays));
+    setGroupId("");
     resetCredit();
     setQuoteResult(null);
     setHeldSaleId(null);
     setHeldTotal(null);
     idempotencyKeyRef.current = newUuid();
     checkoutAttemptedRef.current = false;
+    const completed: CompletedSaleInfo = {
+      id: clientKey,
+      number: offlineSaleNumber,
+      total: receiptData.total,
+      change: receiptData.change,
+      offlineReceipt: receiptData,
+    };
+    setLastSale(completed);
     if (onCheckoutSuccess) {
-      onCheckoutSuccess({
-        id: clientKey,
-        number: offlineSaleNumber,
-        total: receiptData.total,
-        change: receiptData.change,
-        offlineReceipt: receiptData,
-      });
+      onCheckoutSuccess(completed);
     } else {
       onSaleQueued?.();
     }
@@ -476,18 +473,50 @@ export function useTerminalCheckout(params: {
       }
 
       if (!result.ok) {
-        if (["VALIDATION", "NOT_FOUND", "INVALID_STATE"].includes(result.code)) clearCheckoutAttempt(storageKey);
-        else setPendingCheckout(attempt);
+        // Semua AppError yang dikembalikan server adalah hasil transaksi
+        // yang sudah rollback dan bersifat definitif. Jangan menyimpannya
+        // sebagai pending (keranjang basi bisa di-retry setelah stok/harga
+        // berubah); hanya kegagalan transport/unknown yang pending.
+        if (isDefinitiveCheckoutError(result.code)) {
+          clearCheckoutAttempt(storageKey);
+          if (isHeldSaleUnavailableMessage(result.message)) {
+            setHeldSaleId(null);
+            setHeldTotal(null);
+          }
+        } else {
+          setPendingCheckout(attempt);
+        }
         toast.error(result.message);
         return;
       }
 
-      completeCheckout(result.data, attempt);
+      const instantReceipt = buildTerminalReceiptData({
+        saleNumber: result.data.number,
+        cart,
+        quote,
+        cache,
+        payments,
+        methodById,
+        receiptProfile,
+        customerName: debtActive ? (customer?.name ?? null) : null,
+        dueDate: debtActive ? dueDate : null,
+        total: result.data.total,
+        change: result.data.change,
+        outstanding: debtActive ? params.debtAmount : 0,
+      });
+      completeCheckout(result.data, attempt, instantReceipt);
     } finally {
       inFlightRef.current = false;
       setSubmitting(false);
     }
   }
 
-  return { checkout, submitting, pendingCheckout, recoveryError, retryPendingCheckout };
+  return {
+    checkout,
+    submitting,
+    pendingCheckout,
+    recoveryError,
+    retryPendingCheckout,
+    discardPendingCheckout,
+  };
 }

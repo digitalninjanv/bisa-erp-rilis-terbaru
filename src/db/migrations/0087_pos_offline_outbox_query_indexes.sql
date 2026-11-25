@@ -1,0 +1,2 @@
+CREATE INDEX "outbox_pos_client_key_idx" ON "outbox" USING btree ("company_id","event_type",("payload"->>'clientKey'),"processed_at");--> statement-breakpoint
+CREATE INDEX "outbox_pos_settlement_session_idx" ON "outbox" USING btree ("company_id","event_type",("payload"->'settlement'->>'sessionId'));

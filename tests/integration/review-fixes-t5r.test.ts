@@ -12,7 +12,7 @@ import { adminSql } from "@/db/admin";
 import { COMPANY_COOKIE_NAME } from "@/lib/company-selection";
 import { sanitizeEnabledModules } from "@/lib/modules";
 import { wipeCompanyFixture } from "../helpers/wipe-company";
-import { openSessionAction } from "@/server/actions/pos";
+import { openSessionAction } from "@/server/actions/pos-sessions";
 import { saveEnabledModulesAction } from "@/server/actions/settings/modul";
 
 // Tindak lanjut review Tahap 5:

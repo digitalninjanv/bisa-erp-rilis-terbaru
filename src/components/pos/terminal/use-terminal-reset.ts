@@ -2,6 +2,7 @@
 
 import { useCallback, type Dispatch, type SetStateAction } from "react";
 import { defaultDueDate } from "@/components/pos/terminal/use-terminal-checkout";
+import { paymentStateAfterCompletedSale } from "@/lib/pos/payment-state";
 import type { CustomerOption, PaymentEntry } from "@/components/pos/terminal-types";
 
 /**
@@ -29,8 +30,9 @@ export function useTerminalReset(params: {
   } = params;
 
   const resetPaymentInputs = useCallback(() => {
-    setEntries({});
-    setNonCashConfirmedFor(null);
+    const reset = paymentStateAfterCompletedSale();
+    setEntries(reset.entries);
+    setNonCashConfirmedFor(reset.nonCashConfirmedFor);
   }, [setEntries, setNonCashConfirmedFor]);
 
   const resetNewSaleContext = useCallback(() => {

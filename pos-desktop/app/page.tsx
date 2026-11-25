@@ -1167,6 +1167,7 @@ export default function DesktopTerminalPage() {
           stock: product.stock,
           trackStock: product.trackStock,
           trackSerial: product.trackSerial,
+          isTaxExempt: product.isTaxExempt ?? false,
           packagings: product.packagings.map((packaging) => ({
             id: packaging.packagingId,
             name: packaging.name,

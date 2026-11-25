@@ -8,6 +8,10 @@ export type PrintAlignment = "left" | "center" | "right";
 
 export type PrinterConnectionType = "bluetooth" | "usb" | "serial" | "kiosk" | "none";
 
+export type SerialBaudRate = 9600 | 19200 | 38400 | 57600 | 115200;
+
+export const SERIAL_BAUD_RATES: readonly SerialBaudRate[] = [9600, 19200, 38400, 57600, 115200];
+
 export interface ThermalPrinterDevice {
   name: string;
   type: PrinterConnectionType;
@@ -34,18 +38,21 @@ export interface ReceiptPaymentItem {
 export interface ReceiptData {
   companyName: string;
   legalName?: string | null;
+  taxId?: string | null;
   address?: string | null;
   phone?: string | null;
   headerText?: string | null;
   footerText?: string | null;
   saleNumber: string;
   date: string;
+  dueDate?: string | null;
   cashierName?: string | null;
   customerName?: string | null;
   lines: ReceiptLineItem[];
   subtotal: number;
   taxTotal?: number;
   discountTotal?: number;
+  roundingAdjustment?: number;
   total: number;
   outstanding?: number;
   payments: ReceiptPaymentItem[];
@@ -101,6 +108,11 @@ export interface PrinterPreferences {
   openCashDrawer: boolean;
   cutPaper: boolean;
   usbSerialNumber?: string | null;
+  serialBaudRate?: SerialBaudRate;
+  serialVendorId?: number | null;
+  serialProductId?: number | null;
+  /** Cetak struk otomatis sesaat setelah pembayaran berhasil. */
+  autoPrint?: boolean;
 }
 
 export const DEFAULT_PRINTER_PREFERENCES: PrinterPreferences = {
@@ -111,4 +123,8 @@ export const DEFAULT_PRINTER_PREFERENCES: PrinterPreferences = {
   openCashDrawer: true,
   cutPaper: true,
   usbSerialNumber: null,
+  serialBaudRate: 9600,
+  serialVendorId: null,
+  serialProductId: null,
+  autoPrint: true,
 };

@@ -101,7 +101,7 @@ describe("sidebar akuntansi kehilangan grup SDM & Payroll", () => {
   it("gabungan href seluruh modul tidak memiliki tujuan duplikat", () => {
     const all = MODULE_LIST.flatMap((m) => m.nav.map((i) => i.href));
     expect(new Set(all).size).toBe(all.length);
-    expect(all).toHaveLength(59);
+    expect(all).toHaveLength(60);
   });
 });
 

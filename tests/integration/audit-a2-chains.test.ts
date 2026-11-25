@@ -93,6 +93,7 @@ vi.mock("@/lib/session", () => {
       user: { id: "kasir-a2", name: "Kasir A2" },
       permissions: sessionState.permissions,
       role: "manager",
+      enabledModules: ["pos", "gudang", "akuntansi", "hr", "analisa"],
     };
   };
   return {

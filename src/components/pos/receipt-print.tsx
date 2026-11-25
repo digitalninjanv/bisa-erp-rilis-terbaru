@@ -127,7 +127,7 @@ export function ReceiptPrint({
     <button
       type="button"
       onClick={printManually}
-      className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/90"
+      className="inline-flex h-11 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/90 lg:h-8"
     >
       <Printer className="size-3.5" /> Cetak
     </button>

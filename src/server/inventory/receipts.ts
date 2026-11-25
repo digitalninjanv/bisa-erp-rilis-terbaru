@@ -24,7 +24,8 @@ import {
 } from "@/server/purchasing";
 import { normalizeSerialNumbers } from "@/server/serials";
 import { nextDocumentNumber } from "@/server/sequences";
-import { claimIdempotencyKey } from "@/server/idempotency";
+import { paymentRequestFingerprint, writeIdempotencyResultRef } from "@/server/idempotency";
+import { claimReceiptIdempotency } from "./receipt-idempotency";
 import { assertSupplierOwned, assertWarehouseOwned } from "./movements";
 
 import { postReceiptJournal, type ReceiptSource } from "./receipt-journal";
@@ -143,7 +144,8 @@ export async function createMigrationOpeningReceipt(
 async function postReceipt(tx: Tx, input: CreateReceiptInput, openingMigration: boolean) {
   if (input.lines.length === 0) throw new AppError("VALIDATION", "Tambahkan minimal satu barang.");
 
-  const { existing, idemKey } = await claimReceiptIdempotency(tx, input);
+  const fingerprint = input.idempotencyKey?.trim() ? paymentRequestFingerprint(input) : null;
+  const { existing, idemKey } = await claimReceiptIdempotency(tx, input, fingerprint);
   if (existing) return existing;
 
   const context = await resolveReceiptContext(tx, input);
@@ -225,6 +227,14 @@ async function postReceipt(tx: Tx, input: CreateReceiptInput, openingMigration: 
     priceVarianceReason: priceVariances.length > 0 ? priceVarianceReason : null,
   });
 
+  if (idemKey && fingerprint) {
+    await writeIdempotencyResultRef(tx, {
+      companyId: input.companyId,
+      key: idemKey,
+      scope: "inventory.receipt",
+      resultRef: fingerprint,
+    });
+  }
   await insertPurchaseAdvanceAllocations(
     tx,
     input.companyId,
@@ -281,44 +291,6 @@ async function postReceipt(tx: Tx, input: CreateReceiptInput, openingMigration: 
  * sudah ada bila ini replay; null-klaim berarti panggilan ini yang
  * berhak melanjutkan pembuatan dokumen.
  */
-
-
-async function claimReceiptIdempotency(
-  tx: Tx,
-  input: CreateReceiptInput,
-): Promise<{ existing: { id: string; number: string } | undefined; idemKey: string | null }> {
-  // GDG3-06: replay idempotensi — submit ulang berkunci sama (klik
-  // ganda, dua tab, retry sesudah timeout) mengembalikan penerimaan
-  // pertama, bukan membuat dokumen kedua.
-  const idemKey = input.idempotencyKey?.trim() || null;
-  const findReceiptByKey = async () => {
-    if (!idemKey) return undefined;
-    const [row] = await tx
-      .select({ id: stockReceipts.id, number: stockReceipts.number })
-      .from(stockReceipts)
-      .where(and(eq(stockReceipts.companyId, input.companyId), eq(stockReceipts.idempotencyKey, idemKey)))
-      .limit(1);
-    return row;
-  };
-  if (idemKey) {
-    const existing = await findReceiptByKey();
-    if (existing) return { existing, idemKey };
-    const claimed = await claimIdempotencyKey(tx, {
-      companyId: input.companyId,
-      key: idemKey,
-      scope: "inventory.receipt",
-    });
-    if (!claimed) {
-      const winner = await findReceiptByKey();
-      if (winner) return { existing: winner, idemKey };
-      throw new AppError(
-        "CONFLICT",
-        "Penerimaan dengan kunci yang sama sedang diproses. Coba lagi sebentar.",
-      );
-    }
-  }
-  return { existing: undefined, idemKey };
-}
 
 
 type ReceiptContext = {
@@ -759,27 +731,37 @@ async function insertReceiptDocument(
     })
     .returning({ id: stockReceipts.id, number: stockReceipts.number });
 
-  await tx.insert(stockReceiptLines).values(
-    effectiveLines.map((line) => ({
-      companyId: input.companyId,
-      receiptId: receipt.id,
-      productId: line.productId,
-      productName: line.productName,
-      productSku: line.productSku,
-      qty: toDb(line.qty),
-      unitCost: toDb(line.unitCost),
-      lineTotal: toDb(line.lineNet),
-      discountType: line.discountType,
-      discountValue: toDb(line.discountValue),
-      discountAmount: toDb(line.discountAmount),
-      // S2: bentuk masukan berkemasan + faktor cuplikannya.
-      packagingId: line.packagingId,
-      qtyInput: line.qtyInput,
-      isiSnapshot: line.isiSnapshot,
-      batchNumber: line.batchNumber,
-      expiryDate: line.expiryDate,
-    })),
-  );
+  const lineValues = effectiveLines.map((line) => ({
+    companyId: input.companyId,
+    receiptId: receipt.id,
+    productId: line.productId,
+    productName: line.productName,
+    productSku: line.productSku,
+    qty: toDb(line.qty),
+    unitCost: toDb(line.unitCost),
+    stockUnitCost: toDb(line.stockUnitCost),
+    lineTotal: toDb(line.lineNet),
+    discountType: line.discountType,
+    discountValue: toDb(line.discountValue),
+    discountAmount: toDb(line.discountAmount),
+    // S2: bentuk masukan berkemasan + faktor cuplikannya.
+    packagingId: line.packagingId,
+    qtyInput: line.qtyInput,
+    isiSnapshot: line.isiSnapshot,
+    batchNumber: line.batchNumber,
+    expiryDate: line.expiryDate,
+  }));
+  // POS-IMP-01: the PostgreSQL bind message stores the parameter count in
+  // an Int16 (max 65,535; postgres.js caps at 65,534). This insert has 17
+  // parameters per row, so a single statement fails above ~3,850 lines —
+  // a normal opening-stock file is much larger. Insert in bounded chunks
+  // so receipt semantics (one document) stay unchanged.
+  const lineChunkSize = 500;
+  for (let start = 0; start < lineValues.length; start += lineChunkSize) {
+    await tx.insert(stockReceiptLines).values(
+      lineValues.slice(start, start + lineChunkSize),
+    );
+  }
   return { receipt, total, totalTax, totalNet };
 }
 

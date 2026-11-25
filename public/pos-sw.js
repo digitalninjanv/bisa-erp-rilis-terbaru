@@ -33,9 +33,13 @@
 // localhost) — batas itu ditegakkan peramban, bukan kode ini; pada
 // http://IP LAN komponen pendaftar diam (feature detection).
 
-const CACHE_NAME = "bisa-pos-shell-v1";
+const CACHE_NAME = "bisa-pos-shell-v3";
 const CACHE_PREFIX = "bisa-pos-shell-";
 const SHELL_PATH = "/app/pos";
+const SHELL_CACHE_ID_COOKIE = "pos_shell_cache_id";
+const SHELL_CACHE_ID_HEADER = "x-pos-shell-cache-id";
+const SHELL_CACHE_ID_PATTERN = /^[0-9a-f-]{36}$/i;
+const SHELL_CACHE_ID_META = "/__pos_shell_cache_id";
 const STATIC_PREFIX = "/_next/static/";
 const META_PATHS = new Set(["/manifest.webmanifest", "/favicon.ico"]);
 const ICON_PATTERN = /^\/icon-\d+\.png$/;
@@ -51,6 +55,7 @@ async function cacheableCopy(response) {
   headers.delete("set-cookie");
   headers.delete("cache-control");
   headers.delete("vary");
+  headers.delete(SHELL_CACHE_ID_HEADER);
   const body = await response.clone().arrayBuffer();
   return new Response(body, {
     status: response.status,
@@ -71,8 +76,16 @@ self.addEventListener("install", (event) => {
         const res = await fetch(SHELL_PATH, { credentials: "include" });
         if (res && res.ok && !res.redirected) {
           const copy = await cacheableCopy(res);
+          const cacheId = res.headers.get(SHELL_CACHE_ID_HEADER);
+          if (cacheId && SHELL_CACHE_ID_PATTERN.test(cacheId)) {
+            const key = shellCacheKey(cacheId);
+            await cache.put(key, copy.clone());
+            await rememberShellCacheId(cache, cacheId);
+            await deleteOtherShellDocuments(cache, key);
+          }
           const html = await copy.clone().text();
-          await cache.put(SHELL_PATH, copy);
+          // Dokumen disimpan per cache ID dari header respons install;
+          // runtime navigation memperbaruinya dengan salinan jaringan.
           const assets = new Set();
           for (const match of html.matchAll(/\/_next\/static\/[A-Za-z0-9_\-./%]+/g)) {
             assets.add(match[0]);
@@ -108,21 +121,82 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+async function shellCacheIdFromCookieStore() {
+  if (!self.cookieStore || typeof self.cookieStore.get !== "function") return null;
+  try {
+    const cookie = await self.cookieStore.get({
+      name: SHELL_CACHE_ID_COOKIE,
+      url: new URL(SHELL_PATH, self.location.origin).href,
+    });
+    return cookie && SHELL_CACHE_ID_PATTERN.test(cookie.value) ? cookie.value : null;
+  } catch {
+    return null;
+  }
+}
+
+function shellCacheKey(cacheId) {
+  return `${SHELL_PATH}?posuid=${encodeURIComponent(cacheId)}`;
+}
+
+async function rememberShellCacheId(cache, cacheId) {
+  if (!cacheId || !SHELL_CACHE_ID_PATTERN.test(cacheId)) return;
+  await cache.put(SHELL_CACHE_ID_META, new Response(cacheId));
+}
+
+async function shellCacheIdFromCache(cache) {
+  const stored = await cache.match(SHELL_CACHE_ID_META);
+  if (!stored) return null;
+  const value = (await stored.text()).trim();
+  return SHELL_CACHE_ID_PATTERN.test(value) ? value : null;
+}
+
+async function deleteOtherShellDocuments(cache, keepKey) {
+  const keys = await cache.keys();
+  await Promise.all(
+    keys
+      .filter((key) => {
+        const url = new URL(key.url);
+        return url.pathname === SHELL_PATH && url.toString() !== new URL(keepKey, self.location.origin).toString();
+      })
+      .map((key) => cache.delete(key)),
+  );
+}
+
+async function deleteShellDocuments(cache) {
+  const keys = await cache.keys();
+  await Promise.all(
+    keys
+      .filter((key) => new URL(key.url).pathname === SHELL_PATH)
+      .map((key) => cache.delete(key)),
+  );
+}
+
 // Dokumen terminal: jaringan dulu (segar + perbarui cache); cache
-// hanya bila jaringan melempar (server mati / koneksi putus).
+// hanya bila jaringan melempar (server mati / koneksi putus) DAN ID
+// cache non-otorisasi masih cocok. Cookie sesi tetap HttpOnly dan tidak
+// dibaca dari FetchEvent.request.headers (Cookie adalah header terlarang).
 async function terminalDocument(request, cache) {
+  const requestCacheId = (await shellCacheIdFromCookieStore()) ?? (await shellCacheIdFromCache(cache));
+  const requestKey = requestCacheId ? shellCacheKey(requestCacheId) : null;
   try {
     const fresh = await fetch(request);
     // Respons hasil pengalihan (mis. sesi berakhir → /login) tidak
     // pernah disimpan sebagai shell terminal.
     if (fresh.ok && !fresh.redirected) {
-      await cache.put(SHELL_PATH, await cacheableCopy(fresh));
+      const responseCacheId = fresh.headers.get(SHELL_CACHE_ID_HEADER);
+      if (responseCacheId && SHELL_CACHE_ID_PATTERN.test(responseCacheId)) {
+        const key = shellCacheKey(responseCacheId);
+        await cache.put(key, await cacheableCopy(fresh));
+        await rememberShellCacheId(cache, responseCacheId);
+        await deleteOtherShellDocuments(cache, key);
+      }
     } else if (fresh.redirected || fresh.status === 401 || fresh.status === 403) {
-      await cache.delete(SHELL_PATH).catch(() => undefined);
+      await deleteShellDocuments(cache).catch(() => undefined);
+      await cache.delete(SHELL_CACHE_ID_META).catch(() => undefined);
     }
     return fresh;
   } catch (error) {
-    const cached = await cache.match(SHELL_PATH);
+    const cached = requestKey ? await cache.match(requestKey) : null;
     if (cached) return cached;
     throw error;
   }
@@ -138,6 +212,14 @@ async function cacheFirst(request, cache) {
   }
   return fresh;
 }
+
+self.addEventListener("message", (event) => {
+  const cacheId = event.data && event.data.type === "pos-shell-cache-id" ? event.data.cacheId : null;
+  if (!cacheId || !SHELL_CACHE_ID_PATTERN.test(cacheId)) return;
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => rememberShellCacheId(cache, cacheId)),
+  );
+});
 
 self.addEventListener("fetch", (event) => {
   const { request } = event;

@@ -1,27 +1,30 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, ArrowDownToLine, ArrowUpFromLine, Lock, Unlock } from "lucide-react";
 import { toast } from "sonner";
 import { formatIDR } from "@/lib/money";
+import { formatDateTime } from "@/lib/format";
 import { newUuid } from "@/lib/uuid";
 import { MoneyInput } from "@/components/money-input";
 import { ConfirmDialog } from "@/components/blocks/confirm-dialog";
 import { IDR_CASH_DENOMINATIONS, denominationTotal } from "@/lib/pos/denominations";
+import { getBrowserOfflineStorage, getOrCreateDeviceId } from "@/lib/pos-offline";
 import {
   cashMovementAction,
   closeSessionAction,
   openSessionAction,
-} from "@/server/actions/pos";
+  prepareSessionCloseAction,
+} from "@/server/actions/pos-sessions";
 
 type Summary = {
   id: string;
   openedAt: string;
   openingCash: number;
-  expected: number;
   sales: number;
+  receivableIn?: number;
   nonCashSales?: number;
   refunds: number;
   deposits: number;
@@ -40,18 +43,38 @@ export function SessionManager({
   session,
   differenceTolerance = 0,
   heldCount = 0,
+  branches = [],
+  canViewXReport = false,
+  companyId = "",
+  userId = "",
+  posOfflineEnabled = false,
 }: {
   session: Summary | null;
   differenceTolerance?: number;
   heldCount?: number;
+  branches?: { id: string; name: string }[];
+  canViewXReport?: boolean;
+  companyId?: string;
+  userId?: string;
+  posOfflineEnabled?: boolean;
 }) {
   const router = useRouter();
   const [openingCash, setOpeningCash] = useState("500000");
+  const [branchId, setBranchId] = useState(() =>
+    branches.length === 1 ? branches[0].id : "",
+  );
   // A-28 Tahap 1 (H-POS-01/03): tutup sesi dua langkah ala hitung buta
   // opname — langkah "hitung" berisi grid denominasi TANPA kas
   // seharusnya/selisih; angka perbandingan baru tampil di langkah
   // "tinjau" sesudah hitungan dikunci.
   const [closeStep, setCloseStep] = useState<"hitung" | "tinjau">("hitung");
+  const [closePreview, setClosePreview] = useState<{
+    token: string;
+    counted: string;
+    expected: string;
+    difference: string;
+    tolerance: string;
+  } | null>(null);
   const [denomCounts, setDenomCounts] = useState<Record<string, string>>({});
   const [differenceReason, setDifferenceReason] = useState("");
   const [notes, setNotes] = useState("");
@@ -67,6 +90,28 @@ export function SessionManager({
   // Satu kunci per niat mutasi; dipertahankan sampai sukses agar retry
   // setelah respons hilang tidak menggandakan setoran/penarikan.
   const moveKeyRef = useRef<string | null>(null);
+  const [offlineQueued, setOfflineQueued] = useState(0);
+
+  useEffect(() => {
+    if (!posOfflineEnabled || !companyId || !userId) return;
+    let active = true;
+    void (async () => {
+      try {
+        const storage = getBrowserOfflineStorage({
+          companyId,
+          userId,
+          terminalId: getOrCreateDeviceId(),
+        });
+        const items = await storage.list();
+        if (active) setOfflineQueued(items.length);
+      } catch {
+        // IndexedDB tidak tersedia — tidak ada antrean lokal yang bisa dibaca.
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [posOfflineEnabled, companyId, userId]);
 
   async function open() {
     if (!openingValid) {
@@ -75,7 +120,10 @@ export function SessionManager({
     }
     setBusy("open");
     try {
-      const result = await openSessionAction({ openingCash });
+      const result = await openSessionAction({
+        openingCash,
+        branchId: branchId || null,
+      });
       if (!result.ok) {
         toast.error(result.message);
         return;
@@ -89,12 +137,44 @@ export function SessionManager({
     }
   }
 
+  async function lockCountAndReview() {
+    setBusy("prepare");
+    try {
+      const result = await prepareSessionCloseAction({
+        sessionId: session!.id,
+        countedCash: String(denominationTotal(denomCounts)),
+      });
+      if (!result.ok) {
+        toast.error(result.message);
+        return;
+      }
+      setClosePreview(result.data);
+      setCloseStep("tinjau");
+    } catch {
+      toast.error("Hitungan belum dapat dikunci. Periksa koneksi lalu coba lagi.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function close() {
+    if (offlineQueued > 0) {
+      toast.error(
+        `Masih ada ${offlineQueued} transaksi offline di perangkat ini. Sinkronkan dulu dari terminal sebelum menutup sesi.`,
+      );
+      return;
+    }
+    if (!closePreview) {
+      toast.error("Kunci hitungan fisik terlebih dahulu.");
+      setCloseStep("hitung");
+      return;
+    }
     setBusy("close");
     try {
       const result = await closeSessionAction({
         sessionId: session!.id,
-        countedCash: String(denominationTotal(denomCounts)),
+        countedCash: closePreview.counted,
+        countToken: closePreview.token,
         notes: notes || undefined,
         differenceReason: differenceReason.trim() || undefined,
       });
@@ -105,6 +185,7 @@ export function SessionManager({
       toast.success("Sesi kas ditutup.");
       setClosedSessionId(session!.id);
       setDenomCounts({});
+      setClosePreview(null);
       setDifferenceReason("");
       setNotes("");
       setCloseStep("hitung");
@@ -166,20 +247,36 @@ export function SessionManager({
         </p>
         <div className="mt-4 flex flex-wrap items-end gap-2">
           <label className="space-y-1">
+            <span className="block text-[11px] font-medium text-muted-foreground">Cabang</span>
+            <select
+              value={branchId}
+              onChange={(event) => setBranchId(event.target.value)}
+              aria-label="Cabang sesi kas"
+              className="h-11 min-w-44 rounded-md border border-input bg-background px-2.5 text-[12px]"
+            >
+              <option value="">Tanpa cabang</option>
+              {branches.map((branch) => (
+                <option key={branch.id} value={branch.id}>
+                  {branch.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1">
             <span className="block text-[11px] font-medium text-muted-foreground">Modal awal</span>
             <MoneyInput
               value={openingCash}
               onChange={setOpeningCash}
               onValidityChange={setOpeningValid}
               aria-label="Modal awal"
-              className="w-40 font-semibold"
+              className="h-11 w-40 font-semibold"
             />
           </label>
           <button
             type="button"
             onClick={open}
             disabled={busy === "open"}
-            className="h-9 rounded-md bg-primary px-4 text-[12px] font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            className="h-11 rounded-md bg-primary px-4 text-[13px] font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
             {busy === "open" ? "Membuka…" : "Buka sesi"}
           </button>
@@ -189,8 +286,11 @@ export function SessionManager({
   }
 
   const countedTotal = denominationTotal(denomCounts);
-  const difference = countedTotal - session.expected;
-  const reasonRequired = Math.abs(difference) > differenceTolerance;
+  // Angka pembanding hanya ada di preview yang dikembalikan server SESUDAH
+  // hitungan fisik diserahkan. Sebelum itu komponen tidak menerima expected.
+  const tolerance = closePreview ? Number(closePreview.tolerance) : differenceTolerance;
+  const difference = closePreview ? Number(closePreview.difference) : 0;
+  const reasonRequired = closePreview !== null && Math.abs(difference) > tolerance;
 
   return (
     <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_340px]">
@@ -203,16 +303,18 @@ export function SessionManager({
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
             <div>
               <h2 className="text-[13px] font-semibold">Sesi kas berjalan</h2>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">Dibuka {session.openedAt.slice(0, 16).replace("T", " ")}</p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">Dibuka {formatDateTime(session.openedAt)}</p>
             </div>
             <div className="flex items-center gap-2">
-              <Link
-                href={`/app/pos/sesi/riwayat/${session.id}/cetak?x=1&autoprint=1`}
-                target="_blank"
-                className="inline-flex h-8 items-center rounded-md border border-border bg-card px-2.5 text-[11px] font-medium hover:bg-muted"
-              >
-                Cetak X
-              </Link>
+              {canViewXReport ? (
+                <Link
+                  href={`/app/pos/sesi/riwayat/${session.id}/cetak?x=1&autoprint=1`}
+                  target="_blank"
+                  className="inline-flex h-11 items-center rounded-md border border-border bg-card px-3 text-[12px] font-medium hover:bg-muted"
+                >
+                  Cetak X
+                </Link>
+              ) : null}
               <span className="inline-flex items-center gap-1.5 rounded-full bg-tone-teal-soft px-2.5 py-1 text-[11px] font-semibold text-tone-teal">
                 <span className="size-1.5 rounded-full bg-tone-teal" /> Terbuka
               </span>
@@ -228,6 +330,7 @@ export function SessionManager({
             {[
               ["Modal awal", session.openingCash],
               ["Penjualan tunai", session.sales],
+              ["Penerimaan piutang", session.receivableIn ?? 0],
               ["Penjualan non-tunai", session.nonCashSales ?? 0],
               ["Refund", session.refunds],
               ["Transaksi", session.transactionCount],
@@ -266,6 +369,13 @@ export function SessionManager({
                 </div>
               </div>
             ) : null}
+            {offlineQueued > 0 ? (
+              <div className="mt-2.5 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-[12px] text-destructive">
+                Ada <strong>{offlineQueued} transaksi offline</strong> di perangkat ini yang belum
+                tersinkron. Buka terminal dan tekan <strong>Sinkronkan</strong> sebelum menutup
+                sesi; jika konflik, minta supervisor menyelesaikan peninjauan.
+              </div>
+            ) : null}
             {closeStep === "hitung" ? (
               <div className="mt-2">
                 <p className="max-w-lg text-[11px] leading-4 text-muted-foreground">
@@ -296,7 +406,7 @@ export function SessionManager({
                             inputMode="numeric"
                             placeholder="0"
                             aria-label={`Jumlah lembar pecahan ${formatIDR(denom)}`}
-                            className="num h-9 w-16 rounded-md border border-input bg-background px-2 text-right text-[12px]"
+                            className="num h-11 w-16 rounded-md border border-input bg-background px-2 text-right text-[12px]"
                           />
                         </div>
                       </div>
@@ -310,10 +420,11 @@ export function SessionManager({
                   </p>
                   <button
                     type="button"
-                    onClick={() => setCloseStep("tinjau")}
-                    className="inline-flex h-9 items-center gap-1.5 rounded-md bg-foreground px-4 text-[12px] font-semibold text-background hover:bg-foreground/90"
+                    onClick={() => void lockCountAndReview()}
+                    disabled={busy === "prepare"}
+                    className="inline-flex h-11 items-center gap-1.5 rounded-md bg-foreground px-4 text-[13px] font-semibold text-background hover:bg-foreground/90 disabled:opacity-50"
                   >
-                    Kunci hitungan &amp; tinjau
+                    {busy === "prepare" ? "Mengunci…" : "Kunci hitungan & tinjau"}
                   </button>
                 </div>
               </div>
@@ -322,11 +433,15 @@ export function SessionManager({
                 <dl className="grid max-w-xl grid-cols-3 gap-3">
                   <div>
                     <dt className="text-[11px] font-medium text-muted-foreground">Kas seharusnya</dt>
-                    <dd className="num mt-0.5 text-[14px] font-semibold">{formatIDR(session.expected)}</dd>
+                    <dd className="num mt-0.5 text-[14px] font-semibold">
+                      {closePreview ? formatIDR(Number(closePreview.expected)) : "—"}
+                    </dd>
                   </div>
                   <div>
                     <dt className="text-[11px] font-medium text-muted-foreground">Uang dihitung</dt>
-                    <dd className="num mt-0.5 text-[14px] font-semibold">{formatIDR(countedTotal)}</dd>
+                    <dd className="num mt-0.5 text-[14px] font-semibold">
+                      {closePreview ? formatIDR(Number(closePreview.counted)) : formatIDR(countedTotal)}
+                    </dd>
                   </div>
                   <div>
                     <dt className="text-[11px] font-medium text-muted-foreground">Selisih</dt>
@@ -341,7 +456,7 @@ export function SessionManager({
                   <label className="min-w-[220px] flex-1 space-y-1">
                     <span className="block text-[11px] font-medium text-muted-foreground">
                       {reasonRequired
-                        ? `Alasan selisih (wajib — melewati toleransi ${formatIDR(differenceTolerance)})`
+                        ? `Alasan selisih (wajib — melewati toleransi ${formatIDR(tolerance)})`
                         : "Alasan selisih (opsional)"}
                     </span>
                     <input
@@ -349,7 +464,7 @@ export function SessionManager({
                       onChange={(event) => setDifferenceReason(event.target.value)}
                       placeholder="Mis. kembalian berlebih ke pelanggan"
                       aria-label="Alasan selisih kas"
-                      className="h-9 w-full rounded-md border border-input bg-background px-2.5 text-[12px]"
+                      className="h-11 w-full rounded-md border border-input bg-background px-2.5 text-[12px]"
                     />
                   </label>
                   <input
@@ -357,20 +472,21 @@ export function SessionManager({
                     onChange={(event) => setNotes(event.target.value)}
                     placeholder="Catatan penutupan (opsional)"
                     aria-label="Catatan penutupan sesi"
-                    className="h-9 min-w-[180px] flex-1 rounded-md border border-input bg-background px-2.5 text-[12px]"
+                    className="h-11 min-w-[180px] flex-1 rounded-md border border-input bg-background px-2.5 text-[12px]"
                   />
-                  <button
-                    type="button"
-                    onClick={() => setCloseStep("hitung")}
-                    className="inline-flex h-9 items-center rounded-md border border-border px-3 text-[12px] font-medium hover:bg-muted"
-                  >
-                    Ubah hitungan
-                  </button>
+                  <span className="text-[11px] text-muted-foreground">
+                    Hitungan sudah dikunci. Koreksi hanya lewat selisih beralasan atau supervisor.
+                  </span>
                   <button
                     type="button"
                     onClick={close}
-                    disabled={busy === "close" || (reasonRequired && differenceReason.trim() === "")}
-                    className="inline-flex h-9 items-center gap-1.5 rounded-md bg-foreground px-4 text-[12px] font-semibold text-background hover:bg-foreground/90 disabled:opacity-50"
+                    disabled={
+                      busy === "close" ||
+                      !closePreview ||
+                      offlineQueued > 0 ||
+                      (reasonRequired && differenceReason.trim() === "")
+                    }
+                    className="inline-flex h-11 items-center gap-1.5 rounded-md bg-foreground px-4 text-[13px] font-semibold text-background hover:bg-foreground/90 disabled:opacity-50"
                   >
                     <Lock className="size-3.5" /> {busy === "close" ? "Menutup…" : "Tutup sesi"}
                   </button>
@@ -389,36 +505,68 @@ export function SessionManager({
           <div className="border-b border-border px-4 py-3">
             <h2 className="text-[13px] font-semibold">Mutasi kas</h2>
           </div>
-          <div className="max-h-[320px] overflow-x-auto overflow-y-auto">
-            {session.movements.length === 0 ? (
-              <p className="px-4 py-6 text-center text-[12px] text-muted-foreground">Belum ada mutasi.</p>
-            ) : (
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Waktu</th>
-                    <th>Jenis</th>
-                    <th>Catatan</th>
-                    <th className="text-right">Nominal</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {session.movements.map((row) => (
-                    <tr key={row.id}>
-                      <td className="num whitespace-nowrap text-[11px] text-muted-foreground">
-                        {row.createdAt.slice(0, 16).replace("T", " ")}
-                      </td>
-                      <td className="text-[12px] capitalize">{movementLabel(row.type)}</td>
-                      <td className="max-w-[220px] truncate text-[11px] text-muted-foreground">{row.notes ?? "—"}</td>
-                      <td className={`num text-right font-medium ${row.amount < 0 ? "text-destructive" : ""}`}>
-                        {formatIDR(row.amount)}
-                      </td>
+          {session.movements.length === 0 ? (
+            <p className="px-4 py-6 text-center text-[12px] text-muted-foreground">Belum ada mutasi.</p>
+          ) : (
+            <>
+              {/* Mobile/tablet: kartu label-nilai; Nominal tidak boleh
+                  tersembunyi di balik scroll horizontal. */}
+              <div className="divide-y divide-border/70 lg:hidden">
+                {session.movements.map((row) => (
+                  <div key={row.id} className="flex items-start justify-between gap-3 px-4 py-3">
+                    <div className="min-w-0">
+                      <p className="text-[12px] font-medium capitalize">{movementLabel(row.type)}</p>
+                      <p className="num mt-0.5 text-[11px] text-muted-foreground">
+                        {formatDateTime(row.createdAt)}
+                      </p>
+                      {row.notes ? (
+                        <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">{row.notes}</p>
+                      ) : null}
+                    </div>
+                    <span
+                      className={`num shrink-0 text-right text-[13px] font-semibold ${
+                        row.amount < 0 ? "text-destructive" : ""
+                      }`}
+                    >
+                      {formatIDR(row.amount)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div
+                className="hidden max-h-[320px] overflow-x-auto overflow-y-auto lg:block"
+                tabIndex={0}
+                role="region"
+                aria-label="Mutasi kas"
+              >
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Waktu</th>
+                      <th>Jenis</th>
+                      <th>Catatan</th>
+                      <th className="text-right">Nominal</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
+                  </thead>
+                  <tbody>
+                    {session.movements.map((row) => (
+                      <tr key={row.id}>
+                        <td className="num whitespace-nowrap text-[11px] text-muted-foreground">
+                          {formatDateTime(row.createdAt)}
+                        </td>
+                        <td className="text-[12px] capitalize">{movementLabel(row.type)}</td>
+                        <td className="max-w-[220px] truncate text-[11px] text-muted-foreground">{row.notes ?? "—"}</td>
+                        <td className={`num text-right font-medium ${row.amount < 0 ? "text-destructive" : ""}`}>
+                          {formatIDR(row.amount)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -435,6 +583,7 @@ export function SessionManager({
               onChange={setMoveAmount}
               onValidityChange={setMoveValid}
               aria-label="Nominal setor atau tarik bank"
+              className="h-11"
             />
           </div>
           <input
@@ -442,14 +591,14 @@ export function SessionManager({
             onChange={(event) => setMoveNotes(event.target.value)}
             placeholder="Catatan"
             aria-label="Catatan setor atau tarik bank"
-            className="mt-1.5 h-9 w-full rounded-md border border-input bg-background px-2.5 text-[12px]"
+            className="mt-1.5 h-11 w-full rounded-md border border-input bg-background px-2.5 text-[12px]"
           />
           <div className="mt-2 grid grid-cols-2 gap-2">
             <button
               type="button"
               onClick={() => move("deposit")}
               disabled={busy === "deposit"}
-              className="inline-flex h-8 items-center justify-center gap-1 rounded-md bg-tone-teal text-[11px] font-medium text-white hover:bg-tone-teal/90 disabled:opacity-50"
+              className="inline-flex h-11 items-center justify-center gap-1 rounded-md bg-tone-teal text-[12px] font-medium text-white hover:bg-tone-teal/90 disabled:opacity-50"
             >
               <ArrowDownToLine className="size-3.5" /> Setor ke Bank
             </button>
@@ -457,7 +606,7 @@ export function SessionManager({
               type="button"
               onClick={() => move("withdrawal")}
               disabled={busy === "withdrawal"}
-              className="inline-flex h-8 items-center justify-center gap-1 rounded-md border border-border text-[11px] font-medium hover:bg-muted disabled:opacity-50"
+              className="inline-flex h-11 items-center justify-center gap-1 rounded-md border border-border text-[12px] font-medium hover:bg-muted disabled:opacity-50"
             >
               <ArrowUpFromLine className="size-3.5" /> Tarik dari Bank
             </button>
@@ -488,6 +637,7 @@ function movementLabel(type: string) {
     {
       opening: "Modal awal",
       sale: "Penjualan",
+      receivable: "Penerimaan piutang",
       refund: "Refund",
       deposit: "Setor ke bank",
       withdrawal: "Tarik dari bank",

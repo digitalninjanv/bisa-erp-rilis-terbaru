@@ -85,7 +85,13 @@ export type OfflineSalePayload = {
   expectedTotal?: number;
 };
 
-export type OfflineSyncStatus = "synced" | "duplicate" | "conflict" | "failed";
+export type OfflineSyncStatus =
+  | "synced"
+  | "duplicate"
+  | "conflict"
+  | "failed"
+  /** Supervisor sudah membuang/menandai selesai; hapus dari antrean lokal. */
+  | "resolved";
 
 /**
  * FIX-POS Tahap 2: klasifikasi alasan item masuk peninjauan, agar
@@ -321,7 +327,11 @@ export async function applySyncResults(
   const removed: string[] = [];
   const kept: string[] = [];
   for (const result of results) {
-    if (result.status === "synced" || result.status === "duplicate") {
+    if (
+      result.status === "synced" ||
+      result.status === "duplicate" ||
+      result.status === "resolved"
+    ) {
       await storage.remove(result.clientKey);
       removed.push(result.clientKey);
       continue;
@@ -400,6 +410,7 @@ export type LocalQuoteCatalogEntry = {
   stock: number;
   trackStock: boolean;
   trackSerial: boolean;
+  isTaxExempt?: boolean;
   /**
    * S4: kemasan aktif produk dari katalog terminal (untuk quote
    * lokal baris berkemasan). Absen = produk tanpa kemasan.
@@ -520,12 +531,13 @@ export function computeLocalOfflineQuote(input: {
       : undefined;
     if (line.packagingId && !pack) return null;
     const qty = pack ? d(toBaseQty(line.qty, pack.isi)) : d(line.qty);
-    const unitPrice = pack
-      ? pack.salePrice != null
-        ? d(pricePerBaseUnit(pack.salePrice, pack.isi))
-        : d(product.salePrice)
-      : d(product.salePrice);
-    const gross = qty.mul(unitPrice);
+    let grossOverride: ReturnType<typeof d> | null = null;
+    let unitPrice = d(product.salePrice);
+    if (pack && pack.salePrice != null) {
+      grossOverride = d(line.qty).mul(d(pack.salePrice));
+      unitPrice = grossOverride.div(qty);
+    }
+    const gross = grossOverride ?? qty.mul(unitPrice);
     let groupUnitPrice = unitPrice;
     let appliedDiscountType: DiscountType | null = line.discountType ?? null;
     let appliedDiscountValue = line.discountValue ?? 0;
@@ -557,7 +569,8 @@ export function computeLocalOfflineQuote(input: {
     }
     const discount = D.min(D.max(groupDiscount.plus(manualDiscount), 0), gross);
     const net = gross.minus(discount);
-    const tax = lineTax({ net, rate: taxRate, inclusive: true });
+    const lineTaxRate = product.isTaxExempt ? d(0) : taxRate;
+    const tax = lineTax({ net, rate: lineTaxRate, inclusive: true });
     subtotal = subtotal.plus(gross);
     discountTotal = discountTotal.plus(discount);
     taxTotal = taxTotal.plus(tax);
@@ -578,7 +591,7 @@ export function computeLocalOfflineQuote(input: {
       discountAmount: discount.toNumber(),
       groupDiscountAmount: groupDiscount.toNumber(),
       manualDiscountAmount: manualDiscount.toNumber(),
-      taxRate: taxRate.toNumber(),
+      taxRate: lineTaxRate.toNumber(),
       taxAmount: tax.toNumber(),
       lineTotal: net.toNumber(),
       stock: product.trackStock ? product.stock : Number.MAX_SAFE_INTEGER,

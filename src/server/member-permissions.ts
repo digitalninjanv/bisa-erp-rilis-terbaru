@@ -94,7 +94,11 @@ export async function revokeEmployeeUserAccess(
   companyId: string,
   employeeName: string,
   actorUserId?: string,
-): Promise<{ revoked: boolean; userId?: string }> {
+): Promise<{
+  revoked: boolean;
+  userId?: string;
+  reason?: "not_found" | "ambiguous" | "owner_only";
+}> {
   const matchedUsers = await tx
     .select({
       id: user.id,
@@ -107,29 +111,37 @@ export async function revokeEmployeeUserAccess(
     .where(and(eq(member.organizationId, companyId), eq(user.name, employeeName)));
 
   if (matchedUsers.length === 0) {
-    return { revoked: false };
+    return { revoked: false, reason: "not_found" };
   }
 
-  for (const u of matchedUsers) {
-    if (u.role === "owner") continue;
-
-    await tx
-      .delete(member)
-      .where(and(eq(member.organizationId, companyId), eq(member.userId, u.id)));
-
-    await tx.delete(session).where(eq(session.userId, u.id));
-
-    if (actorUserId) {
-      await writeAudit(tx, {
-        companyId,
-        userId: actorUserId,
-        action: "user.remove",
-        entityType: "member",
-        entityId: u.memberId,
-        before: { userId: u.id, role: u.role, reason: "employee_termination" },
-      });
-    }
+  // HR-01: display names are not unique identities. Never mass-revoke all
+  // accounts that happen to share a name; require an unambiguous match and
+  // let a human resolve the ambiguous case in Pengaturan → Pengguna.
+  const candidates = matchedUsers.filter((row) => row.role !== "owner");
+  if (candidates.length === 0) {
+    return { revoked: false, reason: "owner_only" };
+  }
+  if (candidates.length > 1) {
+    return { revoked: false, reason: "ambiguous" };
   }
 
-  return { revoked: true, userId: matchedUsers[0]?.id };
+  const u = candidates[0];
+  await tx
+    .delete(member)
+    .where(and(eq(member.organizationId, companyId), eq(member.userId, u.id)));
+
+  await tx.delete(session).where(eq(session.userId, u.id));
+
+  if (actorUserId) {
+    await writeAudit(tx, {
+      companyId,
+      userId: actorUserId,
+      action: "user.remove",
+      entityType: "member",
+      entityId: u.memberId,
+      before: { userId: u.id, role: u.role, reason: "employee_termination" },
+    });
+  }
+
+  return { revoked: true, userId: u.id };
 }

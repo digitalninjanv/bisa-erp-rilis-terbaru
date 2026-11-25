@@ -4,6 +4,8 @@ import {
   categories,
   products,
   saleLines,
+  saleReturnLines,
+  saleReturns,
   sales,
   stockDocumentLines,
   stockDocuments,
@@ -119,12 +121,12 @@ export async function getPerformanceDrivers(
   companyId: string,
   period: AnalyticsPeriod,
 ) {
-  const [salesRows, valuation, income, map] = await Promise.all([
+  const [salesRows, returnRows, valuation, income, map] = await Promise.all([
     tx
       .select({
         productId: saleLines.productId,
-        sku: saleLines.productSku,
-        name: saleLines.productName,
+        sku: products.sku,
+        name: products.name,
         category: categories.name,
         qty: sql<string>`coalesce(sum(${saleLines.qty}), 0)`,
         revenue: sql<string>`coalesce(sum(${saleLines.lineTotal}), 0)`,
@@ -135,7 +137,7 @@ export async function getPerformanceDrivers(
       })
       .from(saleLines)
       .innerJoin(sales, eq(saleLines.saleId, sales.id))
-      .leftJoin(products, eq(saleLines.productId, products.id))
+      .innerJoin(products, eq(saleLines.productId, products.id))
       .leftJoin(categories, eq(products.categoryId, categories.id))
       .where(
         and(
@@ -147,11 +149,41 @@ export async function getPerformanceDrivers(
       )
       .groupBy(
         saleLines.productId,
-        saleLines.productSku,
-        saleLines.productName,
+        products.sku,
+        products.name,
         categories.name,
       )
       .orderBy(desc(sql`sum(${saleLines.lineTotal})`)),
+    tx
+      .select({
+        productId: saleReturnLines.productId,
+        sku: products.sku,
+        name: products.name,
+        category: categories.name,
+        qty: sql<string>`coalesce(sum(${saleReturnLines.qty}), 0)`,
+        revenue: sql<string>`coalesce(sum(${saleReturnLines.lineTotal}), 0)`,
+        profit: sql<string>`coalesce(sum(${saleReturnLines.lineTotal} - (${saleReturnLines.unitCost} * ${saleReturnLines.qty})), 0)`,
+        lastSoldDate: sql<string>`max(${sales.date})`,
+      })
+      .from(saleReturnLines)
+      .innerJoin(saleReturns, eq(saleReturnLines.returnId, saleReturns.id))
+      .innerJoin(sales, eq(saleReturns.saleId, sales.id))
+      .innerJoin(products, eq(saleReturnLines.productId, products.id))
+      .leftJoin(categories, eq(products.categoryId, categories.id))
+      .where(
+        and(
+          eq(saleReturnLines.companyId, companyId),
+          gte(saleReturns.date, period.from),
+          lte(saleReturns.date, period.to),
+          eq(saleReturns.status, "posted"),
+        ),
+      )
+      .groupBy(
+        saleReturnLines.productId,
+        products.sku,
+        products.name,
+        categories.name,
+      ),
     getInventoryValuation(tx, companyId, undefined, { skipLowStock: true }),
     getIncomeStatement(tx, companyId, {
       from: `${period.from}T00:00:00`,
@@ -160,11 +192,42 @@ export async function getPerformanceDrivers(
     getAccountMap(tx, companyId),
   ]);
 
-  const totalRevenue = salesRows.reduce((acc, row) => acc + d(row.revenue).toNumber(), 0);
+  const returnsByProduct = new Map(returnRows.map((row) => [row.productId, row]));
+  const productRows = salesRows.map((row) => {
+    const returned = returnsByProduct.get(row.productId);
+    return {
+      ...row,
+      qty: d(row.qty).minus(returned?.qty ?? 0).toString(),
+      revenue: d(row.revenue).minus(returned?.revenue ?? 0).toString(),
+      netRevenue: d(row.netRevenue).minus(returned?.revenue ?? 0).toString(),
+      profit: d(row.profit).minus(returned?.profit ?? 0).toString(),
+    };
+  });
+  const saleProductIds = new Set(salesRows.map((row) => row.productId));
+  for (const returned of returnRows) {
+    if (saleProductIds.has(returned.productId)) continue;
+    productRows.push({
+      productId: returned.productId,
+      sku: returned.sku ?? "",
+      name: returned.name,
+      category: returned.category,
+      qty: d(0).minus(returned.qty).toString(),
+      revenue: d(0).minus(returned.revenue).toString(),
+      netRevenue: d(0).minus(returned.revenue).toString(),
+      profit: d(0).minus(returned.profit).toString(),
+      transactions: 0,
+      lastSoldDate: returned.lastSoldDate,
+    });
+  }
+  productRows.sort((a, b) => d(b.revenue).comparedTo(d(a.revenue)));
+  const totalRevenue = productRows.reduce(
+    (acc, row) => acc + Math.max(0, d(row.revenue).toNumber()),
+    0,
+  );
   let cumulative = 0;
-  const abcFsn: AbcFsnRow[] = salesRows.map((row) => {
+  const abcFsn: AbcFsnRow[] = productRows.map((row) => {
     const revenue = d(row.revenue).toNumber();
-    const share = totalRevenue > 0 ? (revenue / totalRevenue) * 100 : 0;
+    const share = totalRevenue > 0 ? (Math.max(0, revenue) / totalRevenue) * 100 : 0;
     cumulative += share;
     const transactions = Number(row.transactions ?? 0);
     const netRevenue = d(row.netRevenue);
@@ -182,7 +245,7 @@ export async function getPerformanceDrivers(
       lastSoldDate: row.lastSoldDate,
       revenueShare: share,
       cumulativeShare: cumulative,
-      abc: cumulative <= 80 ? "A" : cumulative <= 95 ? "B" : "C",
+      abc: revenue <= 0 ? "C" : cumulative <= 80 ? "A" : cumulative <= 95 ? "B" : "C",
       fsn: transactions >= 10 ? "F" : transactions >= 4 ? "S" : "N",
     };
   });
@@ -238,7 +301,7 @@ export async function getRiskControls(
   companyId: string,
   period: AnalyticsPeriod,
 ) {
-  const [valuation, salesSummary, shrinkRow, soldRows, opnameRows] = await Promise.all([
+  const [valuation, salesSummary, shrinkRow, soldRows, returnedRows, opnameRows] = await Promise.all([
     getInventoryValuation(tx, companyId, undefined, { skipLowStock: true }),
     getSalesSummary(tx, companyId, { from: period.from, to: period.to }),
     tx
@@ -260,7 +323,10 @@ export async function getRiskControls(
         ),
       ),
     tx
-      .selectDistinct({ productId: saleLines.productId })
+      .select({
+        productId: saleLines.productId,
+        qty: sql<string>`coalesce(sum(${saleLines.qty}), 0)`,
+      })
       .from(saleLines)
       .innerJoin(sales, eq(saleLines.saleId, sales.id))
       .where(
@@ -270,7 +336,24 @@ export async function getRiskControls(
           lte(sales.date, period.to),
           inArray(sales.status, ["completed", "returned"]),
         ),
-      ),
+      )
+      .groupBy(saleLines.productId),
+    tx
+      .select({
+        productId: saleReturnLines.productId,
+        qty: sql<string>`coalesce(sum(${saleReturnLines.qty}), 0)`,
+      })
+      .from(saleReturnLines)
+      .innerJoin(saleReturns, eq(saleReturnLines.returnId, saleReturns.id))
+      .where(
+        and(
+          eq(saleReturnLines.companyId, companyId),
+          gte(saleReturns.date, shiftDays(period.to, -90)),
+          lte(saleReturns.date, period.to),
+          eq(saleReturns.status, "posted"),
+        ),
+      )
+      .groupBy(saleReturnLines.productId),
     tx
       .select({ id: stockDocuments.id, date: stockDocuments.date })
       .from(stockDocuments)
@@ -287,7 +370,12 @@ export async function getRiskControls(
       .limit(1),
   ]);
 
-  const sold = new Set(soldRows.map((row) => row.productId));
+  const returnedQtyByProduct = new Map(returnedRows.map((row) => [row.productId, d(row.qty)]));
+  const sold = new Set(
+    soldRows
+      .filter((row) => !returnedQtyByProduct.has(row.productId) || d(row.qty).gt(returnedQtyByProduct.get(row.productId)!))
+      .map((row) => row.productId),
+  );
   let deadValue = 0;
   let stockout = 0;
   const deadStock: {

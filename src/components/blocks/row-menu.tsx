@@ -80,7 +80,7 @@ export function RowMenu({
       <DropdownMenuTrigger
         aria-label={label}
         title={label}
-        className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 data-[popup-open]:bg-muted"
+        className="inline-flex size-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 data-[popup-open]:bg-muted lg:size-8"
       >
         <MoreHorizontal className="size-4" />
       </DropdownMenuTrigger>

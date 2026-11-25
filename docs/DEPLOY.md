@@ -46,11 +46,18 @@
    ```bash
    curl -fsS https://DOMAIN/api/health
    ```
-7. **Seed demo** hanya bila ingin data contoh; jangan ke database produksi berisi data asli:
+7. **Seed demo** hanya bila ingin data contoh; jangan ke database produksi berisi data asli.
+   Di development/test:
    ```bash
    pnpm db:seed --force
    ```
-8. **Login owner**, buat pengguna kasir, atur role, gudang, pemetaan akun, produk.
+   Pada `NODE_ENV=production`, seed demo **ditolak** kecuali operator secara eksplisit memakai
+   `--allow-production-seed` **dan** mengisi `BISA_SEED_OWNER_PASSWORD` minimal 16 karakter
+   (password unik, tidak dicetak, dan wajib dirotasi). Ini tetap menanam katalog demo, bukan
+   jalur bootstrap produksi yang ideal; untuk produksi nyata gunakan prosedur provisioning
+   owner terpisah/backup yang disetujui.
+8. **Login owner**, buat pengguna kasir, atur role, gudang, pemetaan akun, produk. Ganti
+   password owner sebelum operasi normal.
 9. **Uji** satu penerimaan, satu penjualan tunai, satu split payment, satu void/refund, tutup shift, laporan, ekspor Excel.
 10. **Aktifkan backup terjadwal** + retensi; uji restore ke DB kosong.
 
@@ -80,3 +87,18 @@
 3. Arahkan `DATABASE_URL`/`DIRECT_URL` ke DB restore, verifikasi health + laporan.
 4. Deploy kode versi sebelumnya.
 5. Migrasi `0070`/`0071` aman untuk rollback index/default; tidak menghapus kolom/data.
+
+## Retensi data operasional (cron)
+
+Jalankan pembersihan terjadwal dari cron/systemd, bukan saat boot aplikasi:
+
+```bash
+# idempotency key lama (default 30 hari; key jurnal dipertahankan)
+pnpm prune:idempotency 30
+
+# ringkasan/outbox POS offline yang sudah terminal (default 180 hari;
+# baris yang belum diselesaikan tidak pernah dihapus)
+pnpm prune:pos-outbox 180
+```
+
+Tinjau periode retensi dengan pemilik data/audit sebelum mengaktifkan jadwal.

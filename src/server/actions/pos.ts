@@ -4,35 +4,29 @@ import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { withCompany, withCompanyReadOnly } from "@/db/tenant";
-import { cashMovements, customers, idempotencyKeys, journalEntries, partyPayments, sales, warehouses } from "@/db/schema";
-import { reverseJournalEntry } from "@/server/accounting";
+import { customers, idempotencyKeys, sales, warehouses } from "@/db/schema";
 import { writeAudit } from "@/server/audit";
-import {
-  assertOriginCreditVoidable,
-  restorePartyCreditUsage,
-  voidOriginPartyCredit,
-} from "@/server/party-credits";
 import type { QuoteResultPublic } from "@/server/pos";
 import {
-  cashDrawerMovement,
-  closeCashSession,
+  consumeHeldSale,
   createSale,
   createSaleReturn,
   deleteHeldSale,
-  getOpenCashSession,
   getReturnCredit,
+  issueReceiptPrintToken,
   holdSale,
-  openCashSession,
   payReceivable,
   quoteCart,
+  voidReceivablePayment,
   voidSale,
 } from "@/server/pos";
 import { searchPosCustomersWithDebt, searchProducts } from "@/server/catalog";
-import { requirePermission, requirePermissionInModule, requireAuth } from "@/lib/session";
+import { requirePermission, requirePermissionInModule } from "@/lib/session";
 import { can } from "@/lib/permissions";
 import { AppError, guard, type ActionResult } from "@/lib/errors";
 import { parseInput } from "@/lib/action-validation";
-import { d, toDb } from "@/lib/money";
+import { parsePosProductSearchInput } from "@/lib/pos/product-search-input";
+import { d } from "@/lib/money";
 import { lockPosSaleAttempt, paymentRequestFingerprint } from "@/server/idempotency";
 import { todayISO } from "@/lib/format";
 import { log } from "@/lib/log";
@@ -80,20 +74,20 @@ export async function searchProductsAction(
 ): Promise<ActionResult<Awaited<ReturnType<typeof searchProducts>>>> {
   return guard(async () => {
     const ctx = await requirePermission("pos.sell");
+    const searchInput = parsePosProductSearchInput(q, offset);
     // POS-SRCH-01: search judges stock by the warehouse the cashier
     // actually selected (quote/checkout already did), not always the
     // default warehouse. A supplied id must belong to this company.
     const resolvedWarehouseId = warehouseId
       ? await assertWarehouseUsable(ctx.company.id, warehouseId)
       : await defaultWarehouseId(ctx.company.id);
-    const safeOffset = Math.max(0, Math.floor(Number(offset ?? 0)) || 0);
     return withCompany(ctx.company.id, (tx) =>
       searchProducts(tx, {
         companyId: ctx.company.id,
         warehouseId: resolvedWarehouseId,
-        q,
+        q: searchInput.query,
         limit: exactCode ? 1 : 24,
-        offset: exactCode ? 0 : safeOffset,
+        offset: exactCode ? 0 : searchInput.offset,
         exactCode,
         categoryId: categoryId || undefined,
         // POS3-10: harga pokok hanya ikut bila pemanggil memegang
@@ -136,7 +130,26 @@ export async function quickAddCustomerAction(input: { name: string; phone?: stri
         if (existing) throw new AppError("CONFLICT", `Nomor telepon ${data.phone} sudah terdaftar atas nama pelanggan "${existing.name}".`);
       }
       const code = `CUST-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
-      const [created] = await tx.insert(customers).values({ companyId: ctx.company.id, code, name: data.name, phone: data.phone || null, creditLimit: "0" }).returning({ id: customers.id, code: customers.code, name: customers.name, phone: customers.phone, creditLimit: customers.creditLimit });
+      const [created] = await tx
+        .insert(customers)
+        .values({
+          companyId: ctx.company.id,
+          code,
+          name: data.name,
+          phone: data.phone || null,
+          creditLimit: "0",
+          // Pelanggan quick-add POS dimulai TANPA kredit. Supervisor
+          // dapat menaikkan limit di master pelanggan.
+          creditLimitUnlimited: false,
+        })
+        .returning({
+          id: customers.id,
+          code: customers.code,
+          name: customers.name,
+          phone: customers.phone,
+          creditLimit: customers.creditLimit,
+          creditLimitUnlimited: customers.creditLimitUnlimited,
+        });
       await writeAudit(tx, { companyId: ctx.company.id, userId: ctx.user.id, action: "customer.quick_add", entityType: "customer", entityId: created.id, after: { code: created.code, name: created.name, phone: created.phone, creditLimit: created.creditLimit } });
       return {
         ...created,
@@ -288,7 +301,18 @@ export async function checkoutAction(input: z.input<typeof checkoutSchema>) {
             );
           }
         }
-        return row ? { id: row.id, number: row.number, total: Number(row.total), change: Number(row.changeTotal) } : null;
+        if (!row) return null;
+        return {
+          id: row.id,
+          number: row.number,
+          total: Number(row.total),
+          change: Number(row.changeTotal),
+          receiptToken: await issueReceiptPrintToken(tx, {
+            companyId: ctx.company.id,
+            userId: ctx.user.id,
+            saleId: row.id,
+          }),
+        };
       };
       const replayed = await findReplay();
       if (replayed) return replayed;
@@ -320,12 +344,21 @@ export async function checkoutAction(input: z.input<typeof checkoutSchema>) {
         idempotencyFingerprint: fingerprint,
       });
       if (data.heldSaleId) {
-        // Baris tahanan masih terkunci oleh klaim di atas dan statusnya
-        // sudah dipastikan held — hapus bersama penjualan finalnya.
-        await tx.execute(sql`delete from sale_lines where sale_id = ${data.heldSaleId}`);
-        await tx.execute(sql`delete from sales where id = ${data.heldSaleId}`);
+        await consumeHeldSale(tx, {
+          companyId: ctx.company.id,
+          userId: ctx.user.id,
+          heldSaleId: data.heldSaleId,
+          completedSaleId: sale.id,
+        });
       }
-      return sale;
+      return {
+        ...sale,
+        receiptToken: await issueReceiptPrintToken(tx, {
+          companyId: ctx.company.id,
+          userId: ctx.user.id,
+          saleId: sale.id,
+        }),
+      };
     });
     const committedAt = performance.now();
     try {
@@ -399,7 +432,7 @@ export async function resumeHeldSaleAction(id: string) {
         .limit(1);
       if (!sale || sale.status !== "held") throw new Error("Pesanan ditahan tidak ditemukan.");
       const lines = await tx.execute(sql`
-        select product_id, qty, qty_input, packaging_id, unit_price, discount_type, discount_value
+        select product_id, qty, qty_input, packaging_id, unit_price, discount_type, discount_value, serial_numbers
           from sale_lines where sale_id = ${id} order by line_no
       `);
       const [customer] = sale.customerId
@@ -410,6 +443,7 @@ export async function resumeHeldSaleAction(id: string) {
               name: customers.name,
               phone: customers.phone,
               creditLimit: customers.creditLimit,
+              creditLimitUnlimited: customers.creditLimitUnlimited,
             })
             .from(customers)
             .where(and(eq(customers.companyId, ctx.company.id), eq(customers.id, sale.customerId)))
@@ -433,6 +467,7 @@ export async function resumeHeldSaleAction(id: string) {
           unit_price: string;
           discount_type: string | null;
           discount_value: string;
+          serial_numbers: string[] | null;
         }[]).map((line) => ({
           productId: line.product_id,
           // S4: keranjang dipulihkan dalam BENTUK MASUKAN baris
@@ -441,6 +476,7 @@ export async function resumeHeldSaleAction(id: string) {
           packagingId: line.packaging_id,
           discountType: line.discount_type,
           discountValue: line.discount_value,
+          serialNumbers: line.serial_numbers ?? [],
         })),
       };
     });
@@ -506,6 +542,7 @@ export async function createReturnAction(input: {
               // S4: baris penjualan asal yang dituju (qty dalam
               // bentuk masukan baris itu); kosong = jalur per produk.
               saleLineId: z.string().uuid().nullish(),
+              serialNumbers: z.array(z.string().trim().min(1).max(80)).max(500).optional(),
             }),
           )
           .min(1),
@@ -563,6 +600,8 @@ export async function payReceivableAction(input: {
   reference?: string;
   date?: string;
   idempotencyKey?: string;
+  /** "pos" menuntut sesi laci untuk penerimaan tunai. */
+  source?: "pos" | "accounting";
 }) {
   return guard(async () => {
     const ctx = await requirePermissionInModule("pos.sell", "pos");
@@ -582,6 +621,7 @@ export async function payReceivableAction(input: {
         // POS1-05: kunci idempotensi per upaya pembayaran dari klien;
         // pengiriman ulang kunci yang sama mengembalikan hasil pertama.
         idempotencyKey: z.string().trim().min(8).max(120).optional(),
+        source: z.enum(["pos", "accounting"]).optional(),
       }),
       input,
     );
@@ -598,6 +638,7 @@ export async function payReceivableAction(input: {
         notes: data.notes,
         reference: data.reference,
         idempotencyKey: data.idempotencyKey,
+        requireCashSession: data.source === "pos",
       }),
     );
     revalidatePath("/app/akuntansi/piutang-utang");
@@ -606,227 +647,35 @@ export async function payReceivableAction(input: {
   });
 }
 
-export async function voidReceivablePaymentAction(input: { paymentId: string; reason: string }) {
+export async function voidReceivablePaymentAction(input: {
+  paymentId: string;
+  reason: string;
+  /** "pos" menuntut sesi laci untuk refund tunai. */
+  source?: "pos" | "accounting";
+}) {
   return guard(async () => {
-    // POS3-11: membatalkan penerimaan piutang membalik dokumen uang
-    // terposting — kelas tindakan yang sama dengan void penjualan,
-    // jadi gerbangnya sama: pos.void (supervisor), bukan pos.sell.
-    // Kasir tetap boleh MENERIMA piutang lewat payReceivableAction.
     const ctx = await requirePermissionInModule("pos.void", "pos");
     const data = parseInput(
-      z.object({ paymentId: z.string().uuid(), reason: z.string().trim().min(3).max(200) }),
+      z.object({
+        paymentId: z.string().uuid(),
+        reason: z.string().trim().min(3).max(200),
+        source: z.enum(["pos", "accounting"]).optional(),
+      }),
       input,
     );
 
-    await withCompany(ctx.company.id, async (tx) => {
-      const [payment] = await tx
-        .select()
-        .from(partyPayments)
-        .where(and(eq(partyPayments.companyId, ctx.company.id), eq(partyPayments.id, data.paymentId)))
-        .limit(1)
-        .for("update");
-      if (!payment) throw new AppError("NOT_FOUND", "Penerimaan pembayaran tidak ditemukan.");
-      if (payment.type !== "receivable" || !payment.saleId) {
-        throw new AppError("VALIDATION", "Pembayaran ini bukan penerimaan piutang penjualan.");
-      }
-      if (payment.status === "void") throw new AppError("INVALID_STATE", "Penerimaan sudah dibatalkan.");
-
-      // A-21 (R3-02): rantai kredit pihak — penerimaan asal yang
-      // kreditnya sudah terpakai tidak dapat dibatalkan sebelum
-      // pembayaran pemakai kredit dibatalkan lebih dulu.
-      await assertOriginCreditVoidable(tx, ctx.company.id, payment.id);
-
-      const [sale] = await tx
-        .select()
-        .from(sales)
-        .where(and(eq(sales.companyId, ctx.company.id), eq(sales.id, payment.saleId)))
-        .limit(1)
-        .for("update");
-      if (!sale) throw new AppError("NOT_FOUND", "Transaksi tidak ditemukan.");
-
-      // AK-P2-03: sama seperti pembayaran utang — jurnal penerimaan ini
-      // ditargetkan lewat idempotency key-nya (`ar:<saleId>:<nomor>`) dan
-      // dibalik per entri, bukan per dokumen induk, agar pembayaran
-      // sebagian lain tidak ikut terbalik.
-      const [entry] = await tx
-        .select({ id: journalEntries.id })
-        .from(journalEntries)
-        .where(
-          and(
-            eq(journalEntries.companyId, ctx.company.id),
-            eq(journalEntries.idempotencyKey, `ar:${sale.id}:${payment.number}`),
-            eq(journalEntries.status, "posted"),
-          ),
-        )
-        .limit(1);
-      if (!entry) {
-        throw new AppError(
-          "VALIDATION",
-          `Jurnal penerimaan ${payment.number} tidak ditemukan, sehingga jurnal pembalik tidak dapat dibuat. Pembatalan penerimaan dibatalkan agar daftar pembayaran dan buku besar tetap selaras; periksa jurnal penerimaan ini terlebih dahulu.`,
-        );
-      }
-      const { reversal } = await reverseJournalEntry(tx, {
-        companyId: ctx.company.id,
-        entryId: entry.id,
-        date: todayISO(),
-        description: `Pembatalan penerimaan piutang ${payment.number} — ${data.reason}`,
-        createdBy: ctx.user.id,
-      });
-
-      await tx
-        .update(partyPayments)
-        .set({ status: "void" })
-        .where(and(eq(partyPayments.companyId, ctx.company.id), eq(partyPayments.id, payment.id)));
-
-      // A-21 (R3-02): selaraskan subledger kredit — pemakaian kredit
-      // oleh penerimaan ini dipulihkan; kredit yang lahir dari
-      // penerimaan ini ikut batal (belum terpakai, per penjaga di atas).
-      await restorePartyCreditUsage(tx, { companyId: ctx.company.id, userId: ctx.user.id, payment });
-      await voidOriginPartyCredit(tx, {
+    await withCompany(ctx.company.id, (tx) =>
+      voidReceivablePayment(tx, {
         companyId: ctx.company.id,
         userId: ctx.user.id,
-        paymentId: payment.id,
-      });
-
-      // POS-001: Kurangi porsi pembayaran piutang yang dibatalkan dari paidTotal penjualan
-      // (mempertahankan porsi pembayaran awal/tunai saat checkout).
-      const diff = d(sale.paidTotal).minus(d(payment.amount));
-      const paid = diff.gt(0) ? diff : d(0);
-      await tx
-        .update(sales)
-        .set({
-          paidTotal: toDb(paid),
-          paymentStatus: paid.gte(d(sale.total)) ? "paid" : paid.gt(0) ? "partial" : "unpaid",
-        })
-        .where(and(eq(sales.companyId, ctx.company.id), eq(sales.id, sale.id)));
-
-      // POS-002: Jika penerimaan piutang memiliki mutasi kas ke laci sesi, catat pengembalian dana
-      const [existingCashMovement] = await tx.select().from(cashMovements).where(and(eq(cashMovements.companyId, ctx.company.id), eq(cashMovements.referenceType, "payment"), eq(cashMovements.referenceId, payment.id))).limit(1);
-      if (existingCashMovement) {
-        const processorSession = await getOpenCashSession(tx, ctx.company.id, ctx.user.id);
-        if (processorSession) {
-          await tx.insert(cashMovements).values({ companyId: ctx.company.id, sessionId: processorSession.id, type: "refund", amount: toDb(d(existingCashMovement.amount).neg()), referenceType: "payment_void", referenceId: payment.id, notes: `Pembatalan penerimaan piutang ${payment.number} — ${data.reason}`, createdBy: ctx.user.id });
-        }
-      }
-
-      await writeAudit(tx, {
-        companyId: ctx.company.id,
-        userId: ctx.user.id,
-        action: "ar.payment.void",
-        entityType: "party_payment",
-        entityId: payment.id,
-        after: {
-          number: payment.number,
-          saleNumber: sale.number,
-          amount: payment.amount,
-          reason: data.reason,
-          reversalNumber: reversal.number,
-        },
-      });
-    });
+        paymentId: data.paymentId,
+        reason: data.reason,
+        requireCashSession: data.source === "pos",
+      }),
+    );
 
     revalidatePath("/app/akuntansi/piutang-utang");
     revalidatePath("/app/pos/riwayat");
     return { id: data.paymentId };
-  });
-}
-
-export async function openSessionAction(input: { openingCash: string | number; branchId?: string | null }) {
-  return guard(async () => {
-    const ctx = await requirePermissionInModule("pos.session", "pos");
-    const data = parseInput(z.object({ openingCash: z.union([z.string(), z.number()]), branchId: z.string().uuid().nullish() }), input);
-    const result = await withCompany(ctx.company.id, (tx) =>
-      openCashSession(tx, {
-        companyId: ctx.company.id,
-        userId: ctx.user.id,
-        branchId: data.branchId ?? null,
-        openingCash: data.openingCash,
-      }),
-    );
-    revalidatePath("/app/pos/sesi");
-    revalidatePath("/app/pos");
-    return result;
-  });
-}
-
-export async function closeSessionAction(input: {
-  sessionId: string;
-  countedCash: string | number;
-  notes?: string;
-  differenceReason?: string;
-}) {
-  return guard(async () => {
-    const ctx = await requirePermissionInModule("pos.session", "pos");
-    const data = parseInput(
-      z.object({
-        sessionId: z.string().uuid(),
-        countedCash: z.union([z.string(), z.number()]),
-        notes: z.string().max(300).optional(),
-        differenceReason: z.string().max(300).optional(),
-      }),
-      input,
-    );
-    const result = await withCompany(ctx.company.id, (tx) =>
-      closeCashSession(tx, {
-        companyId: ctx.company.id,
-        userId: ctx.user.id,
-        sessionId: data.sessionId,
-        countedCash: data.countedCash,
-        notes: data.notes,
-        differenceReason: data.differenceReason,
-      }),
-    );
-    revalidatePath("/app/pos/sesi");
-    revalidatePath("/app/pos");
-    return result;
-  });
-}
-
-export async function cashMovementAction(input: {
-  sessionId: string;
-  type: "deposit" | "withdrawal";
-  amount: string | number;
-  notes?: string;
-  idempotencyKey?: string;
-}) {
-  return guard(async () => {
-    const ctx = await requirePermissionInModule("pos.session", "pos");
-    const data = parseInput(
-      z.object({
-        sessionId: z.string().uuid(),
-        type: z.enum(["deposit", "withdrawal"]),
-        amount: z.union([z.string(), z.number()]),
-        notes: z.string().max(300).optional(),
-        idempotencyKey: z.string().min(8).max(128).optional(),
-      }),
-      input,
-    );
-    await withCompany(ctx.company.id, (tx) =>
-      cashDrawerMovement(tx, {
-        companyId: ctx.company.id,
-        userId: ctx.user.id,
-        sessionId: data.sessionId,
-        type: data.type,
-        amount: data.amount,
-        notes: data.notes,
-        idempotencyKey: data.idempotencyKey,
-      }),
-    );
-    revalidatePath("/app/pos/sesi");
-    return { ok: true };
-  });
-}
-
-export async function currentSessionAction() {
-  return guard(async () => {
-    const ctx = await requireAuth();
-    return withCompanyReadOnly(ctx.company.id, async (tx) => {
-      const rows = await tx.execute(sql`
-        select id, opening_cash, opened_at from cash_sessions
-        where company_id = ${ctx.company.id} and user_id = ${ctx.user.id} and status = 'open'
-        order by opened_at desc limit 1
-      `);
-      return (rows as unknown as { id: string; opening_cash: string; opened_at: string }[])[0] ?? null;
-    });
   });
 }

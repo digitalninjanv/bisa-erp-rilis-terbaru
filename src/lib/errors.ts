@@ -158,10 +158,23 @@ export function zodValidationMessage(error: unknown): string | null {
   return formatZodIssues(zodError.issues);
 }
 
+export function isNextControlFlowError(error: unknown): boolean {
+  if (!error || typeof error !== "object" || !("digest" in error)) return false;
+  const digest = (error as { digest?: unknown }).digest;
+  return (
+    typeof digest === "string" &&
+    (digest.startsWith("NEXT_REDIRECT") || digest.startsWith("NEXT_NOT_FOUND"))
+  );
+}
+
 export function guard<T>(fn: () => Promise<T>): Promise<ActionResult<T>> {
   return fn()
     .then((data) => ({ ok: true as const, data }))
     .catch((error: unknown) => {
+      // redirect()/notFound() are control flow, not application errors.
+      // Without this, an expired session action returns INTERNAL instead
+      // of navigating the user to /login.
+      if (isNextControlFlowError(error)) throw error;
       if (error instanceof AppError) {
         return { ok: false as const, code: error.code, message: error.message };
       }

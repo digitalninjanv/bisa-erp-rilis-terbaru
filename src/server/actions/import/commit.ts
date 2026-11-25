@@ -15,6 +15,8 @@ import { withCompany } from "@/db/tenant";
 import { requirePermission } from "@/lib/session";
 import { AppError, guard } from "@/lib/errors";
 import { can } from "@/lib/permissions";
+import { assertModuleEnabled } from "@/lib/modules";
+import { importEntityModule } from "@/lib/import/import-module";
 import { isoDateField, parseInput } from "@/lib/action-validation";
 import type { ImportField } from "@/lib/import-parse";
 import {
@@ -41,6 +43,8 @@ const commitSchema = z.object({
   warehouseId: z.string().uuid().optional(),
   // Tanggal cut-off migrasi (stok awal). Kosong = hari ini (WIB).
   date: isoDateField.optional(),
+  /** Konfirmasi eksplisit untuk saldo awal bernilai 0. */
+  allowZeroCost: z.boolean().default(false),
   selectedRows: z.array(z.number().int()).optional(),
 });
 
@@ -51,6 +55,7 @@ export async function commitImportBatchAction(input: z.input<typeof commitSchema
 
     const result = await withCompany(ctx.company.id, async (tx) => {
       const job = await lockImportJob(tx, ctx.company.id, data.jobId);
+      if (ctx.enabledModules) assertModuleEnabled(ctx.enabledModules, importEntityModule(job.entity));
       const accountingImport = [
         "accounts",
         "account_mappings",

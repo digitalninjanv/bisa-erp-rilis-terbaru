@@ -101,6 +101,8 @@ export const saleLines = pgTable(
     packagingId: uuid("packaging_id"),
     qtyInput: numeric("qty_input", { precision: 19, scale: 4 }).notNull(),
     isiSnapshot: numeric("isi_snapshot", { precision: 19, scale: 4 }).notNull().default("1"),
+    /** Seri yang dipilih saat transaksi/hold; kosong untuk non-serial. */
+    serialNumbers: jsonb("serial_numbers").$type<string[]>().notNull().default([]),
   },
   (t) => [
     foreignKey({
@@ -163,6 +165,13 @@ export const saleReturns = pgTable(
     disposition: text("disposition").notNull().default("sellable"),
     refundMethod: text("refund_method").notNull().default("cash"), // cash | store_credit | exchange
     total: numeric("total", { precision: 19, scale: 4 }).notNull().default("0"),
+    /**
+     * Nilai barang yang diretur (refundDue: nilai neto termasuk PPN +
+     * pembulatan), terpisah dari `total` yang untuk store_credit/exchange
+     * adalah nilai voucher kredit. Null untuk baris lama; laporan
+     * memakai fallback `total`.
+     */
+    goodsTotal: numeric("goods_total", { precision: 19, scale: 4 }),
     // D-12: for exchange/store_credit returns this document IS the credit
     // voucher — creditUsed tracks how much of `total` has already been
     // redeemed as a POS payment (methods of type customer_credit).
@@ -183,6 +192,7 @@ export const saleReturns = pgTable(
     uniqueIndex("sale_returns_company_idem_uq").on(t.companyId, t.idempotencyKey),
     uniqueIndex("sale_returns_company_number_uq").on(t.companyId, t.number),
     index("sale_returns_company_date_idx").on(t.companyId, t.date),
+    index("sale_returns_company_sale_created_idx").on(t.companyId, t.saleId, t.createdAt),
   ],
 );
 export const saleReturnLines = pgTable(
@@ -209,6 +219,8 @@ export const saleReturnLines = pgTable(
     packagingId: uuid("packaging_id"),
     qtyInput: numeric("qty_input", { precision: 19, scale: 4 }).notNull(),
     isiSnapshot: numeric("isi_snapshot", { precision: 19, scale: 4 }).notNull().default("1"),
+    /** Seri aktual yang dikembalikan pelanggan (kosong = non-serial). */
+    serialNumbers: jsonb("serial_numbers").$type<string[]>().notNull().default([]),
   },
   (t) => [
     foreignKey({

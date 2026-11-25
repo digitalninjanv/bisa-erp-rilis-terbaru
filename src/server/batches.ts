@@ -438,27 +438,43 @@ export async function getBatchAvailability(
         eq(products.trackBatch, true),
       ),
     );
+  const trackedIds = tracked.map((row) => row.id);
+  if (trackedIds.length === 0) return result;
+  // INV-03: two aggregate queries for the whole cart, not 2 per product.
+  const onHandRows = await tx
+    .select({ productId: stockOnHand.productId, qty: stockOnHand.qty })
+    .from(stockOnHand)
+    .where(
+      and(
+        eq(stockOnHand.companyId, input.companyId),
+        eq(stockOnHand.warehouseId, input.warehouseId),
+        inArray(stockOnHand.productId, trackedIds),
+      ),
+    );
+  const onHandByProduct = new Map(onHandRows.map((row) => [row.productId, d(row.qty)]));
+  const batchRows = await tx
+    .select({
+      productId: stockBatches.productId,
+      qty: stockBatches.qty,
+      expiryDate: stockBatches.expiryDate,
+    })
+    .from(stockBatches)
+    .where(
+      and(
+        eq(stockBatches.companyId, input.companyId),
+        eq(stockBatches.warehouseId, input.warehouseId),
+        inArray(stockBatches.productId, trackedIds),
+      ),
+    );
+  const batchesByProduct = new Map<string, { qty: string; expiryDate: string | null }[]>();
+  for (const row of batchRows) {
+    const list = batchesByProduct.get(row.productId) ?? [];
+    list.push({ qty: row.qty, expiryDate: row.expiryDate });
+    batchesByProduct.set(row.productId, list);
+  }
+
   for (const product of tracked) {
-    const [onHand] = await tx
-      .select({ qty: stockOnHand.qty })
-      .from(stockOnHand)
-      .where(
-        and(
-          eq(stockOnHand.companyId, input.companyId),
-          eq(stockOnHand.warehouseId, input.warehouseId),
-          eq(stockOnHand.productId, product.id),
-        ),
-      );
-    const rows = await tx
-      .select({ qty: stockBatches.qty, expiryDate: stockBatches.expiryDate })
-      .from(stockBatches)
-      .where(
-        and(
-          eq(stockBatches.companyId, input.companyId),
-          eq(stockBatches.warehouseId, input.warehouseId),
-          eq(stockBatches.productId, product.id),
-        ),
-      );
+    const rows = batchesByProduct.get(product.id) ?? [];
     // R-7: batch rows are summed SIGNED. A negative row (the shape
     // negative-stock sales leave behind) must net against its bucket —
     // skipping it, as a positive-only sum does, lets a quote offer the
@@ -473,7 +489,7 @@ export async function getBatchAvailability(
     // The gap between stock_on_hand and Σ batch (unmaterialized remainder
     // or drift) carries no expiry, so it lands in fresh — signed, so a
     // negative gap nets down instead of being clamped away.
-    const onHandQty = d(onHand?.qty ?? 0);
+    const onHandQty = onHandByProduct.get(product.id) ?? d(0);
     fresh = fresh.plus(onHandQty.minus(fresh.plus(expired)));
     if (expired.lt(0)) {
       fresh = fresh.plus(expired);

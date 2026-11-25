@@ -29,12 +29,13 @@ import {
   account,
 } from "./schema";
 import { toDb } from "../lib/money";
+import { env } from "../lib/env";
+import { resolveSeedOwnerPassword, seedOwnerLoginMessage } from "./seed-guard";
 import { seedDemoChart } from "./seed-chart"; import { seedDemoPackaging } from "./seed-packaging";
 import { seedPayrollIndonesiaDefaults } from "../server/payroll-indonesia";
 
 const ORG_ID = "01900000-0000-7000-8000-000000000001";
 const USER_ID = "01900000-0000-7000-8000-000000000010";
-const PASSWORD = "Bisa12345!";
 const YEAR = new Date().getFullYear();
 
 type ProductSeed = {
@@ -269,13 +270,12 @@ async function resetCompanyData() {
 async function seed() {
   const force = process.argv.includes("--force");
   const bulk = process.argv.includes("--bulk");
-
+  const owner = resolveSeedOwnerPassword({ isProduction: env.isProduction, argv: process.argv, ownerPassword: process.env.BISA_SEED_OWNER_PASSWORD });
   const existing = await adminDb
     .select({ id: organization.id })
     .from(organization)
     .where(eq(organization.id, ORG_ID))
     .limit(1);
-
   if (existing.length > 0) {
     if (!force) {
       console.log("Seed sudah ada. Gunakan --force untuk mengulang dari awal.");
@@ -285,7 +285,7 @@ async function seed() {
   }
 
   console.log("Membuat organisasi dan pengguna demo...");
-  const passwordHash = await hashPassword(PASSWORD);
+  const passwordHash = await hashPassword(owner.password);
   await adminDb.insert(user).values({
     id: USER_ID,
     name: "Nadia Putri",
@@ -936,7 +936,7 @@ async function seed() {
   });
 
   console.log("Seed selesai.");
-  console.log(`Login: owner@bisa.id / ${PASSWORD}`);
+  console.log(seedOwnerLoginMessage(owner));
   console.log(`Produk: ${insertedProducts.length}, nilai persediaan: ${inventoryValue.toFixed(0)}`);
 }
 

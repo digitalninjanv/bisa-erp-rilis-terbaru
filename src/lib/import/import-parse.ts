@@ -135,6 +135,7 @@ export const OPENING_STOCK_FIELDS: ImportFieldDef[] = [
   {
     key: "unitCost",
     label: "Biaya satuan",
+    required: true,
     aliases: ["biaya satuan", "harga beli", "harga pokok", "hpp", "cost", "unit cost", "biaya", "nilai satuan"],
     exclude: ["total", "jumlah biaya", "jumlah nilai"],
   },

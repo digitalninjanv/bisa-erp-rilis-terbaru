@@ -145,7 +145,7 @@ export function PosActionMenu({
         aria-label="Menu POS lainnya"
         aria-expanded={open}
         className={cn(
-          "flex h-11 items-center gap-2 rounded-md border px-3 text-[13px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          "flex h-11 min-w-11 items-center justify-center gap-2 rounded-md border px-3 text-[13px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:justify-start",
           open
             ? "border-primary bg-primary/5 text-foreground"
             : "border-border bg-background text-muted-foreground hover:bg-muted",

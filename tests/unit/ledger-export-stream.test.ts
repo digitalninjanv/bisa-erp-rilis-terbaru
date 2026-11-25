@@ -81,4 +81,25 @@ describe("ledger export response stream", () => {
     expect(streamState.finalized).toBe(true);
     expect(streamState.transactionFinished).toBe(true);
   });
+
+  it("releases the cursor and transaction after a client stops requesting chunks", async () => {
+    vi.useFakeTimers();
+    try {
+      const result = await createLedgerCsvExport(
+        { id: "company-test", name: "Test" },
+        { accountId: "account-test", from: "2026-01-01", to: "2026-12-31" },
+      );
+      expect(result).not.toBeNull();
+      if (!result) throw new Error("Ekspor buku besar tidak tersedia");
+
+      const reader = result.body.getReader();
+      expect((await reader.read()).done).toBe(false);
+      await vi.advanceTimersByTimeAsync(60_000);
+      await expect(reader.read()).rejects.toThrow("tidak meminta data");
+      expect(streamState.finalized).toBe(true);
+      expect(streamState.transactionFinished).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

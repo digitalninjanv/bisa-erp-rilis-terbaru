@@ -13,6 +13,7 @@ import { d, toDb } from "@/lib/money";
 import { costPerBaseUnit, suggestedPackagingLabel, toBaseQty } from "@/lib/packaging";
 import { writeAudit } from "@/server/audit";
 import { listPackagingsForProducts, resolveLinePackagings } from "@/server/catalog";
+import { claimIdempotencyKey } from "@/server/idempotency";
 import { nextDocumentNumber } from "@/server/sequences";
 
 /**
@@ -105,6 +106,7 @@ export async function createPurchaseOrder(
     date: string;
     expectedDate?: string | null;
     notes?: string;
+    idempotencyKey?: string | null;
     /**
      * Baris berkemasan (Satuan Kemasan S2): bila `packagingId` terisi,
      * `qty` adalah jumlah KEMASAN dan `unitCost` harga PER KEMASAN;
@@ -120,6 +122,17 @@ export async function createPurchaseOrder(
   },
 ) {
   if (input.lines.length === 0) throw new AppError("VALIDATION", "Tambahkan minimal satu barang.");
+
+  if (input.idempotencyKey) {
+    const claimed = await claimIdempotencyKey(tx, {
+      companyId: input.companyId,
+      key: input.idempotencyKey,
+      scope: "purchase.order",
+    });
+    if (!claimed) {
+      throw new AppError("CONFLICT", "Pesanan pembelian dengan kunci idempotensi ini sedang atau sudah diproses.");
+    }
+  }
 
   const [supplier] = await tx
     .select({ id: suppliers.id, name: suppliers.name })
@@ -489,6 +502,7 @@ export type PurchaseRecommendation = {
   sku: string;
   name: string;
   totalStock: string;
+  onOrderQty: string;
   minStock: string;
   suggestedQty: string;
   /** S6: petunjuk "≈ X Dus" dari kemasan bawaan beli (display-only). */
@@ -500,59 +514,77 @@ export type PurchaseRecommendation = {
 
 /**
  * Purchase recommendations (D-6): the canonical low-stock definition (D-4)
- * applied to the all-warehouse total — a product is listed when its total
- * stock is at or below its minimum, with the honest suggested qty of
- * max(2 × minStock − current stock, 0): restock up to twice the minimum.
- * Only rows with a positive suggestion make the list.
+ * applied to effective stock (on-hand + remaining qty on open POs in
+ * draft/sent/partial status) — prevents double-ordering goods already on order.
  */
 export async function listPurchaseRecommendations(
   tx: Tx,
   companyId: string,
 ): Promise<PurchaseRecommendation[]> {
-  const rows = await tx
-    .select({
-      productId: products.id,
-      sku: products.sku,
-      name: products.name,
-      minStock: products.minStock,
-      costPrice: products.costPrice,
-      supplierId: products.supplierId,
-      supplierName: suppliers.name,
-      totalStock: sql<string>`coalesce(sum(${stockOnHand.qty}), 0)`,
-    })
-    .from(products)
-    .leftJoin(stockOnHand, eq(stockOnHand.productId, products.id))
-    .leftJoin(suppliers, eq(products.supplierId, suppliers.id))
-    .where(
-      and(
-        eq(products.companyId, companyId),
-        eq(products.isActive, true),
-        eq(products.trackStock, true),
-      ),
-    )
-    .groupBy(
-      products.id,
-      products.sku,
-      products.name,
-      products.minStock,
-      products.costPrice,
-      products.supplierId,
-      suppliers.name,
-    )
-    .orderBy(asc(products.name));
+  const [rows, openPoRows] = await Promise.all([
+    tx
+      .select({
+        productId: products.id,
+        sku: products.sku,
+        name: products.name,
+        minStock: products.minStock,
+        costPrice: products.costPrice,
+        supplierId: products.supplierId,
+        supplierName: suppliers.name,
+        totalStock: sql<string>`coalesce(sum(${stockOnHand.qty}), 0)`,
+      })
+      .from(products)
+      .leftJoin(stockOnHand, eq(stockOnHand.productId, products.id))
+      .leftJoin(suppliers, eq(products.supplierId, suppliers.id))
+      .where(
+        and(
+          eq(products.companyId, companyId),
+          eq(products.isActive, true),
+          eq(products.trackStock, true),
+        ),
+      )
+      .groupBy(
+        products.id,
+        products.sku,
+        products.name,
+        products.minStock,
+        products.costPrice,
+        products.supplierId,
+        suppliers.name,
+      )
+      .orderBy(asc(products.name)),
+    tx
+      .select({
+        productId: purchaseOrderLines.productId,
+        pendingQty: sql<string>`coalesce(sum(greatest(0, ${purchaseOrderLines.qty} - ${purchaseOrderLines.receivedQty})), 0)`,
+      })
+      .from(purchaseOrderLines)
+      .innerJoin(purchaseOrders, eq(purchaseOrderLines.orderId, purchaseOrders.id))
+      .where(
+        and(
+          eq(purchaseOrders.companyId, companyId),
+          inArray(purchaseOrders.status, ["draft", "sent", "partial"]),
+        ),
+      )
+      .groupBy(purchaseOrderLines.productId),
+  ]);
 
+  const onOrderByProduct = new Map(openPoRows.map((row) => [row.productId, d(row.pendingQty)]));
   const recommendations: PurchaseRecommendation[] = [];
   for (const row of rows) {
     const totalStock = d(row.totalStock);
+    const onOrderQty = onOrderByProduct.get(row.productId) ?? d(0);
+    const effectiveStock = totalStock.plus(onOrderQty);
     const minStock = d(row.minStock);
-    if (!totalStock.lte(minStock)) continue;
-    const suggested = d(2).mul(minStock).minus(totalStock);
+    if (!effectiveStock.lte(minStock)) continue;
+    const suggested = d(2).mul(minStock).minus(effectiveStock);
     if (!suggested.gt(0)) continue;
     recommendations.push({
       productId: row.productId,
       sku: row.sku,
       name: row.name,
       totalStock: toDb(totalStock),
+      onOrderQty: toDb(onOrderQty),
       minStock: toDb(minStock),
       suggestedQty: toDb(suggested),
       suggestedPackaging: null,

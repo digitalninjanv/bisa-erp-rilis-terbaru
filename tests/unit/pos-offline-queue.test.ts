@@ -62,6 +62,20 @@ describe("Antrean offline POS (unit)", () => {
     expect(await countQueued(storage)).toBe(0);
   });
 
+  it("hasil resolved (dibuang/ditandai selesai supervisor) dikeluarkan dari antrean", async () => {
+    const storage = new MemoryOfflineStorage();
+    await enqueueOfflineSale(storage, payload("key-resolved"));
+    const outcome = await applySyncResults(storage, [
+      {
+        clientKey: "key-resolved",
+        status: "resolved",
+        message: "Item sudah dibuang oleh supervisor.",
+      },
+    ]);
+    expect(outcome.removed).toEqual(["key-resolved"]);
+    expect(await countQueued(storage)).toBe(0);
+  });
+
   it("hasil conflict & failed tetap antre dengan pesan terakhir", async () => {
     const storage = new MemoryOfflineStorage();
     await enqueueOfflineSale(storage, payload("key-3"));

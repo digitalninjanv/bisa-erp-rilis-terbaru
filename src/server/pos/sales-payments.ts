@@ -6,7 +6,7 @@
 
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { customers, saleReturns, sales } from "@/db/schema";
+import { customers, partyOpeningBalances, saleReturns, sales } from "@/db/schema";
 import { AppError } from "@/lib/errors";
 import { D, d, Decimal } from "@/lib/money";
 import { getAccountMap } from "@/server/accounting";
@@ -327,29 +327,49 @@ export async function validateReceivableTerms(tx: Tx, input: CreateSaleInput, re
     // sisa piutang di bawah berjalan sesudah kunci diperoleh sehingga
     // membaca keadaan terakhir yang sudah commit.
     const [customer] = await tx
-      .select({ creditLimit: customers.creditLimit, name: customers.name })
+      .select({
+        creditLimit: customers.creditLimit,
+        creditLimitUnlimited: customers.creditLimitUnlimited,
+        name: customers.name,
+      })
       .from(customers)
       .where(and(eq(customers.companyId, input.companyId), eq(customers.id, input.customerId)))
       .limit(1)
       .for("update");
     if (!customer) throw new AppError("VALIDATION", "Pelanggan tidak ditemukan.");
     const limit = d(customer.creditLimit);
-    if (limit.gt(0)) {
-      const [outstanding] = await tx
-        .select({ value: sql<string>`coalesce(sum(${sales.total} - ${sales.paidTotal}), 0)` })
-        .from(sales)
-        .where(
-          and(
-            eq(sales.companyId, input.companyId),
-            eq(sales.customerId, input.customerId),
-            inArray(sales.status, ["completed", "partial"]),
-            inArray(sales.paymentStatus, ["unpaid", "partial"]),
+    if (limit.gt(0) || !customer.creditLimitUnlimited) {
+      const [[outstanding], [opening]] = await Promise.all([
+        tx
+          .select({ value: sql<string>`coalesce(sum(${sales.total} - ${sales.paidTotal}), 0)` })
+          .from(sales)
+          .where(
+            and(
+              eq(sales.companyId, input.companyId),
+              eq(sales.customerId, input.customerId),
+              inArray(sales.status, ["completed", "partial"]),
+              inArray(sales.paymentStatus, ["unpaid", "partial"]),
+            ),
           ),
-        );
-      if (d(outstanding?.value).plus(receivable).gt(limit)) {
+        tx
+          .select({
+            value: sql<string>`coalesce(sum(${partyOpeningBalances.amount} - ${partyOpeningBalances.paidAmount}), 0)`,
+          })
+          .from(partyOpeningBalances)
+          .where(
+            and(
+              eq(partyOpeningBalances.companyId, input.companyId),
+              eq(partyOpeningBalances.kind, "receivable"),
+              eq(partyOpeningBalances.status, "open"),
+              eq(partyOpeningBalances.partyId, input.customerId),
+            ),
+          ),
+      ]);
+      const used = d(outstanding?.value).plus(d(opening?.value));
+      if (used.plus(receivable).gt(limit)) {
         throw new AppError(
           "VALIDATION",
-          `Batas kredit ${customer.name} terlampaui. Sisa limit ${limit.minus(d(outstanding?.value)).toFixed(0)}.`,
+          `Batas kredit ${customer.name} terlampaui. Sisa limit ${limit.minus(used).toFixed(0)}.`,
         );
       }
     }

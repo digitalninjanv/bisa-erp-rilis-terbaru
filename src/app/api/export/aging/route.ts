@@ -1,6 +1,6 @@
 import { withApiError } from "@/lib/api-error";
 import { withCompanyReadOnly } from "@/db/tenant";
-import { requirePermission } from "@/lib/session";
+import { requirePermissionInModule } from "@/lib/session";
 import { todayISO } from "@/lib/format";
 import { csvStreamResponse } from "@/lib/csv";
 import {
@@ -24,7 +24,7 @@ export const dynamic = "force-dynamic";
 // & XLSX berformat (format=xlsx).
 
 async function GETHandler(request: Request) {
-  const ctx = await requirePermission("accounting.view");
+  const ctx = await requirePermissionInModule("accounting.view", "akuntansi");
   const url = new URL(request.url);
   const kind = url.searchParams.get("kind") === "utang" ? "utang" : "piutang";
   const format = url.searchParams.get("format") === "xlsx" ? "xlsx" : "csv";

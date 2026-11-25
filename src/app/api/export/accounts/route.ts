@@ -2,7 +2,7 @@ import { withApiError } from "@/lib/api-error";
 import { and, asc, eq, ilike, or } from "drizzle-orm";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { accounts } from "@/db/schema";
-import { requirePermission } from "@/lib/session";
+import { requirePermissionInModule } from "@/lib/session";
 import { todayISO } from "@/lib/format";
 import { csvResponse, toCsv } from "@/lib/csv";
 import { xlsxResponse } from "@/lib/xlsx";
@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
  * yang sedang tampil (S3 §18F).
  */
 async function GETHandler(request?: Request) {
-  const ctx = await requirePermission("accounting.view");
+  const ctx = await requirePermissionInModule("accounting.view", "akuntansi");
   const url = new URL(request?.url ?? "http://localhost");
   const q = url.searchParams.get("q")?.trim();
   const type = url.searchParams.get("type")?.trim();

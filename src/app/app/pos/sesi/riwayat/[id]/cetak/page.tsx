@@ -5,6 +5,7 @@ import { withCompany } from "@/db/tenant";
 import { getCashSessionHistoryDetail } from "@/server/reports";
 import { getSettings } from "@/server/catalog";
 import { requirePermissionPage } from "@/lib/session";
+import { can } from "@/lib/permissions";
 import { writeAudit } from "@/server/audit";
 import { d, formatIDR } from "@/lib/money";
 import { formatDate, formatDateTime } from "@/lib/format";
@@ -39,6 +40,9 @@ export default async function SessionZReportPage({
   const data = await withCompany(ctx.company.id, async (tx) => {
     const detail = await getCashSessionHistoryDetail(tx, ctx.company.id, id);
     if (!detail) return null;
+    // Laporan X untuk sesi terbuka memuat angka rekonsiliasi; hanya
+    // supervisor yang boleh melihatnya agar hitung kas tetap buta.
+    if (detail.session.status !== "closed" && !can(ctx, "pos.void")) return null;
     const settings = await getSettings(tx, ctx.company.id);
     await writeAudit(tx, {
       companyId: ctx.company.id,
@@ -114,6 +118,7 @@ export default async function SessionZReportPage({
                 <Row label="Transaksi selesai" value={`${detail.transactionCount}`} />
                 <Row label="Total penjualan" value={formatIDR(detail.grossSales)} />
                 <Row label="Penjualan tunai" value={formatIDR(totals.salesTotal)} />
+                <Row label="Penerimaan piutang" value={formatIDR(totals.receivableTotal)} />
                 <Row label="Refund tunai" value={formatIDR(totals.refundsTotal)} />
               </div>
             </section>

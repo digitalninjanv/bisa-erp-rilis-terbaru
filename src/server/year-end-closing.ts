@@ -3,7 +3,7 @@ import type { Tx } from "@/db";
 import { accounts, fiscalPeriods, journalEntries, journalLines } from "@/db/schema";
 import { AppError } from "@/lib/errors";
 import { d, type Decimal } from "@/lib/money";
-import { getAccountId, postJournal, signedBalance } from "@/server/accounting";
+import { getAccountId, postJournal, reverseJournalEntry, signedBalance } from "@/server/accounting";
 import { writeAudit } from "@/server/audit";
 
 /**
@@ -289,6 +289,44 @@ export async function postYearEndClosing(
   });
 
   return entry;
+}
+
+export async function reverseYearEndClosing(
+  tx: Tx,
+  input: {
+    companyId: string;
+    year: number;
+    userId?: string | null;
+    reason?: string | null;
+  },
+): Promise<{ original: { id: string; number: string }; reversal: { id: string; number: string } }> {
+  const active = await findActiveClosing(tx, input.companyId, input.year);
+  if (!active) {
+    throw new AppError("NOT_FOUND", `Tidak ada penutupan buku aktif untuk tahun ${input.year}.`);
+  }
+  const reversed = await reverseJournalEntry(tx, {
+    companyId: input.companyId,
+    entryId: active.id,
+    date: `${input.year}-12-31`,
+    description: `Pembatalan tutup buku tahun ${input.year}${input.reason ? ` — ${input.reason}` : ""}`,
+    createdBy: input.userId ?? null,
+  });
+  await writeAudit(tx, {
+    companyId: input.companyId,
+    userId: input.userId ?? null,
+    action: "period.year_end_closing_reverse",
+    entityType: "journal_entry",
+    entityId: active.id,
+    after: {
+      year: input.year,
+      originalJournalId: active.id,
+      originalJournalNumber: active.number,
+      reversalJournalId: reversed.reversal.id,
+      reversalJournalNumber: reversed.reversal.number,
+      reason: input.reason ?? null,
+    },
+  });
+  return reversed;
 }
 
 /**

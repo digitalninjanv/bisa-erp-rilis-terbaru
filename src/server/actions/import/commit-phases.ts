@@ -48,6 +48,7 @@ export type CommitData = {
   warehouseId?: string;
   /** Tanggal cut-off untuk stok awal produk & impor stok awal. */
   date?: string;
+  allowZeroCost?: boolean;
   selectedRows?: number[];
 };
 
@@ -117,6 +118,7 @@ export async function commitMasterEntity(
       mapping: masterMapping,
       warehouseId,
       date: data.date,
+      allowZeroCost: data.allowZeroCost,
       selectedRows: data.selectedRows,
     });
   }

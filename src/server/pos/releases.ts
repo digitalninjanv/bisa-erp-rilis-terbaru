@@ -205,7 +205,7 @@ export function releaseDir(): string | null {
 /**
  * Nama berkas kanonis artefak per (target, arch) — SATU definisi
  * yang dipakai endpoint, rute unduh, dan skrip rilis
- * (scripts/release-pos-desktop.sh menyalin bundel ke nama ini).
+ * (the native release tooling copies the bundle to this name).
  * Kombinasi di luar peta → null (tidak didukung, 404).
  * Linux hanya AppImage yang dapat memperbarui diri (D4); Windows
  * hanya NSIS.

@@ -1,0 +1,197 @@
+ M .github/workflows/ci.yml
+ M AGENTS.md
+ D IMPLEMENTATION_PLAN.md
+ M package.json
+ M pos-electron/main.cjs
+ M pos-electron/pnpm-lock.yaml
+ M pos-electron/pnpm-workspace.yaml
+ M pos-electron/preload.cjs
+ M public/pos-sw.js
+ D src-tauri/Cargo.lock
+ D src-tauri/Cargo.toml
+ D src-tauri/build.rs
+ D src-tauri/capabilities/default.json
+ D src-tauri/capabilities/display.json
+ D src-tauri/icons/icon.png
+ D src-tauri/src/commands.rs
+ D src-tauri/src/device.rs
+ D src-tauri/src/displaymap.rs
+ D src-tauri/src/keychain.rs
+ D src-tauri/src/lib.rs
+ D src-tauri/src/main.rs
+ D src-tauri/src/posdb.rs
+ D src-tauri/src/printing.rs
+ D src-tauri/src/runtime.rs
+ D src-tauri/src/syncengine.rs
+ D src-tauri/src/transport.rs
+ D src-tauri/src/updater.rs
+ D src-tauri/tauri.conf.json
+ D src-tauri/tauri.linux.conf.json
+ D src-tauri/tauri.windows.conf.json
+ M src/app/api/export/cash-sessions/route.ts
+ M src/app/api/export/payroll/route.ts
+ M src/app/api/pos/desktop/transactions/[saleId]/receipt/route.ts
+ M src/app/api/pos/desktop/transactions/route.ts
+ M src/app/api/pos/telemetry/route.ts
+ M src/app/app/akuntansi/(akuntansi)/riwayat/page.tsx
+ M src/app/app/gudang/pelanggan/[id]/page.tsx
+ M src/app/app/pos/nota/[id]/faktur/page.tsx
+ M src/app/app/pos/nota/[id]/page.tsx
+ M src/app/app/pos/offline/page.tsx
+ M src/app/app/pos/page.tsx
+ M src/app/app/pos/piutang/cetak/page.tsx
+ M src/app/app/pos/piutang/page.tsx
+ M src/app/app/pos/retur/page.tsx
+ M src/app/app/pos/riwayat/page.tsx
+ M src/app/app/pos/sesi/page.tsx
+ M src/app/app/pos/sesi/riwayat/[id]/cetak/page.tsx
+ M src/app/app/pos/sesi/riwayat/[id]/page.tsx
+ M src/app/app/pos/sesi/riwayat/page.tsx
+ M src/components/akuntansi/payment-form.tsx
+ M src/components/gudang/partner-forms.tsx
+ M src/components/gudang/party-detail-view.tsx
+ M src/components/gudang/purchase-order-form.tsx
+ M src/components/pengaturan/forms/identitas-pajak.tsx
+ M src/components/pos/cart-panel.tsx
+ M src/components/pos/held-actions.tsx
+ M src/components/pos/offline-review-panel.tsx
+ M src/components/pos/payment-panel.tsx
+ M src/components/pos/payment/debt-section.tsx
+ M src/components/pos/pos-terminal.tsx
+ M src/components/pos/receipt-print-window.ts
+ M src/components/pos/return-form.tsx
+ M src/components/pos/sale-row-actions.tsx
+ M src/components/pos/session-history-list.tsx
+ M src/components/pos/session-manager.tsx
+ M src/components/pos/terminal-admin-panel.tsx
+ M src/components/pos/terminal-dialogs.tsx
+ M src/components/pos/terminal-types.ts
+ M src/components/pos/terminal/cart-lines.ts
+ M src/components/pos/terminal/cash-movement-dialog.tsx
+ M src/components/pos/terminal/checkout-success-modal.tsx
+ M src/components/pos/terminal/pos-print-queue.tsx
+ M src/components/pos/terminal/product-catalog.tsx
+ M src/components/pos/terminal/use-payment-plan.ts
+ M src/components/pos/terminal/use-product-search.ts
+ M src/components/pos/terminal/use-terminal-checkout.ts
+ M src/components/pos/terminal/use-terminal-reset.ts
+ M src/components/pos/use-cart-persistence.ts
+ M src/components/pos/use-held-sales.ts
+ M src/components/pos/use-offline-queue.ts
+ M src/components/pos/use-return-credit.ts
+ M src/components/shell/module-shell.tsx
+ M src/components/shell/user-menu.tsx
+ M src/db/migrations/meta/_journal.json
+ M src/db/schema/catalog.ts
+ M src/db/schema/inventory.ts
+ M src/db/schema/platform.ts
+ M src/db/schema/sales.ts
+ M src/lib/errors.ts
+ M src/lib/escpos/encoder.ts
+ M src/lib/permissions.ts
+ M src/lib/pos/desktop-print.ts
+ M src/lib/pos/pos-offline.ts
+ M src/lib/pos/print-queue.ts
+ M src/proxy.ts
+ M src/server/accounting.ts
+ M src/server/actions/inventory/penerimaan.ts
+ M src/server/actions/inventory/pihak.ts
+ M src/server/actions/inventory/produk.ts
+ M src/server/actions/pos-offline.ts
+ M src/server/actions/pos.ts
+ M src/server/actions/purchase-requests.ts
+ M src/server/actions/purchasing.ts
+ M src/server/actions/settings/pembayaran.ts
+ M src/server/actions/users.ts
+ M src/server/analytics.ts
+ M src/server/audit.ts
+ M src/server/batches.ts
+ M src/server/catalog/parties.ts
+ M src/server/catalog/settings-reads.ts
+ M src/server/hr/final-pay.ts
+ M src/server/hr/leave.ts
+ M src/server/hr/overtime.ts
+ M src/server/hr/payroll-runs.ts
+ M src/server/inventory/receipt-void.ts
+ M src/server/inventory/receipts.ts
+ M src/server/master-data/parties.ts
+ M src/server/member-permissions.ts
+ M src/server/party-credits.ts
+ M src/server/pos-device.ts
+ M src/server/pos-offline.ts
+ M src/server/pos/index.ts
+ M src/server/pos/offline.ts
+ M src/server/pos/receivables.ts
+ M src/server/pos/return-history.ts
+ M src/server/pos/returns-settlement.ts
+ M src/server/pos/returns.ts
+ M src/server/pos/sales-hold.ts
+ M src/server/pos/sales-payments.ts
+ M src/server/pos/sales-persist.ts
+ M src/server/pos/sessions.ts
+ M src/server/pos/terminals.ts
+ M src/server/purchase-requests.ts
+ M src/server/purchasing.ts
+ M src/server/reports/arap.ts
+ M src/server/reports/cash-sessions.ts
+ M src/server/reports/ledger-export-stream.ts
+ M src/server/reports/sales.ts
+ M src/server/serial-restore.ts
+ M tests/integration/analytics.test.ts
+ M tests/integration/audit-a2-chains.test.ts
+ M tests/integration/erp-concurrency-remediation.test.ts
+ M tests/integration/journal-validation.test.ts
+ M tests/integration/pos-offline-tahap2.test.ts
+ M tests/integration/rekayasa-r3-fresh-session.test.ts
+ M tests/integration/review-fixes-t5r.test.ts
+ M tests/integration/user-management.test.ts
+ M tests/sim2/payroll-access.test.ts
+ M tests/sim2/rbac-matrix.test.ts
+ M tests/unit/a28-tahap4-input-parity.test.ts
+ M tests/unit/architecture-file-size.test.ts
+ M tests/unit/guard-zod.test.ts
+ M tests/unit/ledger-export-stream.test.ts
+ M tests/unit/permissions.test.ts
+ M tests/unit/pos-escpos.test.ts
+ M tests/unit/pos-offline-queue.test.ts
+ M tests/unit/pos-print-queue.test.ts
+ M tests/unit/pos-pwa-sw.test.ts
+ M tests/unit/pos-session-blind-close.test.ts
+?? pos-electron/print-callback.cjs
+?? remediation/
+?? scripts/prune-idempotency.ts
+?? src/app/app/pos/retur/[id]/
+?? src/components/pos/force-close-session.tsx
+?? src/components/pos/terminal/use-new-sale-reset.ts
+?? src/components/pos/terminal/use-terminal-pay-state.ts
+?? src/db/migrations/0085_receipt_goods_values.sql
+?? src/db/migrations/0086_aromatic_boomer.sql
+?? src/db/migrations/0087_pos_offline_outbox_query_indexes.sql
+?? src/db/migrations/0088_clammy_bruce_banner.sql
+?? src/db/migrations/meta/0085_snapshot.json
+?? src/db/migrations/meta/0086_snapshot.json
+?? src/db/migrations/meta/0087_snapshot.json
+?? src/db/migrations/meta/0088_snapshot.json
+?? src/lib/pos/cash-movement.ts
+?? src/lib/pos/checkout-recovery.ts
+?? src/lib/pos/payment-plan.ts
+?? src/lib/pos/payment-state.ts
+?? src/lib/pos/product-cache.ts
+?? src/lib/pos/product-search-input.ts
+?? src/lib/pos/snapshot-limit.ts
+?? src/server/actions/pos-sessions.ts
+?? src/server/journal-idempotency.ts
+?? src/server/pos/offline-payload.ts
+?? src/server/pos/receipt-token.ts
+?? src/server/pos/return-voucher.ts
+?? src/server/pos/session-close-token.ts
+?? tests/integration/hr-concurrency.test.ts
+?? tests/integration/remediation-audit-fixes.test.ts
+?? tests/integration/remediation-settings-guards.test.ts
+?? tests/unit/pos-cash-movement.test.ts
+?? tests/unit/pos-deep-hardening.test.ts
+?? tests/unit/pos-device-snapshot-limit.test.ts
+?? tests/unit/pos-electron-print-callback.test.ts
+?? tests/unit/pos-offline-review-cursor.test.ts
+?? tests/unit/pos-product-search-input.test.ts
+?? tests/unit/pos-telemetry-route.test.ts

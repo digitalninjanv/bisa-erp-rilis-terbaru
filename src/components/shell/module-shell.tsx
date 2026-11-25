@@ -20,7 +20,7 @@ import { initials, todayISO } from "@/lib/format";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { countPurchaseRequestsByStatus } from "@/server/purchase-requests";
 import { countHeldSales } from "@/server/pos";
-import { listOfflineReviewQueue } from "@/server/pos-offline";
+import { getOfflineReviewQueueSummary } from "@/server/pos-offline";
 import { getOpnameReminders } from "@/server/inventory";
 import { countPendingReimbursementClaims } from "@/server/reimbursements";
 import { countPendingLeaveRequests, countPendingOvertimeRequests } from "@/server/hr";
@@ -75,13 +75,13 @@ async function computeNavBadges(
       if (moduleKey === "pos" && ctx.permissions.includes("pos.sell")) {
         const [held, reviewQueue] = await Promise.all([
           countHeldSales(tx, ctx.company.id),
-          listOfflineReviewQueue(tx, ctx.company.id),
+          getOfflineReviewQueueSummary(tx, ctx.company.id),
         ]);
         if (held > 0) {
           badges["/app/pos/ditahan"] = { count: held, tone: "amber" };
         }
-        if (reviewQueue.length > 0) {
-          badges["/app/pos/offline"] = { count: reviewQueue.length, tone: "red" };
+        if (reviewQueue.total > 0) {
+          badges["/app/pos/offline"] = { count: reviewQueue.total, tone: "red" };
         }
       }
       if (moduleKey === "hr" && ctx.permissions.includes("payroll.view")) {

@@ -43,7 +43,7 @@ export default async function CustomerStatementPage({
         .from(customers)
         .where(and(eq(customers.companyId, ctx.company.id), eq(customers.id, customerId)))
         .limit(1),
-      listReceivables(tx, ctx.company.id),
+      listReceivables(tx, ctx.company.id, { partyId: customerId }),
       getSettings(tx, ctx.company.id),
     ]);
     return { customer: customerRows[0] ?? null, receivables, settings };

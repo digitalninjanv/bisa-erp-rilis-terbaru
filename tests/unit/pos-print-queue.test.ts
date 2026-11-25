@@ -43,6 +43,21 @@ describe("POS print queue", () => {
     expect(latest?.attempts).toBe(1);
   });
 
+  it("dua worker tidak dapat mengklaim job pending yang sama", async () => {
+    const storage = new MemoryPrintQueueStorage();
+    const firstWorker = new PrintQueue(storage);
+    const secondWorker = new PrintQueue(storage);
+    await firstWorker.enqueue(input());
+
+    const claims = await Promise.all([
+      firstWorker.claimNext("company-1", undefined, "terminal-1"),
+      secondWorker.claimNext("company-1", undefined, "terminal-1"),
+    ]);
+
+    expect(claims.filter(Boolean)).toHaveLength(1);
+    expect(claims.filter(Boolean)[0]?.status).toBe("printing");
+  });
+
   it("menandai gagal dan bisa retry", async () => {
     const queue = new PrintQueue(new MemoryPrintQueueStorage());
     const job = await queue.enqueue(input());
@@ -75,6 +90,15 @@ describe("POS print queue", () => {
     await queue.markSent(job.id);
     expect(await queue.cleanup(0)).toBe(1);
     expect(await queue.list()).toHaveLength(0);
+  });
+
+  it("tidak mengklaim job milik kasir/perangkat lain", async () => {
+    const queue = new PrintQueue(new MemoryPrintQueueStorage());
+    await queue.enqueue(input({ userId: "user-a", terminalId: "t1" }));
+    await queue.enqueue(input({ saleId: "sale-2", userId: "user-b", terminalId: "t2" }));
+    const claimed = await queue.claimNext("company-1", "user-b", "t2");
+    expect(claimed?.saleId).toBe("sale-2");
+    expect(await queue.claimNext("company-1", "user-b", "t2")).toBeUndefined();
   });
 
   it("tidak mengklaim job yang belum pending", async () => {

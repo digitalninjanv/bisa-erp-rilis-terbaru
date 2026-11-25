@@ -32,6 +32,7 @@ async function loadVoidLines(tx: Tx, companyId: string, receiptId: string) {
       productId: stockReceiptLines.productId,
       qty: stockReceiptLines.qty,
       unitCost: stockReceiptLines.unitCost,
+      stockUnitCost: stockReceiptLines.stockUnitCost,
       lineTotal: stockReceiptLines.lineTotal,
       batchNumber: stockReceiptLines.batchNumber,
       expiryDate: stockReceiptLines.expiryDate,
@@ -176,14 +177,25 @@ async function reverseReceiptStock(
   },
 ) {
   const { receipt } = input;
+  // Baris baru menyimpan nilai stok eksak (DPP). Baris lama (sebelum
+  // migration 0085) tidak punya kolom itu: inferensi yang sama dengan
+  // supplier-return-valuation — bila total faktur == jumlah lineTotal,
+  // PPN termasuk di lineTotal; keluarkan porsi pajaknya.
+  const sourceLineValue = input.lines.reduce((acc, line) => acc.plus(d(line.lineTotal)), d(0));
+  const taxIncluded = d(receipt.taxAmount).gt(0) && d(receipt.total).eq(sourceLineValue);
+  const reversalUnitCostOf = (line: VoidLine) => {
+    if (line.stockUnitCost != null) return d(line.stockUnitCost);
+    if (!d(line.qty).gt(0)) return d(line.unitCost);
+    if (taxIncluded && sourceLineValue.gt(0)) {
+      const taxShare = d(receipt.taxAmount).mul(d(line.lineTotal)).div(sourceLineValue);
+      return d(line.lineTotal).minus(taxShare).div(line.qty);
+    }
+    return d(line.lineTotal).div(line.qty);
+  };
   for (const line of input.lines) {
     if (d(line.qty).isZero()) continue;
-    // Nilai persediaan masuk pada DPP/net (lineTotal), bukan harga
-    // faktur bruto. Void harus memakai biaya per unit yang sama agar
-    // AVCO dan GL tetap cocok saat PPN/diskon dipisah.
-    const reversalUnitCost = d(line.qty).gt(0)
-      ? d(line.lineTotal).div(line.qty)
-      : d(line.unitCost);
+    // Nilai persediaan masuk pada DPP/net, bukan harga faktur bruto.
+    const reversalUnitCost = reversalUnitCostOf(line);
     // Batch-tracked lines leave the batch they arrived in (G8/D-7); if
     // FEFO sales already consumed part of it, the overflow is taken FEFO
     // across the remaining batches so no batch row goes negative alone.

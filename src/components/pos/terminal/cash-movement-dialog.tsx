@@ -1,9 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  CASH_MOVEMENT_TYPE_BY_INTENT,
+  cashMovementToast,
+} from "@/lib/pos/cash-movement";
 
 export function CashMovementDialog({
   open,
@@ -16,10 +20,18 @@ export function CashMovementDialog({
   sessionId: string | null;
   onSave?: (data: { type: "deposit" | "withdrawal"; amount: number; notes?: string }) => Promise<{ ok: boolean; message?: string }>;
 }) {
-  const [type, setType] = useState<"deposit" | "withdrawal">("withdrawal");
+  const [type, setType] = useState<"deposit" | "withdrawal">(
+    CASH_MOVEMENT_TYPE_BY_INTENT.out,
+  );
   const [amount, setAmount] = useState("");
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
+  // Satu key per pembukaan dialog; retry setelah respons hilang memakai
+  // key yang sama agar server tidak mencatat mutasi kedua.
+  const idempotencyKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (open) idempotencyKeyRef.current = crypto.randomUUID();
+  }, [open]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,23 +50,25 @@ export function CashMovementDialog({
       if (onSave) {
         res = await onSave({ type, amount: num, notes: notes.trim() || undefined });
       } else {
-        const { cashMovementAction } = await import("@/server/actions/pos");
+        const { cashMovementAction } = await import("@/server/actions/pos-sessions");
+        const idempotencyKey =
+          idempotencyKeyRef.current ?? crypto.randomUUID();
+        idempotencyKeyRef.current = idempotencyKey;
         const actionRes = await cashMovementAction({
           sessionId,
           type,
           amount: num,
           notes: notes.trim() || undefined,
-          idempotencyKey: crypto.randomUUID(),
+          idempotencyKey,
         });
         res = actionRes.ok ? { ok: true } : { ok: false, message: actionRes.message };
       }
 
       if (res.ok) {
         toast.success(
-          type === "deposit"
-            ? `Kas masuk sebesar Rp ${num.toLocaleString("id-ID")} berhasil dicatat.`
-            : `Kas keluar sebesar Rp ${num.toLocaleString("id-ID")} berhasil dicatat.`,
+          `${cashMovementToast(type)} sebesar Rp ${num.toLocaleString("id-ID")} berhasil dicatat.`,
         );
+        idempotencyKeyRef.current = null;
         setAmount("");
         setNotes("");
         onOpenChange(false);
@@ -72,9 +86,14 @@ export function CashMovementDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Catat Mutasi Kas (Kas Masuk / Keluar)</DialogTitle>
+          <DialogTitle>Setor / Tarik Kas ke Bank</DialogTitle>
           <DialogDescription>
-            Catat pengambilan uang laci untuk operasional darurat atau penambahan modal float kasir.
+            Setor ke bank berarti uang keluar dari laci ke rekening bank. Tarik dari bank berarti
+            uang masuk ke laci. Untuk belanja/beban operasional, catat lewat{" "}
+            <a href="/app/akuntansi/beban" className="font-medium underline">
+              Akuntansi → Beban
+            </a>{" "}
+            agar akun beban dan laci sama-sama benar.
           </DialogDescription>
         </DialogHeader>
 
@@ -82,27 +101,27 @@ export function CashMovementDialog({
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
-              onClick={() => setType("withdrawal")}
+              onClick={() => setType(CASH_MOVEMENT_TYPE_BY_INTENT.out)}
               className={`flex items-center justify-center gap-1.5 rounded-md border p-2.5 text-xs font-semibold transition-colors ${
-                type === "withdrawal"
+                type === CASH_MOVEMENT_TYPE_BY_INTENT.out
                   ? "border-destructive bg-destructive/10 text-destructive"
                   : "border-border hover:bg-muted text-muted-foreground"
               }`}
             >
               <ArrowDownRight className="size-4" />
-              Kas Keluar (Biaya)
+              Setor ke Bank (laci keluar)
             </button>
             <button
               type="button"
-              onClick={() => setType("deposit")}
+              onClick={() => setType(CASH_MOVEMENT_TYPE_BY_INTENT.in)}
               className={`flex items-center justify-center gap-1.5 rounded-md border p-2.5 text-xs font-semibold transition-colors ${
-                type === "deposit"
+                type === CASH_MOVEMENT_TYPE_BY_INTENT.in
                   ? "border-tone-teal bg-tone-teal-soft text-tone-teal"
                   : "border-border hover:bg-muted text-muted-foreground"
               }`}
             >
               <ArrowUpRight className="size-4" />
-              Kas Masuk (Tambah)
+              Tarik dari Bank (laci masuk)
             </button>
           </div>
 
@@ -126,7 +145,7 @@ export function CashMovementDialog({
               type="text"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Contoh: Beli kantong kresek / es batu darurat"
+              placeholder="Contoh: Setor harian ke bank BRI"
               className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>

@@ -1,5 +1,7 @@
 "use client";
 
+import { receiptHref } from "@/lib/pos/receipt-links";
+
 /**
  * Cetak nota lewat jendela popup independen.
  *
@@ -11,10 +13,14 @@
  */
 let printWindow: Window | null = null;
 
-export function printReceiptViaPopup(saleId: string): boolean {
+export function printReceiptViaPopup(saleId: string, printToken?: string): boolean {
   if (typeof window === "undefined") return false;
 
-  const url = `/app/pos/nota/${encodeURIComponent(saleId)}?autoprint=1&popup=1`;
+  const url = receiptHref(saleId, {
+    autoprint: true,
+    popup: true,
+    printToken,
+  });
 
   // Pakai ulang jendela yang masih terbuka supaya klik berulang tidak
   // menumpuk banyak tab.

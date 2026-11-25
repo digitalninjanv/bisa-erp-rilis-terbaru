@@ -1,7 +1,8 @@
 import { withApiError } from "@/lib/api-error";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { listJournalEntries } from "@/server/reports";
-import { requirePermission } from "@/lib/session";
+import { requirePermissionInModule } from "@/lib/session";
+import { AppError } from "@/lib/errors";
 import { journalSourceLabel, monthStartISO, todayISO } from "@/lib/format";
 import { csvResponse, moneyCsv, toCsv } from "@/lib/csv";
 import { xlsxResponse } from "@/lib/xlsx";
@@ -24,10 +25,13 @@ const MAX_PAGES = 100; // plafon ekspor 10.000 jurnal per unduhan
  * sebelumnya CSV hanya ada per satu jurnal di halaman detail.
  */
 async function GETHandler(request: Request) {
-  const ctx = await requirePermission("accounting.view");
+  const ctx = await requirePermissionInModule("accounting.view", "akuntansi");
   const url = new URL(request.url);
   const from = url.searchParams.get("from") || monthStartISO();
   const to = url.searchParams.get("to") || todayISO();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+    throw new AppError("VALIDATION", "Format tanggal ekspor harus YYYY-MM-DD.");
+  }
   const q = url.searchParams.get("q") || undefined;
   const sourceType = url.searchParams.get("source") || undefined;
   const accountId = url.searchParams.get("account") || undefined;

@@ -1,7 +1,7 @@
 import { withApiError } from "@/lib/api-error";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { listSuppliersFiltered } from "@/server/catalog";
-import { requirePermission } from "@/lib/session";
+import { requirePermissionInModule } from "@/lib/session";
 import { todayISO } from "@/lib/format";
 import { csvResponse, toCsv } from "@/lib/csv";
 import { xlsxResponse, type XlsxCell } from "@/lib/xlsx";
@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
  * sama dengan halaman (S3 §18F).
  */
 async function GETHandler(request?: Request) {
-  const ctx = await requirePermission("inventory.view");
+  const ctx = await requirePermissionInModule("inventory.view", "gudang");
   const url = new URL(request?.url ?? "http://localhost");
   const filter = {
     q: url.searchParams.get("q") ?? undefined,

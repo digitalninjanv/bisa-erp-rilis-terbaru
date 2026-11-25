@@ -46,7 +46,7 @@ export function PageHeader({
           // di balik "Penjelasan halaman" yang terlipat bawaan
           // (progressive disclosure, ARAH-DESAIN-A25 §4.1 butir 5).
           <details className="group mt-1 max-w-2xl">
-            <summary className="flex cursor-pointer list-none items-center gap-1 text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center gap-1 text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground lg:min-h-0 [&::-webkit-details-marker]:hidden">
               <Info className="size-3.5" />
               Penjelasan halaman
               <ChevronDown className="size-3.5 transition-transform group-open:rotate-180" />

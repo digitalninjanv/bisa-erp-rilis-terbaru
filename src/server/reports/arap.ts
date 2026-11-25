@@ -29,7 +29,11 @@ import {
 } from "@/db/schema";
 
 import { getCompanySettingsRow } from "@/server/settings";
-export async function listReceivables(tx: Tx, companyId: string) {
+export async function listReceivables(
+  tx: Tx,
+  companyId: string,
+  filter?: { partyId?: string },
+) {
   const rows = await tx
     .select({
       id: sales.id,
@@ -50,6 +54,7 @@ export async function listReceivables(tx: Tx, companyId: string) {
     .where(
       and(
         eq(sales.companyId, companyId),
+        ...(filter?.partyId ? [eq(sales.customerId, filter.partyId)] : []),
         eq(sales.status, "completed"),
         inArray(sales.paymentStatus, ["unpaid", "partial"]),
       ),
@@ -79,6 +84,7 @@ export async function listReceivables(tx: Tx, companyId: string) {
         eq(partyOpeningBalances.companyId, companyId),
         eq(partyOpeningBalances.kind, "receivable"),
         eq(partyOpeningBalances.status, "open"),
+        ...(filter?.partyId ? [eq(partyOpeningBalances.partyId, filter.partyId)] : []),
       ),
     )
     .orderBy(asc(partyOpeningBalances.date));

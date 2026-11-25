@@ -26,9 +26,24 @@ export function addCartLine(
   return [...current, { productId, qty: 1, packagingId }];
 }
 
-export function setCartLineQty(current: CartItem[], key: string, qty: number): CartItem[] {
+export function setCartLineQty(
+  current: CartItem[],
+  key: string,
+  qty: number,
+  serialCount?: number,
+): CartItem[] {
   if (qty <= 0) return current.filter((line) => cartLineKey(line) !== key);
-  return current.map((line) => (cartLineKey(line) === key ? { ...line, qty } : line));
+  return current.map((line) => {
+    if (cartLineKey(line) !== key) return line;
+    const next = { ...line, qty };
+    // Seri adalah snapshot per unit SATUAN DASAR. Saat qty turun, seri
+    // ekor yang tidak lagi punya input harus dibuang; menyisakannya
+    // membuat serialIncomplete menghitung field yang tidak dirender.
+    if (line.serialNumbers && serialCount != null) {
+      next.serialNumbers = line.serialNumbers.slice(0, Math.max(0, Math.floor(serialCount)));
+    }
+    return next;
+  });
 }
 
 export function setCartLineSerial(

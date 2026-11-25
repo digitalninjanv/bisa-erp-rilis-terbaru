@@ -35,47 +35,62 @@ export function OfflineResolveButtons({
 
   async function post(mode: "retry" | "settle") {
     setBusy(true);
-    const result = await postOfflineReviewItemAction({ outboxId: id, mode });
-    setBusy(false);
-    setConfirmingSettle(false);
-    if (!result.ok) {
-      toast.error(result.message);
-      return;
+    try {
+      const result = await postOfflineReviewItemAction({ outboxId: id, mode });
+      setConfirmingSettle(false);
+      if (!result.ok) {
+        toast.error(result.message);
+        return;
+      }
+      if (
+        result.data.mode === "retry" &&
+        result.data.status !== "synced" &&
+        result.data.status !== "duplicate" &&
+        result.data.status !== "resolved"
+      ) {
+        toast.warning(
+          result.data.message ??
+            "Item belum dapat diposting dan tetap berada di daftar peninjauan.",
+        );
+      } else {
+        toast.success(
+          result.data.saleNumber
+            ? `Penjualan tercatat sebagai ${result.data.saleNumber}.`
+            : "Item berhasil diposting.",
+        );
+      }
+      router.refresh();
+    } catch {
+      toast.error("Status tindakan belum pasti. Muat ulang daftar sebelum mencoba lagi.");
+    } finally {
+      setBusy(false);
     }
-    if (result.data.mode === "retry" && result.data.status !== "synced" && result.data.status !== "duplicate") {
-      toast.warning(
-        result.data.message ??
-          "Item belum dapat diposting dan tetap berada di daftar peninjauan.",
-      );
-    } else {
-      toast.success(
-        result.data.saleNumber
-          ? `Penjualan tercatat sebagai ${result.data.saleNumber}.`
-          : "Item berhasil diposting.",
-      );
-    }
-    router.refresh();
   }
 
   async function resolve(resolution: "done" | "discarded", note: string) {
     setBusy(true);
-    const result = await resolveOfflineOutboxAction({
-      outboxId: id,
-      resolution,
-      note: note || undefined,
-    });
-    setBusy(false);
-    setResolving(null);
-    if (!result.ok) {
-      toast.error(result.message);
-      return;
+    try {
+      const result = await resolveOfflineOutboxAction({
+        outboxId: id,
+        resolution,
+        note: note || undefined,
+      });
+      setResolving(null);
+      if (!result.ok) {
+        toast.error(result.message);
+        return;
+      }
+      toast.success(
+        resolution === "done"
+          ? "Antrean ditandai selesai ditinjau."
+          : "Antrean dibuang dari daftar peninjauan.",
+      );
+      router.refresh();
+    } catch {
+      toast.error("Status tindakan belum pasti. Muat ulang daftar sebelum mencoba lagi.");
+    } finally {
+      setBusy(false);
     }
-    toast.success(
-      resolution === "done"
-        ? "Antrean ditandai selesai ditinjau."
-        : "Antrean dibuang dari daftar peninjauan.",
-    );
-    router.refresh();
   }
 
   return (

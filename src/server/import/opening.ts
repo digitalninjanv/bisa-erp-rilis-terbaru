@@ -120,6 +120,7 @@ export function resolveOpeningStockRow(
   row: MappedOpeningStock,
   context: Awaited<ReturnType<typeof loadOpeningStockContext>>,
   fallbackDate?: string,
+  allowZeroCost = false,
 ) {
   const product = row.sku ? context.productBySku.get(row.sku.toLowerCase()) : context.productByName.get(row.name!.toLowerCase());
   if (!product) return { error: `Produk tidak ditemukan atau nama ambigu ("${row.sku ?? row.name}") — gunakan SKU yang terdaftar.`, unknownProduct: true };
@@ -131,6 +132,15 @@ export function resolveOpeningStockRow(
   if (!product.trackStock) return { error: "Produk non-persediaan/jasa tidak boleh menerima stok awal." };
   if (row.qty !== 0 && (product.trackBatch || product.trackSerial)) {
     return { error: "Saldo produk batch/serial memerlukan rincian batch atau nomor seri. Gunakan Penerimaan." };
+  }
+  // POS-IMP-02: biaya 0 tidak boleh menjadi nilai default diam-diam.
+  // Stok bernilai nol hanya sah bila pengguna mencentang konfirmasi
+  // eksplisit; tanpa itu, AVCO dapat menurunkan harga pokok produk ke 0.
+  if (row.qty !== 0 && row.unitCost === 0 && !allowZeroCost) {
+    return {
+      error:
+        "Biaya satuan wajib diisi untuk saldo selain nol. Isi Nilai Satuan, atau centang \"Izinkan biaya 0\" bila stok memang gratis.",
+    };
   }
   if (row.qty <= 0 && context.occupied.has(key)) {
     return { error: "Saldo nol atau minus hanya dapat diimpor pada SKU/gudang tanpa saldo atau mutasi aktif." };
@@ -148,6 +158,8 @@ export async function commitOpeningStockImport(
     warehouseId: string;
     /** Tanggal cut-off default; baris boleh menimpa lewat kolom Tanggal. */
     date?: string;
+    /** Konfirmasi eksplisit untuk baris bersaldo non-nol dengan biaya 0. */
+    allowZeroCost?: boolean;
     selectedRows?: number[];
   },
 ): Promise<MasterCommitResult> {
@@ -203,7 +215,12 @@ export async function commitOpeningStockImport(
       await markRow(tx, row.id, "error", mapped.error ?? "Baris tidak valid");
       continue;
     }
-    const resolved = resolveOpeningStockRow(mapped.value, context, input.date);
+    const resolved = resolveOpeningStockRow(
+      mapped.value,
+      context,
+      input.date,
+      input.allowZeroCost ?? false,
+    );
     if (!resolved.product) {
       if (resolved.skip) {
         skipped += 1;

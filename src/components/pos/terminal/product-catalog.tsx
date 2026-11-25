@@ -9,13 +9,14 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { toast } from "sonner";
-import { ChevronLeft, ChevronRight, CloudOff, Search, Wifi } from "lucide-react";
+import { ChevronLeft, ChevronRight, CloudOff, Search, Wifi, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatIDR, formatQty } from "@/lib/money";
 import { POS_COLUMN_CLASS, PosDisplayControls, type PosDisplayPrefs } from "@/components/pos/pos-display";
 import { burstScanCode, createBurstState, feedBurstChar, resetBurst, type BurstState } from "@/lib/barcode-burst";
 import { cartLineBaseQty, type CartItem, type ProductOption, type TerminalReservation } from "@/components/pos/terminal-types";
 import { ShortcutHelp } from "@/components/pos/terminal/shortcut-help";
+import { playScannerBeep } from "@/lib/pos/scanner-beep";
 import { PosActionMenu } from "@/components/pos/pos-action-menu";
 import { PrinterStatusButton } from "@/components/pos/printer-modal";
 
@@ -83,7 +84,7 @@ export function ProductCatalog(props: {
   setFullscreenOverride: Dispatch<SetStateAction<boolean | null>>;
   allowNegativeStock?: boolean;
 }) {
-  const { searchRef, search, setSearch, products, searching, page, pageFull, goToPage, scanBarcode, addProduct, warehouses, categories, selectedWarehouse, setSelectedWarehouse, selectedCategory, setSelectedCategory, setReservationId, reservations, reservationId, applyReservation, sessionOpen, sessionId = null, heldCount = 0, posOfflineEnabled, online, queuedCount, oldestQueuedAt, cart = [], display, updateDisplay, resetDisplay, fullscreen, setFullscreenOverride, allowNegativeStock = false } = props;
+  const { searchRef, search, setSearch, products, searching, page, pageFull, goToPage, scanBarcode, addProduct, warehouses, categories, selectedWarehouse, setSelectedWarehouse, selectedCategory, setSelectedCategory, setReservationId, reservations, reservationId, applyReservation, sessionOpen, sessionId = null, heldCount = 0, posOfflineEnabled, online, queuedCount, oldestQueuedAt, syncing, syncOfflineQueue, cart = [], display, updateDisplay, resetDisplay, fullscreen, setFullscreenOverride, allowNegativeStock = false } = props;
   const searchBurstRef = useRef<BurstState>(createBurstState());
   // A-28 UI-1 (UX-B02): sorotan hasil pencarian untuk navigasi panah.
   // -1 = belum ada sorotan (Enter berperilaku seperti dulu: hasil
@@ -197,8 +198,11 @@ export function ProductCatalog(props: {
                         const found = await scanBarcode(term);
                         // S4: barcode kemasan menambahkan baris
                         // kemasan itu (matchedPackagingId), bukan 1 Pcs.
-                        if (found) addProduct(found, found.matchedPackagingId ?? null);
-                        else {
+                        if (found) {
+                          playScannerBeep("success");
+                          addProduct(found, found.matchedPackagingId ?? null);
+                        } else {
+                          playScannerBeep("error");
                           toast.error(`Barcode ${term} tidak ditemukan.`);
                           // Jangan biarkan kode yang gagal menempel ke scan
                           // berikutnya. Pertahankan input baru jika kasir
@@ -235,8 +239,21 @@ export function ProductCatalog(props: {
                 }}
                 placeholder="Pindai barcode / cari produk (F2)"
                 aria-label="Cari produk atau scan barcode"
-                className="h-12 w-full rounded-md border border-input bg-background pl-10 pr-3 text-[15px] outline-none transition-shadow placeholder:text-muted-foreground/80 focus:border-ring focus:ring-2 focus:ring-ring/20"
+                className="h-12 w-full rounded-md border border-input bg-background pl-10 pr-12 text-[15px] outline-none transition-shadow placeholder:text-muted-foreground/80 focus:border-ring focus:ring-2 focus:ring-ring/20"
               />
+              {search ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearch("");
+                    searchRef.current?.focus();
+                  }}
+                  aria-label="Hapus pencarian produk"
+                  className="absolute right-1 top-1/2 grid size-11 -translate-y-1/2 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <X className="size-4" />
+                </button>
+              ) : null}
             </div>
             <select
               value={selectedWarehouse}
@@ -290,28 +307,41 @@ export function ProductCatalog(props: {
                 Masalah koneksi dan antrean tetap terlihat dengan satu
                 indikator yang membuka halaman peninjauan. */}
             {posOfflineEnabled && (!online || queuedCount > 0) ? (
-              <Link
-                href="/app/pos/offline"
-                aria-label={
-                  online
-                    ? `${queuedCount} transaksi menunggu sinkronisasi${oldestQueuedDescription ? `. ${oldestQueuedDescription}` : ""}`
-                    : `POS offline${queuedCount > 0 ? `, ${queuedCount} transaksi diantrekan` : ""}${oldestQueuedDescription ? `. ${oldestQueuedDescription}` : ""}`
-                }
-                title={oldestQueuedDescription
-                  ? `${oldestQueuedDescription}. Klik untuk melihat antrean.`
-                  : "Lihat status koneksi dan antrean transaksi"}
-                className={cn(
-                  "flex h-11 items-center gap-2 rounded-md border px-3 text-[13px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  online
-                    ? "border-tone-amber/30 bg-tone-amber-soft text-tone-amber hover:bg-tone-amber-soft/80"
-                    : "border-tone-red/30 bg-tone-red-soft text-tone-red hover:bg-tone-red-soft/80",
-                )}
-              >
-                {online ? <Wifi className="size-4" /> : <CloudOff className="size-4" />}
-                <span>{online ? `${queuedCount} antrean` : "Offline"}</span>
-                {online && queuedCount > 0 ? <span className="num rounded-full bg-background/80 px-2 py-0.5 text-xs">{queuedCount}</span> : null}
-                {oldestQueuedDescription ? <span className="sr-only">{oldestQueuedDescription}</span> : null}
-              </Link>
+              <div className="flex items-center gap-1">
+                <Link
+                  href="/app/pos/offline"
+                  aria-label={
+                    online
+                      ? `${queuedCount} transaksi menunggu sinkronisasi${oldestQueuedDescription ? `. ${oldestQueuedDescription}` : ""}`
+                      : `POS offline${queuedCount > 0 ? `, ${queuedCount} transaksi diantrekan` : ""}${oldestQueuedDescription ? `. ${oldestQueuedDescription}` : ""}`
+                  }
+                  title={oldestQueuedDescription
+                    ? `${oldestQueuedDescription}. Klik untuk melihat antrean.`
+                    : "Lihat status koneksi dan antrean transaksi"}
+                  className={cn(
+                    "flex h-11 items-center gap-2 rounded-md border px-3 text-[13px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    online
+                      ? "border-tone-amber/30 bg-tone-amber-soft text-tone-amber hover:bg-tone-amber-soft/80"
+                      : "border-tone-red/30 bg-tone-red-soft text-tone-red hover:bg-tone-red-soft/80",
+                  )}
+                >
+                  {online ? <Wifi className="size-4" /> : <CloudOff className="size-4" />}
+                  <span>{online ? `${queuedCount} antrean` : "Offline"}</span>
+                  {online && queuedCount > 0 ? <span className="num rounded-full bg-background/80 px-2 py-0.5 text-xs">{queuedCount}</span> : null}
+                  {oldestQueuedDescription ? <span className="sr-only">{oldestQueuedDescription}</span> : null}
+                </Link>
+                {online && queuedCount > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => void syncOfflineQueue()}
+                    disabled={syncing}
+                    className="h-11 rounded-md border border-border bg-card px-3 text-[12px] font-semibold text-foreground hover:bg-muted disabled:cursor-wait disabled:opacity-50"
+                    aria-label="Sinkronkan antrean offline sekarang"
+                  >
+                    {syncing ? "Menyinkronkan…" : "Sinkronkan"}
+                  </button>
+                ) : null}
+              </div>
             ) : null}
             <PosDisplayControls
               prefs={display}
@@ -383,9 +413,21 @@ export function ProductCatalog(props: {
             {searching ? (
               <p className="col-span-full px-2 py-6 text-center text-xs text-muted-foreground">Mencari produk…</p>
             ) : products.length === 0 ? (
-              <p className="col-span-full px-2 py-6 text-center text-xs text-muted-foreground">
-                Produk tidak ditemukan.
-              </p>
+              <div className="col-span-full flex flex-col items-center gap-2 px-2 py-6 text-center">
+                <p className="text-xs text-muted-foreground">Produk tidak ditemukan.</p>
+                {search ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearch("");
+                      searchRef.current?.focus();
+                    }}
+                    className="min-h-11 rounded-md border border-border bg-card px-4 text-sm font-medium transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    Hapus pencarian
+                  </button>
+                ) : null}
+              </div>
             ) : (
               products.map((product, index) => {
                 // POS-1: produk terlacak stok yang habis tampil berlabel

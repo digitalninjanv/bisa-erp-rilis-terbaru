@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gte, lte } from "drizzle-orm";
+import { and, count, desc, eq, gte, lte, notInArray } from "drizzle-orm";
 import type { Tx } from "@/db";
 import { auditLog, user } from "@/db/schema";
 
@@ -70,6 +70,34 @@ export async function writeAudit(
   });
 }
 
+/**
+ * Entity audit milik domain HR/payroll. Feed audit perusahaan tidak boleh
+ * menampilkannya kepada pembaca yang hanya punya izin akuntansi; HR-01
+ * dan CORE-06 menunjukkan metadata/nominal karyawan dapat bocor lewat
+ * feed lintas domain.
+ */
+export const HR_AUDIT_ENTITY_TYPES = [
+  "attendance",
+  "department",
+  "employee",
+  "employee_advance",
+  "employee_loan",
+  "job_position",
+  "leave_request",
+  "leave_type",
+  "overtime_request",
+  "payroll_component_draft",
+  "payroll_minimum_wage",
+  "payroll_ptkp_status",
+  "payroll_run",
+  "payroll_statutory_parameter",
+  "payroll_statutory_program",
+  "payroll_statutory_settings",
+  "payroll_ter_bracket",
+  "reimbursement_claim",
+  "work_shift",
+] as const;
+
 export type CompanyAuditRow = {
   id: string;
   action: string;
@@ -98,13 +126,22 @@ export async function listCompanyAuditTrail(
     action?: string;
     entityType?: string;
     userId?: string;
+    /** Sembunyikan entity domain yang tidak boleh dilihat aktor. */
+    excludeEntityTypes?: readonly string[];
     page?: number;
     pageSize?: number;
   } = {},
 ) {
   const page = Math.max(1, opts.page ?? 1);
   const pageSize = Math.min(100, Math.max(1, opts.pageSize ?? 50));
-  const conditions = [eq(auditLog.companyId, companyId)];
+  const visibility =
+    opts.excludeEntityTypes && opts.excludeEntityTypes.length > 0
+      ? notInArray(auditLog.entityType, [...opts.excludeEntityTypes])
+      : undefined;
+  const visibleWhere = visibility
+    ? and(eq(auditLog.companyId, companyId), visibility)
+    : eq(auditLog.companyId, companyId);
+  const conditions = [visibleWhere];
   if (opts.from) {
     conditions.push(gte(auditLog.createdAt, new Date(`${opts.from}T00:00:00+07:00`)));
   }
@@ -141,18 +178,18 @@ export async function listCompanyAuditTrail(
     tx
       .selectDistinct({ value: auditLog.action })
       .from(auditLog)
-      .where(eq(auditLog.companyId, companyId))
+      .where(visibleWhere)
       .orderBy(auditLog.action),
     tx
       .selectDistinct({ value: auditLog.entityType })
       .from(auditLog)
-      .where(eq(auditLog.companyId, companyId))
+      .where(visibleWhere)
       .orderBy(auditLog.entityType),
     tx
       .selectDistinct({ id: auditLog.userId, name: user.name })
       .from(auditLog)
       .leftJoin(user, eq(auditLog.userId, user.id))
-      .where(eq(auditLog.companyId, companyId))
+      .where(visibleWhere)
       .orderBy(user.name),
   ]);
 

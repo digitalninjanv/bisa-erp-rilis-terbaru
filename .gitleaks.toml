@@ -1,0 +1,28 @@
+# Secret scanning baseline for CI. The repository intentionally contains
+# published local/CI fixture credentials (demo owner, docker app_user) and
+# documented examples; those are allowlisted. Add new entries only after a
+# review confirms they are non-production fixtures.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Known development/test fixtures and generated artifacts"
+paths = [
+  '''^audit/''',
+  '''^tests/''',
+  '''^e2e/helpers\.ts$''',
+  '''^src/db/seed-guard\.ts$''',
+  '''^src/db/seed\.ts$''',
+  '''^docker/init\.sql$''',
+  '''^docs/''',
+  '''^\.env\.example$''',
+  '''^node_modules/''',
+  '''^\.next/''',
+  '''^\.next-remediation/''',
+  '''^dist-release/''',
+]
+regexes = [
+  '''Bisa12345!''',
+  '''appdev''',
+  '''ci-owner-password''',
+]

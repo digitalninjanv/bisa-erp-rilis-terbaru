@@ -781,3 +781,39 @@ describe("Terima barang 3 skenario (G6 / D-5)", () => {
     });
   });
 });
+
+describe("GDG3-06 — receipt idempotency payload fingerprint", () => {
+  it("replays the same payload and rejects a changed payload under the same key", async () => {
+    await rollbackTransaction(async (tx) => {
+      const warehouse = await defaultWarehouse(tx);
+      const supplier = await anySupplier(tx);
+      const product = await newProduct(tx, {
+        name: "Produk Idempotensi Penerimaan",
+        costPrice: "1000",
+        salePrice: "1500",
+      });
+      const key = crypto.randomUUID();
+      const base = {
+        companyId: ORG_ID,
+        userId: USER_ID,
+        warehouseId: warehouse.id,
+        supplierId: supplier.id,
+        source: "purchase" as const,
+        date: todayISO(),
+        idempotencyKey: key,
+        lines: [{ productId: product.id, qty: 5, unitCost: 1000 }],
+      };
+
+      const first = await createReceipt(tx, base);
+      const replay = await createReceipt(tx, base);
+      expect(replay.id).toBe(first.id);
+
+      await expect(
+        createReceipt(tx, {
+          ...base,
+          lines: [{ productId: product.id, qty: 6, unitCost: 1000 }],
+        }),
+      ).rejects.toThrow(/kunci.*data yang berbeda|payload.*berbeda/i);
+    });
+  });
+});

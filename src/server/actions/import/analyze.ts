@@ -11,6 +11,8 @@ import { z } from "zod";
 import { withCompany } from "@/db/tenant";
 import { importJobs } from "@/db/schema";
 import { requirePermission } from "@/lib/session";
+import { assertModuleEnabled } from "@/lib/modules";
+import { importEntityModule } from "@/lib/import/import-module";
 import { AppError, guard } from "@/lib/errors";
 import { parseInput } from "@/lib/action-validation";
 import { ENTITY_FIELDS, IMPORT_FIELDS, type ImportField } from "@/lib/import-parse";
@@ -22,7 +24,7 @@ import { analyzeProductJob } from "./shared";
 
 const mappingSchema = z.record(z.string(), z.string().optional()).optional();
 
-export async function analyzeImportAction(input: { jobId: string; mapping?: Record<string, string | undefined>; warehouseId?: string; date?: string }) {
+export async function analyzeImportAction(input: { jobId: string; mapping?: Record<string, string | undefined>; warehouseId?: string; date?: string; allowZeroCost?: boolean }) {
   return guard(async () => {
     const ctx = await requirePermission("import.manage");
     const data = parseInput(z.object({
@@ -30,6 +32,7 @@ export async function analyzeImportAction(input: { jobId: string; mapping?: Reco
       mapping: mappingSchema,
       warehouseId: z.string().uuid().optional(),
       date: z.iso.date().optional(),
+      allowZeroCost: z.boolean().optional(),
     }), input);
 
     return withCompany(ctx.company.id, async (tx) => {
@@ -39,6 +42,7 @@ export async function analyzeImportAction(input: { jobId: string; mapping?: Reco
         .where(and(eq(importJobs.companyId, ctx.company.id), eq(importJobs.id, data.jobId)))
         .limit(1);
       if (!job) throw new AppError("NOT_FOUND", "Job impor tidak ditemukan.");
+      if (ctx.enabledModules) assertModuleEnabled(ctx.enabledModules, importEntityModule(job.entity));
 
       const provided = Object.fromEntries(
         Object.entries(data.mapping ?? {}).filter(([, value]) => Boolean(value)),
@@ -63,6 +67,7 @@ export async function analyzeImportAction(input: { jobId: string; mapping?: Reco
           customFields,
           warehouseId: data.warehouseId,
           date: data.date,
+          allowZeroCost: data.allowZeroCost,
         });
         return {
           summary: result.summary,

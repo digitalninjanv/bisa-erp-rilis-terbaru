@@ -1,43 +1,50 @@
-import { and, desc, eq, gt, gte, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
 import {
   auditLog,
   categories,
-  customers,
-  customerGroupPrices,
   customerGroups,
-  member,
-  organization,
-  posPromotions,
   productPackagings,
   products,
-  saleLines,
-  sales,
   stockOnHand,
-  stockReservations,
   units,
-  user,
 } from "@/db/schema";
 import { withCompanyReadOnly } from "@/db/tenant";
-import { toPrintSettings } from "@/components/print/types";
 import {
-  getSettings,
+  assertPosDeviceSnapshotComplete,
+  POS_DEVICE_SNAPSHOT_MAX_PRODUCTS,
+} from "@/lib/pos/snapshot-limit";
+import {
   listPackagingsForProducts,
-  listPaymentMethods,
-  listWarehouses,
-  pickDefaultWarehouseId,
   searchProducts,
 } from "@/server/catalog";
 import type { PackagingSnapshot } from "@/lib/packaging";
-import { buildLoyaltyBalances } from "@/lib/pos/loyalty";
+import type { KitchenTicket } from "@/lib/pos/kitchen-display";
 import {
-  buildKitchenTickets,
-  type KitchenTicket,
-  type KitchenTicketSource,
-} from "@/lib/pos/kitchen-display";
-import { resolveOriginEntitlement } from "@/server/member-permissions";
-import { resolvePosTerminalByToken } from "@/server/pos";
-import type { PosDeviceIdentity } from "./pos";
+  readGroupPrices,
+  readSnapshotRefs,
+  resolvePosTerminalByToken,
+  type PosDeviceIdentity,
+  type PosSnapshotCustomerGroup,
+  type PosSnapshotGroupPrice,
+  type PosSnapshotLoyaltyBalance,
+  type PosSnapshotNames,
+  type PosSnapshotPromotion,
+  type PosSnapshotReceipt,
+  type PosSnapshotReservation,
+  type PosSnapshotTerminal,
+} from "./pos";
+
+export type {
+  PosSnapshotCustomerGroup,
+  PosSnapshotGroupPrice,
+  PosSnapshotLoyaltyBalance,
+  PosSnapshotNames,
+  PosSnapshotPromotion,
+  PosSnapshotReceipt,
+  PosSnapshotReservation,
+  PosSnapshotTerminal,
+};
 
 export {
   posSessionIntentSchema,
@@ -165,6 +172,7 @@ export type PosSnapshotProduct = {
   stock: number;
   trackStock: boolean;
   trackSerial: boolean;
+  isTaxExempt?: boolean;
   unitCode: string | null;
   packagings: PosSnapshotPackaging[];
 };
@@ -193,88 +201,6 @@ function toSnapshotPackagings(
  * yang sama seperti quote POS). Blok ini kecil dan selalu dikirim
  * utuh pada snapshot penuh MAUPUN delta — tidak ada sumber kedua.
  */
-export type PosSnapshotReceipt = {
-  companyName: string;
-  address: string | null;
-  phone: string | null;
-  taxId: string | null;
-  headerText: string | null;
-  footerText: string | null;
-  showCashier: boolean;
-  showTax: boolean;
-  showCustomer: boolean;
-  showSession: boolean;
-  showBranding: boolean;
-  /** thermal58 | thermal80 | a5 | a4 — klien thermal memakai 58/80. */
-  receiptPaper: string;
-  taxEnabled: boolean;
-  /** Tarif PPN persen sebagai string desimal (numeric perusahaan). */
-  taxRate: string;
-  /** Pembulatan perusahaan yang dipakai quote POS lokal maupun server. */
-  roundingMode: string;
-  /** Gambar QRIS statis (data URL PNG/JPEG/WebP) untuk layar bayar desktop. */
-  qrisImage: string | null;
-};
-
-/**
- * Identitas terminal pada snapshot (Langkah 6): siapa terminal ini
- * menurut registry server — nama terminal, perusahaan, dan gudang
- * tempat ia menjual. Klien mencapnya ke sesi kas lokal & UI.
- */
-export type PosSnapshotTerminal = {
-  id: string;
-  name: string;
-  companyName: string;
-  warehouse: { id: string; code: string; name: string } | null;
-};
-
-/**
- * Direktori nama (Langkah 6): id → nama untuk kasir (anggota
- * perusahaan) dan pelanggan aktif, agar struk lokal & UI desktop
- * menampilkan NAMA, bukan id mentah (menutup catatan Langkah 5).
- * Selalu dikirim utuh pada snapshot penuh maupun delta — daftarnya
- * kecil untuk skala minimarket dan mengganti utuh selalu benar.
- */
-export type PosSnapshotNames = {
-  cashiers: Array<{ id: string; name: string }>;
-  customers: Array<{ id: string; name: string; groupId: string | null }>;
-};
-
-export type PosSnapshotCustomerGroup = {
-  id: string;
-  name: string;
-  roundingStep: number;
-  roundingDirection: string;
-  roundCashTotal: boolean;
-};
-
-export type PosSnapshotGroupPrice = {
-  groupId: string;
-  productId: string;
-  ruleType: string;
-  value: string;
-};
-
-export type PosSnapshotLoyaltyBalance = { customerId: string; points: number };
-
-export type PosSnapshotPromotion = {
-  id: string;
-  name: string;
-  type: "percent" | "nominal";
-  value: number;
-  minSubtotal: number;
-  productId: string | null;
-};
-
-export type PosSnapshotReservation = {
-  id: string;
-  number: string;
-  productId: string;
-  qty: string;
-  expiresAt: string | null;
-  reason: string | null;
-};
-
 type PosSnapshotEnvelope = {
   version: string;
   /** Kursor untuk permintaan snapshot berikutnya. */
@@ -327,7 +253,6 @@ export type PosDeviceDeltaSnapshot = PosSnapshotEnvelope & {
 export type PosDeviceSnapshotResponse = PosDeviceSnapshot | PosDeviceDeltaSnapshot;
 
 const SNAPSHOT_PAGE = 500;
-const SNAPSHOT_MAX_PRODUCTS = 20_000;
 /** Usia maksimum kursor yang masih dilayani sebagai delta. */
 const SNAPSHOT_CURSOR_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 /** Tumpang-tindih jendela perubahan delta (lihat komentar di atas). */
@@ -356,256 +281,6 @@ export function parseSnapshotCursor(raw: string | null | undefined, now: Date): 
   return parsed;
 }
 
-type SnapshotRefs = {
-  warehouse: { id: string; code: string; name: string } | null;
-  warehouseId: string;
-  warehouses: PosSnapshotEnvelope["warehouses"];
-  reservations: PosSnapshotReservation[];
-  kitchenTickets: KitchenTicket[];
-  promotions: PosSnapshotPromotion[];
-  loyaltyBalances: PosSnapshotLoyaltyBalance[];
-  paymentMethods: PosSnapshotEnvelope["paymentMethods"];
-  customerGroups: PosSnapshotEnvelope["customerGroups"];
-  receipt: PosSnapshotReceipt;
-  terminal: PosSnapshotTerminal;
-  names: PosSnapshotNames;
-  canDiscount: boolean;
-  posOfflineEnabled: boolean;
-};
-
-/** Batas direktori pelanggan pada snapshot — jauh di atas skala
- *  minimarket; terminal hanya butuh id → nama untuk struk. */
-const SNAPSHOT_CUSTOMER_LIMIT = 5000;
-
-async function readSnapshotRefs(
-  tx: Tx,
-  companyId: string,
-  device: PosDeviceIdentity,
-): Promise<SnapshotRefs> {
-  const [settings, warehouses, methods, org, cashierRows, customerRows, groupRows, entitlement] =
-    await Promise.all([
-      getSettings(tx, companyId),
-      listWarehouses(tx, companyId),
-      listPaymentMethods(tx, companyId),
-      tx
-        .select({ name: organization.name })
-        .from(organization)
-        .where(eq(organization.id, companyId))
-        .limit(1)
-        .then((rows) => rows[0] ?? null),
-      tx
-        .select({ id: member.userId, name: user.name })
-        .from(member)
-        .innerJoin(user, eq(user.id, member.userId))
-        .where(eq(member.organizationId, companyId)),
-      tx
-        .select({ id: customers.id, name: customers.name, groupId: customers.groupId })
-        .from(customers)
-        .where(and(eq(customers.companyId, companyId), eq(customers.isActive, true)))
-        .orderBy(customers.name)
-        .limit(SNAPSHOT_CUSTOMER_LIMIT),
-      tx
-        .select({
-          id: customerGroups.id,
-          name: customerGroups.name,
-          roundingStep: customerGroups.roundingStep,
-          roundingDirection: customerGroups.roundingDirection,
-          roundCashTotal: customerGroups.roundCashTotal,
-        })
-        .from(customerGroups)
-        .where(and(eq(customerGroups.companyId, companyId), eq(customerGroups.isActive, true)))
-        .orderBy(customerGroups.name),
-      resolveOriginEntitlement(companyId, device.userId),
-    ]);
-  // Gudang terminal dari registry menang atas gudang bawaan
-  // perusahaan (Langkah 6): terminal menjual dari gudangnya.
-  const warehouseId =
-    device.warehouseId &&
-    warehouses.some((w) => w.id === device.warehouseId)
-      ? device.warehouseId
-      : pickDefaultWarehouseId(warehouses, settings?.defaultWarehouseId);
-  const warehouse = warehouses.find((w) => w.id === warehouseId) ?? null;
-  const now = new Date();
-  const reservationRows = warehouseId
-    ? await tx
-        .select({
-          id: stockReservations.id,
-          number: stockReservations.number,
-          productId: stockReservations.productId,
-          qty: stockReservations.qty,
-          expiresAt: stockReservations.expiresAt,
-          reason: stockReservations.reason,
-        })
-        .from(stockReservations)
-        .where(
-          and(
-            eq(stockReservations.companyId, companyId),
-            eq(stockReservations.warehouseId, warehouseId),
-            eq(stockReservations.status, "active"),
-            or(isNull(stockReservations.expiresAt), gt(stockReservations.expiresAt, now)),
-          ),
-        )
-        .orderBy(stockReservations.number)
-        .limit(500)
-    : [];
-  const reservations: PosSnapshotReservation[] = reservationRows.map((row) => ({
-    id: row.id,
-    number: row.number,
-    productId: row.productId,
-    qty: String(row.qty),
-    expiresAt: row.expiresAt?.toISOString() ?? null,
-    reason: row.reason,
-  }));
-  const sinceKitchen = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const kitchenSales = await tx
-    .select({
-      id: sales.id,
-      number: sales.number,
-      createdAt: sales.createdAt,
-      productName: saleLines.productName,
-      qty: saleLines.qty,
-    })
-    .from(sales)
-    .innerJoin(saleLines, and(eq(saleLines.companyId, companyId), eq(saleLines.saleId, sales.id)))
-    .where(
-      and(
-        eq(sales.companyId, companyId),
-        eq(sales.status, "completed"),
-        gte(sales.createdAt, sinceKitchen),
-      ),
-    )
-    .orderBy(desc(sales.createdAt))
-    .limit(200);
-  const kitchenBySale = new Map<string, KitchenTicketSource>();
-  for (const row of kitchenSales) {
-    const source = kitchenBySale.get(row.id) ?? {
-      id: row.id,
-      number: row.number,
-      createdAt: row.createdAt,
-      lines: [],
-    };
-    source.lines.push({ productName: row.productName, qty: row.qty });
-    kitchenBySale.set(row.id, source);
-  }
-  const kitchenTickets = buildKitchenTickets([...kitchenBySale.values()]).slice(0, 50);
-  const promotionRows = await tx
-    .select({
-      id: posPromotions.id,
-      name: posPromotions.name,
-      type: posPromotions.type,
-      value: posPromotions.value,
-      minSubtotal: posPromotions.minSubtotal,
-      productId: posPromotions.productId,
-    })
-    .from(posPromotions)
-    .where(and(eq(posPromotions.companyId, companyId), eq(posPromotions.active, true)))
-    .orderBy(posPromotions.name)
-    .limit(200);
-  const promotions: PosSnapshotPromotion[] = promotionRows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    type: row.type === "nominal" ? "nominal" : "percent",
-    value: Number(row.value),
-    minSubtotal: Number(row.minSubtotal),
-    productId: row.productId,
-  }));
-  const sinceLoyalty = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
-  const loyaltySales = await tx
-    .select({ customerId: sales.customerId, total: sales.total })
-    .from(sales)
-    .where(
-      and(
-        eq(sales.companyId, companyId),
-        eq(sales.status, "completed"),
-        gte(sales.createdAt, sinceLoyalty),
-      ),
-    )
-    .limit(20_000);
-  const loyaltyBalances: PosSnapshotLoyaltyBalance[] = [
-    ...buildLoyaltyBalances(loyaltySales).entries(),
-  ].map(([customerId, points]) => ({ customerId, points }));
-  // Blok cetak dari baris pengaturan yang sama (lihat
-  // PosSnapshotReceipt): nama tampilan struk mengikuti halaman nota
-  // web — legalName perusahaan, jatuh ke nama bawaan yang sama.
-  const print = toPrintSettings(settings, "nota");
-  return {
-    warehouse: warehouse
-      ? { id: warehouse.id, code: warehouse.code, name: warehouse.name }
-      : null,
-    warehouseId,
-    warehouses: warehouses.map((w) => ({
-      id: w.id,
-      code: w.code,
-      name: w.name,
-      isDefault: w.isDefault,
-    })),
-    reservations,
-    kitchenTickets,
-    promotions,
-    loyaltyBalances,
-    paymentMethods: methods.map((m) => ({
-      id: m.id,
-      code: m.code,
-      name: m.name,
-      type: m.type,
-      feeEnabled: m.feeEnabled,
-      feeType: m.feeType,
-      feeValue: String(m.feeValue),
-    })),
-    customerGroups: groupRows,
-    receipt: {
-      companyName: settings?.legalName || "Bisa Minimarket",
-      address: settings?.address ?? null,
-      phone: settings?.phone ?? null,
-      taxId: settings?.taxId ?? null,
-      headerText: print.headerText,
-      footerText: print.footerText,
-      showCashier: print.showCashier,
-      showTax: print.showTax,
-      showCustomer: print.showCustomer,
-      showSession: print.showSession,
-      showBranding: print.showBranding,
-      receiptPaper: print.receiptPaper,
-      taxEnabled: settings?.taxEnabled ?? true,
-      taxRate: String(settings?.taxRate ?? "0"),
-      roundingMode: settings?.roundingMode ?? "none",
-      qrisImage: settings?.qrisImage ?? null,
-    },
-    terminal: {
-      id: device.terminalId,
-      name: device.terminalName,
-      companyName: settings?.legalName || org?.name || "Bisa Minimarket",
-      warehouse: warehouse
-        ? { id: warehouse.id, code: warehouse.code, name: warehouse.name }
-        : null,
-    },
-    names: {
-      cashiers: cashierRows.map((row) => ({ id: row.id, name: row.name })),
-      customers: customerRows.map((row) => ({ id: row.id, name: row.name, groupId: row.groupId })),
-    },
-    canDiscount: entitlement?.canDiscount ?? false,
-    posOfflineEnabled: settings?.posOfflineEnabled ?? false,
-  };
-}
-
-async function readGroupPrices(
-  tx: Tx,
-  companyId: string,
-  groupIds: string[],
-): Promise<PosSnapshotGroupPrice[]> {
-  if (groupIds.length === 0) return [];
-  const rows = await tx
-    .select({
-      groupId: customerGroupPrices.groupId,
-      productId: customerGroupPrices.productId,
-      ruleType: customerGroupPrices.ruleType,
-      value: customerGroupPrices.value,
-    })
-    .from(customerGroupPrices)
-    .where(and(eq(customerGroupPrices.companyId, companyId), inArray(customerGroupPrices.groupId, groupIds)));
-  return rows.map((row) => ({ ...row, value: String(row.value) }));
-}
-
 export async function getPosDeviceSnapshot(
   tx: Tx,
   device: PosDeviceIdentity,
@@ -617,7 +292,7 @@ export async function getPosDeviceSnapshot(
   const groupPrices = await readGroupPrices(tx, companyId, replaceGroupPriceGroupIds);
   const products: PosSnapshotProduct[] = [];
   if (refs.warehouseId) {
-    for (let offset = 0; offset < SNAPSHOT_MAX_PRODUCTS; offset += SNAPSHOT_PAGE) {
+    for (let offset = 0; offset < POS_DEVICE_SNAPSHOT_MAX_PRODUCTS; offset += SNAPSHOT_PAGE) {
       const rows = await searchProducts(tx, {
         companyId,
         warehouseId: refs.warehouseId,
@@ -642,11 +317,22 @@ export async function getPosDeviceSnapshot(
           stock: Number(row.stock),
           trackStock: row.trackStock,
           trackSerial: row.trackSerial,
+          isTaxExempt: row.isTaxExempt,
           unitCode: row.unitCode,
           packagings: toSnapshotPackagings(packMap.get(row.id)),
         });
       }
       if (rows.length < SNAPSHOT_PAGE) break;
+    }
+    if (products.length >= POS_DEVICE_SNAPSHOT_MAX_PRODUCTS) {
+      const beyondLimit = await searchProducts(tx, {
+        companyId,
+        warehouseId: refs.warehouseId,
+        q: "",
+        limit: 1,
+        offset: POS_DEVICE_SNAPSHOT_MAX_PRODUCTS,
+      });
+      assertPosDeviceSnapshotComplete(products.length, beyondLimit.length > 0);
     }
   }
 
@@ -703,6 +389,7 @@ async function fetchSnapshotProductRows(
       salePrice: products.salePrice,
       trackStock: products.trackStock,
       trackSerial: products.trackSerial,
+      isTaxExempt: products.isTaxExempt,
       isActive: products.isActive,
       unitCode: units.code,
       stock: stockSql,
@@ -723,6 +410,7 @@ async function fetchSnapshotProductRows(
     stock: Number(row.stock),
     trackStock: row.trackStock,
     trackSerial: row.trackSerial,
+    isTaxExempt: row.isTaxExempt,
     unitCode: row.unitCode,
     packagings: toSnapshotPackagings(packMap.get(row.id)),
     isActive: row.isActive,
@@ -761,7 +449,8 @@ export async function getPosDeviceSnapshotDelta(
     tx
       .select({ id: products.id })
       .from(products)
-      .where(and(eq(products.companyId, companyId), gt(products.updatedAt, since))),
+      .where(and(eq(products.companyId, companyId), gt(products.updatedAt, since)))
+      .limit(POS_DEVICE_SNAPSHOT_MAX_PRODUCTS + 1),
     refs.warehouseId
       ? tx
           .select({ productId: stockOnHand.productId })
@@ -773,6 +462,7 @@ export async function getPosDeviceSnapshotDelta(
               gt(stockOnHand.updatedAt, since),
             ),
           )
+          .limit(POS_DEVICE_SNAPSHOT_MAX_PRODUCTS + 1)
       : Promise.resolve([] as Array<{ productId: string }>),
     tx
       .select({ entityId: auditLog.entityId })
@@ -784,14 +474,8 @@ export async function getPosDeviceSnapshotDelta(
           eq(auditLog.action, "product.delete"),
           gt(auditLog.createdAt, since),
         ),
-      ),
-    // S5: perubahan kemasan (buat/ubah isi/harga/barcode pada
-    // `product_packagings.updated_at`) menandai produk induknya
-    // berubah — blok kemasan produk itu dikirim ulang utuh di
-    // delta. Nonaktif adalah UPDATE (tertangkap di sini); hapus
-    // fisik & semua suntingan kemasan lain berjalan di dalam
-    // simpan produk yang membubuhkan `products.updated_at` pada
-    // transaksi yang sama (tertangkap penanda master di atas).
+      )
+      .limit(POS_DEVICE_SNAPSHOT_MAX_PRODUCTS + 1),
     tx
       .select({ productId: productPackagings.productId })
       .from(productPackagings)
@@ -800,14 +484,15 @@ export async function getPosDeviceSnapshotDelta(
           eq(productPackagings.companyId, companyId),
           gt(productPackagings.updatedAt, since),
         ),
-      ),
+      )
+      .limit(POS_DEVICE_SNAPSHOT_MAX_PRODUCTS + 1),
   ]);
 
   const changedIds = new Set<string>();
   for (const row of masterChanged) changedIds.add(row.id);
   for (const row of stockChanged) changedIds.add(row.productId);
   for (const row of packagingChanged) changedIds.add(row.productId);
-  if (changedIds.size > SNAPSHOT_MAX_PRODUCTS) return null;
+  if (changedIds.size > POS_DEVICE_SNAPSHOT_MAX_PRODUCTS) return null;
 
   const rows = await fetchSnapshotProductRows(tx, companyId, refs.warehouseId, [
     ...changedIds,

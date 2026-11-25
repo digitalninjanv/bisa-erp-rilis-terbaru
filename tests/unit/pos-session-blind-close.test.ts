@@ -4,8 +4,9 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => undefined }) }));
 vi.mock("sonner", () => ({ toast: { success: () => undefined, error: () => undefined } }));
-vi.mock("@/server/actions/pos", () => ({
+vi.mock("@/server/actions/pos-sessions", () => ({
   openSessionAction: async () => ({ ok: true, data: null }),
+  prepareSessionCloseAction: async () => ({ ok: true, data: null }),
   closeSessionAction: async () => ({ ok: true, data: null }),
   cashMovementAction: async () => ({ ok: true, data: null }),
 }));

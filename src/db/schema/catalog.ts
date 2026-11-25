@@ -57,6 +57,13 @@ export const customers = pgTable(
     address: text("address"),
     groupId: uuid("group_id").references(() => customerGroups.id),
     creditLimit: numeric("credit_limit", { precision: 19, scale: 4 }).notNull().default("0"),
+    /**
+     * `credit_limit = 0` historis berarti "tanpa batas" untuk pelanggan
+     * lama. Pelanggan yang dibuat cepat dari POS tidak boleh otomatis
+     * mendapat kredit tanpa batas: flag ini membedakan "0 = tanpa batas"
+     * (true) dari "0 = kredit tidak diizinkan" (false).
+     */
+    creditLimitUnlimited: boolean("credit_limit_unlimited").notNull().default(true),
     // S3 (§18D): NPWP/NIK pihak untuk dokumen pajak & deteksi duplikat.
     taxId: text("tax_id"),
     // S3 (§18D): termin pembayaran bawaan (hari) — dipakai sebagai
@@ -165,6 +172,8 @@ export const products = pgTable(
     // stock_serials; receipts must name the serials, POS sales must pick
     // them. See src/server/serials.ts.
     trackSerial: boolean("track_serial").notNull().default(false),
+    /** Bebas PPN / Non-BKP: tarif PPN baris = 0% meski PPN toko aktif. */
+    isTaxExempt: boolean("is_tax_exempt").notNull().default(false),
     // T5-2 (D-16): values of company-defined custom fields
     // (company_settings.custom_fields), key → normalized string.
     attributes: jsonb("attributes").$type<CustomFieldValues>(),

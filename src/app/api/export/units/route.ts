@@ -1,7 +1,7 @@
 import { withApiError } from "@/lib/api-error";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { listAllUnits } from "@/server/catalog";
-import { requirePermission } from "@/lib/session";
+import { requirePermissionInModule } from "@/lib/session";
 import { todayISO } from "@/lib/format";
 import { csvResponse, toCsv } from "@/lib/csv";
 import { xlsxResponse } from "@/lib/xlsx";
@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 
 /** Ekspor satuan; kode tetap teks agar singkatan seperti "01" tidak hilang. */
 async function GETHandler(request: Request) {
-  const ctx = await requirePermission("inventory.view");
+  const ctx = await requirePermissionInModule("inventory.view", "gudang");
   const format = new URL(request.url).searchParams.get("format") === "xlsx" ? "xlsx" : "csv";
   const rows = await withCompanyReadOnly(ctx.company.id, (tx) =>
     listAllUnits(tx, ctx.company.id),

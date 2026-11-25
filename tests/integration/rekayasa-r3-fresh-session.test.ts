@@ -13,7 +13,11 @@ import {
   setPeriodStatusAction,
 } from "@/server/actions/accounting/periode";
 import { updateUserRoleAction } from "@/server/actions/users";
-import { closeSessionAction, openSessionAction } from "@/server/actions/pos";
+import {
+  closeSessionAction,
+  openSessionAction,
+  prepareSessionCloseAction,
+} from "@/server/actions/pos-sessions";
 import { ensureFiscalPeriods } from "@/server/accounting";
 import { wipeCompanyFixture } from "../helpers/wipe-company";
 
@@ -212,9 +216,15 @@ describe("K-5 — titik sensitif bernama", () => {
     const opened = await openSessionAction({ openingCash: "100000" });
     expect(opened.ok).toBe(true);
     if (opened.ok) {
+      const prepared = await prepareSessionCloseAction({
+        sessionId: opened.data.id,
+        countedCash: "100000",
+      });
+      expect(prepared.ok).toBe(true);
       const closedSession = await closeSessionAction({
         sessionId: opened.data.id,
         countedCash: "100000",
+        countToken: prepared.ok ? prepared.data.token : "",
       });
       expect(closedSession.ok).toBe(true);
     }

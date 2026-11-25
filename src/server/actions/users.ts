@@ -4,7 +4,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { hashPassword } from "better-auth/crypto";
 import { z } from "zod";
-import { account, companyRoles, member, session, user } from "@/db/schema";
+import { account, companyRoles, member, organization, session, user } from "@/db/schema";
 import { withCompany } from "@/db/tenant";
 import { writeAudit } from "@/server/audit";
 import { requirePermission } from "@/lib/session";
@@ -16,6 +16,7 @@ import {
   moduleForPermission,
   builtinRole,
   can,
+  missingPermissions,
   sanitizeModules,
   sanitizePermissions,
   type Permission,
@@ -65,6 +66,41 @@ function assertCanAssignRole(actorRole: string, targetRole: string) {
   }
 }
 
+/**
+ * Permission efektif sebuah role di perusahaan. Dipakai untuk mencegah
+ * non-owner memberikan (atau mengambil alih) akun dengan hak yang tidak
+ * ia miliki — aturan yang sama dengan saveCompanyRoleAction.
+ */
+async function permissionsForRole(
+  tx: Parameters<Parameters<typeof withCompany>[1]>[0],
+  companyId: string,
+  role: string,
+): Promise<Permission[]> {
+  const builtin = builtinRole(role);
+  if (builtin) return builtin.permissions;
+  const [custom] = await tx
+    .select({ permissions: companyRoles.permissions, isActive: companyRoles.isActive })
+    .from(companyRoles)
+    .where(and(eq(companyRoles.companyId, companyId), eq(companyRoles.key, role)))
+    .limit(1);
+  return custom?.isActive ? sanitizePermissions(custom.permissions) : [];
+}
+
+function assertCanManageRolePermissions(
+  actor: { role: string; permissions: readonly Permission[] },
+  target: readonly Permission[],
+  label: string,
+): void {
+  if (actor.role === "owner") return;
+  const missing = missingPermissions(actor, target);
+  if (missing.length > 0) {
+    throw new AppError(
+      "FORBIDDEN",
+      `Anda tidak dapat ${label} peran dengan izin yang tidak Anda miliki (${missing[0]}). Minta owner atau pengguna berwenang.`,
+    );
+  }
+}
+
 export async function createCompanyUserAction(input: {
   name: string;
   email: string;
@@ -94,6 +130,11 @@ export async function createCompanyUserAction(input: {
 
     const result = await withCompany(ctx.company.id, async (tx) => {
       await assertRoleExists(tx, ctx.company.id, data.role);
+      assertCanManageRolePermissions(
+        ctx,
+        await permissionsForRole(tx, ctx.company.id, data.role),
+        "memberikan",
+      );
 
       const [existing] = await tx
         .select({ id: user.id })
@@ -154,6 +195,14 @@ export async function updateUserRoleAction(input: { userId: string; role: string
     assertCanAssignRole(ctx.role, data.role);
 
     await withCompany(ctx.company.id, async (tx) => {
+      // Serialize owner demotions/promotions in this tenant. Counting
+      // owners without a shared lock lets two concurrent requests each
+      // observe two owners and demote a different one.
+      await tx
+        .select({ id: organization.id })
+        .from(organization)
+        .where(eq(organization.id, ctx.company.id))
+        .for("update");
       await assertRoleExists(tx, ctx.company.id, data.role);
       const [target] = await tx
         .select({ role: member.role })
@@ -164,6 +213,19 @@ export async function updateUserRoleAction(input: { userId: string; role: string
       if (target.role === "owner" && ctx.role !== "owner") {
         throw new AppError("FORBIDDEN", "Hanya owner yang dapat mengubah peran owner.");
       }
+      if (target.role === "admin" && ctx.role !== "owner") {
+        throw new AppError("FORBIDDEN", "Hanya owner yang dapat mengubah peran admin.");
+      }
+      assertCanManageRolePermissions(
+        ctx,
+        await permissionsForRole(tx, ctx.company.id, data.role),
+        "memberikan",
+      );
+      assertCanManageRolePermissions(
+        ctx,
+        await permissionsForRole(tx, ctx.company.id, target.role),
+        "mengubah",
+      );
       if (target.role === "owner" && data.role !== "owner") {
         const [owners] = await tx
           .select({ value: sql<number>`count(*)::int` })
@@ -222,6 +284,11 @@ export async function updateUserRolesBatchAction(input: {
     }
 
     await withCompany(ctx.company.id, async (tx) => {
+      await tx
+        .select({ id: organization.id })
+        .from(organization)
+        .where(eq(organization.id, ctx.company.id))
+        .for("update");
       const uniqueRoles = [...new Set(data.updates.map((u) => u.role))];
       for (const r of uniqueRoles) {
         await assertRoleExists(tx, ctx.company.id, r);
@@ -243,6 +310,19 @@ export async function updateUserRolesBatchAction(input: {
         if (target.role === "owner" && ctx.role !== "owner") {
           throw new AppError("FORBIDDEN", "Hanya owner yang dapat mengubah peran owner.");
         }
+        if (target.role === "admin" && ctx.role !== "owner") {
+          throw new AppError("FORBIDDEN", "Hanya owner yang dapat mengubah peran admin.");
+        }
+        assertCanManageRolePermissions(
+          ctx,
+          await permissionsForRole(tx, ctx.company.id, item.role),
+          "memberikan",
+        );
+        assertCanManageRolePermissions(
+          ctx,
+          await permissionsForRole(tx, ctx.company.id, target.role),
+          "mengubah",
+        );
         if (target.role === "owner" && item.role !== "owner") {
           remainingOwners -= 1;
         } else if (target.role !== "owner" && item.role === "owner") {
@@ -301,6 +381,11 @@ export async function resetUserPasswordAction(input: { userId: string; password:
       if (membership.role === "admin" && ctx.role !== "owner") {
         throw new AppError("FORBIDDEN", "Kata sandi admin hanya bisa direset oleh owner.");
       }
+      assertCanManageRolePermissions(
+        ctx,
+        await permissionsForRole(tx, ctx.company.id, membership.role),
+        "mereset kata sandi",
+      );
 
       const [credential] = await tx
         .select({ id: account.id })
@@ -358,6 +443,14 @@ export async function removeCompanyUserAction(userId: string) {
       if (target.role === "owner") {
         throw new AppError("VALIDATION", "Peran owner tidak bisa dihapus dari perusahaan.");
       }
+      if (target.role === "admin" && ctx.role !== "owner") {
+        throw new AppError("FORBIDDEN", "Hanya owner yang dapat menghapus akun admin.");
+      }
+      assertCanManageRolePermissions(
+        ctx,
+        await permissionsForRole(tx, ctx.company.id, target.role),
+        "menghapus",
+      );
 
       await tx
         .delete(member)

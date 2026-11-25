@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { withCompanyReadOnly } from "@/db/tenant";
+import { withCompany } from "@/db/tenant";
 import { toPrintSettings } from "@/components/print/types";
 import { formatDate } from "@/lib/format";
 import { formatReceiptToEscPos } from "@/lib/escpos/receipt-template";
@@ -8,6 +8,7 @@ import { saleReceiptLine } from "@/lib/escpos/sale-receipt-line";
 import { d } from "@/lib/money";
 import { getSettings } from "@/server/catalog";
 import { getSaleDetail } from "@/server/reports";
+import { writeAudit } from "@/server/audit";
 import { POS_API_CORS_HEADERS, resolvePosDevice } from "@/server/pos-device";
 import { resolveMemberPermissions } from "@/server/member-permissions";
 
@@ -39,16 +40,31 @@ export async function GET(
   }
 
   const permissions = await resolveMemberPermissions(device.companyId, device.userId);
-  if (!permissions?.includes("pos.sell")) {
-    return errorResponse("Akun terminal tidak lagi memiliki akses POS.", 403);
+  if (!permissions?.includes("pos.receipt.reprint")) {
+    return errorResponse(
+      "Akun terminal tidak memiliki izin cetak ulang nota.",
+      403,
+    );
   }
 
-  const receipt = await withCompanyReadOnly(device.companyId, async (tx) => {
+  const receipt = await withCompany(device.companyId, async (tx) => {
     const [detail, settings] = await Promise.all([
       getSaleDetail(tx, device.companyId, saleId.data),
       getSettings(tx, device.companyId),
     ]);
     if (!detail || !["completed", "returned"].includes(detail.sale.status)) return null;
+    await writeAudit(tx, {
+      companyId: device.companyId,
+      userId: device.userId,
+      action: "pos.receipt.reprint",
+      entityType: "sale",
+      entityId: detail.sale.id,
+      after: {
+        number: detail.sale.number,
+        transport: "desktop_thermal",
+        terminalId: device.terminalId,
+      },
+    });
 
     const printSettings = toPrintSettings(settings, "nota");
     const data: ReceiptData = {

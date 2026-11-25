@@ -766,10 +766,15 @@ describe("POS-PAY-01 — payReceivable memvalidasi akun penerimaan", () => {
       const revenueAccount = await accountByCode(tx, "400001");
       const receivableAccount = await accountByCode(tx, "110301");
       const [customer] = await tx
-        .select()
-        .from(customers)
-        .where(eq(customers.companyId, ORG_ID))
-        .limit(1);
+        .insert(customers)
+        .values({
+          companyId: ORG_ID,
+          code: `PAY01-${crypto.randomUUID().slice(0, 8)}`,
+          name: "Pelanggan Uji POS-PAY-01",
+          creditLimit: "0",
+          creditLimitUnlimited: true,
+        })
+        .returning();
       expect(customer).toBeDefined();
 
       const { sale, quote } = await makeSale(tx, {

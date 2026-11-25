@@ -17,6 +17,7 @@ import {
 } from "@/lib/pagination";
 import { d, toDb, type MoneyInput } from "@/lib/money";
 import { nextDocumentNumber } from "@/server/sequences";
+import { claimIdempotencyKey } from "@/server/idempotency";
 import { createPurchaseOrder } from "./purchasing";
 import { getCompanySettingsRow } from "@/server/settings";
 
@@ -57,11 +58,22 @@ export async function createPurchaseRequest(
     departmentId?: string | null;
     date: string;
     notes?: string | null;
+    idempotencyKey?: string | null;
     lines: PurchaseRequestLineInput[];
   },
 ) {
   if (input.lines.length === 0) {
     throw new AppError("VALIDATION", "PR wajib memiliki minimal satu baris.");
+  }
+  if (input.idempotencyKey) {
+    const claimed = await claimIdempotencyKey(tx, {
+      companyId: input.companyId,
+      key: input.idempotencyKey,
+      scope: "purchase.request",
+    });
+    if (!claimed) {
+      throw new AppError("CONFLICT", "Permintaan pembelian dengan kunci idempotensi ini sedang atau sudah diproses.");
+    }
   }
   if (input.requesterEmployeeId) {
     const [employee] = await tx

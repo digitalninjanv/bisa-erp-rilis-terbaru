@@ -13,11 +13,10 @@ async function resolveEntitlements(
   cashierIds: Array<string | null | undefined>,
 ): Promise<Record<string, OriginEntitlement | null>> {
   const unique = [...new Set(cashierIds.filter((id): id is string => Boolean(id)))];
-  const result: Record<string, OriginEntitlement | null> = {};
-  for (const cashierId of unique) {
-    result[cashierId] = await resolveOriginEntitlement(companyId, cashierId);
-  }
-  return result;
+  const entries = await Promise.all(
+    unique.map(async (cashierId) => [cashierId, await resolveOriginEntitlement(companyId, cashierId)] as const),
+  );
+  return Object.fromEntries(entries);
 }
 
 /** Jalankan setiap penjualan offline melalui jalur domain yang sama
@@ -42,6 +41,15 @@ export async function syncPosDeviceItems(
   }
   const results: OfflineSyncItemResult[] = [];
   for (const item of items) {
+    if (device.warehouseId && item.warehouseId !== device.warehouseId) {
+      results.push({
+        clientKey: item.clientKey,
+        status: "failed",
+        kind: "other",
+        message: "Gudang transaksi tidak sesuai dengan gudang terminal perangkat.",
+      });
+      continue;
+    }
     const result = await withCompany(device.companyId, (tx) =>
       processOfflineSaleItem(tx, {
         companyId: device.companyId,

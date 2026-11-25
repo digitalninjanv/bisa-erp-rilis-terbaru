@@ -1,0 +1,36 @@
+import { eq } from "drizzle-orm";
+import { expect, it } from "vitest";
+import { withCompany } from "@/db/tenant";
+import { idempotencyKeys } from "@/db/schema";
+import { postJournal, seedChartOfAccounts } from "@/server/accounting";
+import { pruneExpiredIdempotencyKeys, runIdempotentPayment } from "@/server/idempotency";
+import { todayISO } from "@/lib/format";
+
+it("replays an expired payment as a new execution and accepts a changed expired journal as the old journal", async () => {
+  const companyId = crypto.randomUUID();
+  const date = todayISO();
+  await withCompany(companyId, async (tx) => {
+    const map = await seedChartOfAccounts(tx, companyId);
+    const input = {
+      companyId, date, sourceType: "manual", description: "Audit retention fixture",
+      lines: [{ accountId: map.cash, debit: 100 }, { accountId: map.equity, credit: 100 }],
+    };
+    const key = crypto.randomUUID();
+    const paymentKey = crypto.randomUUID();
+    const payment = () => runIdempotentPayment(
+      tx,
+      { companyId, key: paymentKey, request: { amount: 100 } },
+      () => postJournal(tx, input),
+    );
+    const firstPayment = await payment();
+    expect((await payment()).id).toBe(firstPayment.id);
+    const firstJournal = await postJournal(tx, { ...input, idempotencyKey: key });
+    const changed = { ...input, description: "Changed journal", idempotencyKey: key };
+    await expect(postJournal(tx, changed)).rejects.toMatchObject({ code: "CONFLICT" });
+    await tx.update(idempotencyKeys).set({ createdAt: new Date("2000-01-01") })
+      .where(eq(idempotencyKeys.companyId, companyId));
+    expect(await pruneExpiredIdempotencyKeys(tx, { companyId })).toBe(2);
+    expect((await payment()).id).not.toBe(firstPayment.id);
+    expect((await postJournal(tx, changed)).id).toBe(firstJournal.id);
+  });
+});

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
-import { accounts, products, saleLines, sales, warehouses } from "@/db/schema";
+import { accounts, products, saleLines, saleReturnLines, saleReturns, sales, warehouses } from "@/db/schema";
 import { postJournal } from "@/server/accounting";
 import { buildAnalyticsPeriod, getBusinessAnalytics } from "@/server/analytics";
 import { getIncomeStatement } from "@/server/reports";
@@ -26,10 +26,15 @@ describe("modul Analisa — 12 indikator", () => {
         .where(and(eq(warehouses.companyId, ORG), eq(warehouses.isDefault, true)))
         .limit(1);
       const [product] = await tx
-        .select({ id: products.id, name: products.name, sku: products.sku })
-        .from(products)
-        .where(eq(products.companyId, ORG))
-        .limit(1);
+        .insert(products)
+        .values({
+          companyId: ORG,
+          sku: `TST-ANALYTICS-${crypto.randomUUID().slice(0, 8)}`,
+          name: "Produk Analytics Retur Parsial",
+          costPrice: "40000",
+          salePrice: "100000",
+        })
+        .returning({ id: products.id, name: products.name, sku: products.sku });
       const accountRows = await tx
         .select({ id: accounts.id, code: accounts.code })
         .from(accounts)
@@ -68,6 +73,30 @@ describe("modul Analisa — 12 indikator", () => {
         productSku: product.sku,
         qtyInput: "1",
       });
+      const returnId = crypto.randomUUID();
+      await tx.insert(saleReturns).values({
+        id: returnId,
+        companyId: ORG,
+        saleId,
+        number: `TST-ANALYTICS-RET-${crypto.randomUUID().slice(0, 8)}`,
+        date: "2026-11-12",
+        status: "posted",
+        total: "25000",
+        costTotal: "10000",
+        reason: "Retur parsial fixture analytics",
+        createdBy: USER_ID,
+      });
+      await tx.insert(saleReturnLines).values({
+        companyId: ORG,
+        returnId,
+        productId: product.id,
+        qty: "0.25",
+        unitPrice: "100000",
+        unitCost: "40000",
+        lineTotal: "25000",
+        productName: product.name,
+        qtyInput: "0.25",
+      });
       await postJournal(tx, {
         companyId: ORG,
         date: "2026-11-11",
@@ -96,7 +125,7 @@ describe("modul Analisa — 12 indikator", () => {
         from: "2026-11-01T00:00:00",
         to: "2026-11-30T23:59:59",
       });
-      return { analytics, income };
+      return { analytics, income, productId: product.id };
     });
     expect(data.analytics.health.revenue).toBeGreaterThan(0);
     expect(data.analytics.health.grossMargin).toBeGreaterThan(0);
@@ -106,6 +135,10 @@ describe("modul Analisa — 12 indikator", () => {
     expect(data.analytics.drivers.abcFsn.length).toBeGreaterThan(0);
     expect(data.analytics.drivers.abcFsn[0].category).toBeTruthy();
     expect(data.analytics.drivers.abcFsn[0].margin).not.toBeNull();
+    const netProduct = data.analytics.drivers.abcFsn.find((row) => row.productId === data.productId);
+    expect(netProduct?.qty).toBeCloseTo(0.75, 4);
+    expect(netProduct?.revenue).toBeCloseTo(75_000, 2);
+    expect(netProduct?.profit).toBeCloseTo(45_000, 2);
     const abc = data.analytics.drivers.abcCounts;
     expect(abc.A + abc.B + abc.C).toBe(data.analytics.drivers.abcFsn.length);
     expect(abc.F + abc.S + abc.N).toBe(data.analytics.drivers.abcFsn.length);

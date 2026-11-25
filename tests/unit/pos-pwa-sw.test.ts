@@ -21,6 +21,8 @@ import { describe, expect, it, vi } from "vitest";
 
 const SW_PATH = path.join(__dirname, "..", "..", "public", "pos-sw.js");
 const ORIGIN = "http://localhost:3000";
+const SHELL_CACHE_ID = "11111111-1111-4111-8111-111111111111";
+const SHELL_CACHE_URL = `${ORIGIN}/app/pos?posuid=${SHELL_CACHE_ID}`;
 
 type Handler = (event: never) => void;
 
@@ -34,8 +36,12 @@ class MockCache {
     const url = typeof key === "string" ? new URL(key, ORIGIN).toString() : key.url;
     return this.store.get(url);
   }
-  async delete(key: string) {
-    return this.store.delete(new URL(key, ORIGIN).toString());
+  async delete(key: string | { url: string }) {
+    const value = typeof key === "string" ? key : key.url;
+    return this.store.delete(new URL(value, ORIGIN).toString());
+  }
+  async keys() {
+    return [...this.store.keys()].map((url) => new Request(url));
   }
   async add(url: string) {
     const res = await this.fetchFn(new Request(url));
@@ -45,7 +51,7 @@ class MockCache {
   constructor(private fetchFn: typeof fetch) {}
 }
 
-function loadSw(fetchImpl: typeof fetch) {
+function loadSw(fetchImpl: typeof fetch, cacheId: string | null = SHELL_CACHE_ID) {
   const handlers = new Map<string, Handler>();
   const cachesByName = new Map<string, MockCache>();
   const cachesMock = {
@@ -85,6 +91,13 @@ function loadSw(fetchImpl: typeof fetch) {
       },
     },
     caches: cachesMock,
+    cookieStore: {
+      get: vi.fn(async (options: { name: string; url: string }) => {
+        expect(options.name).toBe("pos_shell_cache_id");
+        expect(options.url).toBe(`${ORIGIN}/app/pos`);
+        return cacheId ? { name: options.name, value: cacheId } : null;
+      }),
+    },
     location: { origin: ORIGIN },
     fetch: fetchImpl,
     URL,
@@ -112,14 +125,19 @@ function lifecycleEvent() {
   };
 }
 
-function fetchEvent(request: { url: string; method?: string; mode?: string }) {
+function fetchEvent(request: {
+  url: string;
+  method?: string;
+  mode?: string;
+  headers?: Record<string, string>;
+}) {
   let responsePromise: Promise<Response> | undefined;
   const event = {
     request: {
       url: request.url,
       method: request.method ?? "GET",
       mode: request.mode ?? "cors",
-      headers: new Headers(),
+      headers: new Headers(request.headers ?? {}),
     },
     respondWith(p: Promise<Response>) {
       responsePromise = p;
@@ -150,7 +168,7 @@ function htmlResponse(body: string, extraHeaders: Record<string, string> = {}) {
 }
 
 describe("service worker terminal POS (T6B)", () => {
-  it("install: mem-precache dokumen terminal + aset statis yang dirujuknya, lalu skipWaiting", async () => {
+  it("install: mem-precache aset statis (dokumen ditunda sampai uid sesi tersedia), lalu skipWaiting", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
       if (url.endsWith("/app/pos")) return htmlResponse(TERMINAL_HTML);
@@ -163,7 +181,7 @@ describe("service worker terminal POS (T6B)", () => {
     await event.settle();
     expect(state.skipWaiting).toBe(true);
     const all = [...cachesByName.values()].flatMap((c) => [...c.store.keys()]);
-    expect(all).toContain(`${ORIGIN}/app/pos`);
+    expect(all).not.toContain(`${ORIGIN}/app/pos`);
     expect(all.some((u) => u.includes("/_next/static/css/abc123.css"))).toBe(true);
     expect(all.some((u) => u.includes("/_next/static/chunks/main-def456.js"))).toBe(true);
     expect(all.some((u) => u.includes("/_next/static/chunks/app/app/pos/page-789.js"))).toBe(true);
@@ -184,12 +202,18 @@ describe("service worker terminal POS (T6B)", () => {
     expect([...cachesByName.keys()]).not.toContain("bisa-pos-shell-v0");
   });
 
-  it("navigasi /app/pos saat online: jawaban jaringan yang dipakai & cache diperbarui tanpa Set-Cookie", async () => {
+  it("navigasi /app/pos online: cache diidentifikasi oleh header server tanpa membaca Cookie request", async () => {
     const fetchMock = vi.fn(async () =>
-      htmlResponse(TERMINAL_HTML, { "Set-Cookie": "better-auth.session_token=rahasia; HttpOnly" }),
+      htmlResponse(TERMINAL_HTML, {
+        "Set-Cookie": "better-auth.session_token=rahasia; HttpOnly",
+        "x-pos-shell-cache-id": SHELL_CACHE_ID,
+      }),
     );
     const { handlers, cachesByName } = loadSw(fetchMock as unknown as typeof fetch);
-    const event = fetchEvent({ url: `${ORIGIN}/app/pos`, mode: "navigate" });
+    const event = fetchEvent({
+      url: `${ORIGIN}/app/pos`,
+      mode: "navigate",
+    });
     handlers.get("fetch")!(event as never);
     expect(event.responded).toBe(true);
     const res = await event.response();
@@ -197,23 +221,30 @@ describe("service worker terminal POS (T6B)", () => {
     expect(await res!.text()).toContain("Terminal POS");
     const cached = [...cachesByName.values()]
       .flatMap((c) => [...c.store.entries()])
-      .find(([url]) => url === `${ORIGIN}/app/pos`);
-    expect(cached, "dokumen harus tersimpan di cache").toBeTruthy();
+      .find(([url]) => url === SHELL_CACHE_URL);
+    expect(cached, "dokumen harus tersimpan dengan ID non-otorisasi dari respons").toBeTruthy();
     expect(cached![1].headers.get("set-cookie")).toBeNull();
+    expect(cached![1].headers.get("x-pos-shell-cache-id")).toBeNull();
   });
 
   it("navigasi /app/pos saat jaringan mati: dokumen dari cache yang membuka terminal", async () => {
     let online = true;
     const fetchMock = vi.fn(async () => {
       if (!online) throw new TypeError("fetch failed");
-      return htmlResponse(TERMINAL_HTML);
+      return htmlResponse(TERMINAL_HTML, { "x-pos-shell-cache-id": SHELL_CACHE_ID });
     });
     const { handlers } = loadSw(fetchMock as unknown as typeof fetch);
-    const first = fetchEvent({ url: `${ORIGIN}/app/pos`, mode: "navigate" });
+    const first = fetchEvent({
+      url: `${ORIGIN}/app/pos`,
+      mode: "navigate",
+    });
     handlers.get("fetch")!(first as never);
     await first.response();
     online = false;
-    const second = fetchEvent({ url: `${ORIGIN}/app/pos`, mode: "navigate" });
+    const second = fetchEvent({
+      url: `${ORIGIN}/app/pos`,
+      mode: "navigate",
+    });
     handlers.get("fetch")!(second as never);
     const res = await second.response();
     expect(res!.status).toBe(200);
@@ -222,11 +253,14 @@ describe("service worker terminal POS (T6B)", () => {
 
   it("membuang dokumen kasir ketika sesi ditolak oleh server", async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(htmlResponse(TERMINAL_HTML))
+      .mockResolvedValueOnce(htmlResponse(TERMINAL_HTML, { "x-pos-shell-cache-id": SHELL_CACHE_ID }))
       .mockResolvedValueOnce(new Response(null, { status: 401 }));
     const { handlers, cachesByName } = loadSw(fetchMock as typeof fetch);
     const navigate = async () => {
-      const event = fetchEvent({ url: `${ORIGIN}/app/pos`, mode: "navigate" });
+      const event = fetchEvent({
+        url: `${ORIGIN}/app/pos`,
+        mode: "navigate",
+      });
       handlers.get("fetch")!(event as never);
       return event.response();
     };
@@ -235,14 +269,50 @@ describe("service worker terminal POS (T6B)", () => {
     expect([...cachesByName.values()].flatMap((cache) => [...cache.store.keys()])).toEqual([]);
   });
 
-  it("navigasi /app/pos berparameter (?resume=) tetap memperbarui cache kunci kanonis /app/pos", async () => {
-    const fetchMock = vi.fn(async () => htmlResponse(TERMINAL_HTML));
+  it("membuang semua shell tersimpan saat autentikasi ditolak tanpa cache cookie", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(htmlResponse(TERMINAL_HTML, { "x-pos-shell-cache-id": SHELL_CACHE_ID }))
+      .mockResolvedValueOnce(new Response(null, { status: 401 }));
+    const { handlers, cachesByName } = loadSw(fetchMock as typeof fetch, null);
+    const navigate = async () => {
+      const event = fetchEvent({ url: `${ORIGIN}/app/pos`, mode: "navigate" });
+      handlers.get("fetch")!(event as never);
+      return event.response();
+    };
+
+    expect((await navigate())?.status).toBe(200);
+    expect((await navigate())?.status).toBe(401);
+    expect([...cachesByName.values()].flatMap((cache) => [...cache.store.keys()])).toEqual([]);
+  });
+
+  it("navigasi /app/pos berparameter (?resume=) memperbarui cache uid kanonis", async () => {
+    const fetchMock = vi.fn(async () => htmlResponse(TERMINAL_HTML, { "x-pos-shell-cache-id": SHELL_CACHE_ID }));
     const { handlers, cachesByName } = loadSw(fetchMock as unknown as typeof fetch);
-    const event = fetchEvent({ url: `${ORIGIN}/app/pos?resume=abc`, mode: "navigate" });
+    const event = fetchEvent({
+      url: `${ORIGIN}/app/pos?resume=abc`,
+      mode: "navigate",
+    });
     handlers.get("fetch")!(event as never);
     await event.response();
     const all = [...cachesByName.values()].flatMap((c) => [...c.store.keys()]);
-    expect(all).toEqual([`${ORIGIN}/app/pos`]);
+    expect(all).toEqual([SHELL_CACHE_URL, `${ORIGIN}/__pos_shell_cache_id`]);
+  });
+
+  it("tanpa cookie uid, dokumen tidak disimpan maupun disajikan dari cache", async () => {
+    let online = true;
+    const fetchMock = vi.fn(async () => {
+      if (!online) throw new TypeError("fetch failed");
+      return htmlResponse(TERMINAL_HTML);
+    });
+    const { handlers, cachesByName } = loadSw(fetchMock as unknown as typeof fetch, null);
+    const first = fetchEvent({ url: `${ORIGIN}/app/pos`, mode: "navigate" });
+    handlers.get("fetch")!(first as never);
+    await first.response();
+    expect([...cachesByName.values()].flatMap((c) => [...c.store.keys()])).toEqual([]);
+    online = false;
+    const second = fetchEvent({ url: `${ORIGIN}/app/pos`, mode: "navigate" });
+    handlers.get("fetch")!(second as never);
+    await expect(second.response()).rejects.toThrow("fetch failed");
   });
 
   it("POST ke /app/pos (Server Action checkout/sinkron) TIDAK dicegat", async () => {

@@ -103,7 +103,10 @@ export const IMPORT_SAMPLES: Record<ImportEntity, { fileName: string; csv: strin
   },
   opening_stock: {
     fileName: "contoh-impor-stok-awal.csv",
-    csv: ["SKU,Nama Produk,Qty,Biaya Satuan", ",Contoh Produk Stok Awal,10,2500"].join("\n"),
+    csv: [
+      "SKU,Nama Produk,Gudang Saldo Awal,Kuantitas Saldo Awal,Nilai Satuan,Per Tanggal",
+      "GANTI-SKU-ANDA,Contoh Produk Stok Awal,,10,2500,",
+    ].join("\n"),
   },
   opening_payables: {
     fileName: "contoh-impor-saldo-awal-utang.csv",

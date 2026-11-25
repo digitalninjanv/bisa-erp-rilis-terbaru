@@ -32,11 +32,8 @@ const THRESHOLD = 800;
 
 /** Kunci: jalur relatif terhadap src/ (posix). Nilai: plafon baris. */
 const CEILINGS: Record<string, number> = {
-  // Snapshot perangkat POS kini memuat blok reservasi, kitchen display,
-  // promosi, QRIS, dan gudang — semua dibaca dari satu kontrak snapshot
-  // yang sama. Plafon sementara sampai blok ekstra dipecah ke modul
-  // src/server/pos/snapshot-extras.ts.
-  "server/pos-device.ts": 900,
+  // "server/pos-device.ts" DIHAPUS: snapshot refs dipecah ke
+  // src/server/pos/device-snapshot-refs.ts; berkas utama kini ≤600 baris.
   // "db/schema.ts" DIHAPUS di A-26 Q2: sudah terpecah per domain ke
   // src/db/schema/*.ts (semua ≤800 baris); schema.ts kini barrel murni.
   // "components/pengaturan/settings-forms.tsx" DIHAPUS di A-26 Q3: sudah
@@ -76,7 +73,22 @@ const CEILINGS: Record<string, number> = {
   // semua ≤500 baris); master-data.ts kini barrel re-export murni.
   "db/seed.ts": 950, // K-12 — dev-only. Dinilai di A-26 Q8: TIDAK dipecah — satu fungsi seed() menenun id antar keluarga data (akun→peta→produk→stok→saldo awal) sehingga pecahan per keluarga bukan mekanis; risiko regresi baseline demo/e2e tidak sebanding manfaatnya untuk berkas dev-only. Tetap terdaftar & beku. A-27 B5: blok bagan akun (tanam akun + pemetaan + tagging) diekstrak ke db/seed-chart.ts agar tagging PSAK 118 tidak menembus plafon — plafon diturunkan ke ukuran baru 950.
   "db/schema/inventory.ts": 850, // Migrasi 0076–0080: penambahan composite foreign keys multi-tenant (companyId, id) demi integritas referensial dan RLS tenant isolation.
-  "server/actions/pos.ts": 850, // Integrasi mitigasi idempotency fingerprinting + held sale claim check pada alur checkout POS.
+  // A-27 B5: fixed-assets.ts melampaui 800 setelah ensureFixedAssetAccounts,
+  // assertPostableAccount, resolveAssetAccounts, getFixedAssetBookValues, dan
+  // getAccumulatedDepreciationGlBalance digabungkan kembali dari fixed-assets-accounts.ts
+  // (yang dihapus karena menyebabkan siklus impor). Plafon dibekukan; file ini
+  // adalah kandidat refactor berikutnya (pisahkan bagian laporan ke fixed-assets-reads.ts
+  // tanpa circular dep).
+  "server/fixed-assets.ts": 810,
+  // A-26 Q1 follow-up (2026-11-23): tiga berkas tumbuh sedikit di atas 800
+  // selama remediasi P1/POS. Dicatat sebagai utang refactor terbatas
+  // (bukan izin pertumbuhan baru); plafon dibekukan di ukuran sekarang.
+  // "components/pos/pos-terminal.tsx" DIHAPUS setelah ekstraksi
+  // use-terminal-promotions.ts menurunkan ukurannya kembali ≤800 baris (795).
+  // "server/actions/pos.ts" DIHAPUS: voidReceivablePayment pindah ke pos/receivables.ts
+  // dan checkout memakai consumeHeldSale (<680 baris).
+  // "server/pos/offline.ts" DIHAPUS: review/settlement dipecah ke
+  // src/server/pos/offline-review.ts (kedua berkas <500 baris).
   // "components/akuntansi/quick-entry-modal.tsx" DIHAPUS di A-26 Q7
   // (K-07): dipecah per bagian form ke folder
   // src/components/akuntansi/quick-entry/ (semua ≤800 baris);

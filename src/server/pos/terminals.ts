@@ -13,10 +13,17 @@ import {
   warehouses,
 } from "@/db/schema";
 import { AppError } from "@/lib/errors";
-import { permissionsFor, sanitizePermissions, type Permission } from "@/lib/permissions";
+import {
+  builtinRole,
+  permissionsFor,
+  sanitizePermissions,
+  type Permission,
+} from "@/lib/permissions";
 import { writeAudit } from "@/server/audit";
 import { getSettings, listWarehouses, pickDefaultWarehouseId } from "@/server/catalog";
-import { resolveOriginEntitlement } from "@/server/member-permissions";
+import { resolveMemberPermissions, resolveOriginEntitlement } from "@/server/member-permissions";
+import { getCompanySettingsRow } from "@/server/settings";
+import { isModuleEnabled } from "@/lib/modules";
 
 /**
  * Registry terminal POS desktop (POS Native Langkah 6, RENCANA-TAURI
@@ -200,10 +207,11 @@ export async function enrollPosDesktopTerminal(input: {
   installationId: string;
   currentTerminalId?: string | null;
 }): Promise<PosDesktopEnrollment> {
-  const entitlement = await resolveOriginEntitlement(input.companyId, input.userId);
-  if (!entitlement?.canSell) {
+  const memberPermissions = await resolveMemberPermissions(input.companyId, input.userId);
+  if (!memberPermissions || !memberPermissions.includes("pos.sell")) {
     throw new AppError("FORBIDDEN", "Akun ini tidak memiliki akses kasir POS di perusahaan tersebut.");
   }
+  const canManageTerminal = memberPermissions.includes("pos.void");
 
   const token = generateDeviceToken();
   const terminalName = `Bisa POS ${input.installationId.slice(0, 8).toUpperCase()}`;
@@ -236,21 +244,26 @@ export async function enrollPosDesktopTerminal(input: {
       listWarehouses(tx, input.companyId),
       getSettings(tx, input.companyId),
     ]);
-    const warehouseId = pickDefaultWarehouseId(warehouseRows, settings?.defaultWarehouseId);
-    const warehouse = warehouseRows.find((row) => row.id === warehouseId);
-    if (!warehouse) throw new AppError("INVALID_STATE", "Perusahaan belum memiliki gudang aktif untuk POS.");
+    if (!isModuleEnabled(settings, "pos")) {
+      throw new AppError("FORBIDDEN", "Modul POS sedang dinonaktifkan untuk perusahaan ini.");
+    }
+    const defaultWarehouseId = pickDefaultWarehouseId(warehouseRows, settings?.defaultWarehouseId);
+    const defaultWarehouse = warehouseRows.find((row) => row.id === defaultWarehouseId);
+    if (!defaultWarehouse) throw new AppError("INVALID_STATE", "Perusahaan belum memiliki gudang aktif untuk POS.");
 
     let terminalId = input.currentTerminalId ?? null;
     let existing:
-      | { id: string; status: string; tokenDigest: string | null; userId: string }
+      | { id: string; name: string; status: string; tokenDigest: string | null; userId: string; warehouseId: string | null }
       | undefined;
     if (terminalId) {
       [existing] = await tx
         .select({
           id: posTerminals.id,
+          name: posTerminals.name,
           status: posTerminals.status,
           tokenDigest: posTerminals.tokenDigest,
           userId: posTerminals.userId,
+          warehouseId: posTerminals.warehouseId,
         })
         .from(posTerminals)
         .where(and(eq(posTerminals.companyId, input.companyId), eq(posTerminals.id, terminalId)))
@@ -258,13 +271,18 @@ export async function enrollPosDesktopTerminal(input: {
       if (!existing || existing.status !== "active") {
         throw new AppError("FORBIDDEN", "Terminal tidak aktif. Hubungi supervisor untuk mengaktifkannya.");
       }
+      if (existing.userId !== input.userId && !canManageTerminal) {
+        throw new AppError("FORBIDDEN", "Terminal terdaftar untuk kasir lain. Hubungi supervisor untuk memindahkan perangkat.");
+      }
     } else {
       [existing] = await tx
         .select({
           id: posTerminals.id,
+          name: posTerminals.name,
           status: posTerminals.status,
           tokenDigest: posTerminals.tokenDigest,
           userId: posTerminals.userId,
+          warehouseId: posTerminals.warehouseId,
         })
         .from(posTerminals)
         .where(and(eq(posTerminals.companyId, input.companyId), eq(posTerminals.name, terminalName)))
@@ -278,12 +296,25 @@ export async function enrollPosDesktopTerminal(input: {
       terminalId = existing?.id ?? null;
     }
 
+    if (!terminalId && !canManageTerminal) {
+      throw new AppError(
+        "FORBIDDEN",
+        "Pendaftaran terminal POS baru memerlukan izin supervisor (pos.void) atau kode pasangan.",
+      );
+    }
+
+    const effectiveWarehouseId = existing?.warehouseId ?? defaultWarehouseId;
+    const effectiveWarehouse =
+      warehouseRows.find((row) => row.id === effectiveWarehouseId) ?? defaultWarehouse;
+    const effectiveUserId = existing?.userId ?? input.userId;
+    const effectiveName = existing?.name ?? terminalName;
+
     if (!terminalId) {
       const created = await createPosTerminal(tx, {
         companyId: input.companyId,
-        name: terminalName,
-        warehouseId,
-        userId: input.userId,
+        name: effectiveName,
+        warehouseId: effectiveWarehouse.id,
+        userId: effectiveUserId,
         createdBy: input.userId,
       });
       terminalId = created.id;
@@ -293,9 +324,9 @@ export async function enrollPosDesktopTerminal(input: {
     await tx
       .update(posTerminals)
       .set({
-        name: terminalName,
-        warehouseId,
-        userId: input.userId,
+        name: effectiveName,
+        warehouseId: effectiveWarehouse.id,
+        userId: effectiveUserId,
         tokenDigest: digestSecret(token),
         pairedAt: now,
         lastSeenAt: now,
@@ -309,18 +340,18 @@ export async function enrollPosDesktopTerminal(input: {
       action: "pos_terminal.auto_enroll",
       entityType: "pos_terminal",
       entityId: terminalId,
-      after: { name: terminalName, warehouseId, userId: input.userId },
+      after: { name: effectiveName, warehouseId: effectiveWarehouse.id, userId: effectiveUserId },
     });
 
     return {
       token,
       terminal: {
         id: terminalId,
-        name: terminalName,
+        name: effectiveName,
         companyId: company.id,
         companyName: company.name,
-        warehouseId,
-        warehouseName: warehouse.name,
+        warehouseId: effectiveWarehouse.id,
+        warehouseName: effectiveWarehouse.name,
       },
       cashier: { id: cashier.id, name: cashier.name, email: cashier.email },
     };
@@ -372,12 +403,33 @@ export async function listTerminalActorOptions(
   tx: Tx,
   companyId: string,
 ): Promise<Array<{ userId: string; name: string; role: string }>> {
-  return tx
-    .select({ userId: member.userId, name: user.name, role: member.role })
-    .from(member)
-    .innerJoin(user, eq(user.id, member.userId))
-    .where(eq(member.organizationId, companyId))
-    .orderBy(user.name);
+  const [rows, customRoles] = await Promise.all([
+    tx
+      .select({ userId: member.userId, name: user.name, role: member.role })
+      .from(member)
+      .innerJoin(user, eq(user.id, member.userId))
+      .where(eq(member.organizationId, companyId))
+      .orderBy(user.name),
+    tx
+      .select({
+        key: companyRoles.key,
+        permissions: companyRoles.permissions,
+        isActive: companyRoles.isActive,
+      })
+      .from(companyRoles)
+      .where(eq(companyRoles.companyId, companyId)),
+  ]);
+  const customByKey = new Map(customRoles.map((row) => [row.key, row]));
+  // Hanya anggota yang benar-benar memegang pos.sell; terminal dengan aktor
+  // non-POS akan langsung ditolak resolvePosDevice dan membingungkan admin.
+  return rows.filter((row) => {
+    if (builtinRole(row.role)) return permissionsFor(row.role).includes("pos.sell");
+    const custom = customByKey.get(row.role);
+    const permissions = custom?.isActive
+      ? sanitizePermissions(custom.permissions)
+      : permissionsFor("viewer");
+    return permissions.includes("pos.sell");
+  });
 }
 
 export async function revokePosTerminal(
@@ -508,6 +560,11 @@ export async function resolvePosTerminalByToken(
       permissions = sanitizePermissions(customRole.permissions);
     }
     if (!permissions.includes("pos.sell")) return null;
+    // CORE-04: module switch perusahaan adalah kill switch operasional.
+    // Token yang sudah paired tidak boleh terus bertransaksi setelah POS
+    // dimatikan; terminal harus pairing/aktivasi ulang setelah dinyalakan.
+    const settings = await getCompanySettingsRow(tx, terminal.companyId);
+    if (!isModuleEnabled(settings, "pos")) return null;
     const stale =
       !terminal.lastSeenAt ||
       Date.now() - terminal.lastSeenAt.getTime() > LAST_SEEN_TOUCH_MS;
@@ -576,6 +633,15 @@ export async function consumePairingCode(rawCode: string): Promise<PairingResult
     if (!terminal || terminal.status !== "active") return null;
     const token = generateDeviceToken();
     const now = new Date();
+    // CORE-05: klaim kode secara atomik sebelum mengganti token. Dua
+    // request bersamaan hanya satu yang mendapat baris; yang kalah
+    // berhenti tanpa menimpa token pemenang.
+    const [claimed] = await tx
+      .update(posPairingCodes)
+      .set({ usedAt: now })
+      .where(and(eq(posPairingCodes.id, pairing.id), isNull(posPairingCodes.usedAt)))
+      .returning({ id: posPairingCodes.id });
+    if (!claimed) return null;
     await tx
       .update(posTerminals)
       .set({
@@ -585,10 +651,6 @@ export async function consumePairingCode(rawCode: string): Promise<PairingResult
         updatedAt: now,
       })
       .where(eq(posTerminals.id, terminal.id));
-    await tx
-      .update(posPairingCodes)
-      .set({ usedAt: now })
-      .where(eq(posPairingCodes.id, pairing.id));
     return {
       token,
       terminal: {

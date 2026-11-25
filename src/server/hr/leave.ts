@@ -7,6 +7,7 @@ import {
   eq,
   gte,
   lte,
+  ne,
   sql,
 } from "drizzle-orm";
 import type { Tx } from "@/db";
@@ -212,7 +213,8 @@ export async function submitLeaveRequest(
     .select({ id: employees.id })
     .from(employees)
     .where(and(eq(employees.companyId, input.companyId), eq(employees.id, input.employeeId)))
-    .limit(1);
+    .limit(1)
+    .for("update");
   if (!person) throw new AppError("VALIDATION", "Karyawan tidak ditemukan di perusahaan ini.");
   const [type] = await tx
     .select()
@@ -293,7 +295,25 @@ export async function decideLeaveRequest(
     .where(and(eq(leaveRequests.companyId, input.companyId), eq(leaveRequests.id, input.id)))
     .limit(1);
   if (!request) throw new AppError("NOT_FOUND", "Pengajuan cuti tidak ditemukan.");
-  if (request.status !== "pending") {
+
+  // Serialize leave submissions and approvals per employee. This keeps
+  // overlap and quota checks from racing another transaction, then the
+  // locked request is re-read before applying its state transition.
+  const [person] = await tx
+    .select({ id: employees.id })
+    .from(employees)
+    .where(and(eq(employees.companyId, input.companyId), eq(employees.id, request.employeeId)))
+    .limit(1)
+    .for("update");
+  if (!person) throw new AppError("NOT_FOUND", "Karyawan pengajuan cuti tidak ditemukan.");
+  const [lockedRequest] = await tx
+    .select()
+    .from(leaveRequests)
+    .where(and(eq(leaveRequests.companyId, input.companyId), eq(leaveRequests.id, input.id)))
+    .limit(1)
+    .for("update");
+  if (!lockedRequest) throw new AppError("NOT_FOUND", "Pengajuan cuti tidak ditemukan.");
+  if (lockedRequest.status !== "pending") {
     throw new AppError("INVALID_STATE", "Pengajuan cuti sudah diputuskan.");
   }
   // WF-003: Maker-checker (Four-Eyes Principle) — pembuat pengajuan cuti tidak dapat mengesahkan sendiri
@@ -303,8 +323,8 @@ export async function decideLeaveRequest(
     input.userRole !== "owner" &&
     input.userRole !== "admin" &&
     input.userId &&
-    request.createdBy &&
-    request.createdBy === input.userId
+    lockedRequest.createdBy &&
+    lockedRequest.createdBy === input.userId
   ) {
     throw new AppError(
       "FORBIDDEN",
@@ -312,20 +332,41 @@ export async function decideLeaveRequest(
     );
   }
   if (input.approve) {
+    const [overlap] = await tx
+      .select({ id: leaveRequests.id })
+      .from(leaveRequests)
+      .where(
+        and(
+          eq(leaveRequests.companyId, input.companyId),
+          eq(leaveRequests.employeeId, lockedRequest.employeeId),
+          ne(leaveRequests.id, lockedRequest.id),
+          sql`${leaveRequests.status} in ('pending', 'approved')`,
+          lte(leaveRequests.startDate, lockedRequest.endDate),
+          gte(leaveRequests.endDate, lockedRequest.startDate),
+        ),
+      )
+      .limit(1);
+    if (overlap) {
+      throw new AppError(
+        "VALIDATION",
+        "Ada pengajuan cuti aktif lain yang tumpang tindih. Selesaikan pengajuan lain sebelum menyetujui yang ini.",
+      );
+    }
+
     // Saldo diperiksa ulang saat pengesahan: persetujuan lain dapat
     // saja menghabiskan saldo sesudah pengajuan dibuat.
-    const year = Number(request.startDate.slice(0, 4));
+    const year = Number(lockedRequest.startDate.slice(0, 4));
     const balance = await getLeaveBalance(
       tx,
       input.companyId,
-      request.employeeId,
-      request.leaveTypeId,
+      lockedRequest.employeeId,
+      lockedRequest.leaveTypeId,
       year,
     );
-    if (balance.available !== null && d(request.days).gt(balance.available)) {
+    if (balance.available !== null && d(lockedRequest.days).gt(balance.available)) {
       throw new AppError(
         "VALIDATION",
-        `Saldo cuti tidak lagi mencukupi (sisa ${balance.available.toFixed(2)} hari, pengajuan ${d(request.days).toFixed(2)} hari).`,
+        `Saldo cuti tidak lagi mencukupi (sisa ${balance.available.toFixed(2)} hari, pengajuan ${d(lockedRequest.days).toFixed(2)} hari).`,
       );
     }
   }
@@ -340,7 +381,7 @@ export async function decideLeaveRequest(
     .where(
       and(
         eq(leaveRequests.companyId, input.companyId),
-        eq(leaveRequests.id, input.id),
+        eq(leaveRequests.id, lockedRequest.id),
         eq(leaveRequests.status, "pending"),
       ),
     )
@@ -353,15 +394,15 @@ export async function decideLeaveRequest(
     const [type] = await tx
       .select({ name: leaveTypes.name })
       .from(leaveTypes)
-      .where(eq(leaveTypes.id, request.leaveTypeId))
+      .where(eq(leaveTypes.id, lockedRequest.leaveTypeId))
       .limit(1);
-    const workDays = await getEmployeeWorkDays(tx, input.companyId, request.employeeId, request.startDate);
-    for (const date of enumerateDates(request.startDate, request.endDate)) {
+    const workDays = await getEmployeeWorkDays(tx, input.companyId, lockedRequest.employeeId, lockedRequest.startDate);
+    for (const date of enumerateDates(lockedRequest.startDate, lockedRequest.endDate)) {
       if (!isWorkday(date, workDays)) continue;
       await recordAttendance(tx, {
         companyId: input.companyId,
         userId: input.userId,
-        employeeId: request.employeeId,
+        employeeId: lockedRequest.employeeId,
         date,
         status: "leave",
         note: `Cuti: ${type?.name ?? ""}`.trim(),

@@ -36,22 +36,35 @@ const CSV_RESPONSE_HEADERS = {
   "Cache-Control": "no-store",
 };
 
+export function safeDownloadFilename(filename: string, fallback = "export"): string {
+  const base = filename
+    .split(/[\\/]/)
+    .pop()
+    ?.replace(/[\x00-\x1f\x7f"';]+/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/\.{2,}/g, ".")
+    .trim();
+  return base && base.length > 0 ? base.slice(0, 160) : fallback;
+}
+
 export function csvResponse(filename: string, content: string): Response {
+  const safeName = safeDownloadFilename(filename, "export.csv");
   return new Response(`\uFEFF${content}`, {
     status: 200,
     headers: {
       ...CSV_RESPONSE_HEADERS,
-      "Content-Disposition": `attachment; filename="${filename}"`,
+      "Content-Disposition": `attachment; filename="${safeName}"`,
     },
   });
 }
 
 export function csvStreamResponse(filename: string, body: ReadableStream<Uint8Array>): Response {
+  const safeName = safeDownloadFilename(filename, "export.csv");
   return new Response(body, {
     status: 200,
     headers: {
       ...CSV_RESPONSE_HEADERS,
-      "Content-Disposition": `attachment; filename="${filename}"`,
+      "Content-Disposition": `attachment; filename="${safeName}"`,
     },
   });
 }

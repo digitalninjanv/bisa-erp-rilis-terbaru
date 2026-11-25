@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -25,6 +25,8 @@ export function PurchaseOrderForm({
   triggerPrimary?: boolean;
 }) {
   const router = useRouter();
+  const idempotencyKey = useRef<string | null>(null);
+  const submitting = useRef(false);
   const [open, setOpen] = useState(false);
   const [supplierId, setSupplierId] = useState(suppliers[0]?.id ?? "");
   const [date, setDate] = useState(today);
@@ -52,9 +54,11 @@ export function PurchaseOrderForm({
     setLines([]);
     setNotes("");
     setFormErrors([]);
+    idempotencyKey.current = null;
   }
 
   async function submit() {
+    if (submitting.current) return;
     const errs: FormErrorItem[] = [];
     if (!supplierId) {
       errs.push({ field: "po-supplier", message: "Pilih pemasok untuk pesanan pembelian." });
@@ -68,29 +72,44 @@ export function PurchaseOrderForm({
       return;
     }
     setFormErrors([]);
+    submitting.current = true;
     setBusy(true);
-    const result = await savePurchaseOrderAction({
-      supplierId,
-      date,
-      expectedDate: expectedDate || undefined,
-      notes: notes || undefined,
-      lines: lines.map((line) => ({
-        productId: line.productId,
-        qty: line.qty,
-        unitCost: line.unitCost,
-        // S2: baris berkemasan — qty & harga per kemasan apa adanya;
-        // konversi ke satuan dasar terjadi di domain.
-        packagingId: line.packagingId || undefined,
-      })),
-    });
-    setBusy(false);
-    if (!result.ok) {
-      setFormErrors([{ message: result.message }]);
-      toast.error(result.message);
-      return;
+    try {
+      const key = idempotencyKey.current ?? (idempotencyKey.current = crypto.randomUUID());
+      const result = await savePurchaseOrderAction({
+        idempotencyKey: key,
+        supplierId,
+        date,
+        expectedDate: expectedDate || undefined,
+        notes: notes || undefined,
+        lines: lines.map((line) => ({
+          productId: line.productId,
+          qty: line.qty,
+          unitCost: line.unitCost,
+          // S2: baris berkemasan — qty & harga per kemasan apa adanya;
+          // konversi ke satuan dasar terjadi di domain.
+          packagingId: line.packagingId || undefined,
+        })),
+      });
+      if (!result.ok) {
+        setFormErrors([{ message: result.message }]);
+        toast.error(result.message);
+        return;
+      }
+      idempotencyKey.current = null;
+      toast.success(`Pesanan pembelian ${result.data.number} dibuat sebagai draft.`);
+      router.push(`/app/gudang/pembelian/${result.data.id}`);
+    } catch {
+      // Keep the same key after an ambiguous network failure: a retry
+      // must never create a second purchase order if the first commit
+      // succeeded but its response was lost.
+      const message = "Koneksi terputus saat menyimpan. Periksa daftar PO sebelum mencoba lagi.";
+      setFormErrors([{ message }]);
+      toast.error(message);
+    } finally {
+      submitting.current = false;
+      setBusy(false);
     }
-    toast.success(`Pesanan pembelian ${result.data.number} dibuat sebagai draft.`);
-    router.push(`/app/gudang/pembelian/${result.data.id}`);
   }
 
   // A-25 U3: form PO memakai DocumentForm bersama — kepala inti

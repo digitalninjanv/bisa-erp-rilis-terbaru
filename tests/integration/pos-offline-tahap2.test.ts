@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { adminDb, adminSql } from "@/db/admin";
 import {
   account,
@@ -29,7 +29,13 @@ import { d } from "@/lib/money";
 import { todayISO } from "@/lib/format";
 import { applyStockMovement } from "@/server/inventory";
 import { closeCashSession, openCashSession } from "@/server/pos";
-import { listOfflineReviewQueue, processOfflineSaleItem } from "@/server/pos-offline";
+import {
+  getOfflineReviewQueueSummary,
+  listOfflineReviewQueue,
+  listOfflineReviewQueuePage,
+  parseOfflineReviewCursor,
+  processOfflineSaleItem,
+} from "@/server/pos-offline";
 import {
   postOfflineReviewItemAction,
   resolveOfflineOutboxAction,
@@ -299,6 +305,19 @@ describe("POS3-01 antrean besar ber-chunk", () => {
       .from(sales)
       .where(eq(sales.companyId, ORG));
     expect(sold.length).toBeGreaterThanOrEqual(59);
+    const attempts = await adminDb
+      .select({ payload: outbox.payload })
+      .from(outbox)
+      .where(and(
+        eq(outbox.companyId, ORG),
+        eq(outbox.eventType, "pos_offline_sale"),
+        sql`${outbox.payload}->>'clientKey' like 't2-chunk-%'`,
+      ));
+    const payloads = attempts.map((row) => row.payload as Record<string, unknown>);
+    const terminalAttempts = payloads.filter((payload) => payload.status === "synced");
+    expect(terminalAttempts).toHaveLength(59);
+    expect(terminalAttempts.every((payload) => !("sale" in payload))).toBe(true);
+    expect(payloads.find((payload) => payload.status === "failed")?.sale).toBeTruthy();
     const [stock] = await adminDb
       .select({ qty: stockOnHand.qty })
       .from(stockOnHand)
@@ -942,5 +961,55 @@ describe("Rekonsiliasi checkout browser dan pesanan tahan offline", () => {
     expect(remaining).toBeUndefined();
     const replayed = await syncOfflineSalesAction({ items: [offline] });
     expect(replayed).toMatchObject({ ok: true, data: [{ status: "duplicate" }] });
+  });
+});
+
+describe("POS offline review queue pagination", () => {
+  it("pages unresolved summaries with a stable cursor without repeating rows", async () => {
+    const rows = Array.from({ length: 51 }, (_, index) => ({
+      companyId: ORG,
+      eventType: "pos_offline_sale",
+      createdAt: sql`TIMESTAMPTZ '2099-01-01 00:00:00.123456+00' + ${index} * interval '1 microsecond'`,
+      payload: {
+        clientKey: "pagination-" + index,
+        status: "failed",
+        message: null,
+        date: TODAY,
+        warehouseId: whId,
+        lineCount: 1,
+        totalPayments: 1000,
+        queuedAt: new Date(Date.UTC(2099, 0, 1, 0, 0, index)).toISOString(),
+        sale: { clientKey: "pagination-" + index, lines: [{ productId: crypto.randomUUID() }] },
+      },
+    }));
+    await adminDb.insert(outbox).values(rows);
+
+    const first = await withCompany(ORG, (tx) =>
+      listOfflineReviewQueuePage(tx, ORG, { includePayload: false }),
+    );
+    expect(first.items).toHaveLength(50);
+    expect(first.olderCursor).toBeTruthy();
+    expect(first.items.every((row) => !("sale" in row.payload))).toBe(true);
+
+    const cursor = parseOfflineReviewCursor(first.olderCursor ?? undefined);
+    expect(cursor).toBeTruthy();
+    expect(parseOfflineReviewCursor(
+      "2099-01-01T00:00:00.123456Z~0194d5f0-0000-7000-8000-000000000001",
+    )?.createdAt).toBe("2099-01-01T00:00:00.123456Z");
+    const second = await withCompany(ORG, (tx) =>
+      listOfflineReviewQueuePage(tx, ORG, { cursor, direction: "older" }),
+    );
+    expect(second.items.some((row) => row.payload.clientKey === "pagination-0")).toBe(true);
+    expect(second.items.some((row) => first.items.some((firstRow) => firstRow.id === row.id))).toBe(false);
+
+    const backCursor = parseOfflineReviewCursor(second.newerCursor ?? undefined);
+    const back = await withCompany(ORG, (tx) =>
+      listOfflineReviewQueuePage(tx, ORG, { cursor: backCursor, direction: "newer" }),
+    );
+    expect(back.items.map((row) => row.id)).toEqual(first.items.map((row) => row.id));
+
+    const summary = await withCompany(ORG, (tx) => getOfflineReviewQueueSummary(tx, ORG));
+    expect(summary.total).toBeGreaterThanOrEqual(51);
+    expect(summary.failed).toBeGreaterThanOrEqual(51);
   });
 });

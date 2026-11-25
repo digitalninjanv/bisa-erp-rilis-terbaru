@@ -35,7 +35,11 @@ const OWNER_ID = "01900000-0000-7000-8000-00000000aa14";
 const suffix = crypto.randomUUID().replaceAll("-", "").slice(0, 6);
 const email = (name: string) => `${name}.${suffix}@uji.local`;
 
-const session = vi.hoisted(() => ({ role: "owner", userId: "" }));
+const session = vi.hoisted(() => ({
+  role: "owner",
+  userId: "",
+  permissions: null as string[] | null,
+}));
 session.userId = OWNER_ID;
 
 vi.mock("next/cache", () => ({ revalidatePath: () => undefined }));
@@ -43,13 +47,15 @@ vi.mock("@/lib/session", async () => {
   const { AppError } = await import("@/lib/errors");
   const { permissionsFor } = await import("@/lib/permissions");
   const requirePermission = async (permission: string) => {
-    if (!permissionsFor(session.role).includes(permission as never)) {
+    const held = session.permissions ?? permissionsFor(session.role);
+    if (!held.includes(permission as never)) {
       throw new AppError("FORBIDDEN", "Peran ini tidak memiliki izin untuk mengelola pengguna.");
     }
     return {
       company: { id: ORG_ID },
       user: { id: session.userId },
       role: session.role,
+      permissions: held,
     };
   };
   return {
@@ -335,6 +341,25 @@ describe("gerbang peran & penjaga owner", () => {
     expect(await memberRole(secondOwnerId)).toBe("owner");
   });
 
+  it("demote dua owner serentak tetap menyisakan satu owner", async () => {
+    session.userId = OWNER_ID;
+    const demoteSecond = updateUserRoleAction({ userId: secondOwnerId, role: "manager" });
+    session.userId = secondOwnerId;
+    const demoteFirst = updateUserRoleAction({ userId: OWNER_ID, role: "manager" });
+    const results = await Promise.all([demoteSecond, demoteFirst]);
+
+    expect(results.filter((result) => result.ok)).toHaveLength(1);
+    const roles = [await memberRole(OWNER_ID), await memberRole(secondOwnerId)];
+    expect(roles.filter((role) => role === "owner")).toHaveLength(1);
+
+    // Restore the fixture for following role and removal cases.
+    const currentOwner = roles[0] === "owner" ? OWNER_ID : secondOwnerId;
+    const demotedOwner = currentOwner === OWNER_ID ? secondOwnerId : OWNER_ID;
+    session.userId = currentOwner;
+    await updateUserRoleAction({ userId: demotedOwner, role: "owner" });
+    session.userId = OWNER_ID;
+  });
+
   it("MD-03: updateUserRolesBatchAction menolak bila salah satu akun adalah diri sendiri atau menghapus owner terakhir", async () => {
     const selfBatch = await updateUserRolesBatchAction({
       updates: [
@@ -358,6 +383,32 @@ describe("gerbang peran & penjaga owner", () => {
     const hash = await credentialHash(cashierUserId);
     expect(await verifyPassword({ hash: hash!, password: "ManagerBaru123!" })).toBe(true);
     expect(await verifyPassword({ hash: hash!, password: "Kasir12345!" })).toBe(false);
+  });
+
+  it("CORE-01: user-admin kustom tidak bisa memberi peran atau mereset akun yang lebih tinggi", async () => {
+    session.role = "custom-user-admin";
+    session.permissions = ["users.manage"];
+    try {
+      const createManager = await createCompanyUserAction({
+        name: "Manager Liar",
+        email: email("managerliar"),
+        password: "Manager12345!",
+        role: "manager",
+      });
+      expect(createManager.ok).toBe(false);
+      if (!createManager.ok) expect(createManager.code).toBe("FORBIDDEN");
+
+      const resetWarehouse = await resetUserPasswordAction({
+        userId: cashierUserId,
+        password: "AmbilAlih123!",
+      });
+      expect(resetWarehouse.ok).toBe(false);
+      if (!resetWarehouse.ok) expect(resetWarehouse.code).toBe("FORBIDDEN");
+    } finally {
+      session.role = "owner";
+      session.permissions = null;
+      session.userId = OWNER_ID;
+    }
   });
 
   it("mencabut owner ditolak; mencabut pengguna biasa bekerja; mencabut diri sendiri ditolak", async () => {

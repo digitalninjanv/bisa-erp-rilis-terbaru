@@ -15,6 +15,7 @@ import {
 } from "drizzle-orm";
 import type { Tx } from "@/db";
 import {
+  BALANCE_SECTIONS,
   defaultSection,
   INCOME_SECTIONS,
   resolveCashFlowGroup,
@@ -129,6 +130,7 @@ export async function getIncomeStatement(
   const rangeTotals = opts?.excludeClosing
     ? await accountTotalsInRangeExcludingSources(tx, companyId, range.from, range.to, [
         "year_end_closing",
+        "year_end_closing_reversal",
       ])
     : await accountTotalsInRange(tx, companyId, range.from, range.to);
   const rows = accountRows.map((row) => {
@@ -247,17 +249,24 @@ export async function getBalanceSheet(tx: Tx, companyId: string, asOf: string) {
   // comparison column. Accounts with no movement at all stay hidden.
   const withBalance = rows
     .filter((row) => !d(row.debit).isZero() || !d(row.credit).isZero())
-    .map((row) => ({
-      accountId: row.accountId,
-      code: row.code,
-      name: row.name,
-      type: row.type,
-      section: resolveSection(row),
-      amount: (row.type === "asset"
-        ? d(row.debit).minus(row.credit)
-        : d(row.credit).minus(row.debit)
-      ).toNumber(),
-    }));
+    .map((row) => {
+      const resolved = resolveSection(row);
+      const section =
+        resolved && BALANCE_SECTIONS.includes(resolved)
+          ? resolved
+          : (defaultSection(row.type) ?? "current_asset");
+      return {
+        accountId: row.accountId,
+        code: row.code,
+        name: row.name,
+        type: row.type,
+        section,
+        amount: (row.type === "asset"
+          ? d(row.debit).minus(row.credit)
+          : d(row.credit).minus(row.debit)
+        ).toNumber(),
+      };
+    });
 
   const profit = await getIncomeStatement(tx, companyId, { from: "1900-01-01", to: asOf });
   const currentAssets = withBalance.filter((r) => r.section === "current_asset");

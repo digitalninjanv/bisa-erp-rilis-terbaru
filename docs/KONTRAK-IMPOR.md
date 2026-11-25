@@ -139,6 +139,13 @@ Batas:
 
 Untuk stok awal, tab **Stok Awal** menerima `Gudang Saldo Awal`, `Kuantitas Saldo Awal`, `Nilai Satuan`, dan `Per Tanggal`; satu penerimaan dibuat per kombinasi gudang+tanggal. Bila kolom tanggal kosong, dipakai tanggal cut-off di layar.
 
+Aturan stok awal (2026-11-25):
+
+- `Kuantitas Saldo Awal` selalu dalam **satuan dasar** produk (PCS/kg/...), bukan jumlah dus/kemasan.
+- `Nilai Satuan` wajib untuk qty selain 0. Baris dengan biaya 0 hanya diterima bila pengguna mencentang **“Izinkan biaya 0”** di wizard; tanpa konfirmasi, baris ditolak agar harga pokok/AVCO tidak turun ke 0 tanpa disadari.
+- Template XLSX/CSV memakai contoh produk nyata yang aktif, stok-tracked, bukan serial/batch, dan berbiaya > 0. Bila belum ada produk yang layak, sheet Data hanya berisi header.
+- Baris penerimaan di-insert dalam potongan 500 baris untuk menghindari batas 65.534 parameter PostgreSQL; satu job tetap menjadi satu penerimaan per grup gudang+tanggal.
+
 Penjaga duplikat T4R-5 bekerja per **produk antar-job**: stok awal satu produk hanya diterima dari satu job impor. Karena itu, masukkan seluruh gudang untuk produk yang sama dalam satu file (format “saldo awal per gudang” Accurate memang mendukung baris produk berulang per gudang). Memecah per gudang ke beberapa job akan membuat job kedua melewati produk yang sudah diterima job pertama.
 
 ## Bukti

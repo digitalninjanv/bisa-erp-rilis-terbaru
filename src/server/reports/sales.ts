@@ -55,12 +55,14 @@ export async function getSalesSummary(tx: Tx, companyId: string, range: Range) {
 
   const [returnsRow] = await tx
     .select({
-      total: sql<string>`coalesce(sum(${saleReturns.total}), 0)`,
+      // goods_total = nilai barang; total = nilai voucher kredit (fallback
+      // untuk baris lama). Laporan penjualan harus memakai nilai barang.
+      total: sql<string>`coalesce(sum(coalesce(${saleReturns.goodsTotal}, ${saleReturns.total})), 0)`,
       cost: sql<string>`coalesce(sum(${saleReturns.costTotal}), 0)`,
       // PPN pada retur mengikuti proporsi penjualan asal; penjualan
       // menyimpan total inklusif pajak, jadi laba retur harus
       // mengembalikan porsi pajak itu juga.
-      tax: sql<string>`coalesce(sum(case when ${sales.total} > 0 then (${saleReturns.total} * ${sales.taxTotal}) / ${sales.total} else 0 end), 0)`,
+      tax: sql<string>`coalesce(sum(case when ${sales.total} > 0 then (coalesce(${saleReturns.goodsTotal}, ${saleReturns.total}) * ${sales.taxTotal}) / ${sales.total} else 0 end), 0)`,
       transactions: count(),
     })
     .from(saleReturns)
@@ -112,7 +114,7 @@ export async function getSalesByDay(tx: Tx, companyId: string, range: Range) {
     tx
       .select({
         date: saleReturns.date,
-        total: sql<string>`coalesce(sum(${saleReturns.total}), 0)`,
+        total: sql<string>`coalesce(sum(coalesce(${saleReturns.goodsTotal}, ${saleReturns.total})), 0)`,
       })
       .from(saleReturns)
       .where(
@@ -163,7 +165,7 @@ export async function getSalesByCashier(tx: Tx, companyId: string, range: Range)
     tx
       .select({
         id: sales.cashierId,
-        total: sql<string>`coalesce(sum(${saleReturns.total}), 0)`,
+        total: sql<string>`coalesce(sum(coalesce(${saleReturns.goodsTotal}, ${saleReturns.total})), 0)`,
       })
       .from(saleReturns)
       .innerJoin(sales, eq(saleReturns.saleId, sales.id))
@@ -305,7 +307,21 @@ export async function getTopProducts(tx: Tx, companyId: string, range: Range, li
       { qty: d(row.qty), total: d(row.total), profit: d(row.profit) },
     ]),
   );
-  return rows
+  // Produk yang hanya muncul di sisi retur (penjualannya di periode lain)
+  // tetap harus muncul dengan nilai negatif; jangan membuang retur dari
+  // daftar hanya karena tidak ada baris penjualan periode ini.
+  const soldProductIds = new Set(rows.map((row) => row.productId));
+  const returnOnlyRows = returns
+    .filter((row) => !soldProductIds.has(row.productId))
+    .map((row) => ({
+      productId: row.productId,
+      name: row.name,
+      sku: row.sku,
+      qty: "0",
+      total: "0",
+      profit: "0",
+    }));
+  return [...rows, ...returnOnlyRows]
     .map((r) => {
       const ret = returnsByProduct.get(r.productId);
       return {
@@ -485,5 +501,6 @@ export async function listHeldSales(tx: Tx, companyId: string) {
     .from(sales)
     .leftJoin(customers, eq(sales.customerId, customers.id))
     .where(and(eq(sales.companyId, companyId), eq(sales.status, "held")))
-    .orderBy(desc(sales.createdAt));
+    .orderBy(desc(sales.createdAt))
+    .limit(200);
 }

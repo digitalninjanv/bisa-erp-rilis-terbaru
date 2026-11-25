@@ -291,6 +291,7 @@ type QuoteProductRow = {
   trackStock: boolean;
   trackBatch: boolean;
   trackSerial: boolean;
+  isTaxExempt: boolean;
 };
 
 
@@ -403,6 +404,7 @@ async function loadQuoteContext(tx: Tx, ctx: QuoteContext): Promise<LoadedQuoteC
       trackStock: products.trackStock,
       trackBatch: products.trackBatch,
       trackSerial: products.trackSerial,
+      isTaxExempt: products.isTaxExempt,
     })
     .from(products)
     .where(and(eq(products.companyId, ctx.companyId), inArray(products.id, ids))).orderBy(products.id);
@@ -424,18 +426,20 @@ async function loadQuoteContext(tx: Tx, ctx: QuoteContext): Promise<LoadedQuoteC
   }
   // SIM-2 S7B-2 Batch 4: reservasi aktif mengurangi stok TERSEDIA pada
   // quote & checkout (keduanya lewat sini) tanpa mengubah ledger.
-  const reservedQuantities = await getReservedQuantities(tx, ctx.companyId, ctx.warehouseId, ids);
+  // GDG1-09: kecualikan reservasi yang sedang diklaim keranjang ini langsung di SQL.
+  const reservedQuantities = await getReservedQuantities(
+    tx,
+    ctx.companyId,
+    ctx.warehouseId,
+    ids,
+    new Date(),
+    { excludeReservationId: ctx.reservationId ?? null },
+  );
   for (const [productId, qty] of reservedQuantities) {
     if (qty.gt(0)) {
       stock.set(productId, Math.max(0, (stock.get(productId) ?? 0) - qty.toNumber()));
     }
   }
-  // FIX-GDG Tahap 2 (GDG1-09): checkout yang MENYEBUT reservasinya
-  // memenuhi janji itu — qty reservasi produk tersebut ditambahkan
-  // kembali ke stok tersedia keranjang ini (stok yang memang
-  // disisihkan untuknya). Reservasi tidak sah/kedaluwarsa/gudang lain
-  // atau produknya tidak ada di keranjang → ditolak di sini, bukan
-  // diam-diam diabaikan.
   if (ctx.reservationId) {
     const reservation = await getConsumableReservation(tx, {
       companyId: ctx.companyId,
@@ -448,10 +452,6 @@ async function loadQuoteContext(tx: Tx, ctx: QuoteContext): Promise<LoadedQuoteC
         "Produk pada reservasi yang dirujuk tidak ada di keranjang ini.",
       );
     }
-    stock.set(
-      reservation.productId,
-      (stock.get(reservation.productId) ?? 0) + d(reservation.qty).toNumber(),
-    );
   }
   // SIM-2 S2 (audit PPN): saklar PPN per perusahaan. Tarif tetap
   // tersimpan di pengaturan; selama saklar mati, tarif diperlakukan 0
@@ -639,6 +639,7 @@ function priceQuoteLines(
     // dibebankan di struk offline; harga normal per satuan dasarnya
     // adalah snapshot itu dibagi faktor cuplikan baris.
     let normalUnitPrice = d(product.salePrice);
+    let grossOverride: Decimal | null = null;
     if (ctx.frozenPrices) {
       if (line.unitPrice == null) {
         throw new AppError(
@@ -646,20 +647,24 @@ function priceQuoteLines(
           `Snapshot harga ${product.name} tidak lengkap; penyelesaian pada harga struk offline tidak dapat dilakukan untuk item ini.`,
         );
       }
-      normalUnitPrice = pack
-        ? d(pricePerBaseUnit(line.unitPrice, pack.isi))
-        : d(line.unitPrice);
+      if (pack) {
+        grossOverride = qtyInput.mul(d(line.unitPrice));
+        normalUnitPrice = grossOverride.div(qty);
+      } else {
+        normalUnitPrice = d(line.unitPrice);
+      }
     } else if (pack) {
-      // S4: harga jual kemasan INDEPENDEN dari master — harga per
-      // satuan dasarnya diturunkan dari harga kemasan ÷ isi. Kemasan
-      // tanpa harga jual sendiri jatuh ke harga satuan dasar produk
-      // (menjual satu Dus = isi × harga pcs), tidak pernah sebaliknya.
-      normalUnitPrice =
-        pack.salePrice != null
-          ? d(pricePerBaseUnit(pack.salePrice, pack.isi))
-          : d(product.salePrice);
+      // S4: harga jual kemasan INDEPENDEN dari master — hitung bruto langsung
+      // dari qtyInput × harga kemasan agar pembagian isi non-bulat (mis. /6, /12)
+      // tidak memicu selisih 0.0002 akibat pembulatan unit 4 desimal.
+      if (pack.salePrice != null) {
+        grossOverride = qtyInput.mul(d(pack.salePrice));
+        normalUnitPrice = grossOverride.div(qty);
+      } else {
+        normalUnitPrice = d(product.salePrice);
+      }
     }
-    const gross = qty.mul(normalUnitPrice);
+    const gross = grossOverride ?? qty.mul(normalUnitPrice);
 
     let groupUnitPrice = normalUnitPrice;
     let appliedType: DiscountType | null = null;
@@ -724,7 +729,8 @@ function priceQuoteLines(
 
     const discount = D.min(D.max(groupDiscount.plus(manualDiscount), 0), gross);
     const net = gross.minus(discount);
-    const tax = lineTax({ net, rate: taxRate, inclusive: true });
+    const lineTaxRate = product.isTaxExempt ? d(0) : taxRate;
+    const tax = lineTax({ net, rate: lineTaxRate, inclusive: true });
 
     subtotal = subtotal.plus(gross);
     discountTotal = discountTotal.plus(discount);
@@ -749,7 +755,7 @@ function priceQuoteLines(
       discountAmount: discount.toNumber(),
       groupDiscountAmount: groupDiscount.toNumber(),
       manualDiscountAmount: manualDiscount.toNumber(),
-      taxRate: taxRate.toNumber(),
+      taxRate: lineTaxRate.toNumber(),
       taxAmount: tax.toNumber(),
       lineTotal: net.toNumber(),
       unitCost: d(product.costPrice).toNumber(),

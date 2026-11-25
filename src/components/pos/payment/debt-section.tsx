@@ -61,6 +61,11 @@ export function DebtSection(props: {
                           ) : null}
                           {" "}· Sisa limit: <span className="num font-semibold text-foreground">{formatIDR(customer.remainingCredit ?? (customer.creditLimit - (customer.currentDebt ?? 0)))}</span>
                         </span>
+                      ) : customer.creditLimitUnlimited === false ? (
+                        <span className="mt-1 block text-xs font-medium leading-4 text-destructive">
+                          Kredit tidak diizinkan untuk pelanggan ini. Atur limit di master pelanggan
+                          bila supervisor menyetujui.
+                        </span>
                       ) : null}
                     </span>
                     <button

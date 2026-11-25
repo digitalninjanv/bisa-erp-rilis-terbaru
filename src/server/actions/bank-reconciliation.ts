@@ -10,7 +10,7 @@ import {
   matchLine,
   unmatchLine,
 } from "@/server/bank-reconciliation";
-import { requirePermission } from "@/lib/session";
+import { requirePermissionInModule } from "@/lib/session";
 import { AppError, guard } from "@/lib/errors";
 import { parseInput } from "@/lib/action-validation";
 
@@ -24,7 +24,7 @@ const importSchema = z.object({
 
 export async function importStatementAction(input: z.input<typeof importSchema>) {
   return guard(async () => {
-    const ctx = await requirePermission("accounting.manage");
+    const ctx = await requirePermissionInModule("accounting.manage", "akuntansi");
     const data = parseInput(importSchema, input);
     const result = await withCompany(ctx.company.id, (tx) =>
       importStatement(tx, {
@@ -46,7 +46,7 @@ const accountSchema = z.object({
 
 export async function autoMatchAction(input: z.input<typeof accountSchema>) {
   return guard(async () => {
-    const ctx = await requirePermission("accounting.manage");
+    const ctx = await requirePermissionInModule("accounting.manage", "akuntansi");
     const data = parseInput(accountSchema, input);
     const result = await withCompany(ctx.company.id, (tx) =>
       autoMatch(tx, { companyId: ctx.company.id, accountId: data.accountId }),
@@ -63,7 +63,7 @@ const matchSchema = z.object({
 
 export async function matchLineAction(input: z.input<typeof matchSchema>) {
   return guard(async () => {
-    const ctx = await requirePermission("accounting.manage");
+    const ctx = await requirePermissionInModule("accounting.manage", "akuntansi");
     const data = parseInput(matchSchema, input);
     await withCompany(ctx.company.id, (tx) =>
       matchLine(tx, {
@@ -83,7 +83,7 @@ const statementLineSchema = z.object({
 
 export async function unmatchLineAction(input: z.input<typeof statementLineSchema>) {
   return guard(async () => {
-    const ctx = await requirePermission("accounting.manage");
+    const ctx = await requirePermissionInModule("accounting.manage", "akuntansi");
     const data = parseInput(statementLineSchema, input);
     await withCompany(ctx.company.id, (tx) =>
       unmatchLine(tx, { companyId: ctx.company.id, statementLineId: data.statementLineId }),
@@ -107,7 +107,7 @@ const createJournalSchema = z.object({
 
 export async function createJournalFromLineAction(input: z.input<typeof createJournalSchema>) {
   return guard(async () => {
-    const ctx = await requirePermission("accounting.manage");
+    const ctx = await requirePermissionInModule("accounting.manage", "akuntansi");
     const data = parseInput(createJournalSchema, input);
     if (Boolean(data.secondContraAccountId) !== Boolean(data.secondContraAmount)) {
       throw new AppError(

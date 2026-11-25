@@ -137,13 +137,12 @@ export function MobileNav({
   return (
     <>
       {/* A-26 Q9 (K-11): pemicu menu & baris drawer adalah target
-          sentuh primer mobile — pemicu visual 32px diperluas area
-          sentuhnya ke 44px (after:-inset-1.5), baris drawer min-h-11. */}
+          sentuh primer mobile — pemicu visual 44px, baris drawer min-h-11. */}
       <button
         ref={triggerRef}
         type="button"
         onClick={() => setOpen(true)}
-        className="no-print relative grid size-8 place-items-center rounded-md border border-border bg-card text-foreground after:absolute after:-inset-1.5 lg:hidden"
+        className="no-print relative grid size-11 place-items-center rounded-md border border-border bg-card text-foreground lg:hidden"
         aria-label="Buka menu"
       >
         <Menu className="size-4" />

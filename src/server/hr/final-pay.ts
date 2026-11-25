@@ -524,6 +524,9 @@ export async function processFinalPay(tx: Tx, input: FinalPayInput): Promise<Fin
       );
   }
 
+  let accessRevocation:
+    | Awaited<ReturnType<typeof revokeEmployeeUserAccess>>
+    | null = null;
   if (input.terminateNow) {
     const updatedEmployee: EmployeeRow = {
       ...employee,
@@ -552,7 +555,7 @@ export async function processFinalPay(tx: Tx, input: FinalPayInput): Promise<Fin
       note: `Pembayaran akhir ${number}; kasbon tertagih Rp${advanceCharge.toFixed(0)}; pinjaman tertagih Rp${loanCharge.toFixed(0)}; sisa piutang terbuka Rp${leftover.toFixed(0)}.`,
       drafts,
     });
-    await revokeEmployeeUserAccess(tx, companyId, employee.name, userId);
+    accessRevocation = await revokeEmployeeUserAccess(tx, companyId, employee.name, userId);
   }
 
   await writeAudit(tx, {
@@ -573,6 +576,7 @@ export async function processFinalPay(tx: Tx, input: FinalPayInput): Promise<Fin
       loanCharged: toDb(loanCharge),
       leftoverReceivable: toDb(leftover),
       acknowledgeShortfall: Boolean(input.acknowledgeShortfall),
+      accessRevocation,
     },
   });
 

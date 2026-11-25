@@ -40,11 +40,15 @@ export async function getCashSessionSummary(tx: Tx, companyId: string, sessionId
     .select()
     .from(cashMovements)
     .where(and(eq(cashMovements.companyId, companyId), eq(cashMovements.sessionId, sessionId)))
-    .orderBy(desc(cashMovements.createdAt));
+    .orderBy(desc(cashMovements.createdAt))
+    // Tampilan sesi terbuka hanya butuh mutasi terbaru; total resmi
+    // dihitung SQL agregat di bawah dan tidak terpengaruh limit ini.
+    .limit(500);
 
   const [totals] = await tx.execute(sql`
     select coalesce(sum(amount), 0) as expected,
            coalesce(sum(case when type = 'sale' then amount else 0 end), 0) as sales,
+           coalesce(sum(case when type = 'receivable' then amount else 0 end), 0) as receivables,
            coalesce(sum(case when type = 'refund' then amount else 0 end), 0) as refunds,
            coalesce(sum(case when type = 'deposit' then amount else 0 end), 0) as deposits,
            coalesce(sum(case when type = 'withdrawal' then amount else 0 end), 0) as withdrawals
@@ -52,6 +56,7 @@ export async function getCashSessionSummary(tx: Tx, companyId: string, sessionId
   `) as unknown as {
     expected: string;
     sales: string;
+    receivables: string;
     refunds: string;
     deposits: string;
     withdrawals: string;
@@ -81,6 +86,7 @@ export async function getCashSessionSummary(tx: Tx, companyId: string, sessionId
     movements,
     expected: Number(totals?.expected ?? 0),
     sales: Number(totals?.sales ?? 0),
+    receivables: Number(totals?.receivables ?? 0),
     refunds: Number(totals?.refunds ?? 0),
     // POS-CASH-01 (D-9): mutasi deposit tersimpan negatif (kas keluar
     // laci ke bank), tetapi ringkasan melaporkannya sebagai total setor
@@ -100,6 +106,8 @@ export async function getCashSessionSummary(tx: Tx, companyId: string, sessionId
 export type CashSessionTotals = {
   /** Penjualan tunai (mutasi 'sale', selalu positif). */
   salesTotal: string;
+  /** Penerimaan piutang tunai (mutasi 'receivable', bukan omzet). */
+  receivableTotal: string;
   /** Penjualan non-tunai (QRIS, bank, kartu, kredit pelanggan). */
   nonCashSalesTotal: string;
   /** Refund tunai, dilaporkan positif sebagai uang keluar. */
@@ -118,6 +126,7 @@ export type CashSessionTotals = {
 
 const emptySessionTotals = (): CashSessionTotals => ({
   salesTotal: "0",
+  receivableTotal: "0",
   nonCashSalesTotal: "0",
   refundsTotal: "0",
   depositsTotal: "0",
@@ -148,6 +157,7 @@ async function aggregateCashSessionMovements(
     .select({
       sessionId: cashMovements.sessionId,
       sales: sql<string>`coalesce(sum(case when ${cashMovements.type} = 'sale' then ${cashMovements.amount} else 0 end), 0)`,
+      receivables: sql<string>`coalesce(sum(case when ${cashMovements.type} = 'receivable' then ${cashMovements.amount} else 0 end), 0)`,
       refunds: sql<string>`coalesce(sum(case when ${cashMovements.type} = 'refund' then ${cashMovements.amount} else 0 end), 0)`,
       deposits: sql<string>`coalesce(sum(case when ${cashMovements.type} = 'deposit' then ${cashMovements.amount} else 0 end), 0)`,
       withdrawals: sql<string>`coalesce(sum(case when ${cashMovements.type} = 'withdrawal' then ${cashMovements.amount} else 0 end), 0)`,
@@ -158,16 +168,18 @@ async function aggregateCashSessionMovements(
     .groupBy(cashMovements.sessionId);
   for (const row of rows) {
     const sales = d(row.sales);
+    const receivables = d(row.receivables);
     const refunds = d(row.refunds).abs();
     const deposits = d(row.deposits).abs();
     const withdrawals = d(row.withdrawals);
     totals.set(row.sessionId, {
       salesTotal: toDb(sales),
+      receivableTotal: toDb(receivables),
       nonCashSalesTotal: "0",
       refundsTotal: toDb(refunds),
       depositsTotal: toDb(deposits),
       withdrawalsTotal: toDb(withdrawals),
-      totalIn: toDb(sales.plus(withdrawals)),
+      totalIn: toDb(sales.plus(receivables).plus(withdrawals)),
       totalOut: toDb(refunds.plus(deposits)),
       expectedCash: toDb(d(row.total)),
     });
@@ -366,7 +378,12 @@ export async function listCashSessionCashiers(tx: Tx, companyId: string) {
  * (agregat yang sama dengan daftar) + seluruh mutasi kas kronologis
  * menaik beserta nama pelakunya.
  */
-export async function getCashSessionHistoryDetail(tx: Tx, companyId: string, sessionId: string) {
+export async function getCashSessionHistoryDetail(
+  tx: Tx,
+  companyId: string,
+  sessionId: string,
+  options: { movementLimit?: number } = {},
+) {
   const [row] = await tx
     .select(cashSessionHistoryColumns)
     .from(cashSessions)
@@ -379,22 +396,38 @@ export async function getCashSessionHistoryDetail(tx: Tx, companyId: string, ses
   const [totalsMap, countsMap, movements, paymentRows] = await Promise.all([
     aggregateCashSessionMovements(tx, companyId, [sessionId]),
     countSessionTransactions(tx, companyId, [sessionId]),
-    tx
-      .select({
-        id: cashMovements.id,
-        type: cashMovements.type,
-        amount: cashMovements.amount,
-        notes: cashMovements.notes,
-        referenceType: cashMovements.referenceType,
-        createdAt: cashMovements.createdAt,
-        createdByName: user.name,
-      })
-      .from(cashMovements)
-      .leftJoin(user, eq(cashMovements.createdBy, user.id))
-      .where(and(eq(cashMovements.companyId, companyId), eq(cashMovements.sessionId, sessionId)))
-      // createdAt saja tidak cukup urut di dalam satu transaksi —
-      // id uuidv7 menjadi penentu urutan kedua yang monoton.
-      .orderBy(asc(cashMovements.createdAt), asc(cashMovements.id)),
+    (options.movementLimit
+      ? tx
+          .select({
+            id: cashMovements.id,
+            type: cashMovements.type,
+            amount: cashMovements.amount,
+            notes: cashMovements.notes,
+            referenceType: cashMovements.referenceType,
+            createdAt: cashMovements.createdAt,
+            createdByName: user.name,
+          })
+          .from(cashMovements)
+          .leftJoin(user, eq(cashMovements.createdBy, user.id))
+          .where(and(eq(cashMovements.companyId, companyId), eq(cashMovements.sessionId, sessionId)))
+          .orderBy(desc(cashMovements.createdAt), desc(cashMovements.id))
+          .limit(options.movementLimit)
+      : tx
+          .select({
+            id: cashMovements.id,
+            type: cashMovements.type,
+            amount: cashMovements.amount,
+            notes: cashMovements.notes,
+            referenceType: cashMovements.referenceType,
+            createdAt: cashMovements.createdAt,
+            createdByName: user.name,
+          })
+          .from(cashMovements)
+          .leftJoin(user, eq(cashMovements.createdBy, user.id))
+          .where(and(eq(cashMovements.companyId, companyId), eq(cashMovements.sessionId, sessionId)))
+          // createdAt saja tidak cukup urut di dalam satu transaksi —
+          // id uuidv7 menjadi penentu urutan kedua yang monoton.
+          .orderBy(asc(cashMovements.createdAt), asc(cashMovements.id))),
     tx
       .select({
         methodName: paymentMethods.name,
@@ -416,13 +449,22 @@ export async function getCashSessionHistoryDetail(tx: Tx, companyId: string, ses
       .orderBy(desc(sql`sum(${salePayments.amount})`)),
   ]);
 
+  if (options.movementLimit) movements.reverse();
   const historyRow = toHistoryRow(
     row,
     totalsMap.get(sessionId) ?? emptySessionTotals(),
     countsMap.get(sessionId) ?? 0,
   );
-  const { salesTotal, refundsTotal, depositsTotal, withdrawalsTotal, totalIn, totalOut, expectedCash } =
-    historyRow;
+  const {
+    salesTotal,
+    receivableTotal,
+    refundsTotal,
+    depositsTotal,
+    withdrawalsTotal,
+    totalIn,
+    totalOut,
+    expectedCash,
+  } = historyRow;
   const paymentBreakdown = paymentRows.map((row) => ({
     methodName: row.methodName ?? "Pembayaran",
     methodType: row.methodType ?? "other",
@@ -446,7 +488,16 @@ export async function getCashSessionHistoryDetail(tx: Tx, companyId: string, ses
       countedCash: historyRow.countedCash,
       difference: historyRow.difference,
     },
-    totals: { salesTotal, refundsTotal, depositsTotal, withdrawalsTotal, totalIn, totalOut, expectedCash },
+    totals: {
+      salesTotal,
+      receivableTotal,
+      refundsTotal,
+      depositsTotal,
+      withdrawalsTotal,
+      totalIn,
+      totalOut,
+      expectedCash,
+    },
     transactionCount: historyRow.transactionCount,
     movements,
     paymentBreakdown,

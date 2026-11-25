@@ -17,6 +17,7 @@ import { guard } from "@/lib/errors";
 import { amountField, isoDateField, parseInput } from "@/lib/action-validation";
 
 const purchaseOrderSchema = z.object({
+  idempotencyKey: z.string().trim().min(8).max(120).optional(),
   supplierId: z.string().uuid("Pemasok wajib dipilih."),
   date: isoDateField,
   expectedDate: isoDateField.nullish(),
@@ -47,6 +48,7 @@ export async function savePurchaseOrderAction(input: z.input<typeof purchaseOrde
         date: data.date,
         expectedDate: data.expectedDate ?? null,
         notes: data.notes,
+        idempotencyKey: data.idempotencyKey ?? null,
         lines: data.lines.map((line) => ({ ...line, packagingId: line.packagingId ?? null })),
       }),
     );

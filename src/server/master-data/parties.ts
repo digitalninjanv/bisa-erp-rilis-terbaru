@@ -243,6 +243,7 @@ export type PartyDetail = {
     address: string | null;
     notes: string | null;
     creditLimit?: string;
+    creditLimitUnlimited?: boolean;
     groupId?: string | null;
     bankName?: string | null;
     bankAccountNumber?: string | null;

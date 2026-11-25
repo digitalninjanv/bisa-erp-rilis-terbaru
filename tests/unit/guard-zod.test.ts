@@ -130,3 +130,27 @@ describe("zodValidationMessage + parseInput berbagi formatter yang sama", () => 
     expect(parseMessage).toContain("Baris 1: Qty harus lebih dari 0.");
   });
 });
+
+describe("guard() mempertahankan control flow Next.js", () => {
+  it("melempar ulang NEXT_REDIRECT agar redirect login tidak menjadi INTERNAL", async () => {
+    const redirectError = Object.assign(new Error("NEXT_REDIRECT"), {
+      digest: "NEXT_REDIRECT;replace;/login;307;",
+    });
+    await expect(
+      guard(async () => {
+        throw redirectError;
+      }),
+    ).rejects.toBe(redirectError);
+  });
+
+  it("melempar ulang NEXT_NOT_FOUND", async () => {
+    const notFoundError = Object.assign(new Error("NEXT_NOT_FOUND"), {
+      digest: "NEXT_NOT_FOUND",
+    });
+    await expect(
+      guard(async () => {
+        throw notFoundError;
+      }),
+    ).rejects.toBe(notFoundError);
+  });
+});

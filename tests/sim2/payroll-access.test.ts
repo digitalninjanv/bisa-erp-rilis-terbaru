@@ -58,7 +58,7 @@ vi.mock("@/lib/session", async () => {
     permissions: (sessionState.permissions ??
       perms.permissionsFor(sessionState.role)) as never,
     modules: (sessionState.modules ?? perms.modulesFor(sessionState.role)) as never,
-    enabledModules: ["pos", "gudang", "akuntansi"] as never,
+    enabledModules: ["pos", "gudang", "akuntansi", "hr"] as never,
   });
   const requireAuth = async () => buildCtx();
   const requirePermission = async (permission: never) => {

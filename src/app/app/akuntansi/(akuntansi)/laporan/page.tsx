@@ -1,7 +1,7 @@
 import "@/components/akuntansi/financial-report.css";
 import Link from "next/link";
 import { CheckSquare, Download, Printer, Square } from "lucide-react";
-import { withCompanyReadOnly } from "@/db/tenant";
+import { withCompanyReadOnlySnapshot } from "@/db/tenant";
 import {
   getBalanceSheet,
   getCashFlow,
@@ -108,7 +108,7 @@ export default async function ReportsPage({
     return { from: addDaysISO(priorTo, -(span - 1)), to: priorTo };
   })();
 
-  const data = await withCompanyReadOnly(ctx.company.id, async (tx) => {
+  const data = await withCompanyReadOnlySnapshot(ctx.company.id, async (tx) => {
     if (tab === "laba-rugi") {
       const value = await getIncomeStatement(tx, ctx.company.id, range, { excludeClosing: true });
       const prior = priorDates
@@ -150,7 +150,7 @@ export default async function ReportsPage({
   });
 
   // CT-12: the printed head carries the company's legal name.
-  const legalName = await withCompanyReadOnly(ctx.company.id, async (tx) => {
+  const legalName = await withCompanyReadOnlySnapshot(ctx.company.id, async (tx) => {
     const row = await getCompanySettingsRow(tx, ctx.company.id);
     return row?.legalName ?? ctx.company.name;
   });

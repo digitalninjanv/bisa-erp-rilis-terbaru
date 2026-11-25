@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
-import { AppError, type AppErrorCode } from "@/lib/errors";
+import { AppError, isNextControlFlowError, type AppErrorCode } from "@/lib/errors";
 
 /**
  * SEC-006: route export/API tidak boleh membocorkan 500 untuk kesalahan
@@ -21,6 +21,19 @@ const STATUS_BY_CODE: Record<AppErrorCode, number> = {
 };
 
 export function apiErrorResponse(error: unknown): Response {
+  if (isNextControlFlowError(error)) {
+    const digest = (error as { digest?: string }).digest ?? "";
+    if (digest.startsWith("NEXT_NOT_FOUND")) {
+      return NextResponse.json(
+        { error: "Data tidak ditemukan.", code: "NOT_FOUND" },
+        { status: 404 },
+      );
+    }
+    return NextResponse.json(
+      { error: "Sesi masuk sudah berakhir. Masuk kembali.", code: "FORBIDDEN" },
+      { status: 401 },
+    );
+  }
   if (error instanceof ZodError) {
     return NextResponse.json(
       {

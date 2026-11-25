@@ -330,4 +330,15 @@ describe("PaymentPanel — tender terformat & label sisa (UX-B04/B07)", () => {
     expect(html).toContain('id="pos-tendered-input"');
     expect(html).toContain('value="50.000"');
   });
+
+  it("aksi nota terakhir pada panel pembayaran memakai printToken tanpa memaksa salinan=1", () => {
+    const html = renderPanel({
+      mode: "single",
+      lastSale: { id: "sale-123", number: "INV-2026-00002", receiptToken: "tok-abc" },
+      canReprint: true,
+    });
+    expect(html).toContain("Cetak / lihat nota INV-2026-00002");
+    expect(html).toContain("printToken=tok-abc");
+    expect(html).not.toContain("salinan=1");
+  });
 });

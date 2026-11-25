@@ -2,6 +2,8 @@
 // dari pos-terminal.tsx agar hook & panel hasil ekstraksi dapat memakainya
 // tanpa impor melingkar ke komponen induk.
 
+import type { PromotionRule } from "@/lib/pos/promotions";
+
 /** Program Satuan Kemasan S4: kemasan aktif produk untuk terminal. */
 export type PackagingOption = {
   id: string;
@@ -26,6 +28,7 @@ export type ProductOption = {
   // POS-1: produk jasa (trackStock=false) tidak pernah "habis".
   trackStock: boolean;
   trackSerial?: boolean;
+  isTaxExempt?: boolean;
   unitCode: string;
   /** S4: kemasan aktif produk (pemilih satuan baris + resolusi pindai). */
   packagings?: PackagingOption[];
@@ -54,6 +57,8 @@ export type CustomerOption = {
   name: string;
   phone: string | null;
   creditLimit: number;
+  /** false = limit 0 berarti kredit tidak diizinkan (quick-add POS). */
+  creditLimitUnlimited?: boolean;
   currentDebt?: number;
   remainingCredit?: number;
 };
@@ -118,6 +123,7 @@ export type PaymentEntry = {
 
 export type ReceiptProfile = {
   companyName: string;
+  taxId?: string | null;
   address: string | null;
   phone: string | null;
   headerText: string | null;
@@ -150,11 +156,14 @@ export type PosTerminalProps = {
   sessionId?: string | null;
   heldCount: number;
   resumeId: string | null;
+  /** Nomor retur exchange/store-credit dari voucher, diterapkan ke pembayaran. */
+  prefillCreditNumber?: string | null;
   posOfflineEnabled?: boolean;
   offlineTaxRate?: number;
   offlineRoundingMode?: string;
   receivableDefaultTermDays?: number;
   reservations?: TerminalReservation[];
+  promotions?: PromotionRule[];
   allowNegativeStock?: boolean;
   receiptProfile: ReceiptProfile;
 };

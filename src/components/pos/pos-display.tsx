@@ -199,7 +199,7 @@ export function PosDisplayControls({
         aria-label={fullscreen ? "Keluar layar penuh" : "Layar penuh"}
         aria-pressed={fullscreen}
         className={cn(
-          "flex h-11 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium transition-colors",
+          "hidden h-11 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium transition-colors lg:flex",
           fullscreen
             ? "border-primary bg-primary/5 text-foreground"
             : "border-border bg-background text-muted-foreground hover:bg-muted",
@@ -214,15 +214,16 @@ export function PosDisplayControls({
           type="button"
           onClick={() => setOpen(true)}
           title="Atur tampilan POS"
+          aria-label="Atur tampilan POS"
           aria-expanded={open}
           aria-haspopup="dialog"
           className={cn(
-            "flex h-11 items-center gap-2 rounded-md border border-border bg-background px-3 text-[13px] font-semibold text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            "flex h-11 min-w-11 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-[13px] font-semibold text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:justify-start",
             open && "bg-muted",
           )}
         >
           <SlidersHorizontal className="size-4" />
-          <span>Tampilan</span>
+          <span className="hidden sm:inline">Tampilan</span>
         </button>
 
         <SheetContent

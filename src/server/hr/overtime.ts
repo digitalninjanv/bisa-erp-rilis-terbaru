@@ -8,6 +8,7 @@ import {
   eq,
   gte,
   lte,
+  sql,
 } from "drizzle-orm";
 import type { Tx } from "@/db";
 import {
@@ -45,9 +46,31 @@ export async function submitOvertimeRequest(
     .select({ id: employees.id })
     .from(employees)
     .where(and(eq(employees.companyId, input.companyId), eq(employees.id, input.employeeId)))
-    .limit(1);
+    .limit(1)
+    .for("update");
   if (!person) throw new AppError("VALIDATION", "Karyawan tidak ditemukan di perusahaan ini.");
   if (!d(input.hours).gt(0)) throw new AppError("VALIDATION", "Jam lembur harus lebih dari nol.");
+
+  // WF-012: Pengajuan lembur memiliki penjaga tumpang tindih per karyawan dan tanggal
+  const overlapping = await tx
+    .select({ id: overtimeRequests.id })
+    .from(overtimeRequests)
+    .where(
+      and(
+        eq(overtimeRequests.companyId, input.companyId),
+        eq(overtimeRequests.employeeId, input.employeeId),
+        eq(overtimeRequests.date, input.date),
+        sql`${overtimeRequests.status} in ('pending', 'approved')`,
+      ),
+    )
+    .limit(1);
+  if (overlapping.length > 0) {
+    throw new AppError(
+      "VALIDATION",
+      `Sudah ada pengajuan lembur yang aktif (pending/disetujui) untuk karyawan ini pada tanggal ${input.date}.`,
+    );
+  }
+
   const [row] = await tx
     .insert(overtimeRequests)
     .values({
@@ -77,6 +100,8 @@ export async function decideOvertimeRequest(
   const [request] = await tx
     .select({
       id: overtimeRequests.id,
+      employeeId: overtimeRequests.employeeId,
+      date: overtimeRequests.date,
       status: overtimeRequests.status,
       createdBy: overtimeRequests.createdBy,
     })
@@ -87,7 +112,31 @@ export async function decideOvertimeRequest(
   if (!request) {
     throw new AppError("NOT_FOUND", "Pengajuan lembur tidak ditemukan.");
   }
-  if (request.status !== "pending") {
+
+  // Submission and decisions serialize on the employee row. Re-read the
+  // request after obtaining that lock so concurrent decisions cannot use
+  // stale state, then lock the request row for its state transition.
+  const [person] = await tx
+    .select({ id: employees.id })
+    .from(employees)
+    .where(and(eq(employees.companyId, input.companyId), eq(employees.id, request.employeeId)))
+    .limit(1)
+    .for("update");
+  if (!person) throw new AppError("NOT_FOUND", "Karyawan pengajuan lembur tidak ditemukan.");
+  const [lockedRequest] = await tx
+    .select({
+      id: overtimeRequests.id,
+      employeeId: overtimeRequests.employeeId,
+      date: overtimeRequests.date,
+      status: overtimeRequests.status,
+      createdBy: overtimeRequests.createdBy,
+    })
+    .from(overtimeRequests)
+    .where(and(eq(overtimeRequests.companyId, input.companyId), eq(overtimeRequests.id, input.id)))
+    .limit(1)
+    .for("update");
+  if (!lockedRequest) throw new AppError("NOT_FOUND", "Pengajuan lembur tidak ditemukan.");
+  if (lockedRequest.status !== "pending") {
     throw new AppError("INVALID_STATE", "Pengajuan lembur sudah diputuskan.");
   }
 
@@ -98,13 +147,35 @@ export async function decideOvertimeRequest(
     input.userRole !== "owner" &&
     input.userRole !== "admin" &&
     input.userId &&
-    request.createdBy &&
-    request.createdBy === input.userId
+    lockedRequest.createdBy &&
+    lockedRequest.createdBy === input.userId
   ) {
     throw new AppError(
       "FORBIDDEN",
       "Prinsip Maker-Checker (Four-Eyes Principle): Pengajuan lembur tidak dapat disahkan oleh pembuat pengajuan itu sendiri.",
     );
+  }
+
+  if (input.approve) {
+    const [overlap] = await tx
+      .select({ id: overtimeRequests.id })
+      .from(overtimeRequests)
+      .where(
+        and(
+          eq(overtimeRequests.companyId, input.companyId),
+          eq(overtimeRequests.employeeId, lockedRequest.employeeId),
+          eq(overtimeRequests.date, lockedRequest.date),
+          sql`${overtimeRequests.status} in ('pending', 'approved')`,
+          sql`${overtimeRequests.id} <> ${lockedRequest.id}`,
+        ),
+      )
+      .limit(1);
+    if (overlap) {
+      throw new AppError(
+        "VALIDATION",
+        `Ada pengajuan lembur aktif lain untuk karyawan ini pada tanggal ${lockedRequest.date}. Selesaikan pengajuan lain sebelum menyetujui yang ini.`,
+      );
+    }
   }
 
   const [row] = await tx

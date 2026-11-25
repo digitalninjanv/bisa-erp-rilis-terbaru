@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AutoFilterForm } from "@/components/blocks/auto-filter-form";
 import { BookOpen, Landmark } from "lucide-react";
-import { withCompanyReadOnly } from "@/db/tenant";
+import { withCompanyReadOnly, withCompanyReadOnlySnapshot } from "@/db/tenant";
 import {
   getReconciliationFormData,
   getReconciliationSummary,
@@ -152,7 +152,7 @@ export default async function RekonsiliasiPage({
   const sPage = Math.max(1, Number(params.page ?? "1") || 1);
   const bPage = Math.max(1, Number(params.bpage ?? "1") || 1);
 
-  const data = await withCompanyReadOnly(ctx.company.id, async (tx) => {
+  const data = await withCompanyReadOnlySnapshot(ctx.company.id, async (tx) => {
     const [summary, statements, books, candidates, imports, formData] = await Promise.all([
       getReconciliationSummary(tx, ctx.company.id, accountId),
       listStatementLines(tx, ctx.company.id, accountId, {

@@ -108,7 +108,6 @@ const FROZEN: Record<string, string[]> = {
     "server/supplier-returns/payables.ts",
   ],
   partyPayments: [
-    "server/actions/pos.ts",
     "server/master-data/merge.ts",
     "server/opening-balances/payments.ts",
     "server/party-writeoffs.ts",
@@ -133,7 +132,6 @@ const FROZEN: Record<string, string[]> = {
   purchaseAdvances: ["server/master-data/merge.ts", "server/purchase-advances.ts"],
   purchaseOrders: ["server/master-data/merge.ts", "server/purchasing.ts"],
   sales: [
-    "server/actions/pos.ts",
     "server/master-data/merge.ts",
     "server/party-writeoffs.ts",
     "server/pos/receivables.ts",

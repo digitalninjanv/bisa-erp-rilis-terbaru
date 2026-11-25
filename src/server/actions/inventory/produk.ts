@@ -78,6 +78,7 @@ const productSchema = z.object({
   trackStock: z.boolean().optional(),
   trackBatch: z.boolean().optional(),
   trackSerial: z.boolean().optional(),
+  isTaxExempt: z.boolean().optional(),
   isActive: z.boolean().optional(),
   notes: z.string().max(500).optional(),
   // T5-2 (D-16): custom-field values (definition key → raw string);
@@ -184,6 +185,29 @@ export async function saveProductAction(input: z.input<typeof productSchema>) {
           "Mengubah harga jual atau harga pokok produk memerlukan izin Ubah harga produk (peran manajer ke atas). Harga tersimpan tidak berubah — simpan perubahan field lain saja, atau minta pengguna berizin yang menerapkan perubahan harga ini.",
         );
       }
+      // INV-02: harga kemasan juga harga jual yang dipakai POS. Gerbang
+      // inventory.price tidak boleh dilewati lewat editor kemasan.
+      if (data.id && data.packagings && !can(ctx, "inventory.price")) {
+        const existingPackagings =
+          (await listPackagingsForProducts(tx, ctx.company.id, [data.id])).get(data.id) ?? [];
+        const byId = new Map(existingPackagings.map((row) => [row.id, row]));
+        const priceDiffers = (left: string | null, right: string | null | undefined) =>
+          !d(left ?? 0).eq(d(right ?? 0));
+        for (const next of data.packagings) {
+          const previous = next.id ? byId.get(next.id) : undefined;
+          const changesPrice =
+            (previous &&
+              (priceDiffers(previous.salePrice, next.salePrice) ||
+                priceDiffers(previous.buyPrice, next.buyPrice))) ||
+            (!previous && (next.salePrice != null || next.buyPrice != null));
+          if (changesPrice) {
+            throw new AppError(
+              "FORBIDDEN",
+              "Membuat atau mengubah harga kemasan memerlukan izin Ubah harga produk (inventory.price). Simpan perubahan non-harga, atau minta pengguna berizin.",
+            );
+          }
+        }
+      }
       const attributes = await resolveCustomAttributes(
         tx,
         ctx.company.id,
@@ -232,6 +256,7 @@ export async function saveProductAction(input: z.input<typeof productSchema>) {
         trackStock: data.trackStock ?? true,
         trackBatch: data.trackBatch ?? false,
         trackSerial: data.trackSerial ?? false,
+        isTaxExempt: data.isTaxExempt ?? false,
         attributes,
         isActive: data.isActive ?? true,
         notes: data.notes,

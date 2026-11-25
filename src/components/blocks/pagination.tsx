@@ -55,7 +55,7 @@ export function Pagination({
           className={cn(
             // A-22 K6: target sentuh minimum h-8 (sebelumnya size-6 =
             // 24px, satu-satunya kontrol bersama di bawah lantai 28px).
-            "grid size-8 place-items-center rounded border border-border bg-card transition-colors hover:bg-muted",
+            "grid size-11 place-items-center rounded border border-border bg-card transition-colors hover:bg-muted lg:size-8",
             page === 1 && "pointer-events-none opacity-40",
           )}
         >
@@ -70,7 +70,7 @@ export function Pagination({
           aria-disabled={page === pages}
           tabIndex={page === pages ? -1 : undefined}
           className={cn(
-            "grid size-8 place-items-center rounded border border-border bg-card transition-colors hover:bg-muted",
+            "grid size-11 place-items-center rounded border border-border bg-card transition-colors hover:bg-muted lg:size-8",
             page === pages && "pointer-events-none opacity-40",
           )}
         >

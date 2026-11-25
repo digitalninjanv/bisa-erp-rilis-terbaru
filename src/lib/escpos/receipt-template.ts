@@ -143,6 +143,45 @@ export function formatReceiptToEscPos(data: ReceiptData): Uint8Array {
 }
 
 /**
+ * Susun payload ESC/POS untuk halaman uji coba koneksi printer thermal.
+ */
+export function buildTestReceiptEscPos(params: {
+  paperWidth: "58mm" | "80mm";
+  type: string;
+  cutPaper: boolean;
+}): Uint8Array {
+  const encoder = new EscPosEncoder(params.paperWidth);
+  encoder
+    .init()
+    .align("center")
+    .bold(true)
+    .size(false, true)
+    .line("BISA ERP POS")
+    .size(false, false)
+    .bold(false)
+    .line("Uji Coba Printer Thermal")
+    .divider("=")
+    .align("left")
+    .row("Status Koneksi :", "TERHUBUNG")
+    .row("Tipe Printer   :", params.type.toUpperCase())
+    .row("Lebar Kertas   :", params.paperWidth)
+    .row("Waktu Uji      :", new Date().toLocaleTimeString("id-ID"))
+    .divider("-")
+    .align("center")
+    .line("Printer siap digunakan!")
+    .line("Cetak cepat tanpa dialog aktif.")
+    .divider("=")
+    .feed(2);
+
+  if (params.cutPaper) {
+    encoder.cut();
+  } else {
+    encoder.feed(3);
+  }
+  return encoder.encode();
+}
+
+/**
  * Format laporan tutup sesi kasir (Z-Report) atau laporan sementara (X-Report)
  * menjadi deretan byte ESC/POS siap kirim ke printer thermal 58mm / 80mm.
  */
