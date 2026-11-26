@@ -1,7 +1,7 @@
 import { chromium } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 const browser = await chromium.launch();
-const ctx = await browser.newContext({ baseURL: "http://127.0.0.1:3100", viewport: { width: 1880, height: 900 } });
+const ctx = await browser.newContext({ baseURL: process.env.BISA_BASE_URL ?? "http://127.0.0.1:3000", viewport: { width: 1880, height: 900 } });
 const login = await ctx.request.post("/api/auth/sign-in/email", { data: { email: "owner@bisa.id", password: "Bisa12345!" } });
 if (!login.ok()) throw new Error(`login ${login.status()}`);
 const page = await ctx.newPage();

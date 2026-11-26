@@ -20,16 +20,16 @@ import { playScannerBeep } from "@/lib/pos/scanner-beep";
 import { PosActionMenu } from "@/components/pos/pos-action-menu";
 import { PrinterStatusButton } from "@/components/pos/printer-modal";
 
-// Odoo 18+ menunjukkan warna kategori sebagai border-bottom pada kartu,
-// bukan sebagai fill penuh. Kartu tetap putih agar teks dan harga paling
-// mudah dibaca; warna hanya menjadi penanda kategori.
+// Warna kategori menjadi pita tipis di sisi kiri kartu, bukan isi penuh.
+// Kartu memakai kertas hangat agar harga tetap paling menonjol; warna
+// hanya membantu kasir memisahkan kelompok barang dalam sekali lirik.
 const CATEGORY_TONES = [
-  { accent: "border-b-[4px] border-b-teal-600" },
-  { accent: "border-b-[4px] border-b-indigo-600" },
-  { accent: "border-b-[4px] border-b-amber-500" },
-  { accent: "border-b-[4px] border-b-emerald-600" },
-  { accent: "border-b-[4px] border-b-sky-600" },
-  { accent: "border-b-[4px] border-b-rose-600" },
+  { accent: "border-l-[4px] border-l-teal-700" },
+  { accent: "border-l-[4px] border-l-indigo-700" },
+  { accent: "border-l-[4px] border-l-amber-600" },
+  { accent: "border-l-[4px] border-l-emerald-700" },
+  { accent: "border-l-[4px] border-l-sky-700" },
+  { accent: "border-l-[4px] border-l-rose-700" },
 ] as const;
 
 /** Warna kartu deterministik dari nama kategori (Odoo category colors). */
@@ -158,13 +158,13 @@ export function ProductCatalog(props: {
       >
         <div
           className={cn(
-            "overflow-hidden rounded-xl border border-[var(--pos-border-strong)] bg-[var(--pos-panel)] shadow-sm",
+            "overflow-hidden rounded-xl border border-[var(--pos-border-strong)] bg-[var(--pos-panel)] shadow-[var(--shadow-card)]",
             fullscreen && "lg:flex lg:min-h-0 lg:flex-1 lg:flex-col",
           )}
         >
-          <div className="flex flex-wrap items-center gap-2 border-b border-[var(--pos-border-strong)] bg-[var(--pos-header)] p-2.5">
-            <div className="relative min-w-[180px] flex-[1_1_280px]">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <div className="flex flex-wrap items-center gap-2 border-b border-[var(--pos-border-strong)] bg-[var(--pos-command)] p-2.5 text-[var(--pos-command-fg)]">
+            <div className="relative min-w-[180px] flex-[1_1_320px]">
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[var(--pos-muted)]" />
               <input
                 ref={searchRef}
                 value={search}
@@ -239,7 +239,7 @@ export function ProductCatalog(props: {
                 }}
                 placeholder="Pindai barcode / cari produk (F2)"
                 aria-label="Cari produk atau scan barcode"
-                className="h-12 w-full rounded-lg border border-[var(--pos-border-strong)] bg-white pl-10 pr-12 text-[15px] font-medium text-foreground outline-none transition-shadow placeholder:text-slate-600 focus:border-[var(--pos-action)] focus:ring-2 focus:ring-[var(--pos-action)]/25"
+                className="h-12 w-full rounded-lg border-2 border-transparent bg-[var(--pos-panel)] pl-10 pr-12 text-[15px] font-semibold text-[var(--pos-ink)] outline-none transition-shadow placeholder:font-medium placeholder:text-[var(--pos-muted)] focus:border-[var(--pos-gold)] focus:ring-2 focus:ring-[var(--pos-gold)]/35"
               />
               {search ? (
                 <button
@@ -249,7 +249,7 @@ export function ProductCatalog(props: {
                     searchRef.current?.focus();
                   }}
                   aria-label="Hapus pencarian produk"
-                  className="absolute right-1 top-1/2 grid size-11 -translate-y-1/2 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="absolute right-1 top-1/2 grid size-11 -translate-y-1/2 place-items-center rounded-md text-[var(--pos-muted)] transition-colors hover:bg-[var(--pos-tray)] hover:text-[var(--pos-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)]"
                 >
                   <X className="size-4" />
                 </button>
@@ -262,7 +262,7 @@ export function ProductCatalog(props: {
                 // Reservasi terikat gudang — ganti gudang melepaskan pilihan.
                 setReservationId(null);
               }}
-              className="h-12 min-w-[148px] max-w-full rounded-md border border-input bg-background px-3 text-[14px]"
+              className="h-12 min-w-0 max-w-full flex-1 rounded-lg border border-[var(--pos-border-strong)] bg-[var(--pos-panel)] px-3 text-[14px] font-semibold text-[var(--pos-ink)] sm:flex-none sm:min-w-[148px]"
               aria-label="Gudang"
             >
               {warehouses.map((warehouse) => (
@@ -288,7 +288,7 @@ export function ProductCatalog(props: {
                   const reservation = reservations.find((row) => row.id === value);
                   if (reservation) void applyReservation(reservation);
                 }}
-                className="h-12 max-w-[240px] rounded-md border border-input bg-background px-3 text-[14px]"
+                className="h-12 max-w-[240px] rounded-lg border border-[var(--pos-border-strong)] bg-[var(--pos-panel)] px-3 text-[14px] font-semibold text-[var(--pos-ink)]"
                 aria-label="Reservasi stok"
                 title="Tautkan penjualan ke reservasi stok aktif di gudang ini"
               >
@@ -343,26 +343,32 @@ export function ProductCatalog(props: {
                 ) : null}
               </div>
             ) : null}
-            <PosDisplayControls
-              prefs={display}
-              onChange={updateDisplay}
-              onReset={resetDisplay}
-              fullscreen={fullscreen}
-              onToggleFullscreen={() => setFullscreenOverride(!fullscreen)}
-            />
-            <PrinterStatusButton compact />
-            <PosActionMenu
-              sessionOpen={sessionOpen}
-              sessionId={sessionId}
-              heldCount={heldCount}
-              queuedCount={queuedCount}
-            >
-              <ShortcutHelp />
-            </PosActionMenu>
+            <div className="pos-toolbar-control flex items-center gap-1.5">
+              <PosDisplayControls
+                prefs={display}
+                onChange={updateDisplay}
+                onReset={resetDisplay}
+                fullscreen={fullscreen}
+                onToggleFullscreen={() => setFullscreenOverride(!fullscreen)}
+              />
+            </div>
+            <div className="pos-toolbar-control flex items-center">
+              <PrinterStatusButton compact />
+            </div>
+            <div className="pos-toolbar-control flex items-center">
+              <PosActionMenu
+                sessionOpen={sessionOpen}
+                sessionId={sessionId}
+                heldCount={heldCount}
+                queuedCount={queuedCount}
+              >
+                <ShortcutHelp />
+              </PosActionMenu>
+            </div>
           </div>
 
           {categories.length > 0 ? (
-            <div className="flex snap-x gap-1.5 overflow-x-auto overscroll-x-contain border-b border-[var(--pos-border-strong)] bg-[var(--pos-tray)] px-2.5 py-2 pr-6 [mask-image:linear-gradient(to_right,black_calc(100%-28px),transparent)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="flex snap-x gap-1.5 overflow-x-auto overscroll-x-contain border-b border-[var(--pos-border-strong)] bg-[var(--pos-surface-alt)] px-2.5 py-2 pr-6 [mask-image:linear-gradient(to_right,black_calc(100%-28px),transparent)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <button
                 type="button"
                 aria-pressed={selectedCategory === ""}
@@ -371,10 +377,10 @@ export function ProductCatalog(props: {
                   setSearch("");
                 }}
                 className={cn(
-                  "inline-flex h-11 shrink-0 items-center rounded-full px-4 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "inline-flex h-11 shrink-0 items-center rounded-full px-4 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--pos-surface-alt)]",
                   selectedCategory === ""
-                    ? "border border-[var(--pos-action)] bg-[var(--pos-action)] text-[var(--pos-action-fg)] shadow-sm"
-                    : "border border-input bg-background text-foreground hover:bg-muted",
+                    ? "border border-[var(--pos-command)] bg-[var(--pos-command)] text-[var(--pos-command-fg)] shadow-sm"
+                    : "border border-[var(--pos-border-strong)] bg-[var(--pos-panel)] text-[var(--pos-ink)] hover:bg-[var(--pos-tray)]",
                 )}
               >
                 Semua
@@ -389,10 +395,10 @@ export function ProductCatalog(props: {
                     setSearch("");
                   }}
                   className={cn(
-                    "inline-flex h-11 shrink-0 items-center rounded-full px-4 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    "inline-flex h-11 shrink-0 items-center rounded-full px-4 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--pos-surface-alt)]",
                     selectedCategory === category.id
-                      ? "border border-[var(--pos-action)] bg-[var(--pos-action)] text-[var(--pos-action-fg)] shadow-sm"
-                      : "border border-input bg-background text-foreground hover:bg-muted",
+                      ? "border border-[var(--pos-command)] bg-[var(--pos-command)] text-[var(--pos-command-fg)] shadow-sm"
+                      : "border border-[var(--pos-border-strong)] bg-[var(--pos-panel)] text-[var(--pos-ink)] hover:bg-[var(--pos-tray)]",
                   )}
                 >
                   {category.name}
@@ -423,7 +429,7 @@ export function ProductCatalog(props: {
                       setSearch("");
                       searchRef.current?.focus();
                     }}
-                    className="min-h-11 rounded-md border border-border bg-card px-4 text-sm font-medium transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="min-h-11 rounded-md border border-[var(--pos-border-strong)] bg-[var(--pos-panel)] px-4 text-sm font-medium text-[var(--pos-ink)] transition-colors hover:bg-[var(--pos-tray)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)]"
                   >
                     Hapus pencarian
                   </button>
@@ -453,13 +459,14 @@ export function ProductCatalog(props: {
                       aria-current={highlighted || undefined}
                       onClick={() => addProduct(product)}
                       className={cn(
-                        "group flex min-h-12 w-full touch-manipulation items-center gap-3 border text-left transition-all active:scale-[0.995] hover:border-slate-600 hover:bg-slate-50 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        "group flex min-h-12 w-full touch-manipulation items-center gap-3 border text-left transition-all hover:border-[var(--pos-command)] hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--pos-tray)]",
                         shape,
-                        "border-[var(--pos-border-strong)] bg-white shadow-sm",
-                        tone?.accent,
+                        "border-[var(--pos-border-strong)] bg-[var(--pos-panel)] shadow-[var(--shadow-card)]",
+                        !soldOut && tone?.accent,
                         display.density === "compact" ? "px-2.5 py-1.5" : "px-3 py-2",
-                        soldOut && "cursor-not-allowed border-slate-400 bg-slate-100 text-slate-600 hover:border-slate-400 hover:bg-slate-100 hover:shadow-sm",
-                        highlighted && "border-[var(--pos-action)] ring-2 ring-[var(--pos-action)]/30 hover:border-[var(--pos-action)]",
+                        soldOut && "cursor-not-allowed border-stone-400 bg-stone-100 text-stone-500 hover:border-stone-400 hover:shadow-none",
+                        quantity > 0 && "border-[var(--pos-command)] bg-[#eef8f2]",
+                        highlighted && "border-[var(--pos-command)] ring-2 ring-[var(--pos-command)]/25 hover:border-[var(--pos-command)]",
                       )}
                     >
                       <span className="min-w-0 flex-1">
@@ -507,8 +514,8 @@ export function ProductCatalog(props: {
                             soldOut
                               ? "bg-destructive/10 font-semibold text-destructive"
                               : product.stock <= 0
-                                ? "font-semibold text-tone-amber"
-                                : "bg-slate-200 text-slate-800",
+                                ? "bg-[var(--pos-tray)] font-semibold text-tone-amber"
+                                : "bg-[var(--pos-tray)] text-[var(--pos-ink)]",
                             font.badge,
                           )}
                         >
@@ -533,16 +540,16 @@ export function ProductCatalog(props: {
                     aria-current={highlighted || undefined}
                     onClick={() => addProduct(product)}
                     className={cn(
-                      "group flex touch-manipulation flex-col justify-between border text-left transition-all active:scale-[0.99] hover:border-slate-600 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      "group flex touch-manipulation flex-col justify-between border text-left transition-all hover:border-[var(--pos-command)] hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--pos-tray)]",
                       shape,
-                      "border-[var(--pos-border-strong)] bg-white shadow-sm",
-                      tone?.accent,
+                      "border-[var(--pos-border-strong)] bg-[var(--pos-panel)] shadow-[var(--shadow-card)]",
+                      !soldOut && tone?.accent,
                       display.density === "compact" ? "p-2" : "p-2.5",
                       display.density === "compact" ? "min-h-[96px]" : "min-h-[120px]",
-                      quantity > 0 && "border-[var(--pos-action)] bg-[var(--pos-action-soft)] ring-2 ring-[var(--pos-action)]/30",
-                      soldOut && "cursor-not-allowed border-slate-400 bg-slate-100 text-slate-600 hover:border-slate-400 hover:shadow-sm",
+                      quantity > 0 && "border-[var(--pos-command)] bg-[#eef8f2] ring-2 ring-[var(--pos-command)]/20",
+                      soldOut && "cursor-not-allowed border-stone-400 bg-stone-100 text-stone-500 hover:border-stone-400 hover:shadow-none",
                       highlighted &&
-                        "border-[var(--pos-action)] ring-2 ring-[var(--pos-action)]/30 hover:border-[var(--pos-action)]",
+                        "border-[var(--pos-command)] ring-2 ring-[var(--pos-command)]/25 hover:border-[var(--pos-command)]",
                     )}
                   >
                     <span className={cn("line-clamp-2 font-semibold leading-snug text-foreground", font.name)}>{product.name}</span>
@@ -593,8 +600,8 @@ export function ProductCatalog(props: {
                               className={cn(
                                 "num rounded px-1.5 py-0.5",
                                 product.stock > 0
-                                  ? "bg-slate-200 text-slate-800"
-                                  : "font-semibold text-tone-amber",
+                                  ? "bg-[var(--pos-tray)] text-[var(--pos-ink)]"
+                                  : "bg-[var(--pos-tray)] font-semibold text-tone-amber",
                                 font.badge,
                               )}
                             >
@@ -616,8 +623,8 @@ export function ProductCatalog(props: {
 
           {/* POS-1: pagination kisi produk — halaman diganti lewat
               offset server; kata cari/gudang baru selalu mulai dari 1. */}
-          <div className="flex items-center justify-between gap-2 border-t border-[var(--pos-border-strong)] bg-[var(--pos-header)] px-3 py-2">
-            <span className="text-xs font-semibold text-muted-foreground">
+          <div className="flex items-center justify-between gap-2 border-t border-[var(--pos-border-strong)] bg-[var(--pos-surface-alt)] px-3 py-2">
+            <span className="text-xs font-semibold text-[var(--pos-muted)]">
               Halaman {page} · {products.length} produk
               {!pageFull && page > 1 ? " · halaman terakhir" : ""}
             </span>
@@ -626,7 +633,7 @@ export function ProductCatalog(props: {
                 type="button"
                 disabled={page <= 1 || searching}
                 onClick={() => goToPage(page - 1)}
-                className="flex h-11 items-center gap-1 rounded-md border border-input bg-background px-3 text-[13px] font-semibold text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-100 disabled:text-zinc-500 disabled:opacity-100"
+                className="flex h-11 items-center gap-1 rounded-md border border-[var(--pos-border-strong)] bg-[var(--pos-panel)] px-3 text-[13px] font-semibold text-[var(--pos-ink)] hover:bg-[var(--pos-tray)] disabled:cursor-not-allowed disabled:border-stone-300 disabled:bg-stone-100 disabled:text-stone-500 disabled:opacity-100"
               >
                 <ChevronLeft className="size-3.5" /> Sebelumnya
               </button>
@@ -634,7 +641,7 @@ export function ProductCatalog(props: {
                 type="button"
                 disabled={!pageFull || searching}
                 onClick={() => goToPage(page + 1)}
-                className="flex h-11 items-center gap-1 rounded-md border border-input bg-background px-3 text-[13px] font-semibold text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-100 disabled:text-zinc-500 disabled:opacity-100"
+                className="flex h-11 items-center gap-1 rounded-md border border-[var(--pos-border-strong)] bg-[var(--pos-panel)] px-3 text-[13px] font-semibold text-[var(--pos-ink)] hover:bg-[var(--pos-tray)] disabled:cursor-not-allowed disabled:border-stone-300 disabled:bg-stone-100 disabled:text-stone-500 disabled:opacity-100"
               >
                 Berikutnya <ChevronRight className="size-3.5" />
               </button>

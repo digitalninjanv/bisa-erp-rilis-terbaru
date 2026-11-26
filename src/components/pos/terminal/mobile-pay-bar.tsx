@@ -22,25 +22,25 @@ export function MobilePayBar(props: {
 }) {
   const { cart, total, payDisabled, payLabel, checkout, onOpenCart, lastItemName = null } = props;
   return (
-      <div className="no-print fixed inset-x-0 bottom-0 z-20 flex items-center justify-between gap-3 border-t-2 border-border bg-[var(--pos-panel)] px-3 pt-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] shadow-[0_-8px_24px_-16px_rgba(9,9,11,0.25)] lg:hidden">
+      <div className="no-print fixed inset-x-0 bottom-0 z-20 flex items-center justify-between gap-3 border-t-2 border-black/20 bg-[var(--pos-command)] px-3 pt-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] text-[var(--pos-command-fg)] shadow-[0_-8px_24px_-16px_rgba(9,9,11,0.45)] lg:hidden">
         <button
           type="button"
           onClick={onOpenCart}
-          className="min-h-11 min-w-0 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-muted"
+          className="min-h-11 min-w-0 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-white/10"
           aria-label={`Buka keranjang, ${cart.length} baris`}
         >
-          <p className="truncate text-xs font-semibold text-muted-foreground">
+          <p className="truncate text-xs font-semibold text-[var(--pos-command-muted)]">
             {cart.length > 0
               ? `${lastItemName ?? "Keranjang"} · ${cart.length} baris`
               : "Keranjang · 0 baris"}
           </p>
-          <p className="num truncate text-base font-bold text-foreground">{formatIDR(total)}</p>
+          <p className="num truncate text-lg font-extrabold text-[var(--pos-gold-soft)]">{formatIDR(total)}</p>
         </button>
         <button
           type="button"
           onClick={checkout}
           disabled={payDisabled}
-          className="flex h-12 min-w-28 shrink-0 items-center justify-center rounded-md bg-[var(--pos-action)] px-5 text-[15px] font-bold text-[var(--pos-action-fg)] shadow-sm transition-colors hover:bg-[var(--pos-action-deep)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:border disabled:border-zinc-400 disabled:bg-zinc-200 disabled:text-zinc-600 disabled:shadow-none disabled:opacity-100"
+          className="flex h-12 min-w-28 shrink-0 items-center justify-center rounded-md bg-[var(--pos-gold)] px-5 text-[15px] font-bold text-[var(--pos-gold-ink)] shadow-sm transition-colors hover:bg-[var(--pos-gold-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--pos-command)] disabled:cursor-not-allowed disabled:border disabled:border-white/20 disabled:bg-white/15 disabled:text-white/60 disabled:shadow-none disabled:opacity-100"
         >
           {payLabel}
         </button>
@@ -59,17 +59,17 @@ export function MobileCartHeader({
   onClose: () => void;
 }) {
   return (
-    <div className="sticky top-0 z-10 -mx-3 flex items-center justify-between gap-2 border-b border-border bg-card px-4 py-3 backdrop-blur lg:hidden">
+    <div className="sticky top-0 z-10 -mx-3 flex items-center justify-between gap-2 border-b border-black/20 bg-[var(--pos-command)] px-4 py-3 text-[var(--pos-command-fg)] lg:hidden">
       <div>
-      <h2 className="text-base font-semibold">Keranjang &amp; pembayaran</h2>
-      <p className="text-sm text-muted-foreground">
+      <h2 className="text-base font-bold">Keranjang &amp; pembayaran</h2>
+      <p className="num text-sm text-[var(--pos-gold-soft)]">
           {count} baris · {formatIDR(total)}
         </p>
       </div>
       <button
         type="button"
         onClick={onClose}
-        className="inline-flex h-11 items-center rounded-md border border-border bg-card px-4 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="inline-flex h-11 items-center rounded-md border border-white/30 bg-white/10 px-4 text-sm font-semibold text-white hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)]"
         aria-label="Tutup keranjang"
       >
         Tutup

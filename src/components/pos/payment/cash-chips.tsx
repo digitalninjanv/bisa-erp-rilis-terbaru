@@ -39,18 +39,20 @@ export function CashChips({
 }) {
   const suggestions = cashSuggestions(total);
   const chipClass =
-    "inline-flex h-11 items-center justify-center rounded-md border border-[var(--pos-border-strong)] bg-white px-1 text-xs font-semibold text-slate-900 transition-colors hover:border-slate-600 hover:bg-slate-100 active:scale-[0.98] disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-100 disabled:text-slate-500 disabled:opacity-100";
+    "inline-flex h-11 items-center justify-center rounded-md border border-[var(--pos-border-strong)] bg-[var(--pos-panel)] px-1 text-xs font-bold text-[var(--pos-ink)] transition-colors hover:border-[var(--pos-command)] hover:bg-[var(--pos-tray)] active:scale-[0.98] disabled:cursor-not-allowed disabled:border-stone-300 disabled:bg-stone-100 disabled:text-stone-500 disabled:opacity-100";
 
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-semibold text-foreground">Saran uang diterima</span>
+        <span className="text-[11px] font-bold uppercase tracking-wide text-[var(--pos-muted)]">
+          Saran uang diterima
+        </span>
         {tendered > 0 ? (
           <button
             type="button"
             disabled={disabled}
             onClick={() => onChange(0)}
-            className="min-h-8 rounded px-2 text-xs font-semibold text-muted-foreground underline-offset-2 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
+            className="min-h-8 rounded px-2 text-xs font-semibold text-[var(--pos-muted)] underline-offset-2 hover:bg-[var(--pos-tray)] hover:text-[var(--pos-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)] disabled:opacity-40"
           >
             Hapus
           </button>
@@ -63,7 +65,7 @@ export function CashChips({
           onClick={() => onChange(total)}
           className={cn(
             chipClass,
-            "border-[var(--pos-action)] bg-[var(--pos-action-soft)] text-[var(--pos-action-text)] hover:brightness-95",
+            "border-[var(--pos-action)] bg-[var(--pos-action-soft)] text-[var(--pos-action-text)] hover:border-[var(--pos-action)] hover:bg-[var(--pos-action-soft)]",
           )}
         >
           Uang Pas
@@ -76,7 +78,8 @@ export function CashChips({
             onClick={() => onChange(value)}
             className={cn(
               chipClass,
-              tendered === value && "border-2 border-[var(--pos-action)] bg-[var(--pos-action-soft)] text-[var(--pos-action-text)]",
+              tendered === value &&
+                "border-2 border-[var(--pos-action)] bg-[var(--pos-action-soft)] text-[var(--pos-action-text)]",
             )}
             aria-label={`Isi uang diterima ${formatIDR(value)}`}
           >

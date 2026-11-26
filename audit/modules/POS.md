@@ -132,7 +132,7 @@ This confirms the serialized lock is safe and that opposite cart order does not 
 - Root cause of an initial React #441: disposable DB had not applied migration 0089 (`products.is_tax_exempt`); after `pnpm db:migrate`, POS opened normally. The server release tarball was rebuilt with 0089 and install/update scripts run `migrate.mjs` before serving.
 - Residual desktop gaps: LAN `http://IP` is not a secure context, so the PWA offline shell does not register there; kiosk scripts/runbook still carry Tauri-era paths; no auto-update/code signing and Windows NSIS was not built on this host. See `audit/modules/PLATFORM_SECURITY.md` (ELE-001…ELE-005).
 
-## Contrast & readability audit — 2026-11-25
+## Contrast & readability audit — 2026-11-25 (riwayat; digantikan redesign 2026-11-26)
 
 The POS palette was raised from a white-on-white hierarchy to a neutral canvas + white surfaces + strong component boundaries. Layout and workflow are unchanged.
 
@@ -148,3 +148,49 @@ The POS palette was raised from a white-on-white hierarchy to a neutral canvas +
 Changes: canvas `#e4eaf1`, tray `#e9eef5`, header `#e2e8f0`; product/payment/cart panels use `--pos-border-strong`; fields use `--input: #64748b`; accurate action primary darkened `#059669 → #047857`; selected cards use the full action-soft fill; stock badges use `slate-200/slate-800`; payment content is a tinted band; category bar and pagination footer are tinted; payment footer is sticky with a solid action button. `@media (prefers-contrast: more)` strengthens borders/backgrounds, and the existing forced-colors rules remain.
 
 Verification: axe-core WCAG 2 A/AA scan of `/app/pos` with two cart lines reports **0 violations** (`audit/checks/pos-axe-final.log`); screenshot `audit/checks/pos-contrast-after.png`; unit suite 1,249/1,249, typecheck/build/lint pass. No contrast claim is made for physical displays or unmeasured color-blind simulations.
+
+## Redesign "Pasar Modern" — 2026-11-26 (menggantikan audit kontras 2026-11-25)
+
+Permintaan pemilik: POS masih terlalu putih, hierarki warna lemah, dan panel pembayaran terlalu banyak menu. Perubahan kali ini adalah redesign tampilan + penyederhanaan alur, bukan sekadar ganti warna.
+
+**Arah visual.** Kanvas hangat `#efe9de`, permukaan kertas `#fffdf8`, bilah perintah hijau tua (diturunkan dari tema aksi, bawaan `#065f46`), dan aksen emas `#f3b63f` untuk total/CTA. Warna kategori hanya menjadi pita 4px di sisi kiri kartu; tidak ada isian warna acak. Tidak memakai gradient dekoratif, glassmorphism, atau bayangan berlebih.
+
+**Penyederhanaan alur pembayaran.**
+- Toggle "Tunggal/Campuran" di header dihapus. Metode utama tampil sebagai kartu besar; maksimal empat metode, sisanya dilipat di "Metode lain (n)".
+- "Bayar dengan beberapa metode" menjadi tautan di bawah alur tunai, dan mode campuran punya tombol "Kembali ke tunggal".
+- Fee/MDR dilipat ke disclosure "Biaya MDR"; nilai bawaan tetap dikirim walau tidak dibuka.
+- Kredit retur tetap tersedia tetapi collapsed; utang hanya muncul setelah metode Utang dipilih.
+- Input "Uang diterima" dan "Kembalian" diperbesar (56px) dengan chip uang pas/pecahan di bawahnya.
+- Pemilih kelompok harga dipindah ke header keranjang (satu baris), menghapus baris "Harga" terpisah.
+- Diskon per baris menjadi ikon tag 44px di samping tombol hapus; editor tetap muncul saat dipilih.
+- Toolbar katalog di layar kecil kini dua baris rapi (cari; gudang + tampilan + printer + menu), bukan tiga baris.
+- Bar bayar mobile memakai bilah hijau tua + tombol emas dengan teks gelap.
+
+**Kontras terukur (default Hijau Retail).**
+
+| Pasangan | Rasio |
+|---|---:|
+| Teks utama `#1c1917` / kanvas `#efe9de` | 14.47:1 |
+| Teks sekunder `#57534e` / panel `#fffdf8` | 7.50:1 |
+| Garis komponen `#7d7463` / panel `#fffdf8` | 4.54:1 |
+| Garis komponen `#7d7463` / tray `#e9e1d3` | 3.55:1 |
+| Putih / command `#065f46` | 7.68:1 |
+| Command-muted `#c7e0d4` / command `#065f46` | 5.50:1 |
+| Emas muda `#fde68a` / command `#065f46` | 6.17:1 |
+| Putih / aksi `#047857` | 5.48:1 |
+| Putih / QRIS `#6d28d9` | 7.10:1 |
+| Putih / bank `#1d4ed8` | 6.70:1 |
+| Putih / utang `#b45309` | 5.02:1 |
+| Teks emas `#3f2c05` / tombol emas `#f3b63f` | 7.35:1 |
+
+Ambang mengikuti WCAG 2.2 SC 1.4.3 (teks normal 4.5:1) dan SC 1.4.11 (komponen/grafis 3:1). Referensi arah: W3C WCAG 2.2; Shopify "POS System Design" (satu layar transaksi, minimal click-path); floow.design "UI kasir Indonesia" (total terbesar, Rupiah konsisten, QRIS tanpa memilih dompet); BikinDigital DigiKasir v1.0.10 (satu warna aksi, kanvas hangat, angka tabular).
+
+**Verifikasi.**
+- `pnpm test`: **146 files / 1.250 tests passed** (termasuk 57 test POS terarah).
+- `pnpm build` (termasuk `tsc --noEmit`) lulus; `pnpm lint` 0 error (8 warning lama di luar POS).
+- axe-core WCAG 2 A/AA di `/app/pos` dengan dua baris keranjang: **0 violations**.
+- Chromium: desktop 1440×900, laptop 1366×768, dan mobile 390×844; tidak ada console/page error. Pada 1366×768 input "Uang diterima" terlihat tanpa scroll; chip saran dan tombol Bayar tetap terjangkau.
+- Checkout nyata lewat UI baru (5 scan → Bayar → Uang Pas → "Transaksi berhasil"): quote 318 ms, checkout 360 ms, 0 console error (`audit/checks/pos-redesign-checkout-smoke.log`).
+- Screenshot: `audit/checks/pos-contrast-after.png` dan `audit/checks/pos-mobile-redesign.png`.
+
+**Sisa risiko.** Belum diuji dengan kasir sungguhan, pembaca layar nyata, printer fisik, atau Windows/Electron setelah redesign. Uji pengguna singkat (5 kasir, skenario scan → tunai → QRIS → campuran) tetap disarankan sebelum rollout produksi.

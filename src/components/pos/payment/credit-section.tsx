@@ -31,7 +31,7 @@ export function ReturnCreditSection(props: {
   } = credit;
   if (!creditMethod) return null;
   return (
-              <div className="rounded-md border border-dashed border-border p-2">
+              <div className="rounded-lg border border-[var(--pos-border-strong)] bg-[var(--pos-panel)] p-2">
                 {appliedCredit ? (
                   <div className="flex items-center justify-between gap-2 text-[12px]">
                     <span className="min-w-0">
@@ -54,10 +54,12 @@ export function ReturnCreditSection(props: {
                       onClick={() => setCreditOpen((value) => !value)}
                       className="flex min-h-11 w-full items-center justify-between text-[12px] font-medium"
                     >
-                      <span className="flex items-center gap-1.5">
-                        <Wallet className="size-3.5" /> Pakai Kredit Retur
+                      <span className="flex items-center gap-1.5 text-xs">
+                        <Wallet className="size-4 text-[var(--pos-action)]" /> Pakai Kredit Retur
                       </span>
-                      <span className="text-[10px] text-muted-foreground">{creditOpen ? "Tutup" : "Buka"}</span>
+                      <span className="text-[11px] font-semibold text-[var(--pos-muted)]">
+                        {creditOpen ? "Tutup" : "Buka"}
+                      </span>
                     </button>
                     {creditOpen ? (
                       <div className="mt-2 space-y-2">

@@ -55,9 +55,17 @@ describe("POS visual/UX — panel pembayaran", () => {
     expect(panel).toContain("h-12 items-center justify-center gap-2 rounded-md bg-[var(--pos-action)]");
   });
 
-  it("menampilkan dua metode alternatif tanpa membuka Metode lain", () => {
+  it("menampilkan metode utama sebagai kartu pilihan dan melipat metode tambahan", () => {
     expect(panel).toContain("quickMethods");
-    expect(panel).toContain("aria-label={`Pilih ${method.name}`}");
+    expect(panel).toContain("extraMethods");
+    expect(panel).toContain("Metode lain (");
+    expect(panel).toContain("aria-pressed={active}");
+  });
+
+  it("menyembunyikan biaya MDR di disclosure dan tidak memakai toggle mode di header", () => {
+    expect(panel).toContain("pos-disclosure");
+    expect(panel).toContain("Biaya MDR");
+    expect(panel).not.toContain('aria-label="Mode pembayaran"');
   });
 
   it("sheet mobile memakai bottom sheet native dan bar menampilkan item terakhir", () => {

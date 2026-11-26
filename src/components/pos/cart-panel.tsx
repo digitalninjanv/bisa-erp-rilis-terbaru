@@ -8,7 +8,6 @@ import {
   ShoppingCart,
   Tag,
   Trash2,
-  UserRound,
   X,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -97,35 +96,38 @@ export function CartPanel(props: {
   const [bulkSerialKey, setBulkSerialKey] = useState<string | null>(null);
   const [bulkSerialText, setBulkSerialText] = useState("");
   return (
-        <div className="overflow-hidden rounded-xl border border-[var(--pos-border-strong)] bg-[var(--pos-panel)] shadow-sm">
+        <div className="overflow-hidden rounded-xl border border-[var(--pos-border-strong)] bg-[var(--pos-panel)] shadow-[var(--shadow-card)]">
           {(!compactHeader || cart.length > 0 || heldCount > 0) ? (
-          <div className={cn("flex min-h-14 items-center justify-between gap-2 border-b border-[var(--pos-border-strong)] bg-[var(--pos-header)] px-4 py-3 text-[var(--pos-header-fg)] lg:sticky lg:top-0 lg:z-20 lg:rounded-t-[11px]", compactHeader && "justify-end")}>
-            <div className={cn("flex min-w-0 items-center gap-2", compactHeader && "hidden")}>
-              <ShoppingCart className="size-5 text-[var(--pos-action)]" />
-              <h2 className="text-base font-bold text-slate-900">Keranjang</h2>
-              <span className="num whitespace-nowrap rounded-full bg-[var(--pos-action-soft)] px-2.5 py-0.5 text-xs font-bold text-[var(--pos-action-text)]">
+          <div className="flex min-h-14 items-center justify-between gap-2 border-b border-[var(--pos-command)] bg-[var(--pos-command)] px-3 py-2.5 text-[var(--pos-command-fg)] lg:sticky lg:top-0 lg:z-20 lg:rounded-t-[11px]">
+            <div className="flex min-w-0 items-center gap-2">
+              <ShoppingCart className={cn("size-5 text-[var(--pos-gold-soft)]", compactHeader && "hidden")} />
+              <h2 className={cn("text-base font-bold", compactHeader && "hidden")}>Keranjang</h2>
+              <span className={cn("num whitespace-nowrap rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-bold text-[var(--pos-command-fg)]", compactHeader && "hidden")}>
                 {cart.length} baris
               </span>
+              {compactHeader ? (
+                <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--pos-command-muted)]">
+                  Harga
+                </span>
+              ) : null}
             </div>
             <div className="flex shrink-0 items-center gap-1">
               {/* Di laptop pendek baris Harga penuh disembunyikan agar
                   kolom Uang diterima tetap terlihat; selector ringkas
                   ini memakai state yang sama. */}
-              <div
-                className={cn(
-                  "items-center",
-                  compactHeader
-                    ? "flex"
-                    : "hidden [@media(min-width:1024px)_and_(max-height:850px)]:flex",
-                )}
-              >
+              <div className="flex items-center">
                 <label className="sr-only" htmlFor="pos-price-group-compact">Kelompok harga</label>
                 <select
                   id="pos-price-group-compact"
                   value={groupId}
                   onChange={(event) => setGroupId(event.target.value)}
                   aria-label="Kelompok harga"
-                  className="h-11 max-w-[132px] rounded-md border border-input bg-background px-2 text-xs font-semibold text-foreground"
+                  title={
+                    selectedGroup
+                      ? `Harga kelompok aktif · pembulatan ${selectedGroup.roundingStep.toLocaleString("id-ID")} ${selectedGroup.roundingDirection === "down" ? "ke bawah" : selectedGroup.roundingDirection === "up" ? "ke atas" : "terdekat"}`
+                      : "Harga normal (tanpa kelompok)"
+                  }
+                  className="h-11 max-w-[132px] rounded-md border border-[var(--pos-border-strong)] bg-[var(--pos-panel)] px-2 text-xs font-semibold text-[var(--pos-ink)]"
                 >
                   <option value="">Harga normal</option>
                   {groups.map((group) => (
@@ -138,10 +140,10 @@ export function CartPanel(props: {
                   href="/app/pos/ditahan"
                   aria-label={`Lihat ${heldCount} pesanan ditahan`}
                   title={`${heldCount} pesanan ditahan`}
-                  className="flex min-h-11 items-center gap-1 rounded-md px-2 text-sm font-medium text-slate-700 hover:bg-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="flex min-h-11 items-center gap-1 rounded-md px-2 text-sm font-medium text-[var(--pos-command-fg)] hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)]"
                 >
                   <PauseCircle className="size-4" />
-                  <span className="num rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-bold text-amber-900">
+                  <span className="num rounded-full bg-[var(--pos-gold)] px-1.5 py-0.5 text-xs font-bold text-[var(--pos-gold-ink)]">
                     {heldCount}
                   </span>
                 </a>
@@ -152,7 +154,7 @@ export function CartPanel(props: {
                   onClick={() => setConfirmClearCart(true)}
                   aria-label="Kosongkan keranjang"
                   title="Kosongkan keranjang"
-                  className="grid size-11 place-items-center rounded-md text-slate-600 hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="grid size-11 place-items-center rounded-md text-[var(--pos-command-muted)] hover:bg-red-500/20 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)]"
                 >
                   <Trash2 className="size-4" />
                 </button>
@@ -160,42 +162,6 @@ export function CartPanel(props: {
             </div>
           </div>
           ) : null}
-
-          <div
-            className={cn(
-              "border-b border-[var(--pos-border-strong)] bg-[var(--pos-header)] px-4 py-3",
-              compactHeader && "hidden",
-              "[@media(min-width:1024px)_and_(max-height:850px)]:hidden",
-            )}
-          >
-            <div className="flex items-center gap-2">
-              <label className="flex shrink-0 items-center gap-2 text-sm font-semibold text-foreground">
-                <UserRound className="size-4" /> Harga
-              </label>
-              <select
-                value={groupId}
-                onChange={(event) => setGroupId(event.target.value)}
-                className="h-11 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm"
-                aria-label="Kelompok harga"
-              >
-                <option value="">Harga normal (tanpa kelompok)</option>
-                {groups.map((group) => (
-                  <option key={group.id} value={group.id}>{group.name}</option>
-                ))}
-              </select>
-            </div>
-            {selectedGroup ? (
-              <p className="mt-2 text-xs leading-4 text-tone-teal">
-                Harga kelompok aktif · pembulatan {selectedGroup.roundingStep.toLocaleString("id-ID")}
-                {selectedGroup.roundingDirection === "down"
-                  ? " ke bawah"
-                  : selectedGroup.roundingDirection === "up"
-                    ? " ke atas"
-                    : " terdekat"}
-                {selectedGroup.roundCashTotal ? " · total transaksi dibulatkan" : ""}
-              </p>
-            ) : null}
-          </div>
 
           {availablePromotions.length > 0 && onApplyPromotion ? (
             <div className="border-b border-[var(--pos-border-strong)] bg-tone-teal-soft px-4 py-2.5">
@@ -226,14 +192,16 @@ export function CartPanel(props: {
             )}
           >
             {cart.length === 0 ? (
-              <div className="flex flex-col items-center justify-center border-b border-slate-300 bg-[var(--pos-tray)] px-4 py-10 text-center">
-                <ShoppingCart className="size-7 text-muted-foreground" />
-                <p className="mt-2 text-sm font-medium text-muted-foreground">
+              <div className="flex flex-col items-center justify-center border-b border-[var(--pos-border-strong)] bg-[var(--pos-tray)] px-4 py-10 text-center">
+                <span className="grid size-12 place-items-center rounded-full border border-[var(--pos-border-strong)] bg-[var(--pos-panel)]">
+                  <ShoppingCart className="size-6 text-[var(--pos-muted)]" />
+                </span>
+                <p className="mt-3 max-w-[240px] text-sm font-medium text-[var(--pos-muted)]">
                   Scan barcode atau pilih produk untuk mulai.
                 </p>
               </div>
             ) : (
-              <ul className="divide-y divide-slate-300">
+              <ul className="divide-y divide-[var(--border)]">
                 {cart.map((item) => {
                   const key = cartLineKey(item);
                   const line = quoteLine(item.productId, item.packagingId);
@@ -258,7 +226,7 @@ export function CartPanel(props: {
                   const tracked = line?.trackStock ?? cached?.trackStock ?? true;
                   const unitName = pack?.name ?? line?.packagingName ?? cached?.unitCode ?? "PCS";
                   return (
-                    <li key={key} className="px-4 py-3 transition-colors hover:bg-slate-50">
+                    <li key={key} className="px-3 py-3 transition-colors hover:bg-[var(--pos-surface-alt)]">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <p className="line-clamp-2 text-sm font-semibold">{line?.name ?? cached?.name ?? "Produk"}</p>
@@ -270,14 +238,49 @@ export function CartPanel(props: {
                             ) : null}
                           </p>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => setQty(key, 0)}
-                          className="grid size-11 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          aria-label={`Hapus ${line?.name ?? cached?.name ?? "item"} dari keranjang`}
-                        >
-                          <X className="size-4" />
-                        </button>
+                        <div className="flex shrink-0 items-center gap-0.5">
+                          {setLineDiscount ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (discountTargetKey === key) {
+                                  setDiscountTargetKey(null);
+                                } else {
+                                  setDiscountTargetKey(key);
+                                  setLineDiscType(item.discountType ?? "percent");
+                                  setLineDiscVal(item.discountValue ? String(item.discountValue) : "");
+                                }
+                              }}
+                              aria-expanded={discountTargetKey === key}
+                              aria-label={
+                                item.discountType && (item.discountValue ?? 0) > 0
+                                  ? `Ubah diskon ${line?.name ?? cached?.name ?? "item"}`
+                                  : `Tambah diskon ${line?.name ?? cached?.name ?? "item"}`
+                              }
+                              title={
+                                item.discountType && (item.discountValue ?? 0) > 0
+                                  ? "Ubah diskon item"
+                                  : "Tambah diskon item"
+                              }
+                              className={cn(
+                                "grid size-11 place-items-center rounded-md hover:bg-tone-plum-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                                item.discountType && (item.discountValue ?? 0) > 0
+                                  ? "text-tone-plum"
+                                  : "text-muted-foreground",
+                              )}
+                            >
+                              <Tag className="size-4" />
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() => setQty(key, 0)}
+                            className="grid size-11 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            aria-label={`Hapus ${line?.name ?? cached?.name ?? "item"} dari keranjang`}
+                          >
+                            <X className="size-4" />
+                          </button>
+                        </div>
                       </div>
 
                       {/* S4: pemilih satuan baris — hanya untuk produk
@@ -318,11 +321,11 @@ export function CartPanel(props: {
                             (pola area sentuh checkbox/switch). Tombol
                             Hapus di atas baris ini juga diperluas area
                             sentuhnya ke 44px tanpa mengubah visualnya. */}
-                        <div className="flex shrink-0 items-center rounded-md border border-[var(--pos-border-strong)]">
+                        <div className="flex shrink-0 items-center overflow-hidden rounded-lg border border-[var(--pos-border-strong)] bg-[var(--pos-panel)]">
                           <button
                             type="button"
                             onClick={() => setQty(key, item.qty - 1)}
-                            className="grid size-11 place-items-center hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            className="grid size-11 place-items-center text-[var(--pos-ink)] hover:bg-[var(--pos-tray)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)]"
                             aria-label={`Kurangi jumlah ${line?.name ?? cached?.name ?? "item"}`}
                           >
                             <Minus className="size-4" />
@@ -338,13 +341,13 @@ export function CartPanel(props: {
                             decimals={line?.trackSerial ?? cached?.trackSerial ? 0 : undefined}
                             aria-label={`Jumlah ${unitName}`}
                             wrapperClassName="h-11 w-12 shrink-0"
-                            className="h-11 w-full rounded-none border-x border-y-0 border-[var(--pos-border-strong)] bg-transparent px-0 text-center text-sm font-semibold focus:border-[var(--pos-action)]"
+                            className="h-11 w-full rounded-none border-x border-y-0 border-[var(--pos-border-strong)] bg-transparent px-0 text-center text-sm font-bold text-[var(--pos-ink)] focus:border-[var(--pos-action)]"
                           />
                           <button
                             type="button"
                             onClick={() => setQty(key, item.qty + 1)}
                             disabled={!allowNegativeStock && tracked && baseQty >= stock}
-                            className="grid size-11 place-items-center hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
+                            className="grid size-11 place-items-center text-[var(--pos-ink)] hover:bg-[var(--pos-tray)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)] disabled:cursor-not-allowed disabled:opacity-40"
                             aria-label={`Tambah jumlah ${line?.name ?? cached?.name ?? "item"}`}
                           >
                             <Plus className="size-4" />
@@ -352,51 +355,16 @@ export function CartPanel(props: {
                         </div>
                         <div className="flex justify-end">
                           <div className="text-right">
-                            <span className="block text-[11px] font-semibold text-muted-foreground">
+                            <span className="block text-[11px] font-semibold uppercase tracking-wide text-[var(--pos-muted)]">
                               Total
                             </span>
-                            <span className="num text-base font-bold leading-tight">
+                            <span className="num text-lg font-extrabold leading-tight text-[var(--pos-ink)]">
                               {/* lineTotal sudah termasuk pajak (POS-RCPT-01) */}
                               {formatIDR(line ? line.lineTotal : price * item.qty)}
                             </span>
                           </div>
                         </div>
                       </div>
-
-                      {setLineDiscount ? (
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                          {item.discountType && (item.discountValue ?? 0) > 0 ? (
-                            <span className="inline-flex items-center gap-1 rounded bg-tone-plum-soft px-2 py-0.5 text-xs font-semibold text-tone-plum">
-                              <Tag className="size-3" />
-                              Diskon {item.discountType === "percent" ? `${item.discountValue}%` : formatIDR(item.discountValue ?? 0)}
-                              <button
-                                type="button"
-                                onClick={() => setLineDiscount(key, null, 0)}
-                                className="ml-1 rounded p-0.5 text-muted-foreground hover:bg-tone-plum/10 hover:text-destructive"
-                                aria-label={`Hapus diskon ${line?.name ?? cached?.name ?? ""}`}
-                              >
-                                <X className="size-3" />
-                              </button>
-                            </span>
-                          ) : null}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (discountTargetKey === key) {
-                                setDiscountTargetKey(null);
-                              } else {
-                                setDiscountTargetKey(key);
-                                setLineDiscType(item.discountType ?? "percent");
-                                setLineDiscVal(item.discountValue ? String(item.discountValue) : "");
-                              }
-                            }}
-                            className="-ml-2 inline-flex min-h-11 items-center gap-1 rounded px-2 text-[12px] font-medium text-muted-foreground hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          >
-                            <Tag className="size-3" />
-                            {item.discountType && (item.discountValue ?? 0) > 0 ? "Ubah diskon" : "+ Diskon"}
-                          </button>
-                        </div>
-                      ) : null}
 
                       {discountTargetKey === key ? (
                         <div className="mt-2 flex items-center gap-2 rounded-md border border-[var(--pos-border-strong)] bg-[var(--pos-surface-alt)] p-2">
@@ -506,26 +474,31 @@ export function CartPanel(props: {
             )}
           </div>
 
-          <div className={cn("space-y-2 border-t border-[var(--pos-border-strong)] bg-[var(--pos-header)] px-4 py-3 text-sm", compactHeader && "hidden")}>
-            <Row label="Subtotal" value={formatIDR(quote?.subtotal ?? 0)} />
+          <div className={cn("space-y-1 border-t border-[var(--pos-command)] bg-[var(--pos-command)] px-3.5 py-2.5 text-sm text-[var(--pos-command-fg)]", compactHeader && "hidden")}>
+            <Row inverse label="Subtotal" value={formatIDR(quote?.subtotal ?? 0)} />
             {(quote?.discountTotal ?? 0) > 0 ? (
-              <Row label="Diskon" value={`−${formatIDR(quote?.discountTotal ?? 0)}`} tone="plum" />
+              <Row inverse label="Diskon" value={`−${formatIDR(quote?.discountTotal ?? 0)}`} highlight />
             ) : null}
             {(quote?.taxTotal ?? 0) > 0 ? (
-              <Row label="termasuk PPN" value={formatIDR(quote?.taxTotal ?? 0)} />
+              <Row inverse label="termasuk PPN" value={formatIDR(quote?.taxTotal ?? 0)} />
             ) : null}
             {(quote?.roundingAdjustment ?? 0) !== 0 ? (
               <Row
+                inverse
                 label={`Pembulatan total semua metode (${roundingLabel(quote?.cashRounding)})`}
                 value={`${(quote?.roundingAdjustment ?? 0) > 0 ? "+" : "−"}${formatIDR(Math.abs(quote?.roundingAdjustment ?? 0))}`}
               />
             ) : null}
-            <div className="flex items-center justify-between border-t border-[var(--pos-border-strong)] pt-2.5">
-              <span className="text-base font-bold text-slate-900">Total</span>
-              <span className="num text-2xl font-extrabold text-[var(--pos-action)]">{formatIDR(total)}</span>
+            <div className="mt-1 flex items-end justify-between gap-3 border-t border-white/20 pt-2.5">
+              <span className="pb-1 text-[11px] font-bold uppercase tracking-[0.16em] text-[var(--pos-command-muted)]">
+                Total
+              </span>
+              <span className="num text-[24px] font-extrabold leading-none tracking-tight text-[var(--pos-gold-soft)]">
+                {formatIDR(total)}
+              </span>
             </div>
             {heldTotal !== null && Math.abs(total - heldTotal) > 0.01 ? (
-              <p className="rounded bg-amber-500/10 p-1.5 text-xs text-amber-700 dark:text-amber-300">
+              <p className="rounded-md bg-white/10 p-2 text-xs leading-4 text-[var(--pos-gold-soft)]">
                 Total berbeda dari {formatIDR(heldTotal)} saat ditahan karena penyesuaian harga atau diskon terkini.
               </p>
             ) : null}
@@ -533,7 +506,7 @@ export function CartPanel(props: {
                 operasional — 11px, dan tampil juga saat quote basi
                 sedang dihitung ulang (quotePending). */}
             {quoteBusy && cart.length > 0 ? (
-              <p className="text-right text-xs text-muted-foreground">Menghitung total…</p>
+              <p className="text-right text-xs text-[var(--pos-command-muted)]">Menghitung total…</p>
             ) : null}
           </div>
 
@@ -613,11 +586,34 @@ export function CartPanel(props: {
   );
 }
 
-function Row({ label, value, tone }: { label: string; value: string; tone?: "plum" }) {
+function Row({
+  label,
+  value,
+  inverse = false,
+  highlight = false,
+}: {
+  label: string;
+  value: string;
+  inverse?: boolean;
+  highlight?: boolean;
+}) {
   return (
-    <div className="flex items-center justify-between">
-      <span className="text-muted-foreground">{label}</span>
-      <span className={cn("num", tone === "plum" ? "text-tone-plum" : "")}>{value}</span>
+    <div className="flex items-center justify-between gap-3">
+      <span className={inverse ? "text-[var(--pos-command-muted)]" : "text-muted-foreground"}>
+        {label}
+      </span>
+      <span
+        className={cn(
+          "num",
+          highlight
+            ? "font-semibold text-[var(--pos-gold-soft)]"
+            : inverse
+              ? "text-[var(--pos-command-fg)]"
+              : "",
+        )}
+      >
+        {value}
+      </span>
     </div>
   );
 }

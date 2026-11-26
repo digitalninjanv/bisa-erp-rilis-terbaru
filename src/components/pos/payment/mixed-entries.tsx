@@ -79,7 +79,8 @@ export function MixedEntries(props: {
                   </div>
                   {/* POS-1: chip uang diterima cepat untuk baris tunai
                       campuran — "Uang Pas" = pas sebesar nominal baris. */}
-                  {method.type === "cash" ? (
+                  {method.type === "cash" &&
+                  Number(entries[method.id]?.amount ?? 0) > 0 ? (
                     <CashChips
                       total={Number(entries[method.id]?.amount ?? 0)}
                       tendered={Number(entries[method.id]?.tendered ?? 0)}

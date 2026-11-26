@@ -714,67 +714,109 @@
 }
 
 
-/* POS: skema warna Modern Retail POS (bersih, kontras tinggi, hierarki halus tanpa wireframe berat).
-   Berlaku khusus di dalam terminal POS tanpa mengubah modul ERP lain. */
+/* POS: "Pasar Modern" — kanvas hangat, bilah perintah hijau tua, dan
+   aksen emas. Berlaku khusus di dalam terminal POS tanpa mengubah modul
+   ERP lain. Warna aksi tetap mengikuti preferensi Hijau/Teal/Biru/Odoo;
+   --pos-command diturunkan dari --pos-action-deep milik tema aktif. */
 .pos-terminal-root,
 .pos-terminal-surface {
   color-scheme: light;
-  /* POS contrast palette (2026-11-25): canvas/header lebih dalam dari
-     kartu putih agar panel tidak menyatu; --pos-border-strong dipakai
-     untuk batas komponen (kartu/field/tombol) dan memenuhi 3:1 terhadap
-     putih/tray, sedangkan --border tetap untuk garis dekoratif. */
-  --pos-canvas: #e4eaf1;
-  --pos-panel: #ffffff;
-  --pos-tray: #e9eef5;
-  --pos-surface-alt: #f1f5f9;
-  --pos-card-bg: #ffffff;
-  --pos-header: #e2e8f0;
-  --pos-header-fg: #0f172a;
-  --pos-border-strong: #77869a;
-  --background: #ffffff;
-  --foreground: #0f172a;
-  --card: #ffffff;
-  --card-foreground: #0f172a;
-  --popover: #ffffff;
-  --popover-foreground: #0f172a;
+  /* Kontras (dihitung terhadap pasangan yang dipakai):
+     putih / command bawaan #065f46 = 7.68:1 (fallback #064e3b = 9.72:1),
+     putih / aksi #047857 = 5.48:1, ink #1c1917 / kanvas #efe9de = 14.47:1,
+     muted #57534e / panel = 7.50:1, border #7d7463 / panel = 4.54:1. */
+  --pos-canvas: #efe9de;
+  --pos-panel: #fffdf8;
+  --pos-tray: #e9e1d3;
+  --pos-surface-alt: #f6f0e4;
+  --pos-card-bg: #fffdf8;
+  --pos-command: var(--pos-action-deep, #064e3b);
+  --pos-command-fg: #ffffff;
+  --pos-command-muted: #c7e0d4;
+  --pos-gold: #f3b63f;
+  --pos-gold-soft: #fde68a;
+  --pos-gold-ink: #3f2c05;
+  --pos-ink: #1c1917;
+  --pos-muted: #57534e;
+  --pos-border-strong: #7d7463;
+  --background: #fffdf8;
+  --foreground: #1c1917;
+  --card: #fffdf8;
+  --card-foreground: #1c1917;
+  --popover: #fffdf8;
+  --popover-foreground: #1c1917;
   --primary: #047857;
   --primary-foreground: #ffffff;
-  --secondary: #eef2f7;
-  --secondary-foreground: #0f172a;
-  --muted: #e6ecf3;
-  --muted-foreground: #475569;
-  --accent: #ecfdf5;
+  --secondary: #f6f0e4;
+  --secondary-foreground: #1c1917;
+  --muted: #ece4d7;
+  --muted-foreground: #57534e;
+  --accent: #e6f3ed;
   --accent-foreground: #065f46;
   --destructive: #b42318;
-  --border: #cbd5e1;
-  --input: #64748b;
+  --border: #d6cdbd;
+  --input: #7d7463;
   --ring: #047857;
   --tone-teal: #0f766e;
-  --tone-teal-soft: #ccfbf1;
-  --tone-plum: #6d28d9;
+  --tone-teal-soft: #d9f3ec;
+  --tone-plum: #5b21b6;
   --tone-plum-soft: #ede9fe;
-  --tone-amber: #b45309;
+  --tone-amber: #92400e;
   --tone-amber-soft: #fef3c7;
   --tone-red: #b91c1c;
   --tone-red-soft: #fee2e2;
   --tone-green: #047857;
   --tone-green-soft: #d1fae5;
-  --tone-blue: #1d4ed8;
+  --tone-blue: #1e40af;
   --tone-blue-soft: #dbeafe;
-  --shadow-card: 0 1px 3px rgb(15 23 42 / 0.1), 0 1px 2px rgb(15 23 42 / 0.06);
+  --shadow-card: 0 1px 0 rgb(28 25 23 / 0.04), 0 2px 8px rgb(28 25 23 / 0.06);
+}
+
+/* Kontrol di bilah perintah katalog ikut permukaan gelap tanpa harus
+   menduplikasi setiap komponen tampilan/printer/menu. */
+.pos-toolbar-control button {
+  border-color: color-mix(in oklab, #ffffff 38%, transparent);
+  background: color-mix(in oklab, #ffffff 12%, transparent);
+  color: #ffffff;
+}
+.pos-toolbar-control button:hover {
+  background: color-mix(in oklab, #ffffff 22%, transparent);
+}
+.pos-toolbar-control button[aria-pressed="true"] {
+  border-color: #ffffff;
+  background: #ffffff;
+  color: #064e3b;
+}
+.pos-toolbar-control button[aria-pressed="true"] svg {
+  color: #064e3b;
+}
+.pos-toolbar-control button svg {
+  color: #ffffff;
+}
+
+/* Disclosure POS (biaya MDR, opsi lanjutan) — target sentuh penuh,
+   penanda chevron berputar saat terbuka. */
+.pos-disclosure > summary {
+  list-style: none;
+  cursor: pointer;
+}
+.pos-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+.pos-disclosure[open] .pos-disclosure-chevron {
+  transform: rotate(180deg);
 }
 
 @media (prefers-contrast: more) {
   .pos-terminal-root,
   .pos-terminal-surface {
-    --pos-canvas: #dbe3ec;
-    --pos-tray: #e2e8f0;
-    --pos-surface-alt: #eef2f7;
-    --pos-header: #e2e8f0;
-    --pos-border-strong: #64748b;
-    --border: #94a3b8;
-    --input: #334155;
-    --muted-foreground: #334155;
+    --pos-canvas: #e8dfcf;
+    --pos-tray: #ded2be;
+    --pos-surface-alt: #f1e8d8;
+    --pos-border-strong: #5f5749;
+    --border: #8d8271;
+    --input: #3f3a31;
+    --muted-foreground: #3f3a31;
   }
 }
 
