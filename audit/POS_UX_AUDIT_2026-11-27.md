@@ -31,7 +31,7 @@ P0 dan sebagian besar P1 sudah diperbaiki di kode dan diverifikasi ulang.
 | Metode aktif tidak warna-saja | checkmark pada tile aktif |
 | Kembalian lebih kontras | `#065f46` pada `#d1fae5` = **7.32:1** |
 | Aksesibilitas | axe **0 violations** di 1920/1536/1366 full/1366 non-full/390 mobile, termasuk dialog opsi dan rincian terbuka |
-| Regresi | **146 file / 1.260 test** lulus; build + typecheck lulus; lint 0 error |
+| Regresi | **146 file / 1.261 test** lulus; build + typecheck lulus; lint 0 error |
 | Checkout nyata | 5 scan → Bayar → Uang Pas → “Transaksi berhasil”, commit server **101ms**, 0 console error; benchmark 5 scan→dialog→sukses **700ms**; dialog 448×397 (desktop) / 358×397 (mobile, margin 16px) |
 | 1080p | daftar keranjang 480px, 4 baris terlihat; grid 6 kolom, 24 produk tanpa scroll halaman |
 
@@ -57,10 +57,11 @@ Perbaikan tidak berhenti di dialog pembayaran. Seluruh layar terminal dirapikan:
 - Panel kanan menjadi satu kartu penuh: header tetap, daftar mengisi ruang, footer Total + **Bayar** + **Tahan** menempel di dasar. Tidak ada celah antara daftar dan footer.
 - Footer tetap terlihat saat daftar panjang: 8 baris = list scroll 654px/1035px, footer tetap di y=731–851 (1536×864), item terakhir auto-terlihat.
 - **Tahan pesanan dikembalikan** di footer keranjang dan bar mobile. Menyimpan hold **tidak lagi menampilkan toast sukses**; dialog ditutup dan keranjang dikosongkan sebagai umpan balik.
+- **Footer Total/Bayar/Tahan selalu terlihat** meski keranjang kosong: Total Rp0, 0 item, Bayar/Tahan disabled, posisi tetap di dasar panel. Empty state kini di tengah area daftar.
 - Dialog hold/resume memakai palet POS (`pos-terminal-surface`), bukan tema ERP ungu.
 - Referensi Odoo: order panel kanan dengan tombol Payment tetap di bawah; modul OCA “POS Order Details on the Payment Screen” menegaskan “a long order scrolls inside the panel, so the payment buttons stay exactly where the cashier expects.” Layout kita mengikuti prinsip itu, dengan footer Total + dua aksi.
 
-Verifikasi akhir: **146 file / 1.260 test**, build/typecheck, lint 0 error, axe **0 violations** pada halaman, dialog bayar, dialog opsi, hold, dan mobile. Screenshot: `pos-whole-1536.png`, `pos-whole-1536-cart.png`, `pos-whole-mobile-bar.png`, `pos-hold-native-dialog.png`.
+Verifikasi akhir: **146 file / 1.261 test**, build/typecheck, lint 0 error, axe **0 violations** pada halaman, dialog bayar, dialog opsi, hold, dan mobile. Screenshot: `pos-whole-1536.png`, `pos-whole-1536-cart.png`, `pos-whole-mobile-bar.png`, `pos-hold-native-dialog.png`, `pos-empty-footer-final.png`.
 
 ---
 

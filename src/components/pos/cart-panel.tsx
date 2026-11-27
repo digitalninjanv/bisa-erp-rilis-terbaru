@@ -228,7 +228,7 @@ export function CartPanel(props: {
             )}
           >
             {cart.length === 0 ? (
-              <div className="flex flex-col items-center justify-center border-b border-[var(--pos-border-strong)] bg-[var(--pos-tray)] px-4 py-10 text-center">
+              <div className="flex h-full min-h-[160px] flex-col items-center justify-center border-b border-[var(--pos-border-strong)] bg-[var(--pos-tray)] px-4 py-10 text-center">
                 <span className="grid size-12 place-items-center rounded-full border border-[var(--pos-border-strong)] bg-[var(--pos-panel)]">
                   <ShoppingCart className="size-6 text-[var(--pos-muted)]" />
                 </span>

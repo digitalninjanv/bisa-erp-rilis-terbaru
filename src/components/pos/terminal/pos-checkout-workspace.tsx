@@ -46,17 +46,15 @@ export function PosCheckoutWorkspace({
         scrollMode="contained"
         compactHeader={mobile}
         footer={
-          cartProps.cart.length > 0 ? (
-            <PaymentFooter
-              total={cartProps.total}
-              cartCount={cartProps.cart.length}
-              quoteReady={quoteReady}
-              quoteBusy={quoteBusy}
-              quoteError={quoteError}
-              onOpen={onOpenPayment}
-              onHold={onHold}
-            />
-          ) : null
+          <PaymentFooter
+            total={cartProps.total}
+            cartCount={cartProps.cart.length}
+            quoteReady={quoteReady}
+            quoteBusy={quoteBusy}
+            quoteError={quoteError}
+            onOpen={onOpenPayment}
+            onHold={onHold}
+          />
         }
       />
     </div>
@@ -80,12 +78,15 @@ function PaymentFooter({
   onOpen: () => void;
   onHold: () => void;
 }) {
-  const blocked = quoteBusy || (!quoteReady && !quoteError);
-  const label = quoteBusy
-    ? "Menghitung…"
-    : quoteError
-      ? "Cek pembayaran"
-      : `Bayar ${formatIDR(total)}`;
+  const blocked = cartCount === 0 || quoteBusy || (!quoteReady && !quoteError);
+  const label =
+    cartCount === 0
+      ? "Bayar"
+      : quoteBusy
+        ? "Menghitung…"
+        : quoteError
+          ? "Cek pembayaran"
+          : `Bayar ${formatIDR(total)}`;
   return (
     <div className="shrink-0 border-t border-[var(--pos-border-strong)] bg-[var(--pos-panel)] px-3 py-2.5">
       <div className="flex items-end justify-between gap-3">
@@ -111,7 +112,8 @@ function PaymentFooter({
         <button
           type="button"
           onClick={onHold}
-          className="flex h-14 items-center justify-center gap-1.5 rounded-md border border-[var(--pos-border-strong)] bg-[var(--pos-panel)] px-3 text-sm font-semibold text-[var(--pos-ink)] transition-colors hover:bg-[var(--pos-tray)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)]"
+          disabled={cartCount === 0}
+          className="flex h-14 items-center justify-center gap-1.5 rounded-md border border-[var(--pos-border-strong)] bg-[var(--pos-panel)] px-3 text-sm font-semibold text-[var(--pos-ink)] transition-colors hover:bg-[var(--pos-tray)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)] disabled:cursor-not-allowed disabled:opacity-40"
           title="Tahan pesanan"
         >
           <PauseCircle className="size-4" aria-hidden="true" />

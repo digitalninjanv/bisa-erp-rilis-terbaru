@@ -89,6 +89,14 @@ describe("POS visual/UX — panel pembayaran", () => {
     expect(catalog).toContain("posAutoColumnCount");
   });
 
+  it("menjaga footer Total/Bayar/Tahan tetap ada saat keranjang kosong", () => {
+    const workspace = source("components/pos/terminal/pos-checkout-workspace.tsx");
+    expect(workspace).toContain("cartCount === 0");
+    expect(workspace).toContain("disabled={blocked}");
+    expect(workspace).toContain("disabled={cartCount === 0}");
+    expect(workspace).not.toContain("cartProps.cart.length > 0 ?");
+  });
+
   it("mengembalikan Tahan pesanan di footer keranjang dan bar mobile", () => {
     const workspace = source("components/pos/terminal/pos-checkout-workspace.tsx");
     const bar = source("components/pos/terminal/mobile-pay-bar.tsx");
