@@ -206,7 +206,7 @@ export default async function PosReceivablesPage({
                   const paymentKind =
                     row.source === "opening" ? "opening-receivable" : "receivable";
                   const detailHref =
-                    row.source === "document" ? `/app/pos/nota/${row.id}` : null;
+                    row.source === "document" ? `/app/pos/nota/${row.id}?salinan=1` : null;
                   return (
                     <tr key={`${row.source}-${row.id}`}>
                       <td>
@@ -289,7 +289,7 @@ export default async function PosReceivablesPage({
               const paymentKind =
                 row.source === "opening" ? "opening-receivable" : "receivable";
               const detailHref =
-                row.source === "document" ? `/app/pos/nota/${row.id}` : null;
+                row.source === "document" ? `/app/pos/nota/${row.id}?salinan=1` : null;
               return (
                 <div key={`${row.source}-${row.id}`} className="px-4 py-3">
                   <div className="flex items-baseline justify-between gap-2">

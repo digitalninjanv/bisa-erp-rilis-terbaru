@@ -18,6 +18,8 @@ import {
 import type { Tx } from "@/db";
 import { d } from "@/lib/money";
 import {
+  branches,
+  cashSessions,
   categories,
   customers,
   paymentMethods,
@@ -443,7 +445,7 @@ export async function getSaleDetail(tx: Tx, companyId: string, saleId: string) {
     .limit(1);
   if (!sale) return null;
 
-  const [rawLines, payments, customer, cashier] = await Promise.all([
+  const [rawLines, payments, customer, cashier, branch] = await Promise.all([
     tx.select().from(saleLines).where(eq(saleLines.saleId, saleId)).orderBy(asc(saleLines.lineNo)),
     tx
       .select({
@@ -458,9 +460,28 @@ export async function getSaleDetail(tx: Tx, companyId: string, saleId: string) {
       .leftJoin(paymentMethods, eq(salePayments.methodId, paymentMethods.id))
       .where(eq(salePayments.saleId, saleId)),
     sale.customerId
-      ? tx.select({ name: customers.name, phone: customers.phone, address: customers.address }).from(customers).where(eq(customers.id, sale.customerId)).limit(1)
+      ? tx.select({ name: customers.name, phone: customers.phone, address: customers.address, taxId: customers.taxId }).from(customers).where(eq(customers.id, sale.customerId)).limit(1)
       : Promise.resolve([]),
     tx.select({ name: user.name }).from(user).where(eq(user.id, sale.cashierId)).limit(1),
+    sale.branchId
+      ? tx
+          .select({ name: branches.name, address: branches.address, phone: branches.phone })
+          .from(branches)
+          .where(and(eq(branches.companyId, companyId), eq(branches.id, sale.branchId)))
+          .limit(1)
+      : sale.sessionId
+        ? tx
+            .select({ name: branches.name, address: branches.address, phone: branches.phone })
+            .from(cashSessions)
+            .innerJoin(branches, eq(cashSessions.branchId, branches.id))
+            .where(
+              and(
+                eq(cashSessions.companyId, companyId),
+                eq(cashSessions.id, sale.sessionId),
+              ),
+            )
+            .limit(1)
+        : Promise.resolve([]),
   ]);
 
   // S4: nama kemasan baris untuk tampilan bentuk masukan ("1 Dus") di
@@ -481,7 +502,14 @@ export async function getSaleDetail(tx: Tx, companyId: string, saleId: string) {
     packagingName: line.packagingId ? (packagingNames.get(line.packagingId) ?? "Kemasan") : null,
   }));
 
-  return { sale, lines, payments, customer: customer[0] ?? null, cashier: cashier[0] ?? null };
+  return {
+    sale,
+    lines,
+    payments,
+    customer: customer[0] ?? null,
+    cashier: cashier[0] ?? null,
+    branch: branch[0] ?? null,
+  };
 }
 
 export async function listHeldSales(tx: Tx, companyId: string) {

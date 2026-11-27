@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import QRCode from "qrcode";
 import { getDesktopPrintBridge, type DesktopPrinterConfig } from "@/lib/pos/desktop-print";
 import { receiptHref } from "@/lib/pos/receipt-links";
 import { renderReceiptHtml } from "@/lib/pos/receipt-html";
@@ -84,10 +85,18 @@ export function CheckoutSuccessModal({
       try {
         // Cetak pertama memakai HTML lokal agar instan tanpa fetch SSR ulang;
         // cetak ulang tetap memuat /app/pos/nota/[id]?salinan=1 agar tercatat audit.
-        const rawHtml =
-          !desktopSent.current && receiptSource
-            ? renderReceiptHtml({ ...receiptSource, copyIndex: 0 })
-            : undefined;
+        let rawHtml: string | undefined;
+        if (!desktopSent.current && receiptSource) {
+          let qrDataUrl: string | null = null;
+          if (receiptSource.showQr) {
+            qrDataUrl = await QRCode.toDataURL(saleNumber, {
+              margin: 1,
+              width: 180,
+              errorCorrectionLevel: "M",
+            }).catch(() => null);
+          }
+          rawHtml = renderReceiptHtml({ ...receiptSource, copyIndex: 0, qrDataUrl });
+        }
         const result = await desktop.printReceipt(
           saleId,
           desktopSent.current,

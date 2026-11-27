@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { withCompany, withCompanyReadOnly } from "@/db/tenant";
+import { withCompany } from "@/db/tenant";
 import { requirePermission } from "@/lib/session";
 import { AppError, guard } from "@/lib/errors";
 import { getSaleDetail } from "@/server/reports";
@@ -62,18 +62,25 @@ export async function getSaleReceiptDataAction(
       const receiptData: ReceiptData = {
         companyName: settings?.legalName || "Bisa Minimarket",
         legalName: settings?.legalName,
-        address: settings?.address,
-        phone: settings?.phone,
+        taxId: settings?.taxId ?? null,
+        address: detail.branch?.address ?? settings?.address,
+        phone: detail.branch?.phone ?? settings?.phone,
+        branchName: detail.branch?.name ?? null,
         headerText: printSettings.headerText,
         footerText: printSettings.footerText,
         saleNumber: detail.sale.number,
         date: formatDate(detail.sale.date),
+        saleStatus: detail.sale.status,
+        voidReason: detail.sale.voidReason ?? null,
+        dueDate: detail.sale.dueDate ? formatDate(detail.sale.dueDate) : null,
+        sessionId: detail.sale.sessionId ?? null,
         cashierName: detail.cashier?.name ?? null,
         customerName: detail.customer?.name ?? null,
         lines: detail.lines.map(saleReceiptLine),
         subtotal: Number(detail.sale.subtotal),
         taxTotal: Number(detail.sale.taxTotal || 0),
         discountTotal: Number(detail.sale.discountTotal || 0),
+        roundingAdjustment: Number(detail.sale.roundingAdjustment || 0),
         total: Number(detail.sale.total),
         outstanding: d(detail.sale.total).minus(detail.sale.paidTotal).clamp(0, Infinity).toNumber(),
         payments: detail.payments.map((p) => ({
@@ -87,6 +94,7 @@ export async function getSaleReceiptDataAction(
         showTax: printSettings.showTax,
         showCashier: printSettings.showCashier,
         showCustomer: printSettings.showCustomer,
+        showSession: printSettings.showSession,
         showQr: printSettings.showQr,
       };
 

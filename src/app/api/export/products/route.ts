@@ -32,6 +32,7 @@ async function GETHandler(request?: Request) {
   const q = url.searchParams.get("q") ?? undefined;
   const category = url.searchParams.get("category") ?? undefined;
   const lowStock = url.searchParams.get("lowStock") === "1";
+  const warehouse = url.searchParams.get("warehouse") ?? undefined;
   const format = url.searchParams.get("format") === "xlsx" ? "xlsx" : "csv";
 
   const headers = productExportHeaders(includeCost);
@@ -52,9 +53,13 @@ async function GETHandler(request?: Request) {
       getSettings(tx, ctx.company.id),
       listWarehouses(tx, ctx.company.id),
     ]);
+    const requestedWarehouse = warehouses.some((row) => row.id === warehouse)
+      ? warehouse
+      : null;
     return {
       companyId: ctx.company.id,
-      warehouseId: pickDefaultWarehouseId(warehouses, settings?.defaultWarehouseId),
+      warehouseId:
+        requestedWarehouse ?? pickDefaultWarehouseId(warehouses, settings?.defaultWarehouseId),
       q,
       categoryId: category,
       lowStock,

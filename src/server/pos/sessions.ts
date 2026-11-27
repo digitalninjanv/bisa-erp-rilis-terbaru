@@ -483,8 +483,11 @@ export async function getOpenCashSession(tx: Tx, companyId: string, userId: stri
       id: cashSessions.id,
       openingCash: cashSessions.openingCash,
       openedAt: cashSessions.openedAt,
+      branchId: cashSessions.branchId,
+      branchName: branches.name,
     })
     .from(cashSessions)
+    .leftJoin(branches, eq(cashSessions.branchId, branches.id))
     .where(
       and(
         eq(cashSessions.companyId, companyId),

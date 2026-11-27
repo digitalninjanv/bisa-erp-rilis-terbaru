@@ -31,7 +31,8 @@ export const dynamic = "force-dynamic";
  * nota: angka faktur dan struk tidak mungkin berbeda. PPN pada
  * penjualan POS bersifat termasuk dalam total (baris "termasuk
  * PPN" di struk), jadi faktur menyatakannya apa adanya: DPP =
- * total − PPN, PPN ditampilkan terpisah, TOTAL identik.
+ * jumlah neto baris yang dikenai PPN, PPN ditampilkan terpisah,
+ * TOTAL identik. Barang bebas pajak dan pembulatan tidak masuk DPP.
  */
 export default async function SalesInvoicePage({
   params,
@@ -80,12 +81,20 @@ export default async function SalesInvoicePage({
   });
 
   if (!data) notFound();
-  const { sale, lines, payments, settings, customer, cashier } = data;
+  const { sale, lines, payments, settings, customer, cashier, branch } = data;
   const printSettings = toPrintSettings(settings, "faktur");
   const qrDataUrl = printSettings.showQr ? await documentQrDataUrl(sale.number) : null;
   const taxAmount = d(sale.taxTotal);
   const showTax = printSettings.showTax && taxAmount.gt(0);
-  const taxBase = d(sale.total).minus(taxAmount);
+  // DPP hanya dari baris yang benar-benar dikenai PPN. Rumus lama
+  // (total − PPN) ikut memasukkan pembulatan dan barang bebas pajak.
+  const taxBase = lines.reduce(
+    (sum, line) =>
+      d(line.taxAmount).gt(0)
+        ? sum.plus(d(line.lineTotal).minus(d(line.taxAmount)))
+        : sum,
+    d(0),
+  );
   const remaining = d(sale.total).minus(d(sale.paidTotal));
 
   return (
@@ -127,8 +136,9 @@ export default async function SalesInvoicePage({
           <PrintHeader
             settings={printSettings}
             companyName={settings?.legalName ?? "Bisa Minimarket"}
-            address={settings?.address}
-            phone={settings?.phone}
+            branchName={branch?.name}
+            address={branch?.address ?? settings?.address}
+            phone={branch?.phone ?? settings?.phone}
             taxId={settings?.taxId}
             variant="document"
             title="Faktur Penjualan"
@@ -146,6 +156,9 @@ export default async function SalesInvoicePage({
             <div>
               <span className="block text-black/60">Ditagihkan kepada</span>
               <span className="font-medium">{customer?.name ?? "Pelanggan umum"}</span>
+              {customer?.taxId ? (
+                <span className="num block text-black/70">NPWP {customer.taxId}</span>
+              ) : null}
               <span className="mt-1 inline-block border border-black/40 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
                 {remaining.gt(0) ? "Belum lunas" : "Lunas"}
               </span>

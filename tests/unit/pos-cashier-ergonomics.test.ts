@@ -93,9 +93,63 @@ describe("POS modern cashier ergonomics & receipt assembly", () => {
     expect(receipt.companyName).toBe("Minimarket Maju");
     expect(receipt.taxId).toBe("02.111.222.3-444.000");
     expect(receipt.lines).toEqual([
-      { name: "Susu UHT 1L", qty: 2, unit: null, price: 18000, subtotal: 36000, discount: 0 },
+      { name: "Susu UHT 1L", qty: 2, qtyBase: 2, unit: null, price: 18000, subtotal: 36000, discount: 0 },
     ]);
     expect(receipt.change).toBe(14000);
     expect(receipt.payments[0]).toMatchObject({ methodName: "Tunai", tendered: 50000 });
+  });
+});
+
+describe("POS receipt group-price arithmetic", () => {
+  it("prints the normal unit price and the group discount so the row reconciles", () => {
+    const profile: ReceiptProfile = {
+      companyName: "Minimarket Maju",
+      address: null,
+      phone: null,
+      headerText: null,
+      footerText: null,
+      paperWidth: "80mm",
+      showTax: true,
+      showCashier: true,
+      showCustomer: true,
+      showQr: false,
+      cashierName: "Ayu",
+      openCashDrawer: true,
+      cutPaper: true,
+    };
+    const method: Method = { id: "m-cash", code: "CASH", name: "Tunai", type: "cash", instructions: null };
+    const quote = {
+      subtotal: 2000,
+      discountTotal: 200,
+      taxTotal: 0,
+      roundingAdjustment: 0,
+      total: 1800,
+      lines: [{
+        productId: "p1",
+        packagingId: null,
+        unitPrice: 1000,
+        groupUnitPrice: 900,
+        lineTotal: 1800,
+        discountAmount: 200,
+        isiSnapshot: 1,
+      }],
+    };
+    const receipt = buildTerminalReceiptData({
+      saleNumber: "POS-2026-0124",
+      cart: [{ productId: "p1", qty: 2 }],
+      quote: quote as never,
+      cache: {
+        p1: { id: "p1", name: "Teh Botol", sku: "TEH-1", barcode: null, salePrice: "1000", stock: 10, trackStock: true, unitCode: "PCS" },
+      },
+      payments: [{ methodId: "m-cash", amount: 1800, tendered: 2000 }],
+      methodById: new Map([[method.id, method]]),
+      receiptProfile: profile,
+      customerName: null,
+      dueDate: null,
+      total: 1800,
+      change: 200,
+      outstanding: 0,
+    });
+    expect(receipt.lines[0]).toMatchObject({ price: 1000, discount: 200, subtotal: 1800 });
   });
 });

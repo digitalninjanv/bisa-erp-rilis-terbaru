@@ -299,6 +299,7 @@ export function useTerminalCheckout(params: {
       dueDate: debtActive ? dueDate : null,
       total,
       outstanding: params.debtAmount,
+      sessionId,
     });
     try {
       const storage = getBrowserOfflineStorage({
@@ -503,6 +504,7 @@ export function useTerminalCheckout(params: {
         total: result.data.total,
         change: result.data.change,
         outstanding: debtActive ? params.debtAmount : 0,
+        sessionId,
       });
       completeCheckout(result.data, attempt, instantReceipt);
     } finally {

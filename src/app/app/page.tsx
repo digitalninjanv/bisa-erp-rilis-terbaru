@@ -193,7 +193,7 @@ export default async function AppHomePage({
 
         {/* KPI band: penjualan, kas, dan posisi pihak — pola Odoo/Accurate
             (angka kerja dulu, dekorasi belakangan). */}
-        <div className="mt-5 grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-5">
+        <div className="kpi-band mt-5 grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-5">
           {canSeePosSales ? (
             <StatCard
               label="Penjualan hari ini"
@@ -331,8 +331,8 @@ export default async function AppHomePage({
                     href={`/app?from=${preset.from}&to=${preset.to}`}
                     className={
                       activePreset?.key === preset.key
-                        ? "inline-flex h-7 items-center rounded-full bg-foreground px-2.5 text-[11px] font-medium text-background"
-                        : "inline-flex h-7 items-center rounded-full border border-border bg-card px-2.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                        ? "inline-flex h-11 items-center rounded-full bg-foreground px-2.5 text-[11px] font-medium text-background lg:h-8"
+                        : "inline-flex h-11 items-center rounded-full border border-border bg-card px-2.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:h-8"
                     }
                   >
                     {preset.label}
@@ -559,7 +559,7 @@ export default async function AppHomePage({
                     <Link
                       key={href}
                       href={href}
-                      className="flex items-center justify-between rounded-md px-2 py-1.5 text-[12px] hover:bg-muted"
+                      className="flex min-h-11 items-center justify-between rounded-md px-2 py-1.5 text-[12px] hover:bg-muted lg:min-h-0"
                     >
                       {label}
                       <ArrowUpRight className="size-3.5 text-muted-foreground" />
@@ -594,7 +594,7 @@ function Attention({
     tone === "red" ? "bg-tone-red" : tone === "amber" ? "bg-chart-3" : tone === "green" ? "bg-tone-green" : "bg-muted-foreground/40";
   return (
     <li>
-      <Link href={href} className="group flex items-center justify-between gap-2 text-[12px]">
+      <Link href={href} className="group flex min-h-11 items-center justify-between gap-2 rounded-md px-1 py-1 text-[12px] hover:bg-muted/40 sm:min-h-0 sm:px-0 sm:py-0 sm:hover:bg-transparent">
         <span className="flex items-center gap-2 text-muted-foreground">
           <span className={`size-1.5 rounded-full ${dot}`} />
           {label}

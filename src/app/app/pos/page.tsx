@@ -114,6 +114,7 @@ export default async function PosPage({
   const receiptProfile = {
     companyName: data.settings?.legalName ?? ctx.company.name,
     taxId: data.settings?.taxId ?? null,
+    branchName: data.session?.branchName ?? null,
     address: data.settings?.address ?? null,
     phone: data.settings?.phone ?? null,
     headerText: printSettings.headerText,
@@ -122,6 +123,7 @@ export default async function PosPage({
     showTax: printSettings.showTax,
     showCashier: printSettings.showCashier,
     showCustomer: printSettings.showCustomer,
+    showSession: printSettings.showSession,
     showQr: printSettings.showQr,
     cashierName: ctx.user.name,
     openCashDrawer: true,

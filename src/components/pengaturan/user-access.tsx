@@ -220,6 +220,7 @@ function UsersPanel({
                             setRoleDraft((current) => ({ ...current, [user.userId]: event.target.value }))
                           }
                           disabled={self}
+                          aria-label={`Peran ${user.name}`}
                           className="h-9 min-w-[150px] rounded border border-input bg-background px-1.5 text-[11px] disabled:opacity-60"
                         >
                           {roles.map((row) => (

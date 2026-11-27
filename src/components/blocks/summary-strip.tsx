@@ -56,7 +56,7 @@ export function SummaryStrip({
       {items.map((item, index) => {
         const body = (
           <>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <p className="text-[12px] font-medium text-muted-foreground">
               {item.label}
             </p>
             <p

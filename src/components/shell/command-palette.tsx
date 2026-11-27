@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { FileText, Package, ReceiptText, Search, LayoutGrid } from "lucide-react";
 import { filterPalettePages, type PalettePage } from "@/lib/palette";
@@ -49,13 +49,55 @@ export function CommandPalette({ pages }: { pages: PalettePage[] }) {
   const [active, setActive] = useState(0);
   const requestRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  const close = () => {
+  const close = useCallback(() => {
     setOpen(false);
     setQuery("");
     setEntityState({ term: "", results: EMPTY_ENTITIES });
     setActive(0);
-  };
+  }, []);
+
+  // Dialog contract: fokus masuk ke kueri, Tab berputar di dalam panel,
+  // Escape menutup dari mana pun, latar tidak ikut bergulir, dan fokus
+  // kembali ke pemicu saat ditutup.
+  useEffect(() => {
+    if (!open) return;
+    const trigger = triggerRef.current;
+    const frame = window.requestAnimationFrame(() => inputRef.current?.focus());
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        close();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = [...(panelRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), a[href], input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ) ?? [])].filter((element) => element.offsetParent !== null);
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKey);
+      trigger?.focus();
+    };
+  }, [open, close]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -119,15 +161,18 @@ export function CommandPalette({ pages }: { pages: PalettePage[] }) {
   return (
     <>
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen(true)}
-        className={`h-8 w-44 items-center gap-2 rounded-md border border-border bg-card px-2.5 text-[12px] text-muted-foreground transition-colors hover:bg-muted sm:w-56 ${
-          hideOnPosMobile ? "hidden lg:flex" : "flex"
-        }`}
         aria-label="Cari apa saja — Ctrl K"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        className={`h-8 items-center justify-center gap-2 rounded-md border border-border bg-card text-[12px] text-muted-foreground transition-colors hover:bg-muted ${
+          hideOnPosMobile ? "hidden lg:flex" : "flex"
+        } w-8 px-0 sm:w-56 sm:justify-start sm:px-2.5`}
       >
-        <Search className="size-3.5" />
-        <span className="min-w-0 flex-1 truncate text-left">Cari apa saja…</span>
+        <Search className="size-3.5 shrink-0" />
+        <span className="hidden min-w-0 flex-1 truncate text-left sm:inline">Cari apa saja…</span>
         <kbd className="hidden rounded border border-border bg-muted px-1 text-[10px] sm:inline">Ctrl K</kbd>
       </button>
 
@@ -138,10 +183,17 @@ export function CommandPalette({ pages }: { pages: PalettePage[] }) {
             if (event.target === event.currentTarget) close();
           }}
         >
-          <div className="w-full max-w-lg overflow-hidden rounded-xl border border-border bg-card shadow-xl">
+          <div
+            ref={panelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Pencarian cepat"
+            className="w-full max-w-lg overflow-hidden rounded-xl border border-border bg-card shadow-xl"
+          >
             <div className="flex items-center gap-2 border-b border-border px-3">
               <Search className="size-4 text-muted-foreground" />
               <input
+                ref={inputRef}
                 autoFocus
                 value={query}
                 onChange={(event) => {

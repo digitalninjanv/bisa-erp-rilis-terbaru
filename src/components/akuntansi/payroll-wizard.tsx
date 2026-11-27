@@ -154,7 +154,12 @@ export function PayrollWizard({
             <Summary label="Cicilan kasbon" value={formatIDR(totals.advance.toFixed(0))} />
             <Summary label="Total gaji bersih" value={formatIDR(totals.net.toFixed(0))} />
           </dl>
-          <div className="mt-4 overflow-x-auto rounded-lg border border-border">
+          <div
+            className="mt-4 overflow-x-auto rounded-lg border border-border"
+            tabIndex={0}
+            role="region"
+            aria-label="Tabel pratinjau payroll"
+          >
             <table className="data-table">
               <thead>
                 <tr>

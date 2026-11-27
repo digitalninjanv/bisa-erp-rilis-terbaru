@@ -28,6 +28,8 @@ export function buildTerminalReceiptData(params: {
   change?: number;
   outstanding: number;
   date?: string;
+  sessionId?: string | null;
+  branchName?: string | null;
 }): ReceiptData {
   const {
     saleNumber,
@@ -54,11 +56,13 @@ export function buildTerminalReceiptData(params: {
     taxId: receiptProfile.taxId ?? null,
     address: receiptProfile.address,
     phone: receiptProfile.phone,
+    branchName: params.branchName ?? receiptProfile.branchName ?? null,
     headerText: receiptProfile.headerText,
     footerText: receiptProfile.footerText,
     saleNumber,
     date: params.date ?? formatDate(todayISO()),
     dueDate: outstanding > 0 ? dueDate : null,
+    sessionId: params.sessionId ?? null,
     cashierName: receiptProfile.cashierName,
     customerName,
     lines: cart.map((line) => {
@@ -73,9 +77,9 @@ export function buildTerminalReceiptData(params: {
       const name = cache[line.productId]?.name ?? "Produk";
       const price = pack
         ? quoted
-          ? quoted.groupUnitPrice * Number(quoted.isiSnapshot)
+          ? quoted.unitPrice * Number(quoted.isiSnapshot)
           : Number(pack.salePrice ?? 0)
-        : (quoted?.groupUnitPrice ?? Number(cache[line.productId]?.salePrice ?? 0));
+        : (quoted?.unitPrice ?? Number(cache[line.productId]?.salePrice ?? 0));
       return {
         name: pack ? `${name} (${pack.name})` : name,
         qty: line.qty,
@@ -83,6 +87,7 @@ export function buildTerminalReceiptData(params: {
         price,
         subtotal: quoted ? quoted.lineTotal : price * line.qty,
         discount: quoted?.discountAmount ?? 0,
+        qtyBase: line.qty,
       };
     }),
     subtotal: quote?.subtotal ?? total,
@@ -103,6 +108,7 @@ export function buildTerminalReceiptData(params: {
     showTax: receiptProfile.showTax,
     showCashier: receiptProfile.showCashier,
     showCustomer: receiptProfile.showCustomer,
+    showSession: receiptProfile.showSession,
     showQr: receiptProfile.showQr,
     openCashDrawer: receiptProfile.openCashDrawer,
     cutPaper: receiptProfile.cutPaper,

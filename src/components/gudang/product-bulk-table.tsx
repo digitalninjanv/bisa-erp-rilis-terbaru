@@ -99,7 +99,7 @@ export function ProductBulkTable({
   canSeeCost: boolean;
   categories: { id: string; label: string }[];
   units: { id: string; code: string; name: string }[];
-  filter: { q?: string; categoryId?: string; lowStock?: boolean };
+  filter: { q?: string; categoryId?: string; lowStock?: boolean; warehouseId?: string };
   totalFiltered: number;
   /** G3 (TBL-02): urutan aktif + href pengalih per kolom terurut,
    * dihitung halaman (server) — sorting terjadi di fungsi baca. */
@@ -125,7 +125,13 @@ export function ProductBulkTable({
   const selection: BulkProductSelection = useMemo(
     () =>
       allFiltered
-        ? { mode: "filter", q: filter.q, categoryId: filter.categoryId, lowStock: filter.lowStock }
+        ? {
+            mode: "filter",
+            q: filter.q,
+            categoryId: filter.categoryId,
+            lowStock: filter.lowStock,
+            warehouseId: filter.warehouseId,
+          }
         : { mode: "ids", ids: [...selected] },
     [allFiltered, filter, selected],
   );
@@ -331,7 +337,7 @@ export function ProductBulkTable({
                   <Link href={`/app/gudang/produk/${product.id}`} className="text-[12px] font-medium hover:underline">
                     {product.name}
                   </Link>
-                  <p className="num text-[10px] text-muted-foreground">
+                  <p className="num text-[11px] text-muted-foreground">
                     {product.sku}
                     {product.barcode ? ` · ${product.barcode}` : ""}
                   </p>
@@ -340,7 +346,7 @@ export function ProductBulkTable({
                 <td className="text-[11px]">
                   {product.unitCode ?? "—"}
                   {product.packagings && product.packagings.length > 0 ? (
-                    <p className="text-[10px] text-muted-foreground">
+                    <p className="text-[11px] text-muted-foreground">
                       {product.packagings
                         .map((row) => `${row.name} ×${formatQty(row.isi)}`)
                         .join(" · ")}
@@ -359,7 +365,7 @@ export function ProductBulkTable({
                 </td>
                 <td className="num text-right text-[11px] text-muted-foreground">{formatQty(product.minStock)}</td>
                 <td>
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${product.isActive ? "bg-tone-green-soft text-tone-green" : "bg-muted text-muted-foreground"}`}>
+                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${product.isActive ? "bg-tone-green-soft text-tone-green" : "bg-muted text-muted-foreground"}`}>
                     {product.isActive ? "Aktif" : "Nonaktif"}
                   </span>
                 </td>
@@ -401,7 +407,7 @@ export function ProductBulkTable({
                   }`}
                 >
                   {formatQty(product.stock)}
-                  <span className="ml-1 text-[10px] font-normal text-muted-foreground">
+                  <span className="ml-1 text-[11px] font-normal text-muted-foreground">
                     stok · min {formatQty(product.minStock)}
                   </span>
                 </span>
@@ -426,7 +432,7 @@ export function ProductBulkTable({
                   </span>
                 ) : null}
                 <span
-                  className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                  className={`rounded-full px-1.5 py-0.5 text-[11px] font-semibold ${
                     product.isActive
                       ? "bg-tone-green-soft text-tone-green"
                       : "bg-muted text-muted-foreground"
@@ -491,7 +497,7 @@ export function ProductBulkTable({
                 <>
                   <div className="grid gap-2 sm:grid-cols-2">
                     <label className="block space-y-1">
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Operasi</span>
+                      <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Operasi</span>
                       <select
                         value={opKind}
                         onChange={(event) => {
@@ -513,7 +519,7 @@ export function ProductBulkTable({
                     </label>
                     {opKind === "category" ? (
                       <label className="block space-y-1">
-                        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Kategori tujuan</span>
+                        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Kategori tujuan</span>
                         <select value={categoryId} onChange={(event) => { setCategoryId(event.target.value); setPreview(null); }} className={fieldClass}>
                           <option value="">— Tanpa kategori —</option>
                           {categories.map((category) => (
@@ -523,7 +529,7 @@ export function ProductBulkTable({
                       </label>
                     ) : opKind === "unit" ? (
                       <label className="block space-y-1">
-                        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Satuan tujuan</span>
+                        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Satuan tujuan</span>
                         <select value={unitId} onChange={(event) => { setUnitId(event.target.value); setPreview(null); }} className={fieldClass}>
                           <option value="">Pilih satuan…</option>
                           {units.map((unit) => (
@@ -537,7 +543,7 @@ export function ProductBulkTable({
                       </p>
                     ) : (
                       <label className="block space-y-1">
-                        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                           {opKind === "minStock" ? "Stok minimum baru" : opKind.endsWith("Percent") ? "Persen (negatif = turun)" : "Nominal Rp (negatif = turun)"}
                         </span>
                         <input
@@ -569,7 +575,7 @@ export function ProductBulkTable({
                           <tbody>
                             {preview.changes.map((row) => (
                               <tr key={row.id}>
-                                <td className="text-[12px]">{row.name}<p className="num text-[10px] text-muted-foreground">{row.sku}</p></td>
+                                <td className="text-[12px]">{row.name}<p className="num text-[11px] text-muted-foreground">{row.sku}</p></td>
                                 <td className="text-[11px]">{row.changes.map((change) => change.label).join(", ")}</td>
                                 <td className="num text-right text-[11px]">{row.changes.map((change) => change.before).join(", ")}</td>
                                 <td className="num text-right text-[11px] font-medium">{row.changes.map((change) => change.after).join(", ")}</td>

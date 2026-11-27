@@ -124,6 +124,7 @@ export type PaymentEntry = {
 export type ReceiptProfile = {
   companyName: string;
   taxId?: string | null;
+  branchName?: string | null;
   address: string | null;
   phone: string | null;
   headerText: string | null;
@@ -132,6 +133,7 @@ export type ReceiptProfile = {
   showTax: boolean;
   showCashier: boolean;
   showCustomer: boolean;
+  showSession?: boolean;
   showQr: boolean;
   cashierName: string | null;
   openCashDrawer: boolean;

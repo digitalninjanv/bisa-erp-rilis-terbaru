@@ -1,0 +1,13 @@
+import { chromium } from "@playwright/test";
+const b=await chromium.launch(); const ctx=await b.newContext({baseURL:"http://127.0.0.1:3000",viewport:{width:1440,height:900}});
+await ctx.addCookies([{name:"better-auth.session_token",value:"xQ6RsUbS7mfIWfD8rq2UqNOX9ah6lbbn.kn1MM8yVFKi26brgnNUqGoXquVdkPvNcMurQ7W3lpxk%3D",domain:"127.0.0.1",path:"/",httpOnly:true,expires:1796343121}]);
+const p=await ctx.newPage();
+await p.goto("/app",{waitUntil:"domcontentloaded"}); await p.waitForTimeout(900);
+await p.getByRole("button",{name:/Cari apa saja/}).click(); await p.waitForTimeout(300); await p.getByPlaceholder(/Cari produk/).fill("air"); await p.waitForTimeout(700); await p.screenshot({path:"audit/checks/system-ux/command-palette.png"});
+await p.keyboard.press("Escape");
+await p.goto("/app/pengaturan?tab=umum",{waitUntil:"domcontentloaded"}); await p.waitForTimeout(1000);
+await p.getByLabel("Nama legal").fill("Bisa Minimarket Uji Guard");
+await p.waitForTimeout(300); await p.getByRole("link",{name:"Pengguna & peran"}).first().click(); await p.waitForTimeout(300); await p.screenshot({path:"audit/checks/system-ux/settings-unsaved-dialog.png"});
+await p.getByRole("button",{name:"Tetap di sini"}).click();
+await p.goto("/app/akuntansi/jurnal/baru",{waitUntil:"domcontentloaded"}); await p.waitForTimeout(900); await p.getByLabel(/Keterangan/).fill("Uji batal aman"); await p.getByRole("button",{name:"Batal",exact:true}).click(); await p.waitForTimeout(300); await p.screenshot({path:"audit/checks/system-ux/journal-cancel-dialog.png"});
+await b.close();

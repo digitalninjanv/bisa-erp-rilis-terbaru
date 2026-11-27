@@ -28,11 +28,20 @@ import type { Tx } from "@/db";
  * terapkan dengan konfirmasi eksplisit.
  */
 
-async function resolveWarehouseId(tx: Tx, companyId: string): Promise<string> {
+async function resolveWarehouseId(
+  tx: Tx,
+  companyId: string,
+  requested?: string,
+): Promise<string> {
   const [settings, warehouses] = await Promise.all([
     getSettings(tx, companyId),
     listWarehouses(tx, companyId),
   ]);
+  // Operasi massal harus memakai gudang yang sedang dilihat pengguna,
+  // bukan diam-diam jatuh ke gudang default saat filter stok dipakai.
+  if (requested && warehouses.some((warehouse) => warehouse.id === requested)) {
+    return requested;
+  }
   return pickDefaultWarehouseId(warehouses, settings?.defaultWarehouseId);
 }
 
@@ -43,6 +52,7 @@ const selectionSchema = z.discriminatedUnion("mode", [
     q: z.string().max(120).optional(),
     categoryId: z.string().uuid().optional(),
     lowStock: z.boolean().optional(),
+    warehouseId: z.string().uuid().optional(),
   }),
 ]);
 
@@ -72,7 +82,11 @@ export async function previewBulkEditProductsAction(input: z.input<typeof bulkEd
     const ctx = await requirePermissionInModule("inventory.manage", "gudang");
     const data = parseInput(bulkEditSchema, input);
     return withCompanyReadOnly(ctx.company.id, async (tx) => {
-      const warehouseId = await resolveWarehouseId(tx, ctx.company.id);
+      const warehouseId = await resolveWarehouseId(
+        tx,
+        ctx.company.id,
+        data.selection.mode === "filter" ? data.selection.warehouseId : undefined,
+      );
       return previewBulkEditProducts(tx, {
         companyId: ctx.company.id,
         warehouseId,
@@ -179,7 +193,11 @@ export async function applyBulkEditProductsAction(input: z.input<typeof applyBul
       );
     }
     const result = await withCompany(ctx.company.id, async (tx) => {
-      const warehouseId = await resolveWarehouseId(tx, ctx.company.id);
+      const warehouseId = await resolveWarehouseId(
+        tx,
+        ctx.company.id,
+        data.selection.mode === "filter" ? data.selection.warehouseId : undefined,
+      );
       return applyBulkEditProducts(tx, {
         companyId: ctx.company.id,
         userId: ctx.user.id,

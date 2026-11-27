@@ -1,6 +1,6 @@
 import type { ReceiptData } from "@/lib/escpos/types";
 import { formatDate } from "@/lib/format";
-import { formatIDR, formatNumber } from "@/lib/money";
+import { formatIDR, formatQty } from "@/lib/money";
 
 function escapeHtml(str: string | null | undefined): string {
   if (!str) return "";
@@ -39,7 +39,7 @@ export function renderReceiptHtml(data: ReceiptData): string {
         <div class="item">
           <div class="bold">${escapeHtml(item.name)}</div>
           <div class="row">
-            <span>  ${escapeHtml(formatNumber(item.qty))}${unitPart} x ${escapeHtml(formatIDR(item.price))}</span>
+            <span>  ${escapeHtml(formatQty(item.qty))}${unitPart} x ${escapeHtml(formatIDR(item.price))}</span>
             <span>${escapeHtml(formatIDR(item.subtotal))}</span>
           </div>
           ${discountRow}
@@ -53,9 +53,10 @@ export function renderReceiptHtml(data: ReceiptData): string {
       (pay) => `
         <div class="row">
           <span>Bayar (${escapeHtml(pay.methodName)}):</span>
-          <span>${escapeHtml(formatIDR(pay.tendered ?? pay.amount))}</span>
+          <span>${escapeHtml(formatIDR(pay.amount))}</span>
         </div>
-        ${pay.reference ? `<div class="row" style="font-size: ${smallSizePx}px;"><span>  Ref:</span><span>${escapeHtml(pay.reference)}</span></div>` : ""}
+        ${pay.tendered && pay.tendered > pay.amount ? `<div class="row"><span>Diterima:</span><span>${escapeHtml(formatIDR(pay.tendered))}</span></div>` : ""}
+        ${pay.reference ? `<div class="row" style="font-size: ${smallSizePx}px;"><span>  Ref:</span><span class="ref">${escapeHtml(pay.reference)}</span></div>` : ""}
       `,
     )
     .join("");
@@ -65,6 +66,7 @@ export function renderReceiptHtml(data: ReceiptData): string {
     (data.payments ?? [])
       .filter((payment) => payment.methodType === "credit")
       .reduce((sum, payment) => sum + payment.amount, 0);
+  const totalQty = data.lines.reduce((sum, item) => sum + (item.qtyBase ?? item.qty), 0);
 
   return `<!doctype html>
 <html lang="id">
@@ -81,34 +83,53 @@ export function renderReceiptHtml(data: ReceiptData): string {
     .row { display: flex; justify-content: space-between; gap: 4px; }
     .item { margin-bottom: 2px; }
     .copy-banner { border-top: 2px double #000; border-bottom: 2px double #000; padding: 2px 0; margin: 4px 0; text-align: center; font-weight: bold; letter-spacing: 0.08em; }
+    .ref { text-align: right; word-break: break-all; }
+    .qr { display: flex; flex-direction: column; align-items: center; margin-top: 6px; }
+    .qr img { width: ${is58 ? 18 : 22}mm; height: auto; image-rendering: pixelated; }
   </style>
 </head>
 <body>
   <main class="print-doc" data-paper="${paperKey}">
     <div class="text-center bold" style="font-size: ${headerSizePx}px;">${escapeHtml(data.companyName)}</div>
+    ${data.branchName ? `<div class="text-center bold">${escapeHtml(data.branchName)}</div>` : ""}
     ${data.address ? `<div class="text-center">${escapeHtml(data.address)}</div>` : ""}
     ${data.phone ? `<div class="text-center">Telp: ${escapeHtml(data.phone)}</div>` : ""}
     ${data.taxId ? `<div class="text-center" style="font-size: ${smallSizePx}px;">NPWP: ${escapeHtml(data.taxId)}</div>` : ""}
     ${data.headerText ? `<div class="text-center">${escapeHtml(data.headerText)}</div>` : ""}
     <div class="divider"></div>
     ${(data.copyIndex ?? 0) > 0 ? `<div class="copy-banner">SALINAN — BUKAN NOTA ASLI</div>` : ""}
+    ${data.saleStatus === "voided" || data.saleStatus === "void"
+      ? `<div class="copy-banner">VOID${data.voidReason ? ` — ${escapeHtml(data.voidReason)}` : ""}</div>`
+      : data.saleStatus === "returned"
+        ? `<div class="copy-banner">NOTA RETUR — TRANSAKSI TELAH DIRETUR</div>`
+        : ""}
     <div class="row"><span>No. Nota:</span><span>${escapeHtml(data.saleNumber)}</span></div>
     <div class="row"><span>Tanggal:</span><span>${escapeHtml(data.date)}</span></div>
     ${showCashier && data.cashierName ? `<div class="row"><span>Kasir:</span><span>${escapeHtml(data.cashierName)}</span></div>` : ""}
+    ${data.showSession !== false && data.sessionId ? `<div class="row"><span>Sesi:</span><span>${escapeHtml(data.sessionId.slice(0, 8))}</span></div>` : ""}
     ${showCustomer && data.customerName ? `<div class="row"><span>Pelanggan:</span><span>${escapeHtml(data.customerName)}</span></div>` : ""}
-    ${data.dueDate ? `<div class="row"><span>Jatuh tempo:</span><span>${escapeHtml(formatDate(data.dueDate))}</span></div>` : ""}
+    ${data.dueDate ? `<div class="row"><span>Jatuh tempo:</span><span>${escapeHtml(/^\d{4}-\d{2}-\d{2}/.test(data.dueDate) ? formatDate(data.dueDate) : data.dueDate)}</span></div>` : ""}
     <div class="divider"></div>
     ${linesHtml}
     <div class="divider"></div>
-    ${(data.discountTotal ?? 0) > 0 ? `<div class="row"><span>Subtotal:</span><span>${escapeHtml(formatIDR(data.subtotal))}</span></div><div class="row"><span>Diskon:</span><span>-${escapeHtml(formatIDR(data.discountTotal ?? 0))}</span></div>` : ""}
-    ${showTax && (data.taxTotal ?? 0) > 0 ? `<div class="row"><span>PPN:</span><span>${escapeHtml(formatIDR(data.taxTotal ?? 0))}</span></div>` : ""}
-    ${(data.roundingAdjustment ?? 0) !== 0 ? `<div class="row"><span>Pembulatan:</span><span>${escapeHtml(formatIDR(data.roundingAdjustment ?? 0))}</span></div>` : ""}
+    <div class="row"><span>Jumlah item:</span><span>${escapeHtml(formatQty(totalQty))} (${data.lines.length} jenis)</span></div>
+    <div class="row"><span>Subtotal:</span><span>${escapeHtml(formatIDR(data.subtotal))}</span></div>
+    ${(data.discountTotal ?? 0) > 0 ? `<div class="row"><span>Diskon:</span><span>-${escapeHtml(formatIDR(data.discountTotal ?? 0))}</span></div>` : ""}
+    ${showTax && (data.taxTotal ?? 0) > 0 ? `<div class="row"><span>PPN (termasuk):</span><span>${escapeHtml(formatIDR(data.taxTotal ?? 0))}</span></div>` : ""}
+    ${(data.roundingAdjustment ?? 0) !== 0 ? `<div class="row"><span>Pembulatan:</span><span>${data.roundingAdjustment && data.roundingAdjustment > 0 ? "+" : "-"}${escapeHtml(formatIDR(Math.abs(data.roundingAdjustment ?? 0)))}</span></div>` : ""}
     <div class="row bold" style="font-size: ${headerSizePx}px;"><span>TOTAL:</span><span>${escapeHtml(formatIDR(data.total))}</span></div>
     <div class="divider"></div>
     ${paymentsHtml}
-    ${outstanding > 0 ? `<div class="row bold"><span>Sisa utang:</span><span>${escapeHtml(formatIDR(outstanding))}</span></div><div class="row"><span>Status:</span><span>BELUM LUNAS</span></div>` : ""}
-    ${typeof data.change === "number" && data.change > 0 ? `<div class="row bold"><span>Kembalian:</span><span>${escapeHtml(formatIDR(data.change))}</span></div>` : outstanding <= 0 ? `<div class="row"><span>Status:</span><span>LUNAS</span></div>` : ""}
-    ${data.footerText ? `<div class="divider"></div><div class="text-center" style="font-size: ${smallSizePx}px;">${escapeHtml(data.footerText)}</div>` : `<div class="divider"></div><div class="text-center" style="font-size: ${smallSizePx}px;">Terima kasih atas kunjungan Anda!</div>`}
+    ${outstanding > 0 ? `<div class="row bold"><span>Sisa utang:</span><span>${escapeHtml(formatIDR(outstanding))}</span></div>` : ""}
+    ${typeof data.change === "number" && data.change > 0 ? `<div class="row bold"><span>Kembalian:</span><span>${escapeHtml(formatIDR(data.change))}</span></div>` : ""}
+    <div class="row bold"><span>Status:</span><span>${outstanding > 0 ? "BELUM LUNAS" : "LUNAS"}</span></div>
+    <div class="divider"></div>
+    ${
+      data.footerText
+        ? `<div class="text-center" style="font-size: ${smallSizePx}px;">${escapeHtml(data.footerText)}</div>`
+        : `<div class="text-center" style="font-size: ${smallSizePx}px;">Terima kasih atas kunjungan Anda!</div>
+           <div class="text-center" style="font-size: ${smallSizePx}px;">Barang yang sudah dibeli tidak dapat ditukar tanpa nota.</div>`
+    }
   </main>
 </body>
 </html>`;

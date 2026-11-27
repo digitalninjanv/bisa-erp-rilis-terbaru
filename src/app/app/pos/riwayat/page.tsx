@@ -160,7 +160,7 @@ export default async function SalesHistoryPage({
               {data.list.rows.map((sale) => (
                 <tr key={sale.id}>
                   <td>
-                    <Link href={`/app/pos/nota/${sale.id}`} prefetch={false} className="num font-medium hover:underline">
+                    <Link href={`/app/pos/nota/${sale.id}?salinan=1`} prefetch={false} className="num font-medium hover:underline">
                       {sale.number}
                     </Link>
                     <p className="text-[10px] text-muted-foreground">{formatDate(sale.date)}</p>
@@ -200,7 +200,7 @@ export default async function SalesHistoryPage({
             <div key={sale.id} className="px-4 py-3">
               <div className="flex items-baseline justify-between gap-2">
                 <Link
-                  href={`/app/pos/nota/${sale.id}`}
+                  href={`/app/pos/nota/${sale.id}?salinan=1`}
                   prefetch={false}
                   className="num inline-flex min-h-11 items-center text-[12px] font-medium text-primary hover:underline"
                 >

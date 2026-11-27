@@ -342,7 +342,10 @@ export function SettingsForm({
       </SettingsSection>
       <SettingsSection id="alur-kerja" title="Alur kerja & stok" description="Saklar perilaku alur lintas modul.">
         <div className="grid gap-3 sm:grid-cols-2">
-        <div className="rounded-lg border border-tone-amber/30 bg-tone-amber-soft/20 p-3 sm:col-span-2">
+        <div
+          id="kebijakan-stok"
+          className="scroll-mt-24 rounded-lg border border-tone-amber/30 bg-tone-amber-soft/20 p-3 sm:col-span-2"
+        >
           <label className="flex items-start gap-2.5 text-[12px] font-medium text-foreground">
             <input
               type="checkbox"

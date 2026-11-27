@@ -16,6 +16,7 @@ export function saleReceiptLine(line: {
   return {
     name: line.packagingName ? `${line.productName} (${line.packagingName})` : line.productName,
     qty: d(line.packagingId ? line.qtyInput : line.qty).toNumber(),
+    qtyBase: d(line.qty).toNumber(),
     unit: line.packagingName,
     price: d(line.unitPrice).mul(line.packagingId ? d(line.isiSnapshot) : 1).toNumber(),
     subtotal: d(line.lineTotal).toNumber(),

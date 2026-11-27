@@ -11,9 +11,11 @@ import {
   type ReactNode,
 } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Check, Save } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { ConfirmDialog } from "@/components/blocks/confirm-dialog";
 
 export type SettingsNavItem = {
   id: string;
@@ -72,8 +74,10 @@ export function SettingsLayout({
   saveLabel?: string;
   className?: string;
 }) {
+  const router = useRouter();
   const [dirtyIds, setDirtyIds] = useState<ReadonlySet<string>>(new Set());
   const [saving, setSaving] = useState(false);
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
   const saversRef = useRef(new Map<string, Saver>());
 
   const reportDirty = useCallback((id: string, dirty: boolean) => {
@@ -97,6 +101,35 @@ export function SettingsLayout({
   );
 
   const dirtyCount = dirtyIds.size;
+
+  // Lindungi perubahan yang belum disimpan dari refresh/close tab.
+  // Navigasi internal tetap memakai bilah simpan yang selalu terlihat;
+  // dialog per-tautan akan mengganggu perpindahan tab yang normal.
+  useEffect(() => {
+    if (dirtyCount === 0) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    // Navigasi internal (tab/sidebar) juga tidak boleh membuang isian
+    // tanpa konfirmasi. Hanya tautan kiri-sama yang dicegat.
+    const onClick = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const anchor = (event.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+      if (!anchor || anchor.target === "_blank" || anchor.hasAttribute("download")) return;
+      const url = new URL(anchor.href, window.location.href);
+      if (url.origin !== window.location.origin) return;
+      if (url.pathname === window.location.pathname && url.search === window.location.search) return;
+      event.preventDefault();
+      setPendingHref(`${url.pathname}${url.search}${url.hash}`);
+    };
+    document.addEventListener("click", onClick, true);
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => {
+      document.removeEventListener("click", onClick, true);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+    };
+  }, [dirtyCount]);
 
   async function saveAll() {
     const ids = [...dirtyIds];
@@ -186,7 +219,7 @@ export function SettingsLayout({
                   type="button"
                   onClick={() => void saveAll()}
                   disabled={saving}
-                  className="inline-flex h-9 items-center gap-1.5 rounded-md bg-primary px-4 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                  className="inline-flex h-11 items-center gap-1.5 rounded-md bg-primary px-4 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50 lg:h-9"
                 >
                   <Save className="size-4" />
                   {saving ? "Menyimpan…" : saveLabel}
@@ -202,7 +235,7 @@ export function SettingsLayout({
                 <button
                   type="button"
                   disabled
-                  className="inline-flex h-9 items-center gap-1.5 rounded-md bg-primary px-4 text-[13px] font-medium text-primary-foreground opacity-50"
+                  className="inline-flex h-11 items-center gap-1.5 rounded-md bg-primary px-4 text-[13px] font-medium text-primary-foreground opacity-50 lg:h-9"
                 >
                   <Save className="size-4" />
                   {saveLabel}
@@ -212,6 +245,20 @@ export function SettingsLayout({
           </div>
         </div>
       </div>
+      <ConfirmDialog
+        open={pendingHref !== null}
+        title="Tinggalkan halaman pengaturan?"
+        description="Ada perubahan yang belum disimpan. Jika keluar sekarang, isian akan hilang."
+        confirmLabel="Ya, tinggalkan"
+        cancelLabel="Tetap di sini"
+        danger
+        onConfirm={() => {
+          const href = pendingHref;
+          setPendingHref(null);
+          if (href) router.push(href);
+        }}
+        onCancel={() => setPendingHref(null)}
+      />
     </SettingsRegistryContext.Provider>
   );
 }

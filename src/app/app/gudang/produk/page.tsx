@@ -130,15 +130,16 @@ export default async function ProductsPage({
                 ...(params.q ? { q: params.q } : {}),
                 ...(params.category ? { category: params.category } : {}),
                 ...(params.lowStock === "1" ? { lowStock: "1" } : {}),
+                warehouse: data.warehouseId,
                 format: "xlsx",
               }).toString()}`}
-              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] font-medium hover:bg-muted"
+              className="inline-flex h-11 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] font-medium hover:bg-muted lg:h-8"
             >
               <Download className="size-3.5" /> Unduh Excel
             </Link>
             <Link
               href="/app/gudang/impor"
-              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] font-medium hover:bg-muted"
+              className="inline-flex h-11 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] font-medium hover:bg-muted lg:h-8"
             >
               <Upload className="size-3.5" /> Impor Excel
             </Link>
@@ -208,7 +209,12 @@ export default async function ProductsPage({
             basePath="/app/gudang/produk"
             param="lowStock"
             q={params.q}
-            params={{ urut: sort, arah: dir }}
+            params={{
+              category: params.category,
+              warehouse: data.warehouseId,
+              urut: sort,
+              arah: dir,
+            }}
             value={params.lowStock}
             options={[
               { label: "Semua", value: "" },
@@ -294,6 +300,7 @@ export default async function ProductsPage({
             q: params.q,
             categoryId: params.category,
             lowStock: params.lowStock === "1",
+            warehouseId: data.warehouseId,
           }}
           totalFiltered={data.list.total}
         />

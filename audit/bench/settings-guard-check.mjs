@@ -1,0 +1,11 @@
+import { chromium } from "@playwright/test";
+const b=await chromium.launch(); const ctx=await b.newContext({baseURL:"http://127.0.0.1:3000",viewport:{width:1440,height:900}});
+await ctx.addCookies([{name:"better-auth.session_token",value:"xQ6RsUbS7mfIWfD8rq2UqNOX9ah6lbbn.kn1MM8yVFKi26brgnNUqGoXquVdkPvNcMurQ7W3lpxk%3D",domain:"127.0.0.1",path:"/",httpOnly:true,expires:1796343121}]);
+const p=await ctx.newPage(); await p.goto("/app/pengaturan?tab=umum",{waitUntil:"domcontentloaded"}); await p.waitForTimeout(1000);
+const name=p.getByLabel("Nama legal"); await name.fill("Bisa Minimarket Uji Guard");
+await p.waitForTimeout(400);
+await p.getByRole("link",{name:"Pengguna & peran"}).first().click(); await p.waitForTimeout(400);
+const dialog=await p.getByText("Tinggalkan halaman pengaturan?").count();
+await p.getByRole("button",{name:"Tetap di sini"}).click(); await p.waitForTimeout(200);
+console.log(JSON.stringify({dialog, urlAfterCancel:p.url(), stillOnPage:p.url().includes("tab=umum")},null,2));
+await b.close();

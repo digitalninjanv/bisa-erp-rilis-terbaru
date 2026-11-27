@@ -6,6 +6,7 @@ import { TemplateDivider, headingFont } from "./template-parts";
 export function PrintHeader({
   settings,
   companyName,
+  branchName,
   address,
   phone,
   taxId,
@@ -16,6 +17,9 @@ export function PrintHeader({
 }: {
   settings: PrintSettings;
   companyName: string;
+  /** Nama outlet/cabang pada nota; alamat & telepon di bawahnya
+   * sebaiknya alamat cabang bila tersedia. */
+  branchName?: string | null;
   address?: string | null;
   phone?: string | null;
   taxId?: string | null;
@@ -40,7 +44,8 @@ export function PrintHeader({
           alt={companyName}
           style={{
             maxHeight: variant === "receipt" ? "12mm" : style.dense ? "10mm" : "14mm",
-            maxWidth: style.centeredHeader ? "70mm" : "60mm",
+            // Nota thermal tidak boleh melebar melewati lebar kertas roll.
+            maxWidth: variant === "receipt" ? "100%" : style.centeredHeader ? "70mm" : "60mm",
           }}
           className={variant === "receipt" ? "mx-auto object-contain" : "object-contain"}
         />
@@ -60,6 +65,15 @@ export function PrintHeader({
           {companyName}
         </p>
       )}
+      {branchName ? (
+        <p
+          className={`mt-0.5 font-semibold uppercase tracking-wide ${
+            variant === "receipt" ? "text-[10px]" : "text-[11px]"
+          }`}
+        >
+          {branchName}
+        </p>
+      ) : null}
       {settings.template === "minimal" || style.dense ? (
         address || phone || (variant === "document" && taxId) ? (
           <p className={`mt-0.5 ${variant === "receipt" ? "text-[10px]" : "text-[11px]"}`}>

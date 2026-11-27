@@ -101,17 +101,6 @@ export function ProductForm({
     isActive: product?.isActive ?? true,
     notes: product?.notes ?? "",
   });
-  const isDirty =
-    form.name !== (product?.name ?? "") ||
-    form.sku !== (product?.sku ?? "") ||
-    form.barcode !== (product?.barcode ?? "") ||
-    form.categoryId !== (product?.categoryId ?? "") ||
-    form.unitId !== (product?.unitId ?? "") ||
-    form.supplierId !== (product?.supplierId ?? "") ||
-    form.costPrice !== (product?.costPrice ?? "0") ||
-    form.salePrice !== (product?.salePrice ?? "0") ||
-    form.isTaxExempt !== (product?.isTaxExempt ?? false) ||
-    form.notes !== (product?.notes ?? "");
   const [customValues, setCustomValues] = useState<Record<string, string>>(
     () => ({ ...(product?.attributes ?? {}) }),
   );
@@ -122,6 +111,27 @@ export function ProductForm({
   // buat-baru selalu; formulir ubah hanya bila halaman menyertakan
   // daftar kemasan produk (absen = jangan sentuh, jangan hapus).
   const packagingsManaged = !product || product.packagings !== undefined;
+  const initialPackaging = (product?.packagings ?? []).map((row, index) =>
+    toRowState(row, row.id ?? `row-${index}`),
+  );
+  const isDirty =
+    form.name !== (product?.name ?? "") ||
+    form.sku !== (product?.sku ?? "") ||
+    form.barcode !== (product?.barcode ?? "") ||
+    form.categoryId !== (product?.categoryId ?? "") ||
+    form.unitId !== (product?.unitId ?? "") ||
+    form.supplierId !== (product?.supplierId ?? "") ||
+    form.costPrice !== (product?.costPrice ?? "0") ||
+    form.salePrice !== (product?.salePrice ?? "0") ||
+    form.minStock !== (product?.minStock ?? "0") ||
+    form.trackStock !== (product?.trackStock ?? true) ||
+    form.trackBatch !== (product?.trackBatch ?? false) ||
+    form.trackSerial !== (product?.trackSerial ?? false) ||
+    form.isTaxExempt !== (product?.isTaxExempt ?? false) ||
+    form.isActive !== (product?.isActive ?? true) ||
+    form.notes !== (product?.notes ?? "") ||
+    JSON.stringify(customValues) !== JSON.stringify(product?.attributes ?? {}) ||
+    (packagingsManaged && JSON.stringify(packagingRows) !== JSON.stringify(initialPackaging));
   // A-28 Tahap 4 (H-PGT-01): harga memakai MoneyInput bersama —
   // validitas ketikan per field menahan kirim sampai angka terbaca.
   const [invalidMoney, setInvalidMoney] = useState<Record<string, boolean>>({});
@@ -210,8 +220,8 @@ export function ProductForm({
         onClick={() => setOpen(true)}
         className={
           product
-            ? "inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] font-medium hover:bg-muted"
-            : "inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/90"
+            ? "inline-flex h-11 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] font-medium hover:bg-muted lg:h-8"
+            : "inline-flex h-11 items-center gap-1.5 rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary/90 lg:h-8"
         }
       >
         {product ? <Save className="size-3.5" /> : <Plus className="size-3.5" />}

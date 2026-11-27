@@ -260,6 +260,13 @@
 .theme-erp .stat-card[data-size="default"] .stat-value {
   font-size: clamp(15px, 2.4vw, 24px);
 }
+/* KPI Beranda: jumlah kartu bergantung izin. Di ponsel, kartu terakhir
+   yang ganjil mengisi dua kolom agar tidak menyisakan sel kosong. */
+@media (max-width: 767px) {
+  .kpi-band > :last-child:nth-child(odd) {
+    grid-column: span 2;
+  }
+}
 .theme-erp .field-label {
   font-size: 13px;
   font-weight: 500;

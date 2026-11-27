@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { newUuid } from "@/lib/uuid";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { Plus, Save, Scale, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { showPostingWarnings } from "@/lib/notify-warnings";
@@ -26,6 +25,7 @@ import { MoneyInput } from "@/components/money-input";
 import { DateField } from "@/components/date-field";
 import { DocumentForm } from "@/components/blocks/document-form";
 import { ErrorSummary, type FormErrorItem } from "@/components/blocks/error-summary";
+import { ConfirmDialog } from "@/components/blocks/confirm-dialog";
 import { fieldClass, labelClass } from "@/components/akuntansi/field-classes";
 
 type Account = ComboboxAccount;
@@ -61,6 +61,7 @@ export function JournalEntryForm({
   const [busy, setBusy] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [formErrors, setFormErrors] = useState<FormErrorItem[]>([]);
+  const [cancelOpen, setCancelOpen] = useState(false);
   // AK-P3-02: one idempotency key per form session (same pattern as the
   // POS terminal) — a network retry or double submit replays this key and
   // the server returns the already-posted journal instead of duplicating it.
@@ -82,6 +83,19 @@ export function JournalEntryForm({
   const filledLines = lines.filter(
     (line) => line.accountId && (d(line.debit || "0").gt(0) || d(line.credit || "0").gt(0)),
   );
+  const isDirty =
+    description.trim() !== "" ||
+    lines.some((line) => line.accountId !== "" || line.debit !== "" || line.credit !== "");
+
+  useEffect(() => {
+    if (!isDirty) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [isDirty]);
 
   // Alasan tombol Posting nonaktif, selalu terlihat di samping tombol —
   // bukan lagi tombol mati yang misterius.
@@ -359,7 +373,7 @@ export function JournalEntryForm({
         <button
           type="button"
           onClick={() => setLines((current) => appendJournalLines(current))}
-          className="inline-flex h-8 items-center gap-1.5 rounded border border-border px-2.5 text-[11px] transition-colors hover:bg-muted"
+          className="inline-flex h-11 items-center gap-1.5 rounded border border-border px-2.5 text-[11px] transition-colors hover:bg-muted lg:h-8"
         >
           <Plus className="size-3.5" /> Tambah 2 baris
         </button>
@@ -368,7 +382,7 @@ export function JournalEntryForm({
           onClick={applyBalancing}
           disabled={!balancing}
           title={balancing ? "Isi nominal penyeimbang pada sisi yang kurang (Alt+B)" : "Tidak ada selisih untuk disamakan"}
-          className="inline-flex h-8 items-center gap-1.5 rounded border border-border px-2.5 text-[11px] transition-colors hover:bg-muted disabled:opacity-40"
+          className="inline-flex h-11 items-center gap-1.5 rounded border border-border px-2.5 text-[11px] transition-colors hover:bg-muted disabled:opacity-40 lg:h-8"
         >
           <Scale className="size-3.5" />
           {balancing ? `Samakan selisih ${formatIDR(balancing.amount)}` : "Samakan selisih"}
@@ -380,14 +394,21 @@ export function JournalEntryForm({
           <p className="text-[11px] text-muted-foreground" role="status">{blockReason}</p>
         ) : null}
         <div className="flex items-center gap-2">
-          <Link href="/app/akuntansi" className="inline-flex h-8 items-center rounded-md border border-border px-3 text-[12px] transition-colors hover:bg-muted">
+          <button
+            type="button"
+            onClick={() => {
+              if (isDirty) setCancelOpen(true);
+              else router.push("/app/akuntansi");
+            }}
+            className="inline-flex h-11 items-center rounded-md border border-border px-3 text-[12px] transition-colors hover:bg-muted lg:h-8"
+          >
             Batal
-          </Link>
+          </button>
           <button
             type="button"
             onClick={() => void saveDraft()}
             disabled={busy || savingDraft || blockReason !== null}
-            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] font-medium transition-colors hover:bg-muted disabled:opacity-50"
+            className="inline-flex h-11 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] font-medium transition-colors hover:bg-muted disabled:opacity-50 lg:h-8"
           >
             <Save className="size-3.5" /> {savingDraft ? "Menyimpan…" : "Simpan draf"}
           </button>
@@ -395,7 +416,7 @@ export function JournalEntryForm({
             type="button"
             onClick={submit}
             disabled={busy || savingDraft || blockReason !== null}
-            className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-4 text-[12px] font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+            className="inline-flex h-11 items-center gap-1.5 rounded-md bg-primary px-4 text-[12px] font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50 lg:h-8"
           >
             <Save className="size-3.5" /> {busy ? "Memposting…" : "Posting jurnal"}
           </button>
@@ -661,6 +682,19 @@ export function JournalEntryForm({
       </div>
 
     </DocumentForm>
+    <ConfirmDialog
+      open={cancelOpen}
+      title="Batalkan jurnal ini?"
+      description="Baris dan keterangan yang sudah diketik akan hilang. Simpan sebagai draf bila masih ingin melanjutkannya nanti."
+      confirmLabel="Ya, batalkan"
+      cancelLabel="Lanjut mengisi"
+      danger
+      onConfirm={() => {
+        setCancelOpen(false);
+        router.push("/app/akuntansi");
+      }}
+      onCancel={() => setCancelOpen(false)}
+    />
     </>
   );
 }

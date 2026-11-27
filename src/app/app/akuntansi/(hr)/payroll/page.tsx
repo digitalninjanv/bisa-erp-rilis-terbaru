@@ -129,7 +129,12 @@ export default async function PayrollPage() {
           />
         }
       >
-        <div className="overflow-x-auto">
+        <div
+          className="overflow-x-auto"
+          tabIndex={0}
+          role="region"
+          aria-label="Tabel daftar karyawan payroll"
+        >
           <table className="data-table">
             <thead>
               <tr>
@@ -217,7 +222,12 @@ export default async function PayrollPage() {
           />
         }
       >
-        <div className="overflow-x-auto">
+        <div
+          className="overflow-x-auto"
+          tabIndex={0}
+          role="region"
+          aria-label="Tabel riwayat payroll"
+        >
           <table className="data-table">
             <thead>
               <tr>

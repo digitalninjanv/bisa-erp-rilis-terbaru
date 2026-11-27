@@ -26,7 +26,14 @@ import { writeAudit } from "@/server/audit";
 
 export type BulkProductSelection =
   | { mode: "ids"; ids: string[] }
-  | { mode: "filter"; q?: string; categoryId?: string; lowStock?: boolean };
+  | {
+      mode: "filter";
+      q?: string;
+      categoryId?: string;
+      lowStock?: boolean;
+      /** Gudang yang sedang dilihat pengguna; stok minimum dinilai di sini. */
+      warehouseId?: string;
+    };
 
 export type BulkProductOperation =
   | { kind: "price"; target: "salePrice" | "costPrice"; mode: "percent" | "nominal"; value: string }

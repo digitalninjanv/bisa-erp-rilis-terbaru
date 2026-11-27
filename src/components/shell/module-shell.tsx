@@ -268,7 +268,7 @@ export function HomeTopbar({ ctx }: { ctx: CompanyContext }) {
           </Link>
           <div>
             <p className="text-[13px] font-semibold leading-tight">Bisa ERP</p>
-            <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+            <p className="hidden text-[10px] uppercase tracking-[0.16em] text-muted-foreground sm:block">
               Minimarket suite
             </p>
           </div>

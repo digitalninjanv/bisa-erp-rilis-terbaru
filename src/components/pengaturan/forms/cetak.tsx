@@ -618,9 +618,36 @@ export function PrintSettingsForm({
                       <span>Contoh Produk B ×1</span>
                       <span className="num">{formatIDR(12000)}</span>
                     </div>
+                    <div className="my-2 border-t border-dashed border-black/50" />
+                    <div className="flex justify-between">
+                      <span>Jumlah item</span>
+                      <span className="num">3 (2 jenis)</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Subtotal</span>
+                      <span className="num">{formatIDR(27000)}</span>
+                    </div>
+                    {previewSettings.showTax ? (
+                      <div className="flex justify-between">
+                        <span>PPN (termasuk)</span>
+                        <span className="num">{formatIDR(2700)}</span>
+                      </div>
+                    ) : null}
                     <div className="print-total-bar mt-1 flex justify-between border-t border-black/50 pt-1 text-[13px] font-bold">
                       <span>TOTAL</span>
                       <span className="num">{formatIDR(27000)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Tunai</span>
+                      <span className="num">{formatIDR(30000)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Kembalian</span>
+                      <span className="num">{formatIDR(3000)}</span>
+                    </div>
+                    <div className="flex justify-between font-semibold">
+                      <span>Status</span>
+                      <span>LUNAS</span>
                     </div>
                     <PrintFooter
                       settings={previewSettings}

@@ -172,7 +172,12 @@ export default async function WarehouseDashboard({
             <p className="mt-0.5 text-[11px] text-muted-foreground">Batch kedaluwarsa tidak bisa dijual; keluarkan lewat penyesuaian stok.</p>
           </div>
         </div>
-          <div className="overflow-x-auto">
+          <div
+            className="overflow-x-auto"
+            tabIndex={0}
+            role="region"
+            aria-label="Tabel batch kedaluwarsa"
+          >
             <table className="data-table">
               <thead>
                 <tr>
@@ -236,7 +241,12 @@ export default async function WarehouseDashboard({
           {data.movements.length === 0 ? (
             <EmptyState title="Belum ada pergerakan" description="Penerimaan, penjualan, dan penyesuaian akan muncul di sini." />
           ) : (
-            <div className="overflow-x-auto">
+            <div
+              className="overflow-x-auto"
+              tabIndex={0}
+              role="region"
+              aria-label="Tabel pergerakan stok terbaru"
+            >
               <table className="data-table">
                 <thead>
                   <tr>

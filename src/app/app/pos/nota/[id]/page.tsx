@@ -137,7 +137,8 @@ export default async function ReceiptPage({
       </div>
     );
   }
-  const { sale, lines, payments, settings, customer, cashier } = data;
+  const { sale, lines, payments, settings, customer, cashier, branch } = data;
+  const totalItemQty = lines.reduce((sum, line) => sum + Number(line.qty), 0);
   // Print Engine (T4-4, D-13): paper/template come from the shared print
   // settings; the legacy receipt width column no longer drives layout.
   const printSettings = toPrintSettings(settings, "nota");
@@ -173,7 +174,7 @@ export default async function ReceiptPage({
             href={invoiceHref(sale.id, { copy: isCopy, printToken: query.printToken })}
             className="inline-flex h-11 items-center rounded-md border border-border bg-card px-3 text-[12px] hover:bg-muted lg:h-8"
           >
-            Faktur A4
+            Faktur
           </Link>
           <Link
             href="/app/pos/riwayat"
@@ -219,8 +220,9 @@ export default async function ReceiptPage({
               headerText: printSettings.headerText,
             }}
             companyName={settings?.legalName ?? "Bisa Minimarket"}
-            address={settings?.address}
-            phone={settings?.phone}
+            branchName={branch?.name}
+            address={branch?.address ?? settings?.address}
+            phone={branch?.phone ?? settings?.phone}
             variant="receipt"
           />
 
@@ -293,7 +295,7 @@ export default async function ReceiptPage({
                   <td className="py-1 pr-1">
                     <p className="font-medium">{line.productName}</p>
                     {line.productSku ? (
-                      <p className="num text-[9px] leading-tight text-black/50">{line.productSku}</p>
+                      <p className="num text-[10px] leading-tight text-black/70">{line.productSku}</p>
                     ) : null}
                     <p className="num">
                       {/* CT-26: price phrases never break mid-phrase;
@@ -331,6 +333,12 @@ export default async function ReceiptPage({
           <div className="my-2 border-t border-dashed border-black/50" />
 
           <div className="space-y-0.5">
+            <div className="flex justify-between">
+              <span>Jumlah item</span>
+              <span className="num">
+                {formatQty(totalItemQty)} ({lines.length} jenis)
+              </span>
+            </div>
             <div className="flex justify-between">
               <span>Subtotal</span>
               <span className="num">{formatIDR(sale.subtotal)}</span>
@@ -399,11 +407,19 @@ export default async function ReceiptPage({
                 <span className="num">{formatIDR(Number(sale.total) - Number(sale.paidTotal))}</span>
               </div>
             ) : null}
+            <div className="flex justify-between font-semibold">
+              <span>Status</span>
+              <span>{Number(sale.paidTotal) < Number(sale.total) ? "BELUM LUNAS" : "LUNAS"}</span>
+            </div>
           </div>
 
           {sale.voidReason ? (
             <p className="mt-2 border-y-2 border-double border-black py-1 text-center font-bold uppercase tracking-wider">
               VOID — {sale.voidReason}
+            </p>
+          ) : sale.status === "returned" ? (
+            <p className="mt-2 border-y-2 border-double border-black py-1 text-center font-bold uppercase tracking-wider">
+              Nota retur — transaksi telah diretur
             </p>
           ) : null}
           <PrintFooter
@@ -412,7 +428,10 @@ export default async function ReceiptPage({
             variant="receipt"
             qrDataUrl={qrDataUrl}
             qrSizeMm={paperSpec(printSettings.receiptPaper).qrMm}
-            footerText={printSettings.footerText ?? "Terima kasih telah berbelanja"}
+            footerText={
+              printSettings.footerText ??
+              "Terima kasih telah berbelanja\nBarang yang sudah dibeli tidak dapat ditukar tanpa nota."
+            }
           />
         </div>
         </PrintShell>

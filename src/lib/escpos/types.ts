@@ -21,6 +21,9 @@ export interface ThermalPrinterDevice {
 export interface ReceiptLineItem {
   name: string;
   qty: number;
+  /** Kuantitas dalam satuan dasar; dipakai untuk total item yang konsisten
+   * antara nota web, HTML offline, dan ESC/POS. */
+  qtyBase?: number;
   unit?: string | null;
   price: number;
   subtotal: number;
@@ -41,11 +44,18 @@ export interface ReceiptData {
   taxId?: string | null;
   address?: string | null;
   phone?: string | null;
+  /** Nama outlet/cabang yang melayani transaksi. */
+  branchName?: string | null;
   headerText?: string | null;
   footerText?: string | null;
   saleNumber: string;
   date: string;
   dueDate?: string | null;
+  /** Status transaksi agar nota retur/void tidak tercetak seperti asli. */
+  saleStatus?: "completed" | "returned" | "voided" | string | null;
+  voidReason?: string | null;
+  /** Identitas sesi kas; hanya 8 karakter awal yang dicetak. */
+  sessionId?: string | null;
   cashierName?: string | null;
   customerName?: string | null;
   lines: ReceiptLineItem[];
@@ -63,7 +73,10 @@ export interface ReceiptData {
   showTax?: boolean;
   showCashier?: boolean;
   showCustomer?: boolean;
+  showSession?: boolean;
   showQr?: boolean;
+  /** Data URL QR untuk jalur HTML offline/Electron. */
+  qrDataUrl?: string | null;
   openCashDrawer?: boolean;
   cutPaper?: boolean;
 }

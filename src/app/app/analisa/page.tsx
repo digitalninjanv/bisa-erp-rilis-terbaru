@@ -351,7 +351,7 @@ export default async function AnalisaPage({
                     }
                   >
                     {item.label}
-                    <span className="num opacity-70">{counts[item.key]}</span>
+                    <span className="num">{counts[item.key]}</span>
                   </Link>
                 ))}
               </div>
