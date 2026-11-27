@@ -141,6 +141,7 @@ Desktop shell disamakan dengan terminal POS yang baru, tanpa mengubah jalur tran
 - Pengaturan kini satu kartu full-height: isi form scroll, tombol **Uji Cetak / Tutup / Simpan** selalu di dasar. Diuji pada 560×660, 540×540, dan lebar minimum 440×503 — tombol Simpan selalu terlihat.
 - Label versi dinaikkan ke 0.1.2; AppImage dibangun ulang dari sumber saat ini, SHA-256 `13f17d6bc369958bb7ee40a2586e32f255b1b24c8aa3843d65e10d5183a4d272`.
 - Smoke Electron 45.4.1: offline → halaman offline, Pengaturan menampilkan 3 printer + pilihan 58/80 mm, login → `/app/pos`, checkout tunai → “Transaksi berhasil”. 0 console/page error.
+- AppImage final (bukan hanya `linux-unpacked`) dijalankan langsung: login → `/app/pos`, jendela maximized 1536×835, `window.bisaPosDesktop` aktif, pencarian produk terlihat, 0 console error.
 - axe-core pada halaman offline dan Pengaturan: **0 violations** (WCAG 2.0/2.1 A/AA). Screenshot: `electron-offline-0.1.2.png`, `electron-settings-0.1.2.png`, `electron-settings-540x540.png`, `electron-settings-420x540.png`.
 - Sisa: installer Windows 0.1.2 dibangun lewat CI dan belum diuji pada PC kasir fisik; tanda tangan kode/auto-update belum ada.
 
