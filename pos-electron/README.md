@@ -17,7 +17,7 @@ Aplikasi desktop resmi untuk Bisa POS yang secara bawaan membuka terminal `https
    - Windows: jalankan `pnpm run package:win` **di Windows** (NSIS membutuhkan Wine bila dijalankan dari Linux) → `Bisa POS Setup <versi>.exe`.
    Workflow `.github/workflows/pos-electron-build.yml` membangun AppImage di Ubuntu dan installer NSIS di Windows secara otomatis; unduh artifact `bisa-pos-windows-nsis` dari halaman Actions. Hasil lokal berada di `dist-release/pos-electron/`.
 3. Build ini memakai bawaan `https://ifi.lapak.my.id`. Untuk server lain, jalankan dengan `--erp-url=https://alamat-erp-toko` atau ubah lewat **Atur printer & server**. Alamat HTTPS harus memakai sertifikat yang dipercaya komputer kasir.
-4. Untuk Linux, dari root repo jalankan `bash pos-electron/install-linux.sh "/path/ke/Bisa POS-0.1.1.AppImage"` untuk menambahkan ikon **Bisa POS** ke menu aplikasi pengguna. Jika sistem tidak menyediakan FUSE, jalankan AppImage dengan `--appimage-extract-and-run`.
+4. Untuk Linux, dari root repo jalankan `bash pos-electron/install-linux.sh "/path/ke/Bisa POS-0.1.2.AppImage"` untuk menambahkan ikon **Bisa POS** ke menu aplikasi pengguna. Jika sistem tidak menyediakan FUSE, jalankan AppImage dengan `--appimage-extract-and-run`.
 
 ## Printer
 

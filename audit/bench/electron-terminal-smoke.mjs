@@ -3,10 +3,11 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+const BASE = process.env.POS_BASE_URL ?? "http://127.0.0.1:3100";
 const userData = mkdtempSync(join(tmpdir(), "bisa-pos-terminal-"));
 const app = await electron.launch({
   executablePath: "dist-release/pos-electron/linux-unpacked/bisa-pos",
-  args: ["--no-sandbox", "--erp-url=http://127.0.0.1:3100", `--user-data-dir=${userData}`],
+  args: ["--no-sandbox", `--erp-url=${BASE}`, `--user-data-dir=${userData}`],
   env: { ...process.env, XDG_CONFIG_HOME: userData },
   timeout: 30000,
 });

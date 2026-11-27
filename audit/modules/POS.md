@@ -121,7 +121,7 @@ This confirms the serialized lock is safe and that opposite cart order does not 
 - `p1-pos-receipts.log`: receipt/invoice P1 regression set **12/12 passed** (fresh token, no-token original, `salinan=1`, A4).
 - `current-pos.log` (pre-fix): 14 files pass; `pos-audit-remediation` 2 fixture failures; the `pos-session-close-hardening` POS-005 failure is now fixed.
 - `validate-pwa-final.log`: PWA online/offline reload + sync **2/2 passed**.
-- **Not tested:** physical printer/jam/power loss, barcode scanner hardware/rapid scan, cross-browser matrix, full 23-file E2E suite, production RLS, load/concurrency at target volume, Electron packaging/install.
+- **Not tested:** physical printer/jam/power loss, barcode scanner hardware/rapid scan, cross-browser matrix, full 23-file E2E suite, production RLS, load/concurrency at target volume, Electron install on cashier hardware.
 - **No P0 confirmed** in the executed POS paths. POS-005, POS-006, and POS-007 are fixed; no active POS code finding remains. Full outage/retry lifecycle, target-volume load, and printer hardware remain untested.
 
 ## Electron desktop smoke — 2026-11-25
@@ -131,6 +131,18 @@ This confirms the serialized lock is safe and that opposite cart order does not 
 - 13 key ERP pages (POS, history/session/hold, warehouse, receipt/valuation, opening-stock import, accounting/reports) returned 200 with no error screen.
 - Root cause of an initial React #441: disposable DB had not applied migration 0089 (`products.is_tax_exempt`); after `pnpm db:migrate`, POS opened normally. The server release tarball was rebuilt with 0089 and install/update scripts run `migrate.mjs` before serving.
 - Residual desktop gaps: LAN `http://IP` is not a secure context, so the PWA offline shell does not register there; kiosk scripts/runbook still carry Tauri-era paths; no auto-update/code signing and Windows NSIS was not built on this host. See `audit/modules/PLATFORM_SECURITY.md` (ELE-001…ELE-005).
+
+## Electron desktop 0.1.2 — 2026-11-27
+
+Desktop shell disamakan dengan terminal POS yang baru, tanpa mengubah jalur transaksi:
+
+- Jendela terminal 1440×900 (minimum 1024×700), langsung dimaksimalkan; latar `#e7ddcc` mencegah kilatan putih saat halaman dimuat, menu bar auto-hide. Uji Xvfb: jendela benar-benar maximized 1536×835 pada work area 1536×864 dan langsung terlihat.
+- Halaman offline dan Pengaturan Printer & Server memakai palet POS: kanvas hangat, panel putih, border kuat, aksi hijau, focus ring emas. Status server dan tips laci kasir tetap terlihat.
+- Pengaturan kini satu kartu full-height: isi form scroll, tombol **Uji Cetak / Tutup / Simpan** selalu di dasar. Diuji pada 560×660, 540×540, dan lebar minimum 440×503 — tombol Simpan selalu terlihat.
+- Label versi dinaikkan ke 0.1.2; AppImage dibangun ulang dari sumber saat ini, SHA-256 `13f17d6bc369958bb7ee40a2586e32f255b1b24c8aa3843d65e10d5183a4d272`.
+- Smoke Electron 45.4.1: offline → halaman offline, Pengaturan menampilkan 3 printer + pilihan 58/80 mm, login → `/app/pos`, checkout tunai → “Transaksi berhasil”. 0 console/page error.
+- axe-core pada halaman offline dan Pengaturan: **0 violations** (WCAG 2.0/2.1 A/AA). Screenshot: `electron-offline-0.1.2.png`, `electron-settings-0.1.2.png`, `electron-settings-540x540.png`, `electron-settings-420x540.png`.
+- Sisa: installer Windows 0.1.2 dibangun lewat CI dan belum diuji pada PC kasir fisik; tanda tangan kode/auto-update belum ada.
 
 ## Contrast & readability audit — 2026-11-25 (riwayat; digantikan redesign 2026-11-26)
 

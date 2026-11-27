@@ -297,7 +297,7 @@ function openSettingsModal() {
     minimizable: false,
     maximizable: false,
     autoHideMenuBar: true,
-    backgroundColor: "#f7f5f2",
+    backgroundColor: "#e7ddcc",
     webPreferences: {
       sandbox: true,
       contextIsolation: true,
@@ -324,9 +324,12 @@ async function clearAppCacheAndReload() {
 async function openTerminal() {
   terminal = new BrowserWindow({
     title: "Bisa POS",
-    width: 1366,
-    height: 850,
-    backgroundColor: "#f0eeee",
+    width: 1440,
+    height: 900,
+    minWidth: 1024,
+    minHeight: 700,
+    autoHideMenuBar: true,
+    backgroundColor: "#e7ddcc",
     webPreferences: { ...preferences, preload: join(__dirname, "preload.cjs") },
   });
   terminal.on("closed", () => {
@@ -360,6 +363,7 @@ async function openTerminal() {
     { type: "separator" },
     { role: "quit", label: "Keluar" },
   ] }]));
+  terminal.maximize();
   await loadTerminal();
 }
 
