@@ -66,7 +66,6 @@ export function PosTerminal({
   });
   const [selectedWarehouse, setSelectedWarehouse] = useState(warehouseId);
   const [selectedCategory, setSelectedCategory] = useState("");
-  // FIX-GDG Tahap 4 (butir b): reservasi terpilih untuk penjualan ini.
   const [reservationId, setReservationId] = useState<string | null>(null);
   const [groupId, setGroupId] = useState("");
   const [mode, setMode] = useState<"single" | "mixed">("single");
@@ -90,7 +89,6 @@ export function PosTerminal({
     setMobileCartOpen,
   });
 
-  // POS-1 (D-19): keadaan panel utang (pelanggan, pencarian, jatuh tempo).
   const [customer, setCustomer] = useState<CustomerOption | null>(null);
   const [customerQuery, setCustomerQuery] = useState("");
   const [customerResults, setCustomerResults] = useState<CustomerOption[]>([]);
@@ -705,6 +703,7 @@ export function PosTerminal({
           <PosCheckoutWorkspace
             cartProps={cartPanelProps}
             onOpenPayment={openPayment}
+            onHold={() => setHoldOpen(true)}
             quoteReady={Boolean(quote) && !quoteBusy && !quoteError}
             quoteBusy={quoteBusy}
             quoteError={quoteError}
@@ -728,6 +727,7 @@ export function PosTerminal({
             <PosCheckoutWorkspace
               cartProps={cartPanelProps}
               onOpenPayment={openPayment}
+              onHold={() => setHoldOpen(true)}
               quoteReady={Boolean(quote) && !quoteBusy && !quoteError}
               quoteBusy={quoteBusy}
               quoteError={quoteError}
@@ -752,6 +752,7 @@ export function PosTerminal({
         <MobilePayBar
           cart={cart} total={total}
           onOpenPayment={openPayment}
+          onHold={() => setHoldOpen(true)}
           onOpenCart={() => setMobileCartOpen(true)}
           lastItemName={cache[cart[cart.length - 1]?.productId ?? ""]?.name ?? null}
         />

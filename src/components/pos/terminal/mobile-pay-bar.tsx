@@ -4,6 +4,7 @@
  */
 "use client";
 
+import { PauseCircle } from "lucide-react";
 import { formatIDR } from "@/lib/money";
 import type { CartItem } from "@/components/pos/terminal-types";
 
@@ -14,10 +15,11 @@ export function MobilePayBar(props: {
   cart: CartItem[];
   total: number;
   onOpenPayment: () => void;
+  onHold: () => void;
   onOpenCart: () => void;
   lastItemName?: string | null;
 }) {
-  const { cart, total, onOpenPayment, onOpenCart, lastItemName = null } = props;
+  const { cart, total, onOpenPayment, onHold, onOpenCart, lastItemName = null } = props;
   return (
       <div className="no-print fixed inset-x-0 bottom-0 z-20 flex items-center justify-between gap-3 border-t-2 border-black/20 bg-[var(--pos-command)] px-3 pt-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] text-[var(--pos-command-fg)] shadow-[0_-8px_24px_-16px_rgba(9,9,11,0.45)] lg:hidden">
         <button
@@ -33,14 +35,26 @@ export function MobilePayBar(props: {
           </p>
           <p className="num truncate text-lg font-extrabold text-[var(--pos-gold-soft)]">{formatIDR(total)}</p>
         </button>
-        <button
-          type="button"
-          onClick={onOpenPayment}
-          disabled={cart.length === 0}
-          className="flex h-14 min-w-28 shrink-0 items-center justify-center rounded-md bg-[var(--pos-gold)] px-5 text-[15px] font-bold text-[var(--pos-gold-ink)] shadow-sm transition-colors hover:bg-[var(--pos-gold-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--pos-command)] disabled:cursor-not-allowed disabled:border disabled:border-white/20 disabled:bg-white/15 disabled:text-white/60 disabled:shadow-none disabled:opacity-100"
-        >
-          {cart.length > 0 ? `Bayar ${formatIDR(total)}` : "Bayar"}
-        </button>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <button
+            type="button"
+            onClick={onHold}
+            disabled={cart.length === 0}
+            aria-label="Tahan pesanan"
+            title="Tahan pesanan"
+            className="grid size-14 place-items-center rounded-md border border-white/25 bg-white/10 text-white transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <PauseCircle className="size-5" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={onOpenPayment}
+            disabled={cart.length === 0}
+            className="flex h-14 min-w-28 shrink-0 items-center justify-center rounded-md bg-[var(--pos-gold)] px-5 text-[15px] font-bold text-[var(--pos-gold-ink)] shadow-sm transition-colors hover:bg-[var(--pos-gold-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--pos-command)] disabled:cursor-not-allowed disabled:border disabled:border-white/20 disabled:bg-white/15 disabled:text-white/60 disabled:shadow-none disabled:opacity-100"
+          >
+            {cart.length > 0 ? `Bayar ${formatIDR(total)}` : "Bayar"}
+          </button>
+        </div>
       </div>
   );
 }
@@ -48,11 +62,9 @@ export function MobilePayBar(props: {
 /** Header sheet keranjang mobile — dipisah agar pos-terminal tetap ≤800 baris. */
 export function MobileCartHeader({
   count,
-  total,
   onClose,
 }: {
   count: number;
-  total: number;
   onClose: () => void;
 }) {
   return (
@@ -60,7 +72,7 @@ export function MobileCartHeader({
       <div>
       <h2 className="text-base font-bold">Keranjang</h2>
       <p className="num text-sm text-[var(--pos-gold-soft)]">
-          {count} baris · {formatIDR(total)}
+          {count} baris
         </p>
       </div>
       <button

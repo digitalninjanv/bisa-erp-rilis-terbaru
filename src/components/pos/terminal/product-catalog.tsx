@@ -533,7 +533,7 @@ export function ProductCatalog(props: {
                         </span>
                       ) : null}
                       {display.showPrice ? (
-                        <span className={cn("num shrink-0 font-extrabold text-foreground", font.price)}>{formatIDR(product.salePrice)}</span>
+                        <span className={cn("num shrink-0 font-extrabold text-[var(--pos-action-text)]", font.price)}>{formatIDR(product.salePrice)}</span>
                       ) : null}
                       {display.showStock ? (
                         <span
@@ -591,7 +591,7 @@ export function ProductCatalog(props: {
                     ) : null}
                     <span className="mt-1 flex shrink-0 flex-wrap items-end justify-between gap-1">
                       {display.showPrice ? (
-                        <span className={cn("num font-extrabold text-foreground", font.price)}>{formatIDR(product.salePrice)}</span>
+                        <span className={cn("num font-extrabold text-[var(--pos-action-text)]", font.price)}>{formatIDR(product.salePrice)}</span>
                       ) : (
                         <span />
                       )}

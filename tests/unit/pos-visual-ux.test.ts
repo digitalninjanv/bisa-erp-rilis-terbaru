@@ -89,6 +89,15 @@ describe("POS visual/UX — panel pembayaran", () => {
     expect(catalog).toContain("posAutoColumnCount");
   });
 
+  it("mengembalikan Tahan pesanan di footer keranjang dan bar mobile", () => {
+    const workspace = source("components/pos/terminal/pos-checkout-workspace.tsx");
+    const bar = source("components/pos/terminal/mobile-pay-bar.tsx");
+    expect(workspace).toContain("onHold");
+    expect(workspace).toContain("Tahan");
+    expect(bar).toContain("onHold");
+    expect(bar).toContain("Tahan pesanan");
+  });
+
   it("membuka panel pembayaran hanya setelah Bayar ditekan", () => {
     const terminal = source("components/pos/pos-terminal.tsx");
     const workspace = source("components/pos/terminal/pos-checkout-workspace.tsx");
@@ -97,7 +106,8 @@ describe("POS visual/UX — panel pembayaran", () => {
     expect(terminal).toContain("<PaymentDialog");
     expect(dialog).toContain("<PaymentPanel");
     expect(dialog).toContain("embedded");
-    expect(workspace).toContain("PaymentLaunchBar");
+    expect(workspace).toContain("PaymentFooter");
+    expect(workspace).toContain("footer={");
     expect(workspace).not.toContain("<PaymentPanel");
   });
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Dispatch, SetStateAction } from "react";
+import type { Dispatch, ReactNode, SetStateAction } from "react";
 import {
   AlertTriangle,
   Minus,
@@ -64,6 +64,9 @@ export function CartPanel(props: {
   scrollMode?: "contained" | "page";
   /** Sheet mobile: judul sudah ada di header sheet, cukup aksi baris. */
   compactHeader?: boolean;
+  /** Footer aksi (total + Bayar) yang menempel di dasar kartu keranjang. */
+  footer?: ReactNode;
+  className?: string;
 }) {
   const {
     cart,
@@ -89,6 +92,8 @@ export function CartPanel(props: {
     onApplyPromotion,
     scrollMode = "contained",
     compactHeader = false,
+    footer,
+    className,
   } = props;
   const [confirmClearCart, setConfirmClearCart] = useState(false);
   const [discountTargetKey, setDiscountTargetKey] = useState<string | null>(null);
@@ -111,7 +116,12 @@ export function CartPanel(props: {
     element.scrollTop = element.scrollHeight;
   }, [cart.length, scrollMode]);
   return (
-        <div className="overflow-hidden rounded-xl border border-[var(--pos-border-strong)] bg-[var(--pos-panel)] shadow-[var(--shadow-card)]">
+        <div
+          className={cn(
+            "flex min-h-0 flex-col overflow-hidden rounded-xl border border-[var(--pos-border-strong)] bg-[var(--pos-panel)] shadow-[var(--shadow-card)]",
+            className,
+          )}
+        >
           {(!compactHeader || cart.length > 0 || heldCount > 0) ? (
           <div className="flex min-h-14 items-center justify-between gap-2 border-b border-[var(--pos-command)] bg-[var(--pos-command)] px-3 py-2.5 text-[var(--pos-command-fg)] lg:sticky lg:top-0 lg:z-20 lg:rounded-t-[11px]">
             <div className="flex min-w-0 items-center gap-2">
@@ -212,7 +222,7 @@ export function CartPanel(props: {
               setLinesScrolled((current) => (current === next ? current : next));
             }}
             className={cn(
-              "min-h-[120px] overscroll-contain focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)]",
+              "min-h-0 flex-1 overscroll-contain bg-[var(--pos-surface-alt)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)]",
               scrollMode === "page" ? "overflow-visible" : "pos-cart-lines overflow-y-auto",
               linesScrolled && "pos-cart-lines-scrolled",
             )}
@@ -252,10 +262,10 @@ export function CartPanel(props: {
                   const tracked = line?.trackStock ?? cached?.trackStock ?? true;
                   const unitName = pack?.name ?? line?.packagingName ?? cached?.unitCode ?? "PCS";
                   return (
-                    <li key={key} className="px-3 py-3 transition-colors hover:bg-[var(--pos-surface-alt)]">
+                    <li key={key} className="px-3 py-3 transition-colors hover:bg-[var(--pos-tray)]">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="line-clamp-2 text-sm font-semibold">{line?.name ?? cached?.name ?? "Produk"}</p>
+                          <p className="line-clamp-2 text-[15px] font-semibold leading-snug">{line?.name ?? cached?.name ?? "Produk"}</p>
                           <p className="num mt-0.5 text-xs text-muted-foreground">
                             {line?.sku ?? cached?.sku} · {formatIDR(price)}
                             {pack ? <span> / {pack.name}</span> : null}
@@ -499,6 +509,8 @@ export function CartPanel(props: {
               </ul>
             )}
           </div>
+
+          {footer ? <div className="shrink-0">{footer}</div> : null}
 
           <Dialog open={summaryOpen} onOpenChange={setSummaryOpen}>
             <DialogContent className="max-w-[calc(100%-2rem)] sm:max-w-sm">

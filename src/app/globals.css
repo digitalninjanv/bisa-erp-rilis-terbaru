@@ -725,10 +725,10 @@
      putih / command bawaan #065f46 = 7.68:1 (fallback #064e3b = 9.72:1),
      putih / aksi #047857 = 5.48:1, ink #1c1917 / kanvas #efe9de = 14.47:1,
      muted #57534e / panel = 7.50:1, border #7d7463 / panel = 4.54:1. */
-  --pos-canvas: #efe9de;
+  --pos-canvas: #e7ddcc;
   --pos-panel: #fffdf8;
-  --pos-tray: #e9e1d3;
-  --pos-surface-alt: #f6f0e4;
+  --pos-tray: #dfd3bf;
+  --pos-surface-alt: #f4ecdd;
   --pos-card-bg: #fffdf8;
   --pos-command: var(--pos-action-deep, #064e3b);
   --pos-command-fg: #ffffff;
@@ -737,8 +737,8 @@
   --pos-gold-soft: #fde68a;
   --pos-gold-ink: #3f2c05;
   --pos-ink: #1c1917;
-  --pos-muted: #57534e;
-  --pos-border-strong: #7d7463;
+  --pos-muted: #4f4a42;
+  --pos-border-strong: #6f6658;
   --background: #fffdf8;
   --foreground: #1c1917;
   --card: #fffdf8;
@@ -750,12 +750,12 @@
   --secondary: #f6f0e4;
   --secondary-foreground: #1c1917;
   --muted: #ece4d7;
-  --muted-foreground: #57534e;
+  --muted-foreground: #4f4a42;
   --accent: #e6f3ed;
   --accent-foreground: #065f46;
   --destructive: #b42318;
-  --border: #d6cdbd;
-  --input: #7d7463;
+  --border: #d3c8b6;
+  --input: #6f6658;
   --ring: #047857;
   --tone-teal: #0f766e;
   --tone-teal-soft: #d9f3ec;
@@ -810,9 +810,9 @@
 @media (prefers-contrast: more) {
   .pos-terminal-root,
   .pos-terminal-surface {
-    --pos-canvas: #e8dfcf;
-    --pos-tray: #ded2be;
-    --pos-surface-alt: #f1e8d8;
+    --pos-canvas: #ded2be;
+    --pos-tray: #d4c6ae;
+    --pos-surface-alt: #eee3d0;
     --pos-border-strong: #5f5749;
     --border: #8d8271;
     --input: #3f3a31;
@@ -853,13 +853,7 @@
 /* POS: keranjang mendapat tinggi yang tersedia; pembayaran kini
    muncul sebagai dialog sehingga daftar tidak perlu dikorbankan. */
 .pos-cart-lines {
-  max-height: min(480px, 62dvh);
-}
-
-@media (max-width: 1023px) {
-  .pos-cart-lines {
-    max-height: min(420px, 55dvh);
-  }
+  min-height: 0;
 }
 
 /* Tepi atas daftar yang sedang digulir dibuat memudar agar baris

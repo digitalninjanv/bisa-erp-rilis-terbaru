@@ -20,7 +20,7 @@ export function CheckoutRecoveryDialog(props: {
   return (
     <>
       <Dialog open={props.open} disablePointerDismissal onOpenChange={(_, event) => event.cancel()}>
-        <DialogContent showCloseButton={false} initialFocus={retryRef} finalFocus={props.returnFocus}>
+        <DialogContent className="pos-terminal-surface" showCloseButton={false} initialFocus={retryRef} finalFocus={props.returnFocus}>
           <DialogTitle>Pembayaran belum terkonfirmasi</DialogTitle>
           <DialogDescription>
             Periksa pembayaran sebelumnya sebelum melayani transaksi berikutnya. Pemeriksaan ini
@@ -87,7 +87,7 @@ export function HoldDialog(props: {
 
   return (
     <Dialog open disablePointerDismissal={busy} onOpenChange={(open) => { if (!open && !busy) setHoldOpen(false); }}>
-      <DialogContent showCloseButton={false} initialFocus={inputRef} finalFocus={props.returnFocus}>
+      <DialogContent className="pos-terminal-surface" showCloseButton={false} initialFocus={inputRef} finalFocus={props.returnFocus}>
         <DialogTitle>Tahan pesanan</DialogTitle>
         <DialogDescription>
           Simpan keranjang agar bisa dilanjutkan nanti. Stok belum berkurang sampai pembayaran selesai.
@@ -137,7 +137,7 @@ export function ResumeDialog(props: {
   const cancelRef = useRef<HTMLButtonElement>(null);
   return (
     <Dialog open disablePointerDismissal={resumeHolding} onOpenChange={(open) => { if (!open && !resumeHolding) resumeCancel(); }}>
-      <DialogContent showCloseButton={false} initialFocus={cancelRef} finalFocus={props.returnFocus}>
+      <DialogContent className="pos-terminal-surface" showCloseButton={false} initialFocus={cancelRef} finalFocus={props.returnFocus}>
         <DialogTitle>Keranjang aktif belum kosong</DialogTitle>
         <DialogDescription>
           Keranjang saat ini berisi {resumeOffer.stored.cart.length} produk. Pesanan ditahan

@@ -1,6 +1,7 @@
 "use client";
 
 import type { ComponentProps } from "react";
+import { PauseCircle } from "lucide-react";
 import { formatIDR } from "@/lib/money";
 import { CartPanel } from "@/components/pos/cart-panel";
 import { MobileCartHeader } from "@/components/pos/terminal/mobile-pay-bar";
@@ -8,13 +9,14 @@ import { MobileCartHeader } from "@/components/pos/terminal/mobile-pay-bar";
 type CartPanelProps = ComponentProps<typeof CartPanel>;
 
 /**
- * Panel keranjang yang dipakai ulang untuk desktop dan sheet mobile.
- * Pembayaran tidak lagi menetap di kolom ini: kasir menekan Bayar dan
- * panel pembayaran fokus muncul sebagai dialog (pola Accurate/POS).
+ * Panel keranjang native: header tetap, daftar mengisi ruang, dan
+ * footer Total + Bayar menempel di dasar kartu (pola Odoo POS).
+ * Pembayaran baru muncul sebagai dialog setelah Bayar ditekan.
  */
 export function PosCheckoutWorkspace({
   cartProps,
   onOpenPayment,
+  onHold,
   quoteReady,
   quoteBusy,
   quoteError,
@@ -23,6 +25,7 @@ export function PosCheckoutWorkspace({
 }: {
   cartProps: CartPanelProps;
   onOpenPayment: () => void;
+  onHold: () => void;
   quoteReady: boolean;
   quoteBusy: boolean;
   quoteError: string | null;
@@ -30,34 +33,44 @@ export function PosCheckoutWorkspace({
   onClose?: () => void;
 }) {
   return (
-    <div className="flex min-h-full min-w-0 flex-col gap-3">
+    <div className="flex h-full min-h-0 min-w-0 flex-col gap-3">
       {mobile ? (
         <MobileCartHeader
           count={cartProps.cart.length}
-          total={cartProps.total}
           onClose={onClose ?? (() => {})}
         />
       ) : null}
-      <CartPanel {...cartProps} scrollMode="contained" compactHeader={mobile} />
-      <PaymentLaunchBar
-        cartCount={cartProps.cart.length}
-        total={cartProps.total}
-        quoteReady={quoteReady}
-        quoteBusy={quoteBusy}
-        quoteError={quoteError}
-        onOpen={onOpenPayment}
+      <CartPanel
+        {...cartProps}
+        className="min-h-0 flex-1"
+        scrollMode="contained"
+        compactHeader={mobile}
+        footer={
+          cartProps.cart.length > 0 ? (
+            <PaymentFooter
+              total={cartProps.total}
+              cartCount={cartProps.cart.length}
+              quoteReady={quoteReady}
+              quoteBusy={quoteBusy}
+              quoteError={quoteError}
+              onOpen={onOpenPayment}
+              onHold={onHold}
+            />
+          ) : null
+        }
       />
     </div>
   );
 }
 
-function PaymentLaunchBar({
+function PaymentFooter({
   cartCount,
   total,
   quoteReady,
   quoteBusy,
   quoteError,
   onOpen,
+  onHold,
 }: {
   cartCount: number;
   total: number;
@@ -65,8 +78,8 @@ function PaymentLaunchBar({
   quoteBusy: boolean;
   quoteError: string | null;
   onOpen: () => void;
+  onHold: () => void;
 }) {
-  if (cartCount === 0) return null;
   const blocked = quoteBusy || (!quoteReady && !quoteError);
   const label = quoteBusy
     ? "Menghitung…"
@@ -74,15 +87,37 @@ function PaymentLaunchBar({
       ? "Cek pembayaran"
       : `Bayar ${formatIDR(total)}`;
   return (
-    <div className="sticky bottom-0 z-10 rounded-xl border border-[var(--pos-border-strong)] bg-[var(--pos-panel)] p-2.5 shadow-[0_-8px_24px_-18px_rgb(28_25_23/0.45)]">
-      <button
-        type="button"
-        onClick={onOpen}
-        disabled={blocked}
-        className="flex h-14 w-full items-center justify-center gap-2 rounded-md bg-[var(--pos-action)] text-base font-bold text-[var(--pos-action-fg)] transition-colors hover:bg-[var(--pos-action-deep)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)] focus-visible:ring-offset-2 disabled:cursor-wait disabled:bg-stone-200 disabled:text-stone-600"
-      >
-        {label}
-      </button>
+    <div className="shrink-0 border-t border-[var(--pos-border-strong)] bg-[var(--pos-panel)] px-3 py-2.5">
+      <div className="flex items-end justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--pos-muted)]">
+            Total
+          </p>
+          <p className="text-xs text-[var(--pos-muted)]">{cartCount} item</p>
+        </div>
+        <p className="num shrink-0 text-[26px] font-extrabold leading-none tracking-tight text-[var(--pos-ink)]">
+          {formatIDR(total)}
+        </p>
+      </div>
+      <div className="mt-2.5 grid grid-cols-[1fr_auto] gap-2">
+        <button
+          type="button"
+          onClick={onOpen}
+          disabled={blocked}
+          className="flex h-14 items-center justify-center gap-2 rounded-md bg-[var(--pos-action)] text-base font-bold text-[var(--pos-action-fg)] transition-colors hover:bg-[var(--pos-action-deep)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)] focus-visible:ring-offset-2 disabled:cursor-wait disabled:bg-stone-200 disabled:text-stone-600"
+        >
+          {label}
+        </button>
+        <button
+          type="button"
+          onClick={onHold}
+          className="flex h-14 items-center justify-center gap-1.5 rounded-md border border-[var(--pos-border-strong)] bg-[var(--pos-panel)] px-3 text-sm font-semibold text-[var(--pos-ink)] transition-colors hover:bg-[var(--pos-tray)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)]"
+          title="Tahan pesanan"
+        >
+          <PauseCircle className="size-4" aria-hidden="true" />
+          Tahan
+        </button>
+      </div>
     </div>
   );
 }

@@ -324,7 +324,7 @@ export function CheckoutSuccessModal({
       >
         <DialogContent
           showCloseButton={false}
-          className="max-w-md gap-0 overflow-hidden p-0"
+          className="pos-terminal-surface max-w-md gap-0 overflow-hidden p-0"
         >
           <button
             type="button"

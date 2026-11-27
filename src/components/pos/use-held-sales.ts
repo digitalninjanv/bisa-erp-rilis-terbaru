@@ -313,11 +313,9 @@ export function useHeldSales(params: {
         setHeldSaleId(null);
         setHeldTotal(null);
         onHoldSuccess?.();
-        toast.success(`Pesanan ${result.number} ditahan.`);
       } else {
         // The request saved the submitted snapshot. Preserve edits made
         // while it was in flight instead of clearing a newer active cart.
-        toast.success(`Pesanan ${result.number} ditahan; perubahan keranjang terbaru tetap dipertahankan.`);
       }
       router.refresh();
     } catch {
@@ -366,7 +364,6 @@ export function useHeldSales(params: {
       const result = await runAction(holdAction({ ...request, idempotencyKey: attempt.idempotencyKey }));
       if (!result) return;
       resumeHoldAttemptRef.current = null;
-      toast.success(`Keranjang aktif ditahan sebagai pesanan ${result.number}.`);
       applyResume(resumeOffer.data);
       router.refresh();
     } catch {
