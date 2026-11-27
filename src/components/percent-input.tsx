@@ -119,7 +119,7 @@ export function PercentInput({
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? errorId : undefined}
           className={cn(
-            "num h-9 w-full rounded-md border border-input bg-background pl-2.5 pr-7 text-right text-[13px] outline-none focus:border-ring disabled:opacity-50",
+            "num h-11 w-full rounded-md border border-input bg-background pl-2.5 pr-7 text-right text-[13px] outline-none focus:border-ring disabled:opacity-50 lg:h-9",
             error && "border-destructive",
             className,
           )}

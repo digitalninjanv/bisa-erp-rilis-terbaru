@@ -90,3 +90,37 @@ describe("DATA-TABLE-ENTERPRISE: Core DataTable Component", () => {
     expect(html).toContain("Tidak ada data yang ditemukan.");
   });
 });
+
+describe("DATA-TABLE-ENTERPRISE: Responsive & aksesibilitas", () => {
+  function ResponsiveTable({ data }: { data: TestRow[] }) {
+    // eslint-disable-next-line react-hooks/incompatible-library
+    const table = useReactTable({
+      data,
+      columns: testColumns,
+      getCoreRowModel: getCoreRowModel(),
+    });
+    return createElement(DataTable<TestRow>, {
+      table,
+      density: "normal",
+      ariaLabel: "Tabel produk uji",
+      mobileCard: (row) =>
+        createElement("div", { "data-mobile-card": row.id }, `${row.name} — kartu`),
+    });
+  }
+
+  it("merender region tabel yang fokusabel dan kartu mobile", () => {
+    const rows: TestRow[] = [{ id: "1", name: "Beras Premium 5kg", sku: "BRS-001" }];
+    const html = renderToStaticMarkup(createElement(ResponsiveTable, { data: rows }));
+    expect(html).toContain('role="region"');
+    expect(html).toContain('aria-label="Tabel produk uji"');
+    expect(html).toContain('tabindex="0"');
+    expect(html).toContain('data-mobile-card="1"');
+    expect(html).toContain("Beras Premium 5kg — kartu");
+    expect(html).toContain("BRS-001");
+  });
+
+  it("menampilkan empty state di kartu mobile saat data kosong", () => {
+    const html = renderToStaticMarkup(createElement(ResponsiveTable, { data: [] }));
+    expect(html).toContain("Tidak ada data yang ditemukan.");
+  });
+});

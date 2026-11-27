@@ -15,7 +15,7 @@ Audit ini mencakup seluruh keluarga layar ERP yang dapat diakses tanpa parameter
 - **77/77 route statis** merespons 200, tidak ada layar error, dan tidak ada console error.
 - **15 pola layar kunci** diukur pada desktop dan mobile; **0 overflow horizontal**.
 - **axe-core 0 violations** pada sampel akhir desktop/mobile setelah perbaikan.
-- **1.266 test lulus**, build/typecheck lulus, lint **0 error** (7 warning lama).
+- **1.270 test lulus**, build/typecheck lulus, lint **0 error** (7 warning lama), e2e penjaga tabel/form **4/4 lulus**.
 - **18 temuan diperbaiki** pada putaran ini, termasuk 6 isu P1.
 - **Sisa backlog** yang jujur didokumentasikan di §8; yang terbesar adalah first print yang masih memakai snapshot klien, adopsi DataTable yang belum merata, dan beberapa tabel mobile yang masih perlu isyarat gulir.
 
@@ -123,14 +123,14 @@ Putaran ini menyelaraskan **identitas outlet, NPWP, sesi, jatuh tempo, jumlah it
 
 | Prioritas | Sisa | Alasan / dampak |
 |---|---|---|
-| P1 | First print masih memakai quote klien; jika harga berubah antara quote dan commit, baris bisa berbeda dari TOTAL | Perlu `ReceiptData` dari sale yang sudah commit; perubahan menyentuh jalur checkout kritis |
-| P2 | Beberapa tabel mobile (pengaturan pembayaran, pratinjau ubah massal) masih perlu gulir horizontal tanpa isyarat visual | Perlu pola kartu/scroll-hint bersama |
+| P1 | ~~First print memakai quote klien~~ | **TERTUTUP putaran 2:** `createSale` mengembalikan snapshot nota dari sale yang sudah commit; fallback lama hanya untuk replay/offline. |
+| P2 | Sebagian tabel legacy (pengaturan pembayaran, pratinjau ubah massal) masih perlu gulir horizontal | DataTable baru sudah punya kartu mobile + scrollbar tipis; tabel legacy menyusul bertahap |
 | P2 | Sebagian aksi primer mobile masih 32–36px (mis. tombol di panel lain) | Perlu sapuan target sentuh menyeluruh |
-| P2 | Adopsi `DataTable` TanStack belum merata; banyak tabel masih HTML primitif | Pekerjaan migrasi bertahap, bukan satu file |
-| P2 | Faktur kredit belum mencetak rekening tujuan transfer | Perlu data rekening bank perusahaan di faktur |
-| P3 | Halaman A4/A5 yang dipakai sebagai nota masih mendapat nomor halaman | Perlu pengecualian `paged` untuk nota sheet |
+| P2 | Adopsi `DataTable` TanStack | **Sebagian:** riwayat POS, riwayat jurnal, dan pengguna/peran sudah memakai TanStack + kartu mobile; tabel legacy lain menyusul. |
+| P2 | ~~Faktur kredit belum mencetak rekening tujuan transfer~~ | **TERTUTUP putaran 2:** faktur menampilkan maksimal 3 rekening bank perusahaan. |
+| P3 | ~~Halaman A4/A5 yang dipakai sebagai nota masih mendapat nomor halaman~~ | **TERTUTUP putaran 2:** `pageNumbers={false}` untuk nota sheet. |
 | P3 | Label/istilah nota masih berbeda antarpath (“No.” vs “No. Nota”, footer default) | Perlu satu konstanta label bersama |
-| P3 | `showQr` di HTML offline hanya aktif bila QR data URL tersedia | Jalur non-Electron perlu generator QR sendiri |
+| P3 | `showQr` di HTML offline hanya aktif bila QR data URL tersedia | Electron sudah; jalur HTML lain perlu generator QR sendiri |
 | P3 | Multi-outlet: `sales.branchId` historis masih kosong; jalur baca memakai cabang sesi | Perlu backfill/isi saat persist untuk laporan jangka panjang |
 
 ---
@@ -166,7 +166,7 @@ Prinsip yang dipakai: satu pandangan mata untuk TOTAL dan status; diskon tidak d
 
 | Gerbang | Hasil |
 |---|---|
-| Unit test | **146 file / 1.266 test lulus** |
+| Unit test | **147 file / 1.270 test lulus** |
 | Build + typecheck | **lulus** |
 | Lint | **0 error**, 7 warning lama |
 | Route smoke | **77/77 route** status 200, 0 layar error, 0 console error |
@@ -193,3 +193,32 @@ Prinsip yang dipakai: satu pandangan mata untuk TOTAL dan status; diskon tidak d
 5. **P3**: satukan konstanta label/footer nota; kecualikan nomor halaman untuk nota sheet A4/A5; backfill `sales.branchId`.
 
 Audit ini tidak mengklaim seluruh 97 pola dinamis diuji end-to-end; 77 route statis dan 15 pola kunci diuji hidup, sedangkan detail dinamis diwakili oleh nota, faktur, jurnal, payroll, dan dokumen yang disebut di atas. Sisa risiko utama ada pada perangkat keras printer, Windows/Electron, dan transaksi volume besar.
+
+
+---
+
+## 9. Tindak lanjut putaran 2 — standar tabel & form
+
+Putaran ini menutup sisa yang paling terlihat dari “AI slop”:
+
+**Tabel**
+- `DataTable` bersama sekarang memiliki kepala sticky, region gulir fokusabel, `aria-sort`, scrollbar tipis, empty state di dalam bingkai, dan **kartu mobile**.
+- `DataTableColumnHeader` mengganti ikon ⋯ di setiap header dengan klik sortir langsung; pilihan kolom tetap di toolbar “Kolom”.
+- `DataTableToolbar` menjadi satu pola toolbar (pencarian/filter kiri, kontrol kolom kanan).
+- **TanStack diadopsi** pada:
+  - `src/components/pos/sales-history-table.tsx` (riwayat POS),
+  - `src/components/akuntansi/journal-history-table.tsx` (riwayat jurnal),
+  - `src/components/pengaturan/user-access.tsx` (pengguna & peran).
+- Paginasi dan filter tetap server-side; TanStack menangani presentasi, sortir halaman, dan pilihan kolom.
+
+**Form**
+- `Field` bersama sekarang mendukung `required` (visual + “wajib diisi” untuk pembaca layar), `hint`, `error` dengan `role="alert"`, serta `aria-describedby`/`aria-invalid`/`aria-required` pada kontrol tunggal.
+- Tinggi field standar menjadi **44px di ponsel, 36px di desktop** (`h-11 lg:h-9`) untuk `fieldClass`, `MoneyInput`, `QtyInput`, dan `PercentInput`.
+- Kontrak lengkap ditulis di `docs/DESIGN-STANDARD-TABLE-FORM.md`.
+
+**Cetak**
+- First print kini memakai snapshot server dari sale yang sudah commit (baris, diskon, PPN, total, outlet, sesi, pembayaran).
+- Faktur kredit mencetak rekening bank perusahaan.
+- Nota sheet A4/A5 tidak lagi mendapat nomor halaman.
+
+**Verifikasi tambahan:** build/typecheck lulus; **147 file / 1.270 unit test** lulus; e2e penjaga tabel/form **4/4**; axe **0** pada riwayat POS, riwayat jurnal, dan pengguna (desktop/mobile); 77/77 route smoke lulus; tidak ada console error pada tiga tabel baru.

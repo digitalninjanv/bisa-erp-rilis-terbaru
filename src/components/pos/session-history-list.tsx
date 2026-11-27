@@ -84,7 +84,7 @@ export function SessionHistoryTable({
   return (
     <>
     <div className="hidden lg:block">
-      <table className="data-table">
+      <table className="data-table [&_td]:py-1.5">
         <thead>
           <tr>
             <th scope="col">Kasir</th>
@@ -124,17 +124,15 @@ export function SessionHistoryTable({
                     {row.userName ?? "Kasir"}
                   </Link>
                 )}
-                {row.branchName ? (
-                  <span className="block text-[11px] text-muted-foreground">{row.branchName}</span>
-                ) : null}
-                <span className="mt-1 block">
+                <span className="mt-0.5 flex flex-wrap items-center gap-1.5">
                   <SessionStatusBadge status={row.status} />
+                  {row.branchName ? (
+                    <span className="text-[11px] text-muted-foreground">{row.branchName}</span>
+                  ) : null}
+                  {row.longOpen ? (
+                    <span className="text-[11px] font-medium text-destructive">Terbuka &gt;24 jam</span>
+                  ) : null}
                 </span>
-                {row.longOpen ? (
-                  <span className="mt-0.5 block text-[10px] font-medium text-destructive">
-                    Terbuka &gt;24 jam
-                  </span>
-                ) : null}
               </td>
               <td className="num text-[11px] whitespace-nowrap text-muted-foreground">
                 <span className="block">{formatDateTime(row.openedAt)}</span>

@@ -312,6 +312,9 @@ export async function checkoutAction(input: z.input<typeof checkoutSchema>) {
             userId: ctx.user.id,
             saleId: row.id,
           }),
+          // Replay tidak membangun ulang snapshot nota; klien memakai
+          // fallback quote lokal atau memuat nota historis.
+          receipt: undefined,
         };
       };
       const replayed = await findReplay();
@@ -339,10 +342,14 @@ export async function checkoutAction(input: z.input<typeof checkoutSchema>) {
           );
         }
       }
-      const sale = await createSale(tx, {
-        ...saleInput,
-        idempotencyFingerprint: fingerprint,
-      });
+      const sale = await createSale(
+        tx,
+        {
+          ...saleInput,
+          idempotencyFingerprint: fingerprint,
+        },
+        { withReceipt: true },
+      );
       if (data.heldSaleId) {
         await consumeHeldSale(tx, {
           companyId: ctx.company.id,

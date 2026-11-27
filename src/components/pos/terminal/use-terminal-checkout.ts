@@ -491,21 +491,25 @@ export function useTerminalCheckout(params: {
         return;
       }
 
-      const instantReceipt = buildTerminalReceiptData({
-        saleNumber: result.data.number,
-        cart,
-        quote,
-        cache,
-        payments,
-        methodById,
-        receiptProfile,
-        customerName: debtActive ? (customer?.name ?? null) : null,
-        dueDate: debtActive ? dueDate : null,
-        total: result.data.total,
-        change: result.data.change,
-        outstanding: debtActive ? params.debtAmount : 0,
-        sessionId,
-      });
+      // Server mengirim snapshot nota dari sale yang sudah commit.
+      // Fallback lama tetap ada untuk replay/idempotensi/offline.
+      const instantReceipt =
+        result.data.receipt ??
+        buildTerminalReceiptData({
+          saleNumber: result.data.number,
+          cart,
+          quote,
+          cache,
+          payments,
+          methodById,
+          receiptProfile,
+          customerName: debtActive ? (customer?.name ?? null) : null,
+          dueDate: debtActive ? dueDate : null,
+          total: result.data.total,
+          change: result.data.change,
+          outstanding: debtActive ? params.debtAmount : 0,
+          sessionId,
+        });
       completeCheckout(result.data, attempt, instantReceipt);
     } finally {
       inFlightRef.current = false;

@@ -22,6 +22,14 @@ interface DataTableProps<TData> {
   className?: string;
   /** Tinggi maksimal dengan scroll vertikal jika diinginkan */
   maxHeight?: string | number;
+  /** Nama region gulir untuk pembaca layar. */
+  ariaLabel?: string;
+  /**
+   * Tampilan kartu di bawah `lg`. Bila diisi, tabel desktop
+   * disembunyikan dan setiap baris dirender sebagai kartu — pola
+   * responsif standar untuk daftar operasional di ponsel.
+   */
+  mobileCard?: (row: TData) => React.ReactNode;
 }
 
 /**
@@ -40,9 +48,9 @@ function getCommonPinningStyles<TData>(column: Column<TData>): CSSProperties {
     position: isPinned ? "sticky" : undefined,
     zIndex: isPinned ? 1 : 0,
     boxShadow: isLastLeftPinnedColumn
-      ? "1px 0 0 0 hsl(var(--border))"
+      ? "1px 0 0 0 var(--border)"
       : isFirstRightPinnedColumn
-        ? "-1px 0 0 0 hsl(var(--border))"
+        ? "-1px 0 0 0 var(--border)"
         : undefined,
   };
 }
@@ -53,6 +61,8 @@ export function DataTable<TData>({
   emptyState,
   className,
   maxHeight,
+  ariaLabel = "Tabel data",
+  mobileCard,
 }: DataTableProps<TData>) {
   const densityRowClass =
     density === "compact"
@@ -68,24 +78,37 @@ export function DataTable<TData>({
         ? "h-10 py-2.5 px-3 text-[12px]"
         : "h-9 py-2 px-3 text-[12px]";
 
-  return (
+  const tableBody = (
     <div
       className={cn(
-        "relative w-full overflow-x-auto contain-paint",
+        "data-table-scroll relative w-full overflow-x-auto contain-paint",
         className,
       )}
+      tabIndex={0}
+      role="region"
+      aria-label={ariaLabel}
       style={maxHeight ? { maxHeight, overflowY: "auto" } : undefined}
     >
       <Table className="data-table w-full">
-        <TableHeader>
+        <TableHeader className="sticky top-0 z-10 bg-card">
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id} className="hover:bg-transparent">
               {headerGroup.headers.map((header) => {
                 const isPinned = header.column.getIsPinned();
+                const sorted = header.column.getIsSorted();
                 return (
                   <TableHead
                     key={header.id}
                     colSpan={header.colSpan}
+                    aria-sort={
+                      sorted === "asc"
+                        ? "ascending"
+                        : sorted === "desc"
+                          ? "descending"
+                          : header.column.getCanSort()
+                            ? "none"
+                            : undefined
+                    }
                     style={{
                       ...getCommonPinningStyles(header.column),
                       width: header.getSize() !== 150 ? header.getSize() : undefined,
@@ -148,5 +171,23 @@ export function DataTable<TData>({
         </TableBody>
       </Table>
     </div>
+  );
+
+  if (!mobileCard) return tableBody;
+
+  const rows = table.getRowModel().rows;
+  return (
+    <>
+      <div className="divide-y divide-border/70 lg:hidden">
+        {rows.length > 0 ? (
+          rows.map((row) => <div key={row.id}>{mobileCard(row.original)}</div>)
+        ) : (
+          <div className="px-4 py-10 text-center text-[12px] text-muted-foreground">
+            {emptyState ?? "Tidak ada data yang ditemukan."}
+          </div>
+        )}
+      </div>
+      <div className="hidden lg:block">{tableBody}</div>
+    </>
   );
 }

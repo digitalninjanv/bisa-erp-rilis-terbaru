@@ -250,7 +250,7 @@ export function ProductForm({
             <ErrorSummary errors={formErrors} className="mb-4" />
             <p className="mb-3 text-[11px] text-muted-foreground">SKU dan barcode harus unik di perusahaan ini.</p>
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Nama produk" className="sm:col-span-2">
+              <Field label="Nama produk" required className="sm:col-span-2">
                 <input
                   id="product-name"
                   value={form.name}
@@ -259,7 +259,7 @@ export function ProductForm({
                   placeholder="Contoh: Indomie Goreng 85g"
                 />
               </Field>
-              <Field label="SKU">
+              <Field label="SKU" required>
                 <input id="product-sku" value={form.sku} onChange={(event) => setForm({ ...form, sku: event.target.value })} className={inputClass} placeholder="SKU-00001" />
               </Field>
               <Field label="Barcode">

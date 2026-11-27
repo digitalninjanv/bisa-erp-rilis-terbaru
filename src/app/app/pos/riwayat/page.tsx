@@ -4,16 +4,15 @@ import { listSales, getSalesSummary } from "@/server/reports";
 import { requirePermissionPage } from "@/lib/session";
 import { can } from "@/lib/permissions";
 import { formatIDR, formatNumber } from "@/lib/money";
-import { formatDateTime, formatDate, todayISO, monthStartISO } from "@/lib/format";
+import { todayISO, monthStartISO } from "@/lib/format";
 import { PageHeader } from "@/components/blocks/page-header";
 import { DataList, DataListToolbar } from "@/components/blocks/data-list";
 import { DateRangeField } from "@/components/date-field";
 import { SummaryStrip } from "@/components/blocks/summary-strip";
-import { StatusBadge } from "@/components/blocks/status-badge";
 import { Pagination } from "@/components/blocks/pagination";
 import { FilterChips } from "@/components/blocks/search-form";
 import { EmptyState } from "@/components/blocks/empty-state";
-import { SaleRowActions } from "@/components/pos/sale-row-actions";
+import { SalesHistoryTable } from "@/components/pos/sales-history-table";
 
 export const metadata = { title: "Riwayat transaksi" };
 export const dynamic = "force-dynamic";
@@ -142,94 +141,12 @@ export default async function SalesHistoryPage({
           />
         }
       >
-        <div className="hidden overflow-x-auto lg:block">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Nomor</th>
-                <th>Waktu</th>
-                <th>Kasir</th>
-                <th>Pelanggan</th>
-                <th className="text-right">Item</th>
-                <th className="text-right">Total</th>
-                <th>Status</th>
-                <th className="text-right">Aksi</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.list.rows.map((sale) => (
-                <tr key={sale.id}>
-                  <td>
-                    <Link href={`/app/pos/nota/${sale.id}?salinan=1`} prefetch={false} className="num font-medium hover:underline">
-                      {sale.number}
-                    </Link>
-                    <p className="text-[10px] text-muted-foreground">{formatDate(sale.date)}</p>
-                  </td>
-                  <td className="num whitespace-nowrap text-[12px] text-muted-foreground">
-                    {formatDateTime(sale.createdAt)}
-                  </td>
-                  <td className="text-[12px]">{sale.cashierName ?? "—"}</td>
-                  <td className="text-[12px]">{sale.customerName ?? "Umum"}</td>
-                  <td className="num text-right text-[12px]">{formatNumber(sale.itemCount)}</td>
-                  <td className="num text-right font-medium">{formatIDR(sale.total)}</td>
-                  <td>
-                    <div className="flex flex-wrap items-center gap-1">
-                      <StatusBadge status={sale.status} />
-                      {sale.paymentStatus !== "paid" && sale.status === "completed" ? (
-                        <StatusBadge status={sale.paymentStatus} />
-                      ) : null}
-                    </div>
-                  </td>
-                  <td>
-                    <SaleRowActions
-                      saleId={sale.id}
-                      number={sale.number}
-                      status={sale.status}
-                      canVoid={can(ctx, "pos.void")}
-                      canReturn={can(ctx, "pos.return")}
-                      canReprint={can(ctx, "pos.receipt.reprint")}
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="divide-y divide-border/70 lg:hidden">
-          {data.list.rows.map((sale) => (
-            <div key={sale.id} className="px-4 py-3">
-              <div className="flex items-baseline justify-between gap-2">
-                <Link
-                  href={`/app/pos/nota/${sale.id}?salinan=1`}
-                  prefetch={false}
-                  className="num inline-flex min-h-11 items-center text-[12px] font-medium text-primary hover:underline"
-                >
-                  {sale.number}
-                </Link>
-                <span className="num text-[12px] font-semibold">{formatIDR(sale.total)}</span>
-              </div>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">
-                {formatDateTime(sale.createdAt)} · {sale.customerName ?? "Umum"} · {sale.itemCount} item
-              </p>
-              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                <StatusBadge status={sale.status} />
-                {sale.paymentStatus !== "paid" && sale.status === "completed" ? (
-                  <StatusBadge status={sale.paymentStatus} />
-                ) : null}
-                <span className="ml-auto">
-                  <SaleRowActions
-                    saleId={sale.id}
-                    number={sale.number}
-                    status={sale.status}
-                    canVoid={can(ctx, "pos.void")}
-                    canReturn={can(ctx, "pos.return")}
-                    canReprint={can(ctx, "pos.receipt.reprint")}
-                  />
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
+        <SalesHistoryTable
+          rows={data.list.rows}
+          canVoid={can(ctx, "pos.void")}
+          canReturn={can(ctx, "pos.return")}
+          canReprint={can(ctx, "pos.receipt.reprint")}
+        />
       </DataList>
     </div>
   );

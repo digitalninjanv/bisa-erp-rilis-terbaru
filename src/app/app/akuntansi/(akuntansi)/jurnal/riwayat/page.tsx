@@ -12,14 +12,13 @@ import { requirePermissionPage } from "@/lib/session";
 import { can } from "@/lib/permissions";
 import { LIST_PAGE_SIZE } from "@/lib/pagination";
 import { formatIDR } from "@/lib/money";
-import { formatDate, journalSourceLabel, todayISO, monthStartISO, JOURNAL_SOURCE_LABELS } from "@/lib/format";
+import { journalSourceLabel, todayISO, monthStartISO, JOURNAL_SOURCE_LABELS } from "@/lib/format";
 import { PageHeader } from "@/components/blocks/page-header";
 import { Pagination } from "@/components/blocks/pagination";
 import { DataList, DataListToolbar, dataListFilterClass, dataListFilterWideClass } from "@/components/blocks/data-list";
 import { EmptyState } from "@/components/blocks/empty-state";
 import { SummaryStrip } from "@/components/blocks/summary-strip";
-import { StatusBadge } from "@/components/blocks/status-badge";
-import { RowMenu } from "@/components/blocks/row-menu";
+import { JournalHistoryTable } from "@/components/akuntansi/journal-history-table";
 import { DateRangeField } from "@/components/date-field";
 
 export const metadata = { title: "Riwayat jurnal" };
@@ -208,103 +207,7 @@ export default async function JournalPage({
           />
         }
       >
-        {/* G4 (UX4-04): contain-paint — tanpa ini scrollable-overflow tabel
-            lebar merambat melewati wadah gulir ke dokumen (halaman ikut
-            bergeser di 390px walau tabel sudah di dalam overflow-x-auto). */}
-        <div className="hidden overflow-x-auto contain-paint lg:block">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Nomor</th>
-                <th aria-sort="descending">Tanggal</th>
-                <th>Keterangan</th>
-                <th>Sumber</th>
-                <th>Status</th>
-                <th className="text-right">Nilai</th>
-                <th className="w-10"><span className="sr-only">Aksi</span></th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.rows.map((row) => (
-                <tr key={row.id}>
-                  <td>
-                    <Link href={`/app/akuntansi/jurnal/${row.id}`} className="num font-medium transition-colors hover:underline">
-                      {row.number}
-                    </Link>
-                  </td>
-                  <td className="num whitespace-nowrap text-[12px] text-muted-foreground">{formatDate(row.date)}</td>
-                  <td className="max-w-[340px] text-[12px]">
-                    <span className="block truncate">{row.description}</span>
-                    {/* A-28 UI-3 (AKT-05): rincian debit/kredit per
-                        baris jurnal, ringkas & dapat dilipat — akuntan
-                        tak perlu membuka detail hanya untuk melihat
-                        komposisi akun jurnal ini. */}
-                    {row.lines.length > 0 ? (
-                      <details className="mt-0.5">
-                        <summary className="cursor-pointer text-[11px] text-primary hover:underline">
-                          Rincian {row.lines.length} baris
-                        </summary>
-                        <ul className="mt-1 space-y-0.5 border-l-2 border-border pl-2">
-                          {row.lines.map((line, index) => (
-                            <li key={index} className="flex items-baseline justify-between gap-3 text-[11px]">
-                              <span className="min-w-0 truncate">
-                                <span className="num mr-1.5 text-muted-foreground">{line.accountCode}</span>
-                                {line.accountName}
-                              </span>
-                              <span className="num shrink-0 whitespace-nowrap">
-                                {line.debit > 0 ? `Dr ${formatIDR(line.debit)}` : line.credit > 0 ? `Cr ${formatIDR(line.credit)}` : "—"}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      </details>
-                    ) : null}
-                  </td>
-                  {/* AK5-02d: label sumber Bahasa Indonesia bersama —
-                      bukan lagi kata mentah hasil replace underscore. */}
-                  <td className="text-[11px]">{journalSourceLabel(row.sourceType)}</td>
-                  <td><StatusBadge status={row.status} /></td>
-                  <td className="num text-right font-medium">{formatIDR(row.amount)}</td>
-                  <td>
-                    <div className="flex justify-end">
-                      <RowMenu
-                        label={`Aksi untuk jurnal ${row.number}`}
-                        items={[
-                          { key: "detail", label: "Lihat detail", href: `/app/akuntansi/jurnal/${row.id}` },
-                          { key: "print", label: "Cetak", href: `/app/akuntansi/jurnal/${row.id}/cetak` },
-                        ]}
-                      />
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Mobile: kartu ringkas — nomor, tanggal, keterangan, nilai, status. */}
-        <div className="divide-y divide-border/70 lg:hidden">
-          {data.rows.map((row) => (
-            <div key={row.id} className="px-4 py-3">
-              <div className="flex items-baseline justify-between gap-2">
-                <Link
-                  href={`/app/akuntansi/jurnal/${row.id}`}
-                  className="num text-[12px] font-medium text-primary hover:underline"
-                >
-                  {row.number}
-                </Link>
-                <span className="num text-[12px] font-semibold">{formatIDR(row.amount)}</span>
-              </div>
-              <p className="mt-0.5 line-clamp-2 text-[12px]">{row.description}</p>
-              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                <StatusBadge status={row.status} />
-                <span className="text-[11px] text-muted-foreground">
-                  {formatDate(row.date)} · {journalSourceLabel(row.sourceType)}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
+        <JournalHistoryTable rows={data.rows} />
       </DataList>
     </div>
   );

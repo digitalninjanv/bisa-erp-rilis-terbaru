@@ -252,7 +252,7 @@ export function SessionManager({
               value={branchId}
               onChange={(event) => setBranchId(event.target.value)}
               aria-label="Cabang sesi kas"
-              className="h-11 min-w-44 rounded-md border border-input bg-background px-2.5 text-[12px]"
+              className="h-11 min-w-44 rounded-md border border-input bg-background px-2.5 text-[12px] lg:h-9"
             >
               <option value="">Tanpa cabang</option>
               {branches.map((branch) => (
@@ -269,7 +269,7 @@ export function SessionManager({
               onChange={setOpeningCash}
               onValidityChange={setOpeningValid}
               aria-label="Modal awal"
-              className="h-11 w-40 font-semibold"
+              className="h-11 w-40 font-semibold lg:h-9"
             />
           </label>
           <button
@@ -406,7 +406,7 @@ export function SessionManager({
                             inputMode="numeric"
                             placeholder="0"
                             aria-label={`Jumlah lembar pecahan ${formatIDR(denom)}`}
-                            className="num h-11 w-16 rounded-md border border-input bg-background px-2 text-right text-[12px]"
+                            className="num h-11 w-16 rounded-md border border-input bg-background px-2 text-right text-[12px] lg:h-9"
                           />
                         </div>
                       </div>
@@ -464,7 +464,7 @@ export function SessionManager({
                       onChange={(event) => setDifferenceReason(event.target.value)}
                       placeholder="Mis. kembalian berlebih ke pelanggan"
                       aria-label="Alasan selisih kas"
-                      className="h-11 w-full rounded-md border border-input bg-background px-2.5 text-[12px]"
+                      className="h-11 w-full rounded-md border border-input bg-background px-2.5 text-[12px] lg:h-9"
                     />
                   </label>
                   <input
@@ -472,7 +472,7 @@ export function SessionManager({
                     onChange={(event) => setNotes(event.target.value)}
                     placeholder="Catatan penutupan (opsional)"
                     aria-label="Catatan penutupan sesi"
-                    className="h-11 min-w-[180px] flex-1 rounded-md border border-input bg-background px-2.5 text-[12px]"
+                    className="h-11 min-w-[180px] flex-1 rounded-md border border-input bg-background px-2.5 text-[12px] lg:h-9"
                   />
                   <span className="text-[11px] text-muted-foreground">
                     Hitungan sudah dikunci. Koreksi hanya lewat selisih beralasan atau supervisor.
@@ -583,7 +583,7 @@ export function SessionManager({
               onChange={setMoveAmount}
               onValidityChange={setMoveValid}
               aria-label="Nominal setor atau tarik bank"
-              className="h-11"
+              className="h-11 lg:h-9"
             />
           </div>
           <input
@@ -591,7 +591,7 @@ export function SessionManager({
             onChange={(event) => setMoveNotes(event.target.value)}
             placeholder="Catatan"
             aria-label="Catatan setor atau tarik bank"
-            className="mt-1.5 h-11 w-full rounded-md border border-input bg-background px-2.5 text-[12px]"
+            className="mt-1.5 h-11 w-full rounded-md border border-input bg-background px-2.5 text-[12px] lg:h-9"
           />
           <div className="mt-2 grid grid-cols-2 gap-2">
             <button

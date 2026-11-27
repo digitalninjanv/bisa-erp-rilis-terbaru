@@ -131,7 +131,7 @@ export function MoneyInput({
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? errorId : undefined}
         className={cn(
-          "num h-9 w-full rounded-md border border-input bg-background px-2.5 text-right text-[13px] outline-none placeholder:text-muted-foreground focus:border-ring disabled:opacity-50",
+          "num h-11 w-full rounded-md border border-input bg-background px-2.5 text-right text-[13px] outline-none placeholder:text-muted-foreground focus:border-ring disabled:opacity-50 lg:h-9",
           error && "border-destructive",
           className,
         )}

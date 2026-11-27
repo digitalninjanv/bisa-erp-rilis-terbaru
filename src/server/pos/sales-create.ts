@@ -6,14 +6,17 @@
 
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { cashSessions, customers, idempotencyKeys, paymentMethods, sales } from "@/db/schema";
+import { branches, cashSessions, customers, idempotencyKeys, paymentMethods, sales, user } from "@/db/schema";
 import { AppError } from "@/lib/errors";
 import { d, toDb, Decimal } from "@/lib/money";
+import { formatDate } from "@/lib/format";
+import { toPrintSettings } from "@/components/print/types";
+import type { ReceiptData } from "@/lib/escpos/types";
 import { assertPeriodOpen, getAccountMap } from "@/server/accounting";
 import { paymentRequestFingerprint } from "@/server/idempotency";
 import { writeAudit } from "@/server/audit";
 import { consumeReservationForSale, getReservedQuantities } from "@/server/reservations";
-import { quoteCart } from "./quote";
+import { quoteCart, type QuoteResult } from "./quote";
 import { getCompanySettingsRow } from "@/server/settings";
 import type { CreateSaleInput } from "./sales-types";
 import { allocateSalePayments, lockCreditReturns, validateReceivableTerms } from "./sales-payments";
@@ -22,7 +25,15 @@ import { applySaleStockMovements, persistSaleDocument, postSaleJournal, recordSa
 export async function createSale(
   tx: Tx,
   input: CreateSaleInput,
-): Promise<{ id: string; number: string; total: number; change: number; overageAbsorbed?: number }> {
+  options?: { withReceipt?: boolean },
+): Promise<{
+  id: string;
+  number: string;
+  total: number;
+  change: number;
+  overageAbsorbed?: number;
+  receipt?: ReceiptData;
+}> {
   const replayedSale = await claimSaleIdempotency(tx, {
     ...input,
     idempotencyFingerprint: input.idempotencyFingerprint ?? saleRequestFingerprint(input),
@@ -30,7 +41,7 @@ export async function createSale(
   if (replayedSale) return replayedSale;
 
   await assertPeriodOpen(tx, input.companyId, input.date);
-  await validateSaleCustomer(tx, input);
+  const customerName = await validateSaleCustomer(tx, input);
 
   const { quote, settings } = await prepareSaleQuote(tx, input);
 
@@ -136,12 +147,113 @@ export async function createSale(
     });
   }
 
+  const receipt = options?.withReceipt
+    ? await buildCommittedReceipt(tx, {
+        input,
+        quote,
+        settings,
+        session,
+        applied,
+        methodMap,
+        change,
+        receivable,
+        customerName,
+        saleNumber: sale.number,
+      })
+    : undefined;
+
   return {
     id: sale.id,
     number: sale.number,
     total: quote.total,
     change: change.toNumber(),
     ...(settlementClosedSession ? { overageAbsorbed: overageAbsorbed.toNumber() } : {}),
+    ...(receipt ? { receipt } : {}),
+  };
+}
+
+/**
+ * Snapshot nota dari data yang SUDAH commit. Dipakai first print POS
+ * agar baris, diskon, PPN, dan TOTAL berasal dari sale yang sama —
+ * bukan campuran quote klien lama + total server baru.
+ */
+async function buildCommittedReceipt(
+  tx: Tx,
+  params: {
+    input: CreateSaleInput;
+    quote: QuoteResult;
+    settings: Awaited<ReturnType<typeof getCompanySettingsRow>>;
+    session: { id: string; branchId: string | null };
+    applied: Awaited<ReturnType<typeof allocateSalePayments>>["applied"];
+    methodMap: Map<string, { name: string; type: string }>;
+    change: Decimal;
+    receivable: Decimal;
+    customerName: string | null;
+    saleNumber: string;
+  },
+): Promise<ReceiptData> {
+  const { input, quote, settings, session, applied, methodMap, change, receivable, customerName } = params;
+  const printSettings = toPrintSettings(settings, "nota");
+  const [branch, cashier] = await Promise.all([
+    session.branchId
+      ? tx
+          .select({ name: branches.name, address: branches.address, phone: branches.phone })
+          .from(branches)
+          .where(and(eq(branches.companyId, input.companyId), eq(branches.id, session.branchId)))
+          .limit(1)
+      : Promise.resolve([]),
+    tx.select({ name: user.name }).from(user).where(eq(user.id, input.userId)).limit(1),
+  ]);
+
+  return {
+    companyName: settings?.legalName ?? "Bisa Minimarket",
+    legalName: settings?.legalName,
+    taxId: settings?.taxId ?? null,
+    address: branch[0]?.address ?? settings?.address ?? null,
+    phone: branch[0]?.phone ?? settings?.phone ?? null,
+    branchName: branch[0]?.name ?? null,
+    headerText: printSettings.headerText,
+    footerText: printSettings.footerText,
+    saleNumber: params.saleNumber,
+    date: formatDate(input.date),
+    dueDate: input.dueDate ?? null,
+    sessionId: session.id,
+    cashierName: cashier[0]?.name ?? null,
+    customerName,
+    lines: quote.lines.map((line) => ({
+      name: line.packagingName ? `${line.name} (${line.packagingName})` : line.name,
+      qty: line.packagingId ? line.qtyInput : line.qty,
+      qtyBase: line.qty,
+      unit: line.packagingName,
+      price: line.packagingId
+        ? line.unitPrice * Number(line.isiSnapshot)
+        : line.unitPrice,
+      subtotal: line.lineTotal,
+      discount: line.discountAmount,
+    })),
+    subtotal: quote.subtotal,
+    taxTotal: quote.taxTotal,
+    discountTotal: quote.discountTotal,
+    roundingAdjustment: quote.roundingAdjustment,
+    total: quote.total,
+    outstanding: receivable.toNumber(),
+    payments: applied.map((payment) => ({
+      methodName: methodMap.get(payment.methodId)?.name ?? "Pembayaran",
+      methodType: payment.type,
+      amount: payment.amount.toNumber(),
+      tendered: payment.tendered.toNumber(),
+      reference: payment.reference ?? null,
+    })),
+    change: change.toNumber(),
+    paperWidth: printSettings.receiptPaper === "thermal58" ? "58mm" : "80mm",
+    showTax: printSettings.showTax,
+    showCashier: printSettings.showCashier,
+    showCustomer: printSettings.showCustomer,
+    showSession: printSettings.showSession,
+    showQr: printSettings.showQr,
+    openCashDrawer: true,
+    cutPaper: true,
+    saleStatus: "completed",
   };
 }
 
@@ -239,25 +351,25 @@ async function claimSaleIdempotency(tx: Tx, input: CreateSaleInput) {
  */
 
 
-async function validateSaleCustomer(tx: Tx, input: CreateSaleInput) {
+async function validateSaleCustomer(tx: Tx, input: CreateSaleInput): Promise<string | null> {
   // POS1-07: customerId yang terisi divalidasi untuk SEMUA jalur
   // checkout — bukan hanya penjualan utang. FK basis data hanya
   // membuktikan baris pelanggan itu ada di SUATU perusahaan; tanpa
   // pemeriksaan setenant ini, penjualan lunas dapat menanam referensi
   // pelanggan perusahaan lain (referensi yatim lintas-tenant).
-  if (input.customerId) {
-    const [customer] = await tx
-      .select({ id: customers.id, name: customers.name, isActive: customers.isActive })
-      .from(customers)
-      .where(and(eq(customers.companyId, input.companyId), eq(customers.id, input.customerId)))
-      .limit(1);
-    if (!customer) {
-      throw new AppError("VALIDATION", "Pelanggan tidak ditemukan di perusahaan ini.");
-    }
-    if (!customer.isActive) {
-      throw new AppError("VALIDATION", `Pelanggan ${customer.name} sudah nonaktif dan tidak dapat dipakai untuk penjualan.`);
-    }
+  if (!input.customerId) return null;
+  const [customer] = await tx
+    .select({ id: customers.id, name: customers.name, isActive: customers.isActive })
+    .from(customers)
+    .where(and(eq(customers.companyId, input.companyId), eq(customers.id, input.customerId)))
+    .limit(1);
+  if (!customer) {
+    throw new AppError("VALIDATION", "Pelanggan tidak ditemukan di perusahaan ini.");
   }
+  if (!customer.isActive) {
+    throw new AppError("VALIDATION", `Pelanggan ${customer.name} sudah nonaktif dan tidak dapat dipakai untuk penjualan.`);
+  }
+  return customer.name;
 }
 
 /**
@@ -349,11 +461,16 @@ async function lockSaleSession(tx: Tx, input: CreateSaleInput) {
   // FIX-POS Tahap 2 (POS3-02): jalur offline dapat menunjuk sesi ASAL
   // secara eksplisit — penjualan ditempelkan ke sesi itu (terbuka:
   // jalur normal; tertutup: hanya dalam mode penyelesaian offline).
-  let session: { id: string };
+  let session: { id: string; branchId: string | null };
   let settlementClosedSession = false;
   if (input.sessionId) {
     const [explicit] = await tx
-      .select({ id: cashSessions.id, userId: cashSessions.userId, status: cashSessions.status })
+      .select({
+        id: cashSessions.id,
+        userId: cashSessions.userId,
+        status: cashSessions.status,
+        branchId: cashSessions.branchId,
+      })
       .from(cashSessions)
       .where(
         and(eq(cashSessions.companyId, input.companyId), eq(cashSessions.id, input.sessionId)),
@@ -373,10 +490,10 @@ async function lockSaleSession(tx: Tx, input: CreateSaleInput) {
       }
       settlementClosedSession = true;
     }
-    session = { id: explicit.id };
+    session = { id: explicit.id, branchId: explicit.branchId };
   } else {
     const [open] = await tx
-      .select({ id: cashSessions.id })
+      .select({ id: cashSessions.id, branchId: cashSessions.branchId })
       .from(cashSessions)
       .where(
         and(

@@ -7,12 +7,15 @@ export function PrintShell({
   paper,
   children,
   pageStyle = true,
+  pageNumbers = true,
 }: {
   settings: PrintSettings;
   paper: PrintPaper;
   children: ReactNode;
   /** Set false for on-screen previews so the host page keeps its own @page rule. */
   pageStyle?: boolean;
+  /** Nota yang dicetak di kertas sheet tetap satu dokumen, bukan laporan berhalaman. */
+  pageNumbers?: boolean;
 }) {
   const spec = paperSpec(paper);
   const style = {
@@ -25,7 +28,9 @@ export function PrintShell({
   // CT-25 (D-18): sheet papers carry "Halaman x dari y" in the @page
   // bottom margin box. Thermal rolls are continuous.
   const pageRule = spec.paged
-    ? `@page { size: ${spec.pageSize}; margin: ${spec.pageMargin}; @bottom-center { content: "Halaman " counter(page) " dari " counter(pages); font-size: 9px; color: rgba(0,0,0,0.55); } }`
+    ? pageNumbers
+      ? `@page { size: ${spec.pageSize}; margin: ${spec.pageMargin}; @bottom-center { content: "Halaman " counter(page) " dari " counter(pages); font-size: 9px; color: rgba(0,0,0,0.55); } }`
+      : `@page { size: ${spec.pageSize}; margin: ${spec.pageMargin}; }`
     : `@page { size: ${spec.pageSize}; margin: ${spec.pageMargin}; }`;
   return (
     <div

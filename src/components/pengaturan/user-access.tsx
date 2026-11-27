@@ -1,8 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import {
+  getCoreRowModel,
+  getFilteredRowModel,
+  getSortedRowModel,
+  useReactTable,
+  type ColumnDef,
+  type SortingState,
+} from "@tanstack/react-table";
 import { useRouter } from "next/navigation";
-import { Plus, ShieldCheck, UserPlus, Users } from "lucide-react";
+import { Plus, Search, ShieldCheck, UserPlus, Users } from "lucide-react";
 import { toast } from "sonner";
 import { formatDateTime } from "@/lib/format";
 import { fieldClass, labelClass } from "@/components/blocks/field-classes";
@@ -10,6 +18,11 @@ import { useSettingsSection } from "@/components/blocks/settings-layout";
 import { Field } from "@/components/blocks/field";
 import { ConfirmDialog } from "@/components/blocks/confirm-dialog";
 import { RowMenu } from "@/components/blocks/row-menu";
+import {
+  DataTable,
+  DataTableColumnHeader,
+  DataTableToolbar,
+} from "@/components/blocks/data-table";
 import { Modal } from "@/components/blocks/modal";
 import { MODULE_PERMISSIONS, PERMISSIONS, type Permission } from "@/lib/permissions";
 import type { ModuleKey } from "@/lib/modules";
@@ -83,7 +96,7 @@ export function UserAccessManager({
             key={item.key}
             type="button"
             onClick={() => setTab(item.key)}
-            className={`inline-flex h-8 items-center rounded-full px-3 text-[11px] font-medium ${
+            className={`inline-flex h-11 items-center rounded-full px-3 text-[11px] font-medium lg:h-8 ${
               tab === item.key ? "bg-foreground text-background" : "border border-border bg-card text-muted-foreground hover:bg-muted"
             }`}
           >
@@ -120,6 +133,8 @@ function UsersPanel({
   );
   const [busy, setBusy] = useState<string | null>(null);
   const [removingUser, setRemovingUser] = useState<UserRow | null>(null);
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const [globalFilter, setGlobalFilter] = useState("");
 
   // A-25 U6 (POLA-05/PNG-06, diperkuat MD-03): perubahan peran semua pengguna
   // tersimpan atomik dalam satu transaksi via updateUserRolesBatchAction
@@ -154,6 +169,152 @@ function UsersPanel({
     setDirty(anyRoleChanged);
   }, [anyRoleChanged, setDirty]);
 
+  function roleControl(user: UserRow, self: boolean) {
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <select
+          value={roleDraft[user.userId] ?? user.role}
+          onChange={(event) =>
+            setRoleDraft((current) => ({ ...current, [user.userId]: event.target.value }))
+          }
+          disabled={self}
+          aria-label={`Peran ${user.name}`}
+          className="h-11 min-w-[150px] rounded-md border border-input bg-background px-2 text-[12px] disabled:opacity-60 lg:h-9 lg:text-[11px]"
+        >
+          {roles.map((row) => (
+            <option key={row.key} value={row.key} disabled={row.key === "owner" && !canAssignOwner}>
+              {row.name}
+              {row.builtin ? "" : " (kustom)"}
+            </option>
+          ))}
+        </select>
+        {!self && (roleDraft[user.userId] ?? user.role) !== user.role ? (
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-tone-amber">
+            <span aria-hidden className="size-1.5 rounded-full bg-tone-amber" />
+            Berubah
+          </span>
+        ) : null}
+      </span>
+    );
+  }
+
+  function userActions(user: UserRow, self: boolean) {
+    const items = [
+      ...(canAssignOwner || user.role !== "owner"
+        ? [{ key: "reset", label: "Reset kata sandi" }]
+        : []),
+      ...(!self && user.role !== "owner"
+        ? [{ key: "remove", label: "Cabut akses", danger: true, disabled: busy === `remove:${user.userId}` }]
+        : []),
+    ];
+    if (items.length === 0) return null;
+    return (
+      <RowMenu
+        label={`Aksi untuk pengguna ${user.name}`}
+        items={items}
+        onAction={(key) => {
+          if (key === "reset") setResetFor(user);
+          if (key === "remove") setRemovingUser(user);
+        }}
+      />
+    );
+  }
+
+  const columns: ColumnDef<UserRow>[] = [
+    {
+      id: "name",
+      accessorFn: (user) => `${user.name} ${user.email}`,
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Pengguna" />,
+      enableHiding: false,
+      cell: ({ row }) => {
+        const user = row.original;
+        const self = user.userId === currentUserId;
+        return (
+          <div>
+            <p className="text-[12px] font-medium">
+              {user.name}
+              {self ? (
+                <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-semibold text-muted-foreground">
+                  Anda
+                </span>
+              ) : null}
+            </p>
+            <p className="text-[11px] text-muted-foreground">{user.email}</p>
+          </div>
+        );
+      },
+    },
+    {
+      id: "roleName",
+      accessorFn: (user) => user.roleName,
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Peran" />,
+      cell: ({ row }) => roleControl(row.original, row.original.userId === currentUserId),
+    },
+    {
+      id: "modules",
+      accessorFn: (user) => user.modules.map((module) => MODULE_LABELS[module] ?? module).join(" "),
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Modul" />,
+      cell: ({ row }) => {
+        const user = row.original;
+        const role = roles.find((entry) => entry.key === user.role);
+        return (
+          <div>
+            <div className="flex flex-wrap gap-1">
+              {user.modules.length === 0 ? (
+                <span className="text-[11px] text-muted-foreground">Tanpa modul</span>
+              ) : (
+                user.modules.map((module) => (
+                  <span key={module} className="rounded-full bg-tone-teal-soft px-1.5 py-0.5 text-[11px] font-semibold text-tone-teal">
+                    {MODULE_LABELS[module] ?? module}
+                  </span>
+                ))
+              )}
+            </div>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              {role?.permissions.length ?? user.permissions.length} izin
+            </p>
+          </div>
+        );
+      },
+    },
+    {
+      id: "createdAt",
+      accessorKey: "createdAt",
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Dibuat" />,
+      cell: ({ row }) => (
+        <span className="num whitespace-nowrap text-[11px] text-muted-foreground">
+          {formatDateTime(row.original.createdAt)}
+        </span>
+      ),
+    },
+    {
+      id: "actions",
+      header: () => <span className="block text-right text-[12px] font-medium text-muted-foreground">Aksi</span>,
+      enableSorting: false,
+      enableHiding: false,
+      enableGlobalFilter: false,
+      cell: ({ row }) => (
+        <div className="flex items-center justify-end">
+          {userActions(row.original, row.original.userId === currentUserId)}
+        </div>
+      ),
+    },
+  ];
+
+  // TanStack Table intentionally exposes non-memoizable functions.
+  // eslint-disable-next-line react-hooks/incompatible-library
+  const table = useReactTable({
+    data: users,
+    columns,
+    state: { sorting, globalFilter },
+    onSortingChange: setSorting,
+    onGlobalFilterChange: setGlobalFilter,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    globalFilterFn: "includesString",
+  });
+
   async function remove(user: UserRow) {
     setBusy(`remove:${user.userId}`);
     const result = await removeCompanyUserAction(user.userId);
@@ -181,123 +342,67 @@ function UsersPanel({
         <button
           type="button"
           onClick={() => setCreateOpen(true)}
-          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] font-medium transition-colors hover:bg-muted"
+          className="inline-flex h-11 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] font-medium transition-colors hover:bg-muted lg:h-8"
         >
           <UserPlus className="size-3.5" /> Pengguna baru
         </button>
       </div>
 
       <section className="overflow-hidden rounded-lg border border-border bg-card">
-        <div className="overflow-x-auto">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Pengguna</th>
-                <th>Peran</th>
-                <th>Modul</th>
-                <th>Dibuat</th>
-                <th className="text-right">Aksi</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((user) => {
-                const role = roles.find((row) => row.key === user.role);
-                const self = user.userId === currentUserId;
-                return (
-                  <tr key={user.userId}>
-                    <td>
-                      <p className="text-[12px] font-medium">
-                        {user.name}
-                        {self ? <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-semibold text-muted-foreground">Anda</span> : null}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground">{user.email}</p>
-                    </td>
-                    <td>
-                      <div className="flex items-center gap-1.5">
-                        <select
-                          value={roleDraft[user.userId] ?? user.role}
-                          onChange={(event) =>
-                            setRoleDraft((current) => ({ ...current, [user.userId]: event.target.value }))
-                          }
-                          disabled={self}
-                          aria-label={`Peran ${user.name}`}
-                          className="h-9 min-w-[150px] rounded border border-input bg-background px-1.5 text-[11px] disabled:opacity-60"
-                        >
-                          {roles.map((row) => (
-                            <option key={row.key} value={row.key} disabled={row.key === "owner" && !canAssignOwner}>
-                              {row.name}
-                              {row.builtin ? "" : " (kustom)"}
-                            </option>
-                          ))}
-                        </select>
-                        {!self && (roleDraft[user.userId] ?? user.role) !== user.role ? (
-                          <span className="inline-flex items-center gap-1.5 text-[10px] font-medium">
-                            <span aria-hidden className="size-1.5 rounded-full bg-tone-amber" />
-                            Berubah
-                          </span>
-                        ) : null}
-                      </div>
-                    </td>
-                    <td>
-                      <div className="flex flex-wrap gap-1">
-                        {user.modules.length === 0 ? (
-                          <span className="text-[10px] text-muted-foreground">Tanpa modul</span>
-                        ) : (
-                          user.modules.map((module) => (
-                            <span key={module} className="rounded-full bg-tone-teal-soft px-1.5 py-0.5 text-[11px] font-semibold text-tone-teal">
-                              {MODULE_LABELS[module] ?? module}
-                            </span>
-                          ))
-                        )}
-                      </div>
-                      <p className="mt-0.5 text-[11px] text-muted-foreground">
-                        {role?.permissions.length ?? user.permissions.length} izin
-                      </p>
-                    </td>
-                    <td className="num whitespace-nowrap text-[10px] text-muted-foreground">
-                      {formatDateTime(user.createdAt)}
-                    </td>
-                    <td>
-                      {/* G3 (UX4-01): aksi baris pengguna kini satu
-                          menu ⋯ — sebelumnya dua tombol ikon permanen
-                          (Reset kata sandi + Cabut akses). Syarat
-                          tampil tiap aksi tidak berubah. */}
-                      {(() => {
-                        const items = [
-                          ...(canAssignOwner || user.role !== "owner"
-                            ? [{ key: "reset", label: "Reset kata sandi" }]
-                            : []),
-                          ...(!self && user.role !== "owner"
-                            ? [{ key: "remove", label: "Cabut akses", danger: true, disabled: busy === `remove:${user.userId}` }]
-                            : []),
-                        ];
-                        return items.length > 0 ? (
-                          <div className="flex items-center justify-end">
-                            <RowMenu
-                              label={`Aksi untuk pengguna ${user.name}`}
-                              items={items}
-                              onAction={(key) => {
-                                if (key === "reset") setResetFor(user);
-                                if (key === "remove") setRemovingUser(user);
-                              }}
-                            />
-                          </div>
-                        ) : null;
-                      })()}
-                    </td>
-                  </tr>
-                );
-              })}
-              {users.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="py-6 text-center text-[11px] text-muted-foreground">
-                    Belum ada pengguna.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
+        <DataTableToolbar
+          table={table}
+          columnLabels={{ name: "Pengguna", roleName: "Peran", modules: "Modul", createdAt: "Dibuat" }}
+          search={
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <input
+                value={globalFilter}
+                onChange={(event) => setGlobalFilter(event.target.value)}
+                placeholder="Cari nama, email, atau peran…"
+                aria-label="Cari pengguna"
+                className={`${fieldClass} h-11 pl-8 lg:h-9`}
+              />
+            </div>
+          }
+        />
+        <DataTable
+          table={table}
+          density="normal"
+          ariaLabel="Tabel pengguna dan peran"
+          emptyState={<span>Belum ada pengguna.</span>}
+          mobileCard={(user) => {
+            const self = user.userId === currentUserId;
+            return (
+              <div className="px-4 py-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-medium">
+                      {user.name}
+                      {self ? (
+                        <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-semibold text-muted-foreground">
+                          Anda
+                        </span>
+                      ) : null}
+                    </p>
+                    <p className="truncate text-[11px] text-muted-foreground">{user.email}</p>
+                  </div>
+                  <div className="shrink-0">{userActions(user, self)}</div>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  {roleControl(user, self)}
+                  {user.modules.map((module) => (
+                    <span key={module} className="rounded-full bg-tone-teal-soft px-1.5 py-0.5 text-[11px] font-semibold text-tone-teal">
+                      {MODULE_LABELS[module] ?? module}
+                    </span>
+                  ))}
+                </div>
+                <p className="mt-1.5 num text-[11px] text-muted-foreground">
+                  Dibuat {formatDateTime(user.createdAt)}
+                </p>
+              </div>
+            );
+          }}
+        />
       </section>
 
       {createOpen ? (
@@ -373,16 +478,16 @@ function CreateUserModal({
   return (
     <Modal title="Pengguna baru" onClose={onClose} onSubmit={submit} busy={busy}>
       <div className="grid gap-2 sm:grid-cols-2">
-        <Field label="Nama" className="sm:col-span-2">
+        <Field label="Nama" required className="sm:col-span-2">
           <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className={fieldClass} />
         </Field>
-        <Field label="Email login">
+        <Field label="Email login" required>
           <input type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} className={fieldClass} placeholder="nama@toko.id" />
         </Field>
-        <Field label="Kata sandi">
+        <Field label="Kata sandi" required>
           <input type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} className={fieldClass} placeholder="Minimal 8 karakter" />
         </Field>
-        <Field label="Peran" className="sm:col-span-2">
+        <Field label="Peran" required className="sm:col-span-2">
           <select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })} className={fieldClass}>
             {roles.map((row) => (
               <option key={row.key} value={row.key} disabled={row.key === "owner" && !canAssignOwner}>
@@ -426,7 +531,7 @@ function ResetPasswordModal({
 
   return (
     <Modal title={`Reset kata sandi · ${user.name}`} onClose={onClose} onSubmit={submit} busy={busy}>
-      <Field label="Kata sandi baru">
+      <Field label="Kata sandi baru" required>
         <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} className={fieldClass} placeholder="Minimal 8 karakter" />
       </Field>
     </Modal>
@@ -468,7 +573,7 @@ function RolesPanel({ roles }: { roles: RoleRow[] }) {
         <button
           type="button"
           onClick={() => setCreateOpen(true)}
-          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] font-medium transition-colors hover:bg-muted"
+          className="inline-flex h-11 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] font-medium transition-colors hover:bg-muted lg:h-8"
         >
           <Plus className="size-3.5" /> Peran baru
         </button>
@@ -612,7 +717,7 @@ function RoleModal({
   return (
     <Modal title={role ? `Ubah peran · ${role.name}` : "Peran baru"} onClose={onClose} onSubmit={submit} busy={busy} wide>
       <div className="space-y-3">
-        <Field label="Nama peran">
+        <Field label="Nama peran" required>
           <input value={name} onChange={(event) => setName(event.target.value)} className={fieldClass} placeholder="Kasir Senior, Admin Gudang…" disabled={Boolean(role)} />
         </Field>
 

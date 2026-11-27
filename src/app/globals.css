@@ -260,6 +260,25 @@
 .theme-erp .stat-card[data-size="default"] .stat-value {
   font-size: clamp(15px, 2.4vw, 24px);
 }
+/* Tabel lebar: scrollbar tipis yang terlihat + fokus keyboard jelas.
+   Di ponsel, geser horizontal tetap menjadi fallback; tiap tabel juga
+   mendapat kartu responsif bila halaman menyediakannya. */
+.data-table-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+  overscroll-behavior-x: contain;
+}
+.data-table-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+.data-table-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--border);
+}
+.data-table-scroll:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
 /* KPI Beranda: jumlah kartu bergantung izin. Di ponsel, kartu terakhir
    yang ganjil mengisi dua kolom agar tidak menyisakan sel kosong. */
 @media (max-width: 767px) {

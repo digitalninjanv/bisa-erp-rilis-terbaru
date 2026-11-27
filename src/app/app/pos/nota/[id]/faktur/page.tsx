@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { withCompany } from "@/db/tenant";
-import { getSaleDetail } from "@/server/reports";
+import { getSaleDetail, listAccounts } from "@/server/reports";
 import { getSettings } from "@/server/catalog";
 import { writeAudit } from "@/server/audit";
 import { verifyReceiptPrintToken } from "@/server/pos";
@@ -60,9 +60,15 @@ export default async function SalesInvoicePage({
       token: query.printToken,
     });
     if (!fresh && !canReprint) return null;
-    const detail = await getSaleDetail(tx, ctx.company.id, id);
+    const [detail, settings, accounts] = await Promise.all([
+      getSaleDetail(tx, ctx.company.id, id),
+      getSettings(tx, ctx.company.id),
+      listAccounts(tx, ctx.company.id),
+    ]);
     if (!detail) return null;
-    const settings = await getSettings(tx, ctx.company.id);
+    const bankAccounts = accounts.filter(
+      (row) => row.cashBankKind === "bank" && row.bankAccountNumber,
+    );
     if (isCopy || !fresh) {
       await writeAudit(tx, {
         companyId: ctx.company.id,
@@ -77,11 +83,11 @@ export default async function SalesInvoicePage({
         },
       });
     }
-    return { ...detail, settings, fresh };
+    return { ...detail, settings, bankAccounts, fresh };
   });
 
   if (!data) notFound();
-  const { sale, lines, payments, settings, customer, cashier, branch } = data;
+  const { sale, lines, payments, settings, customer, cashier, branch, bankAccounts } = data;
   const printSettings = toPrintSettings(settings, "faktur");
   const qrDataUrl = printSettings.showQr ? await documentQrDataUrl(sale.number) : null;
   const taxAmount = d(sale.taxTotal);
@@ -296,6 +302,21 @@ export default async function SalesInvoicePage({
                 Cantumkan nomor faktur <span className="num font-medium">{sale.number}</span> pada
                 bukti transfer.
               </p>
+              {bankAccounts.length > 0 ? (
+                <div className="mt-1.5">
+                  <p className="font-medium">Transfer ke:</p>
+                  <ul className="mt-0.5 space-y-0.5">
+                    {bankAccounts.slice(0, 3).map((account) => (
+                      <li key={account.id} className="num">
+                        {[account.bankName, account.bankAccountNumber, account.bankAccountHolder]
+                          .filter(Boolean)
+                          .join(" · ")}
+                        {account.bankBranch ? ` (${account.bankBranch})` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
               {settings?.phone ? <p>Konfirmasi pembayaran: {settings.phone}</p> : null}
             </div>
           ) : null}

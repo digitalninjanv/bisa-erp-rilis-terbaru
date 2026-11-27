@@ -154,7 +154,7 @@ export function DateField({
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? errorId : undefined}
           className={cn(
-            "field-control num h-11 w-full rounded-md border border-input bg-background px-2.5 pr-11 text-[13px] outline-none focus:border-ring focus:ring-2 focus:ring-ring/20 disabled:opacity-60",
+            "field-control num h-11 w-full rounded-md border border-input bg-background px-2.5 pr-11 text-[13px] outline-none focus:border-ring focus:ring-2 focus:ring-ring/20 disabled:opacity-60 lg:h-9",
             error && "border-destructive",
             className,
           )}
@@ -179,7 +179,7 @@ export function DateField({
           onChange={handleNativeChange}
           tabIndex={-1}
           aria-hidden="true"
-          className="absolute inset-y-0 right-0 w-11 cursor-pointer opacity-0"
+          className="absolute inset-y-0 right-0 w-11 cursor-pointer opacity-0 lg:h-9"
         />
       </div>
       {error ? (

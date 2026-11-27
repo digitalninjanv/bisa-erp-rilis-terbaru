@@ -47,7 +47,7 @@ export function DataTableFacetedFilter<TData, TValue>({
           <Button
             variant="outline"
             size="sm"
-            className="h-8 border-dashed text-[12px]"
+            className="h-11 border-dashed text-[12px] lg:h-8"
             aria-label={`Filter ${title}`}
           >
             <PlusCircle className="mr-1.5 size-3.5" />

@@ -18,18 +18,17 @@
  * §2.2/§2.4. Sejak A-25 U8 semua cangkang modul (termasuk POS)
  * berada di dalam lingkup itu.
  *
- * Validasi 3 (F-01): tinggi field SATU sumber = h-9 (36px) di kelas
- * ini, di bawaan ui/input & ui/select, dan di komponen bersama
- * (MoneyInput/PercentInput/DateField). Penaikan tema .field-control
- * yang dulu menjadi sumber kedua DIHAPUS dari globals.css — campuran
- * 32/36px dalam satu form (terukur sampai 178+41 field) tidak boleh
- * kembali; dijaga e2e/table-form-guard.spec.ts.
+ * Validasi 3 (F-01): tinggi field SATU sumber — 44px di ponsel
+ * (target sentuh) dan 36px di desktop lewat `lg:h-9` — di kelas ini
+ * dan di komponen bersama (MoneyInput/QtyInput/PercentInput/DateField).
+ * Penaikan tema .field-control yang dulu menjadi sumber kedua DIHAPUS
+ * dari globals.css agar tidak ada dua tinggi yang bersaing.
  */
 export const labelClass =
   "field-label block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground";
 
 export const fieldClass =
-  "field-control h-9 w-full rounded-md border border-input bg-background px-2.5 text-[12px] outline-none focus:border-ring focus:ring-2 focus:ring-ring/20 disabled:opacity-60";
+  "field-control h-11 w-full rounded-md border border-input bg-background px-2.5 text-[12px] outline-none focus:border-ring focus:ring-2 focus:ring-ring/20 disabled:opacity-60 lg:h-9";
 
 /** Alias historis: sebagian komponen menamai gaya field-nya berbeda. */
 export const inputClass = fieldClass;

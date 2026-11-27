@@ -35,7 +35,7 @@ export function DataTableViewOptions<TData>({
           <Button
             variant="outline"
             size="sm"
-            className="h-8 gap-1.5 px-2.5 text-[12px] font-medium"
+            className="h-11 gap-1.5 px-2.5 text-[12px] font-medium lg:h-8"
             aria-label="Pilih kolom yang ditampilkan"
           >
             <SlidersHorizontal className="size-3.5 text-muted-foreground" />

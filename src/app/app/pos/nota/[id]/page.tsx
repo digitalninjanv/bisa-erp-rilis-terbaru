@@ -201,7 +201,7 @@ export default async function ReceiptPage({
       </div>
 
       <div className="print-area mx-auto w-fit rounded-lg border border-border bg-white p-4 shadow-sm">
-        <PrintShell settings={printSettings} paper={printSettings.receiptPaper}>
+        <PrintShell settings={printSettings} paper={printSettings.receiptPaper} pageNumbers={false}>
         <div
           className="receipt"
           style={{

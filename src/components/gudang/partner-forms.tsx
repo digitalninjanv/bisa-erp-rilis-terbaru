@@ -176,8 +176,8 @@ export function SupplierForm({
       {open ? (
         <Modal title={supplier ? "Ubah pemasok" : "Pemasok baru"} onClose={() => setOpen(false)} onSubmit={submit} busy={busy}>
           <div className="grid gap-2 sm:grid-cols-2">
-            <Field label="Kode"><input value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} className={fieldClass} /></Field>
-            <Field label="Nama"><input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className={fieldClass} /></Field>
+            <Field label="Kode" required><input value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} className={fieldClass} /></Field>
+            <Field label="Nama" required><input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className={fieldClass} /></Field>
             <Field label="Telepon"><input value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} className={fieldClass} /></Field>
             <Field label="Email"><input value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} className={fieldClass} /></Field>
             <Field label="Alamat" className="sm:col-span-2"><input value={form.address} onChange={(event) => setForm({ ...form, address: event.target.value })} className={fieldClass} /></Field>
@@ -327,8 +327,8 @@ export function CustomerForm({
       {open ? (
         <Modal title={customer ? "Ubah pelanggan" : "Pelanggan baru"} onClose={() => setOpen(false)} onSubmit={submit} busy={busy}>
           <div className="grid gap-2 sm:grid-cols-2">
-            <Field label="Kode"><input value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} className={fieldClass} /></Field>
-            <Field label="Nama"><input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className={fieldClass} /></Field>
+            <Field label="Kode" required><input value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} className={fieldClass} /></Field>
+            <Field label="Nama" required><input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className={fieldClass} /></Field>
             <Field label="Telepon"><input value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} className={fieldClass} /></Field>
             <Field label="Email"><input value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} className={fieldClass} /></Field>
             <Field label="Grup pelanggan">
