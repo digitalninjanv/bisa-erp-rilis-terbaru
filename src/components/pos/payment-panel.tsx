@@ -4,9 +4,10 @@ import { useState, type Dispatch, type SetStateAction } from "react";
 import {
   AlertTriangle,
   Banknote,
-  ChevronDown,
+  Check,
   CreditCard,
   Landmark,
+  MoreHorizontal,
   PauseCircle,
   QrCode,
   Split,
@@ -14,15 +15,15 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatIDR } from "@/lib/money";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { receiptHref } from "@/lib/pos/receipt-links";
-import { formatMoneyText } from "@/lib/money-input";
 import { MoneyInput } from "@/components/money-input";
 import { paymentMethodTypeLabel } from "@/lib/format";
 import type { QuoteResultPublic } from "@/server/pos";
 import type { CartItem, CustomerOption, Method, PaymentEntry } from "@/components/pos/terminal-types";
 import type { ReturnCreditApi } from "@/components/pos/use-return-credit";
 import { CashChips, ChangeBreakdown } from "./payment/cash-chips";
-import { FeeEntryField, methodFeeEligible, configuredFeeValue } from "./payment/fee-field";
+import { FeeEntryField, methodFeeEligible } from "./payment/fee-field";
 import { MixedEntries } from "./payment/mixed-entries";
 import { ReturnCreditSection } from "./payment/credit-section";
 import { DebtSection } from "./payment/debt-section";
@@ -183,32 +184,47 @@ export function PaymentPanel(props: {
     onReopenLastSale,
   } = props;
   const tenderedAmount = Number(entries[singleMethod]?.tendered ?? 0);
-  // Empat metode teratas tampil sebagai kartu besar; sisanya dilipat agar
-  // panel pembayaran tidak menjadi daftar menu panjang.
-  const [methodsExpanded, setMethodsExpanded] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
   const isDebtMethod = Boolean(debtMethod && singleMethod === debtMethod.id);
   const activeMethodName = isDebtMethod ? "Utang" : (single?.name ?? "Pilih metode");
-  const quickMethods = methods.slice(0, 4);
-  const extraMethods = methods.slice(4);
-  const activeFee =
-    single && methodFeeEligible(single)
-      ? entries[singleMethod]?.fee || configuredFeeValue(single, total)
-      : "0";
+  // Tunai dan QRIS adalah dua jalur tersibuk; metode lain (bank, utang)
+  // tetap tersedia tetapi tidak memenuhi panel pada layar 1366/1536.
+  const methodRank = (method: Method) =>
+    method.type === "cash" ? 0 : method.type === "qris" ? 1 : 2;
+  const orderedMethods = [...methods].sort((a, b) => methodRank(a) - methodRank(b));
+  const quickMethods = orderedMethods.slice(0, 2);
+  const extraMethods = orderedMethods.slice(2);
+  const extraCount = extraMethods.length + (debtMethod ? 1 : 0);
+  const hasOptions = mode === "single" || extraCount > 0 || Boolean(creditMethod);
   return (
       <>
         <div className="overflow-hidden rounded-xl border border-[var(--pos-border-strong)] bg-[var(--pos-panel)] shadow-[var(--shadow-card)]">
-          <div className="flex min-h-[64px] items-center justify-between gap-3 bg-[var(--pos-command)] px-4 py-2.5 text-[var(--pos-command-fg)]">
+          <div className="flex min-h-[56px] items-center justify-between gap-3 bg-[var(--pos-command)] px-4 py-2 text-[var(--pos-command-fg)]">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--pos-command-muted)]">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--pos-command-muted)]">
                 Pembayaran
               </p>
-              <p className="num text-2xl font-extrabold leading-tight text-[var(--pos-gold-soft)]">
+              <p className="num text-[22px] font-extrabold leading-tight text-[var(--pos-gold-soft)]">
                 {formatIDR(total)}
               </p>
             </div>
-            <span className="max-w-[46%] truncate rounded-full bg-white/12 px-2.5 py-1 text-[11px] font-semibold text-[var(--pos-command-fg)]">
-              {mode === "mixed" ? "Campuran" : activeMethodName}
-            </span>
+            <div className="flex min-w-0 items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setOptionsOpen(true)}
+                aria-expanded={optionsOpen}
+                aria-haspopup="dialog"
+                aria-label="Opsi pembayaran lain"
+                title="Opsi pembayaran lain"
+                disabled={!hasOptions}
+                className="grid size-11 shrink-0 place-items-center rounded-md border border-white/20 bg-white/10 text-[var(--pos-command-fg)] transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <MoreHorizontal className="size-5" />
+              </button>
+              <span className="max-w-[120px] truncate rounded-full bg-white/12 px-2.5 py-1 text-[11px] font-semibold text-[var(--pos-command-fg)]">
+                {mode === "mixed" ? "Campuran" : activeMethodName}
+              </span>
+            </div>
           </div>
 
           <div className="space-y-2.5 bg-[var(--pos-surface-alt)] p-2.5">
@@ -222,7 +238,10 @@ export function PaymentPanel(props: {
                       <button
                         key={method.id}
                         type="button"
-                        onClick={() => setSingleMethod(method.id)}
+                        onClick={() => {
+                          setSingleMethod(method.id);
+                          setOptionsOpen(false);
+                        }}
                         title={method.name}
                         aria-pressed={active}
                         className={cn(
@@ -247,7 +266,7 @@ export function PaymentPanel(props: {
                           {typeLabel.toLowerCase() !== method.name.toLowerCase() ? (
                             <span
                               className={cn(
-                                "block truncate text-[10px] font-medium uppercase tracking-wide",
+                                "block truncate text-[11px] font-medium uppercase tracking-wide",
                                 active ? "text-white" : "text-[var(--pos-muted)]",
                               )}
                             >
@@ -255,94 +274,17 @@ export function PaymentPanel(props: {
                             </span>
                           ) : null}
                         </span>
+                        {active ? <Check aria-hidden="true" className="ml-auto size-4 shrink-0" /> : null}
                       </button>
                     );
                   })}
-                  {/* POS-1 (D-19): pilihan Utang — metode kredit tampil
-                      khusus di sini, bukan di daftar metode lunas. */}
-                  {debtMethod ? (
-                    <button
-                      type="button"
-                      onClick={() => setSingleMethod(debtMethod.id)}
-                      aria-pressed={singleMethod === debtMethod.id}
-                      title={debtMethod.name}
-                      className={cn(
-                        "flex min-h-[52px] items-center gap-2.5 rounded-lg border-2 px-2.5 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)] focus-visible:ring-offset-2",
-                        singleMethod === debtMethod.id
-                          ? methodActiveTone.credit
-                          : "border-[var(--pos-border-strong)] bg-[var(--pos-panel)] text-[var(--pos-ink)] hover:border-[var(--pos-command)]",
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "grid size-9 shrink-0 place-items-center rounded-md",
-                          singleMethod === debtMethod.id
-                            ? "bg-white/15 text-white"
-                            : "bg-tone-amber-soft text-tone-amber",
-                        )}
-                      >
-                        <Wallet className="size-4" />
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm font-bold">Utang</span>
-                        <span
-                          className={cn(
-                            "block truncate text-[10px] font-medium uppercase tracking-wide",
-                            singleMethod === debtMethod.id ? "text-white" : "text-[var(--pos-muted)]",
-                          )}
-                        >
-                          Tempo
-                        </span>
-                      </span>
-                    </button>
-                  ) : null}
                 </div>
-
-                {extraMethods.length > 0 ? (
-                  <div className="rounded-lg border border-[var(--pos-border-strong)] bg-[var(--pos-panel)]">
-                    <button
-                      type="button"
-                      onClick={() => setMethodsExpanded((value) => !value)}
-                      aria-expanded={methodsExpanded}
-                      className="flex min-h-11 w-full items-center justify-between gap-2 px-3 text-xs font-semibold text-[var(--pos-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)]"
-                    >
-                      <span>{methodsExpanded ? "Tutup metode lain" : `Metode lain (${extraMethods.length})`}</span>
-                      <ChevronDown
-                        className={cn("size-4 transition-transform", methodsExpanded && "rotate-180")}
-                      />
-                    </button>
-                    {methodsExpanded ? (
-                      <div role="group" aria-label="Metode pembayaran lainnya" className="grid grid-cols-2 gap-2 border-t border-[var(--pos-border)] p-2">
-                        {extraMethods.map((method) => (
-                          <button
-                            key={method.id}
-                            type="button"
-                            onClick={() => {
-                              setSingleMethod(method.id);
-                              setMethodsExpanded(false);
-                            }}
-                            aria-pressed={singleMethod === method.id}
-                                className={cn(
-                              "flex min-h-12 items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)]",
-                              singleMethod === method.id
-                                ? methodActiveTone[method.type] ?? methodActiveTone.cash
-                                : "border-[var(--pos-border-strong)] bg-[var(--pos-panel)] text-[var(--pos-ink)] hover:bg-[var(--pos-tray)]",
-                            )}
-                          >
-                            <span className="truncate">{method.name}</span>
-                            <MethodIcon type={method.type} className="size-4 shrink-0" />
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
 
                 {single?.type === "cash" ? (
                   <div className="space-y-2.5 rounded-lg border border-[var(--pos-border-strong)] bg-[var(--pos-panel)] p-2.5">
                     <div className="grid grid-cols-2 gap-2.5">
                       <label className="space-y-1">
-                        <span className="text-[11px] font-bold uppercase tracking-wide text-[var(--pos-muted)]">
+                        <span className="text-xs font-bold uppercase tracking-wide text-[var(--pos-muted)]">
                           Uang diterima
                         </span>
                         {/* A-28 UI-1 (UX-B04): Diterima memakai MoneyInput
@@ -353,7 +295,7 @@ export function PaymentPanel(props: {
                             Id tetap menjadi target pintasan F4. */}
                         <MoneyInput
                           id={tenderedInputId}
-                          aria-label="Uang diterima"
+                          aria-label="Uang diterima; kosongkan untuk uang pas"
                           value={entries[singleMethod]?.tendered ?? ""}
                           onChange={(canonical) =>
                             setEntries((current) => ({
@@ -365,12 +307,12 @@ export function PaymentPanel(props: {
                               },
                             }))
                           }
-                          placeholder={total > 0 ? `Pas: ${formatMoneyText(String(total))}` : "0"}
-                          className="h-14 border-2 border-[var(--pos-border-strong)] bg-[var(--pos-panel)] text-lg font-extrabold text-[var(--pos-ink)] focus:border-[var(--pos-action)]"
+                          placeholder="0"
+                          className="h-14 border-2 border-[var(--pos-border-strong)] bg-[var(--pos-panel)] text-lg font-extrabold text-[var(--pos-ink)] placeholder:font-semibold placeholder:text-[var(--pos-muted)] focus:border-[var(--pos-action)]"
                         />
                       </label>
                       <label className="space-y-1">
-                        <span className="text-[11px] font-bold uppercase tracking-wide text-[var(--pos-muted)]">
+                        <span className="text-xs font-bold uppercase tracking-wide text-[var(--pos-muted)]">
                           Kembalian
                         </span>
                         <div
@@ -378,7 +320,7 @@ export function PaymentPanel(props: {
                             "num flex h-14 items-center justify-end rounded-md border-2 px-3 text-lg font-extrabold",
                             change < 0
                               ? "border-destructive/60 bg-tone-red-soft text-tone-red"
-                              : "border-tone-green/50 bg-tone-green-soft text-tone-green",
+                              : "border-tone-green/50 bg-tone-green-soft text-[#065f46]",
                           )}
                         >
                           {change < 0 ? `−${formatIDR(Math.abs(change))}` : formatIDR(change)}
@@ -464,7 +406,7 @@ export function PaymentPanel(props: {
                       </span>
                     </label>
                     <label className="block space-y-1">
-                      <span className="text-[11px] font-bold uppercase tracking-wide text-[var(--pos-muted)]">
+                      <span className="text-xs font-bold uppercase tracking-wide text-[var(--pos-muted)]">
                         No. referensi / kode persetujuan (opsional)
                       </span>
                       <input
@@ -488,46 +430,6 @@ export function PaymentPanel(props: {
                   </div>
                 ) : null}
 
-                {/* A-21 Tahap R3-A (R3-01): fee metode tunggal —
-                    nilai awal konfigurasi, dapat diubah kasir. Dilipat
-                    agar alur tunai/QRIS tetap ringkas; nilai bawaan
-                    tetap dikirim walau kasir tidak membukanya. */}
-                {methodFeeEligible(single) ? (
-                  <details className="pos-disclosure rounded-lg border border-[var(--pos-border-strong)] bg-[var(--pos-panel)]">
-                    <summary className="flex min-h-11 items-center justify-between gap-2 px-3 text-xs font-semibold text-[var(--pos-muted)]">
-                      <span>Biaya MDR {single?.name}</span>
-                      <span className="flex items-center gap-1.5">
-                        <span className="num text-[var(--pos-ink)]">{formatIDR(Number(activeFee))}</span>
-                        <ChevronDown className="pos-disclosure-chevron size-4 transition-transform" />
-                      </span>
-                    </summary>
-                    <div className="border-t border-[var(--pos-border)] p-3">
-                      <FeeEntryField
-                        method={single!}
-                        base={total}
-                        entry={entries[singleMethod]}
-                        onFee={(fee) =>
-                          setEntries((current) => ({
-                            ...current,
-                            [singleMethod]: {
-                              ...(current[singleMethod] ?? { amount: "", tendered: "", reference: "" }),
-                              fee,
-                            },
-                          }))
-                        }
-                      />
-                    </div>
-                  </details>
-                ) : null}
-
-                <button
-                  type="button"
-                  onClick={() => setMode("mixed")}
-                  className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--pos-border-strong)] px-3 text-xs font-semibold text-[var(--pos-muted)] transition-colors hover:border-[var(--pos-command)] hover:bg-[var(--pos-panel)] hover:text-[var(--pos-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)]"
-                >
-                  <Split className="size-4" />
-                  Bayar dengan beberapa metode
-                </button>
               </>
             ) : (
               <>
@@ -560,7 +462,111 @@ export function PaymentPanel(props: {
               </>
             )}
 
-            <ReturnCreditSection creditMethod={creditMethod} credit={credit} />
+            {hasOptions ? (
+              <Dialog open={optionsOpen} onOpenChange={setOptionsOpen}>
+                <DialogContent className="max-h-[85dvh] max-w-md overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle>Opsi pembayaran lain</DialogTitle>
+                    <DialogDescription>
+                      Metode lain, pembayaran campuran, kredit retur, dan biaya MDR.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-2">
+                    {extraCount > 0 ? (
+                      <div>
+                        <p className="text-xs font-semibold text-[var(--pos-ink)]">
+                          Metode lain ({extraCount})
+                        </p>
+                        <div role="group" aria-label="Metode pembayaran lainnya" className="mt-1.5 grid grid-cols-2 gap-2">
+                          {extraMethods.map((method) => (
+                            <button
+                              key={method.id}
+                              type="button"
+                              onClick={() => {
+                                setSingleMethod(method.id);
+                                setOptionsOpen(false);
+                              }}
+                              aria-pressed={singleMethod === method.id}
+                              title={method.name}
+                              className={cn(
+                                "flex min-h-11 items-center justify-between gap-2 rounded-md border px-2.5 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)]",
+                                singleMethod === method.id
+                                  ? methodActiveTone[method.type] ?? methodActiveTone.cash
+                                  : "border-[var(--pos-border-strong)] bg-[var(--pos-panel)] text-[var(--pos-ink)] hover:bg-[var(--pos-tray)]",
+                              )}
+                            >
+                              <span className="truncate">{method.name}</span>
+                              <MethodIcon type={method.type} className="size-4 shrink-0" />
+                            </button>
+                          ))}
+                          {debtMethod ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSingleMethod(debtMethod.id);
+                                setOptionsOpen(false);
+                              }}
+                              aria-pressed={singleMethod === debtMethod.id}
+                              title={debtMethod.name}
+                              className={cn(
+                                "flex min-h-11 items-center justify-between gap-2 rounded-md border px-2.5 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)]",
+                                singleMethod === debtMethod.id
+                                  ? methodActiveTone.credit
+                                  : "border-[var(--pos-border-strong)] bg-[var(--pos-panel)] text-[var(--pos-ink)] hover:bg-[var(--pos-tray)]",
+                              )}
+                            >
+                              <span className="truncate">Utang <span className="text-[11px] uppercase tracking-wide opacity-80">Tempo</span></span>
+                              <Wallet className="size-4 shrink-0" />
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
+                    {mode === "single" && methodFeeEligible(single) ? (
+                      <div className="rounded-md border border-[var(--pos-border)] bg-[var(--pos-surface-alt)] p-2.5">
+                        <p className="mb-1.5 text-xs font-semibold text-[var(--pos-ink)]">
+                          Biaya MDR {single?.name}
+                        </p>
+                        <FeeEntryField
+                          method={single!}
+                          base={total}
+                          entry={entries[singleMethod]}
+                          onFee={(fee) =>
+                            setEntries((current) => ({
+                              ...current,
+                              [singleMethod]: {
+                                ...(current[singleMethod] ?? { amount: "", tendered: "", reference: "" }),
+                                fee,
+                              },
+                            }))
+                          }
+                        />
+                      </div>
+                    ) : null}
+                    {mode === "single" ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMode("mixed");
+                          setOptionsOpen(false);
+                        }}
+                        className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--pos-border-strong)] px-3 text-xs font-semibold text-[var(--pos-muted)] transition-colors hover:border-[var(--pos-command)] hover:bg-[var(--pos-surface-alt)] hover:text-[var(--pos-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)]"
+                      >
+                        <Split className="size-4" />
+                        Bayar dengan beberapa metode
+                      </button>
+                    ) : null}
+                    {credit.appliedCredit ? null : (
+                      <ReturnCreditSection creditMethod={creditMethod} credit={credit} />
+                    )}
+                  </div>
+                </DialogContent>
+              </Dialog>
+            ) : null}
+
+            {credit.appliedCredit ? (
+              <ReturnCreditSection creditMethod={creditMethod} credit={credit} />
+            ) : null}
 
             <DebtSection
               debtMethod={debtMethod}
@@ -674,7 +680,7 @@ export function PaymentPanel(props: {
             type="button"
             onClick={checkout}
             disabled={payDisabled}
-            className="flex h-12 items-center justify-center gap-2 rounded-md bg-[var(--pos-action)] text-[15px] font-bold text-[var(--pos-action-fg)] shadow-sm transition-colors hover:bg-[var(--pos-action-deep)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:border disabled:border-stone-300 disabled:bg-stone-200 disabled:text-stone-600 disabled:shadow-none disabled:opacity-100"
+            className="flex h-14 items-center justify-center gap-2 rounded-md bg-[var(--pos-action)] text-base font-bold text-[var(--pos-action-fg)] shadow-sm transition-colors hover:bg-[var(--pos-action-deep)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:border disabled:border-stone-300 disabled:bg-stone-200 disabled:text-stone-600 disabled:shadow-none disabled:opacity-100"
           >
             {payLabel}
           </button>
@@ -682,7 +688,7 @@ export function PaymentPanel(props: {
             type="button"
             onClick={() => setHoldOpen(true)}
             disabled={cart.length === 0}
-            className="flex h-12 items-center justify-center gap-2 rounded-lg border border-[var(--pos-border-strong)] bg-[var(--pos-panel)] px-4 text-sm font-semibold text-[var(--pos-ink)] hover:bg-[var(--pos-tray)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)] disabled:cursor-not-allowed disabled:border-stone-300 disabled:bg-stone-100 disabled:text-stone-500 disabled:opacity-100"
+            className="flex h-14 items-center justify-center gap-2 rounded-lg border border-[var(--pos-border-strong)] bg-[var(--pos-panel)] px-4 text-sm font-semibold text-[var(--pos-ink)] hover:bg-[var(--pos-tray)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)] disabled:cursor-not-allowed disabled:border-stone-300 disabled:bg-stone-100 disabled:text-stone-500 disabled:opacity-100"
             title="Tahan pesanan"
           >
             <PauseCircle className="size-4" /> Tahan

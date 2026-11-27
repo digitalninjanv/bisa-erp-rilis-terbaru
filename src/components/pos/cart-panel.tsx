@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import {
   AlertTriangle,
   Minus,
   PauseCircle,
   Plus,
+  ReceiptText,
   ShoppingCart,
   Tag,
   Trash2,
@@ -95,6 +96,20 @@ export function CartPanel(props: {
   const [lineDiscVal, setLineDiscVal] = useState("");
   const [bulkSerialKey, setBulkSerialKey] = useState<string | null>(null);
   const [bulkSerialText, setBulkSerialText] = useState("");
+  const [linesScrolled, setLinesScrolled] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const hasBreakdown =
+    (quote?.discountTotal ?? 0) > 0 ||
+    (quote?.taxTotal ?? 0) > 0 ||
+    (quote?.roundingAdjustment ?? 0) !== 0;
+  const linesRef = useRef<HTMLDivElement>(null);
+  // Setelah scan, baris terbaru harus terlihat — sebelumnya daftar tetap
+  // di scrollTop 0 sehingga item ke-5..8 tidak pernah tampak.
+  useEffect(() => {
+    const element = linesRef.current;
+    if (!element || scrollMode !== "contained") return;
+    element.scrollTop = element.scrollHeight;
+  }, [cart.length, scrollMode]);
   return (
         <div className="overflow-hidden rounded-xl border border-[var(--pos-border-strong)] bg-[var(--pos-panel)] shadow-[var(--shadow-card)]">
           {(!compactHeader || cart.length > 0 || heldCount > 0) ? (
@@ -102,14 +117,16 @@ export function CartPanel(props: {
             <div className="flex min-w-0 items-center gap-2">
               <ShoppingCart className={cn("size-5 text-[var(--pos-gold-soft)]", compactHeader && "hidden")} />
               <h2 className={cn("text-base font-bold", compactHeader && "hidden")}>Keranjang</h2>
-              <span className={cn("num whitespace-nowrap rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-bold text-[var(--pos-command-fg)]", compactHeader && "hidden")}>
-                {cart.length} baris
-              </span>
-              {compactHeader ? (
-                <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--pos-command-muted)]">
-                  Harga
-                </span>
-              ) : null}
+              <button
+                type="button"
+                onClick={() => setSummaryOpen(true)}
+                aria-label={`Rincian transaksi, ${cart.length} baris`}
+                title="Rincian transaksi"
+                className="num inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1 rounded-full bg-white/15 px-2 text-xs font-bold text-[var(--pos-command-fg)] transition-colors hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)]"
+              >
+                <ReceiptText className="size-3.5" aria-hidden="true" />
+                {cart.length}
+              </button>
             </div>
             <div className="flex shrink-0 items-center gap-1">
               {/* Di laptop pendek baris Harga penuh disembunyikan agar
@@ -186,9 +203,18 @@ export function CartPanel(props: {
           ) : null}
 
           <div
+            ref={linesRef}
+            role="region"
+            aria-label="Daftar item keranjang; gulir untuk melihat semua item"
+            tabIndex={0}
+            onScroll={(event) => {
+              const next = event.currentTarget.scrollTop > 4;
+              setLinesScrolled((current) => (current === next ? current : next));
+            }}
             className={cn(
-              "min-h-[120px]",
+              "min-h-[120px] overscroll-contain focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)]",
               scrollMode === "page" ? "overflow-visible" : "pos-cart-lines overflow-y-auto",
+              linesScrolled && "pos-cart-lines-scrolled",
             )}
           >
             {cart.length === 0 ? (
@@ -355,7 +381,7 @@ export function CartPanel(props: {
                         </div>
                         <div className="flex justify-end">
                           <div className="text-right">
-                            <span className="block text-[11px] font-semibold uppercase tracking-wide text-[var(--pos-muted)]">
+                            <span className="block text-xs font-semibold uppercase tracking-wide text-[var(--pos-muted)]">
                               Total
                             </span>
                             <span className="num text-lg font-extrabold leading-tight text-[var(--pos-ink)]">
@@ -474,41 +500,49 @@ export function CartPanel(props: {
             )}
           </div>
 
-          <div className={cn("space-y-1 border-t border-[var(--pos-command)] bg-[var(--pos-command)] px-3.5 py-2.5 text-sm text-[var(--pos-command-fg)]", compactHeader && "hidden")}>
-            <Row inverse label="Subtotal" value={formatIDR(quote?.subtotal ?? 0)} />
-            {(quote?.discountTotal ?? 0) > 0 ? (
-              <Row inverse label="Diskon" value={`−${formatIDR(quote?.discountTotal ?? 0)}`} highlight />
-            ) : null}
-            {(quote?.taxTotal ?? 0) > 0 ? (
-              <Row inverse label="termasuk PPN" value={formatIDR(quote?.taxTotal ?? 0)} />
-            ) : null}
-            {(quote?.roundingAdjustment ?? 0) !== 0 ? (
-              <Row
-                inverse
-                label={`Pembulatan total semua metode (${roundingLabel(quote?.cashRounding)})`}
-                value={`${(quote?.roundingAdjustment ?? 0) > 0 ? "+" : "−"}${formatIDR(Math.abs(quote?.roundingAdjustment ?? 0))}`}
-              />
-            ) : null}
-            <div className="mt-1 flex items-end justify-between gap-3 border-t border-white/20 pt-2.5">
-              <span className="pb-1 text-[11px] font-bold uppercase tracking-[0.16em] text-[var(--pos-command-muted)]">
-                Total
-              </span>
-              <span className="num text-[24px] font-extrabold leading-none tracking-tight text-[var(--pos-gold-soft)]">
-                {formatIDR(total)}
-              </span>
-            </div>
-            {heldTotal !== null && Math.abs(total - heldTotal) > 0.01 ? (
-              <p className="rounded-md bg-white/10 p-2 text-xs leading-4 text-[var(--pos-gold-soft)]">
-                Total berbeda dari {formatIDR(heldTotal)} saat ditahan karena penyesuaian harga atau diskon terkini.
-              </p>
-            ) : null}
-            {/* POS2-01/22: status perhitungan adalah informasi
-                operasional — 11px, dan tampil juga saat quote basi
-                sedang dihitung ulang (quotePending). */}
-            {quoteBusy && cart.length > 0 ? (
-              <p className="text-right text-xs text-[var(--pos-command-muted)]">Menghitung total…</p>
-            ) : null}
-          </div>
+          <Dialog open={summaryOpen} onOpenChange={setSummaryOpen}>
+            <DialogContent className="max-w-sm">
+              <DialogHeader>
+                <DialogTitle>Rincian transaksi</DialogTitle>
+                <DialogDescription>
+                  {cart.length} baris · {formatIDR(total)}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-2 text-sm">
+                {hasBreakdown ? (
+                  <Row label="Subtotal" value={formatIDR(quote?.subtotal ?? 0)} />
+                ) : null}
+                {(quote?.discountTotal ?? 0) > 0 ? (
+                  <Row label="Diskon" value={`−${formatIDR(quote?.discountTotal ?? 0)}`} tone="plum" />
+                ) : null}
+                {(quote?.taxTotal ?? 0) > 0 ? (
+                  <Row label="termasuk PPN" value={formatIDR(quote?.taxTotal ?? 0)} />
+                ) : null}
+                {(quote?.roundingAdjustment ?? 0) !== 0 ? (
+                  <Row
+                    label={`Pembulatan total (${roundingLabel(quote?.cashRounding)})`}
+                    value={`${(quote?.roundingAdjustment ?? 0) > 0 ? "+" : "−"}${formatIDR(Math.abs(quote?.roundingAdjustment ?? 0))}`}
+                  />
+                ) : null}
+                <div className="flex items-end justify-between gap-3 border-t border-[var(--pos-border-strong)] pt-2.5">
+                  <span className="text-xs font-bold uppercase tracking-[0.16em] text-[var(--pos-muted)]">
+                    Total
+                  </span>
+                  <span className="num text-2xl font-extrabold tracking-tight text-[var(--pos-action)]">
+                    {formatIDR(total)}
+                  </span>
+                </div>
+                {heldTotal !== null && Math.abs(total - heldTotal) > 0.01 ? (
+                  <p className="rounded-md bg-tone-amber-soft p-2 text-xs leading-4 text-tone-amber">
+                    Total berbeda dari {formatIDR(heldTotal)} saat ditahan karena penyesuaian harga atau diskon terkini.
+                  </p>
+                ) : null}
+                {quoteBusy && cart.length > 0 ? (
+                  <p className="text-right text-xs text-[var(--pos-muted)]">Menghitung total…</p>
+                ) : null}
+              </div>
+            </DialogContent>
+          </Dialog>
 
           <ConfirmDialog
             open={confirmClearCart}
@@ -586,34 +620,11 @@ export function CartPanel(props: {
   );
 }
 
-function Row({
-  label,
-  value,
-  inverse = false,
-  highlight = false,
-}: {
-  label: string;
-  value: string;
-  inverse?: boolean;
-  highlight?: boolean;
-}) {
+function Row({ label, value, tone }: { label: string; value: string; tone?: "plum" }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <span className={inverse ? "text-[var(--pos-command-muted)]" : "text-muted-foreground"}>
-        {label}
-      </span>
-      <span
-        className={cn(
-          "num",
-          highlight
-            ? "font-semibold text-[var(--pos-gold-soft)]"
-            : inverse
-              ? "text-[var(--pos-command-fg)]"
-              : "",
-        )}
-      >
-        {value}
-      </span>
+      <span className="text-[var(--pos-muted)]">{label}</span>
+      <span className={cn("num", tone === "plum" && "font-semibold text-tone-plum")}>{value}</span>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { posAutoColumnCount } from "@/components/pos/pos-display";
 
 /**
  * Regression visual/UX POS 2026-11-23.
@@ -50,22 +51,42 @@ describe("POS visual/UX — panel pembayaran", () => {
     expect(panel).not.toContain("sticky bottom-0 -mx-4 -mb-4");
   });
 
-  it("mempertahankan target input F4 dan tombol Bayar 48px", () => {
+  it("mempertahankan target input F4 dan tombol Bayar 56px", () => {
     expect(panel).toContain("pos-tendered-input");
-    expect(panel).toContain("h-12 items-center justify-center gap-2 rounded-md bg-[var(--pos-action)]");
+    expect(panel).toContain("h-14 items-center justify-center gap-2 rounded-md bg-[var(--pos-action)]");
   });
 
-  it("menampilkan metode utama sebagai kartu pilihan dan melipat metode tambahan", () => {
-    expect(panel).toContain("quickMethods");
+  it("menampilkan dua metode utama dan melipat metode sekunder", () => {
+    expect(panel).toContain("const quickMethods = orderedMethods.slice(0, 2)");
     expect(panel).toContain("extraMethods");
     expect(panel).toContain("Metode lain (");
     expect(panel).toContain("aria-pressed={active}");
   });
 
-  it("menyembunyikan biaya MDR di disclosure dan tidak memakai toggle mode di header", () => {
-    expect(panel).toContain("pos-disclosure");
+  it("menyembunyikan biaya MDR, kredit retur, dan pembayaran campuran di opsi sekunder", () => {
+    expect(panel).toContain("hasOptions");
     expect(panel).toContain("Biaya MDR");
+    expect(panel).toContain("Opsi pembayaran lain");
+    expect(panel).toContain("Dialog");
+    expect(panel).toContain("optionsOpen");
     expect(panel).not.toContain('aria-label="Mode pembayaran"');
+  });
+
+  it("memakai placeholder nominal netral yang tidak menyerupai nilai terisi", () => {
+    expect(panel).toContain('placeholder="0"');
+    expect(panel).not.toContain("Pas: ${formatMoneyText");
+  });
+
+  it("menggulir keranjang ke baris terbaru dan menyediakan rincian transaksi", () => {
+    const cart = source("components/pos/cart-panel.tsx");
+    expect(cart).toContain("scrollTop");
+    expect(cart).toContain("Rincian transaksi");
+  });
+
+  it("memakai harga kartu yang lebih tegas dan grid katalog adaptif", () => {
+    const catalog = source("components/pos/terminal/product-catalog.tsx");
+    expect(catalog).toContain("text-[22px]");
+    expect(catalog).toContain("posAutoColumnCount");
   });
 
   it("sheet mobile memakai bottom sheet native dan bar menampilkan item terakhir", () => {
@@ -142,5 +163,18 @@ describe("POS visual/UX — target sentuh bersama", () => {
     const catalog = source("components/pos/terminal/product-catalog.tsx");
     expect(catalog).toContain('aria-label="Hapus pencarian produk"');
     expect(catalog).toContain("Hapus pencarian");
+  });
+});
+
+describe("POS visual/UX — kolom katalog adaptif", () => {
+  it("memilih 3 kolom untuk area katalog 530px dan 5–6 untuk layar lebar", () => {
+    expect(posAutoColumnCount(530)).toBe(3);
+    expect(posAutoColumnCount(800)).toBe(4);
+    expect(posAutoColumnCount(1100)).toBe(5);
+    expect(posAutoColumnCount(1400)).toBe(6);
+  });
+
+  it("mempertahankan 2 kolom untuk layar sempit", () => {
+    expect(posAutoColumnCount(390)).toBe(2);
   });
 });

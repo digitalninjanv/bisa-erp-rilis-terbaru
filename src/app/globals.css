@@ -857,6 +857,13 @@
   max-height: 320px;
 }
 
+/* Tepi atas daftar yang sedang digulir dibuat memudar agar baris
+   terpotong tidak terlihat seperti render rusak. */
+.pos-cart-lines-scrolled {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 100%);
+}
+
 @media (max-width: 1023px) {
   .pos-cart-lines {
     max-height: 200px;
@@ -866,5 +873,13 @@
 @media (min-width: 1024px) and (max-height: 850px) {
   .pos-cart-lines {
     max-height: 180px;
+  }
+}
+
+/* 1536x864 (1920x1080 @125%) masih menyisakan 14px untuk chip tunai;
+   kurangi daftar 20px agar Uang Pas tidak tertutup footer sticky. */
+@media (min-width: 1024px) and (min-height: 851px) and (max-height: 900px) {
+  .pos-cart-lines {
+    max-height: 300px;
   }
 }

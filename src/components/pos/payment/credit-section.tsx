@@ -57,7 +57,7 @@ export function ReturnCreditSection(props: {
                       <span className="flex items-center gap-1.5 text-xs">
                         <Wallet className="size-4 text-[var(--pos-action)]" /> Pakai Kredit Retur
                       </span>
-                      <span className="text-[11px] font-semibold text-[var(--pos-muted)]">
+                      <span className="text-xs font-semibold text-[var(--pos-muted)]">
                         {creditOpen ? "Tutup" : "Buka"}
                       </span>
                     </button>

@@ -44,7 +44,7 @@ export function CashChips({
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] font-bold uppercase tracking-wide text-[var(--pos-muted)]">
+        <span className="text-xs font-bold uppercase tracking-wide text-[var(--pos-muted)]">
           Saran uang diterima
         </span>
         {tendered > 0 ? (

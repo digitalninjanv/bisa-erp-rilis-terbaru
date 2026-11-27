@@ -26,8 +26,8 @@ export function MobilePayBar(props: {
         <button
           type="button"
           onClick={onOpenCart}
+          title="Buka keranjang"
           className="min-h-11 min-w-0 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-white/10"
-          aria-label={`Buka keranjang, ${cart.length} baris`}
         >
           <p className="truncate text-xs font-semibold text-[var(--pos-command-muted)]">
             {cart.length > 0
@@ -40,7 +40,7 @@ export function MobilePayBar(props: {
           type="button"
           onClick={checkout}
           disabled={payDisabled}
-          className="flex h-12 min-w-28 shrink-0 items-center justify-center rounded-md bg-[var(--pos-gold)] px-5 text-[15px] font-bold text-[var(--pos-gold-ink)] shadow-sm transition-colors hover:bg-[var(--pos-gold-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--pos-command)] disabled:cursor-not-allowed disabled:border disabled:border-white/20 disabled:bg-white/15 disabled:text-white/60 disabled:shadow-none disabled:opacity-100"
+          className="flex h-14 min-w-28 shrink-0 items-center justify-center rounded-md bg-[var(--pos-gold)] px-5 text-[15px] font-bold text-[var(--pos-gold-ink)] shadow-sm transition-colors hover:bg-[var(--pos-gold-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--pos-command)] disabled:cursor-not-allowed disabled:border disabled:border-white/20 disabled:bg-white/15 disabled:text-white/60 disabled:shadow-none disabled:opacity-100"
         >
           {payLabel}
         </button>

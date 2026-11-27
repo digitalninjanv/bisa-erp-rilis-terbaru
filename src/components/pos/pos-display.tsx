@@ -77,6 +77,28 @@ export const POS_COLUMN_CLASS: Record<PosColumns, string> = {
   "6": "grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6",
 };
 
+/**
+ * Kolom katalog mengikuti LEBAR AREA KATALOG, bukan lebar viewport.
+ * Dua panel membuat viewport 1366px hanya menyisakan ±530px untuk
+ * katalog; breakpoint viewport lama memaksa 4 kolom 122px di sana.
+ * Ambang di bawah menjaga kartu minimal ±170px pada layar kasir umum.
+ */
+export function posAutoColumnCount(width: number): 2 | 3 | 4 | 5 | 6 {
+  if (width < 520) return 2;
+  if (width < 760) return 3;
+  if (width < 1000) return 4;
+  if (width < 1280) return 5;
+  return 6;
+}
+
+export const POS_AUTO_COLUMN_CLASS: Record<2 | 3 | 4 | 5 | 6, string> = {
+  2: "grid-cols-2",
+  3: "grid-cols-3",
+  4: "grid-cols-4",
+  5: "grid-cols-5",
+  6: "grid-cols-6",
+};
+
 const STORAGE_KEY = "bisa.pos.display";
 
 function readPrefs(): PosDisplayPrefs {
@@ -331,7 +353,7 @@ export function PosDisplayControls({
               <Toggle label="Harga jual" checked={prefs.showPrice} onChange={(showPrice) => onChange({ showPrice })} />
               <Toggle label="Informasi stok" checked={prefs.showStock} onChange={(showStock) => onChange({ showStock })} />
               <Toggle label="SKU produk" checked={prefs.showSku} onChange={(showSku) => onChange({ showSku })} />
-              <Toggle label="Pilihan kemasan" checked={prefs.showPackaging} onChange={(showPackaging) => onChange({ showPackaging })} />
+              <Toggle label="Pilihan kemasan (tampilan daftar)" checked={prefs.showPackaging} onChange={(showPackaging) => onChange({ showPackaging })} />
               <Toggle label="Nama kategori" checked={prefs.showCategory} onChange={(showCategory) => onChange({ showCategory })} />
               <Toggle label="Warna kategori pada kartu" checked={prefs.cardTint} onChange={(cardTint) => onChange({ cardTint })} />
             </section>

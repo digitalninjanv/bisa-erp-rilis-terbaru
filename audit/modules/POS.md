@@ -194,3 +194,7 @@ Ambang mengikuti WCAG 2.2 SC 1.4.3 (teks normal 4.5:1) dan SC 1.4.11 (komponen/g
 - Screenshot: `audit/checks/pos-contrast-after.png` dan `audit/checks/pos-mobile-redesign.png`.
 
 **Sisa risiko.** Belum diuji dengan kasir sungguhan, pembaca layar nyata, printer fisik, atau Windows/Electron setelah redesign. Uji pengguna singkat (5 kasir, skenario scan → tunai → QRIS → campuran) tetap disarankan sebelum rollout produksi.
+
+## Audit UX lanjutan & perbaikan — 2026-11-27
+
+Audit mendalam (Playwright 1920/1536/1366/390, axe, riset Exa/Firecrawl/web-search) menemukan tiga masalah utama: footer menutup chip tunai pada 1366/1536, keranjang tidak auto-scroll ke item terbaru, dan placeholder “Pas: …” hanya 2.33:1 serta tampak seperti nilai terisi. Perbaikan yang sudah diterapkan: panel pembayaran dipadatkan (2 metode utama + dialog opsi), total keranjang dipindah ke dialog “Rincian transaksi”, auto-scroll + fade keranjang, placeholder `0` (7.50:1), kartu 126px dengan harga 22px, grid katalog mengikuti lebar area (3–6 kolom), checkmark metode aktif, tombol Bayar 56px, dan ringkasan total dihapus dari alur utama. Verifikasi akhir: 1.257 unit test, build/typecheck, lint 0 error, axe 0 violations di semua viewport termasuk dialog, checkout 5 item 327ms tanpa console error. Detail: [`audit/POS_UX_AUDIT_2026-11-27.md`](../POS_UX_AUDIT_2026-11-27.md).

@@ -29,6 +29,7 @@ import type {
 const TUNAI: Method = { id: "m-tunai", code: "CASH", name: "Tunai", type: "cash", instructions: null };
 const QRIS: Method = { id: "m-qris", code: "QRIS", name: "QRIS", type: "qris", instructions: null };
 const UTANG: Method = { id: "m-utang", code: "CREDIT", name: "Utang / Tempo", type: "credit", instructions: null };
+const BANK: Method = { id: "m-bank", code: "BANK", name: "Transfer Bank", type: "bank", instructions: null };
 const methodById = new Map([TUNAI, QRIS, UTANG].map((m) => [m.id, m]));
 
 function entry(amount: string, tendered = ""): PaymentEntry {
@@ -316,6 +317,27 @@ describe("PaymentPanel — tender terformat & label sisa (UX-B04/B07)", () => {
     });
     expect(html).toContain('value="50.000"');
     expect(html).not.toContain('value="50000"');
+  });
+
+  it("hanya dua metode utama yang tampil; metode sekunder masuk disclosure", () => {
+    const html = renderPanel({
+      mode: "single",
+      methods: [TUNAI, QRIS, BANK],
+      debtMethod: UTANG,
+      debtActive: false,
+      debtAmount: 0,
+    });
+    expect(html).toContain('title="Tunai"');
+    expect(html).toContain('title="QRIS"');
+    expect(html).toContain('aria-label="Opsi pembayaran lain"');
+    expect(html).not.toContain('title="Transfer Bank"');
+    expect(html).not.toContain('title="Utang / Tempo"');
+  });
+
+  it("kolom tunai memakai placeholder netral, bukan nominal yang terlihat terisi", () => {
+    const html = renderPanel({ mode: "single", total: 72_000, payDisabled: false, payLabel: "Bayar Rp 72.000" });
+    expect(html).toContain('placeholder="0"');
+    expect(html).not.toContain("Pas: 72.000");
   });
 
   it("mode tunggal: kolom Diterima adalah MoneyInput ber-id target F4, tampil terformat", () => {

@@ -12,7 +12,13 @@ import { toast } from "sonner";
 import { ChevronLeft, ChevronRight, CloudOff, Search, Wifi, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatIDR, formatQty } from "@/lib/money";
-import { POS_COLUMN_CLASS, PosDisplayControls, type PosDisplayPrefs } from "@/components/pos/pos-display";
+import {
+  POS_AUTO_COLUMN_CLASS,
+  POS_COLUMN_CLASS,
+  PosDisplayControls,
+  posAutoColumnCount,
+  type PosDisplayPrefs,
+} from "@/components/pos/pos-display";
 import { burstScanCode, createBurstState, feedBurstChar, resetBurst, type BurstState } from "@/lib/barcode-burst";
 import { cartLineBaseQty, type CartItem, type ProductOption, type TerminalReservation } from "@/components/pos/terminal-types";
 import { ShortcutHelp } from "@/components/pos/terminal/shortcut-help";
@@ -99,6 +105,24 @@ export function ProductCatalog(props: {
   const setHighlight = (index: number) =>
     setHighlightState({ forProducts: products, index });
   const gridRef = useRef<HTMLDivElement>(null);
+  // Kolom "auto" mengikuti lebar area katalog, bukan viewport. Panel
+  // kanan selebar 360–480px membuat viewport 1366 hanya menyisakan
+  // ±530px katalog; breakpoint viewport lama memaksa 4 kolom 122px.
+  const [autoColumns, setAutoColumns] = useState<2 | 3 | 4 | 5 | 6>(4);
+  useEffect(() => {
+    if (display.columns !== "auto") return;
+    const element = gridRef.current;
+    if (!element) return;
+    const measure = () => {
+      const next = posAutoColumnCount(element.clientWidth);
+      setAutoColumns((current) => (current === next ? current : next));
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [display.columns, fullscreen]);
   useEffect(() => {
     if (highlight < 0) return;
     gridRef.current
@@ -126,10 +150,14 @@ export function ProductCatalog(props: {
 
   const font =
     display.fontScale === "xl"
-      ? { name: "text-base", price: "text-xl", meta: "text-xs", badge: "text-xs" }
+      ? { name: "text-base", price: "text-[24px]", meta: "text-xs", badge: "text-xs" }
       : display.fontScale === "large"
-        ? { name: "text-base", price: "text-lg", meta: "text-xs", badge: "text-xs" }
-        : { name: "text-[15px]", price: "text-[17px]", meta: "text-xs", badge: "text-xs" };
+        ? { name: "text-base", price: "text-[22px]", meta: "text-xs", badge: "text-xs" }
+        : { name: "text-[15px]", price: "text-[20px]", meta: "text-xs", badge: "text-xs" };
+  const columnClass =
+    display.columns === "auto"
+      ? POS_AUTO_COLUMN_CLASS[autoColumns]
+      : POS_COLUMN_CLASS[display.columns];
 
   const oldestQueuedDate = oldestQueuedAt ? new Date(oldestQueuedAt) : null;
   const oldestQueuedLabel = oldestQueuedDate && !Number.isNaN(oldestQueuedDate.getTime())
@@ -411,8 +439,8 @@ export function ProductCatalog(props: {
             ref={gridRef}
             className={cn(
               "bg-[var(--pos-tray)]",
-              display.view === "list" ? "flex flex-col" : "grid",
-              display.view === "grid" && POS_COLUMN_CLASS[display.columns],
+              display.view === "list" ? "flex flex-col" : "grid content-start",
+              display.view === "grid" && columnClass,
               display.density === "compact" ? "gap-1.5 p-2" : "gap-2.5 p-3",
               fullscreen && "lg:min-h-0 lg:flex-1 lg:overflow-y-auto",
             )}
@@ -505,7 +533,7 @@ export function ProductCatalog(props: {
                         </span>
                       ) : null}
                       {display.showPrice ? (
-                        <span className={cn("num shrink-0 font-bold text-foreground", font.price)}>{formatIDR(product.salePrice)}</span>
+                        <span className={cn("num shrink-0 font-extrabold text-foreground", font.price)}>{formatIDR(product.salePrice)}</span>
                       ) : null}
                       {display.showStock ? (
                         <span
@@ -545,14 +573,14 @@ export function ProductCatalog(props: {
                       "border-[var(--pos-border-strong)] bg-[var(--pos-panel)] shadow-[var(--shadow-card)]",
                       !soldOut && tone?.accent,
                       display.density === "compact" ? "p-2" : "p-2.5",
-                      display.density === "compact" ? "min-h-[96px]" : "min-h-[120px]",
+                      display.density === "compact" ? "min-h-[120px]" : "min-h-[126px]",
                       quantity > 0 && "border-[var(--pos-command)] bg-[#eef8f2] ring-2 ring-[var(--pos-command)]/20",
                       soldOut && "cursor-not-allowed border-stone-400 bg-stone-100 text-stone-500 hover:border-stone-400 hover:shadow-none",
                       highlighted &&
                         "border-[var(--pos-command)] ring-2 ring-[var(--pos-command)]/25 hover:border-[var(--pos-command)]",
                     )}
                   >
-                    <span className={cn("line-clamp-2 font-semibold leading-snug text-foreground", font.name)}>{product.name}</span>
+                    <span className={cn("line-clamp-2 shrink-0 font-semibold leading-snug text-foreground", font.name)}>{product.name}</span>
                     {display.showSku ? (
                       <span className={cn("num mt-0.5 truncate text-muted-foreground", font.meta)}>{product.sku}</span>
                     ) : null}
@@ -561,26 +589,9 @@ export function ProductCatalog(props: {
                         {product.categoryName}
                       </span>
                     ) : null}
-                    {display.showPackaging && visiblePacks.length > 0 ? (
-                      <span className="mt-0.5 flex flex-wrap gap-1">
-                        {visiblePacks.map((pack) => (
-                          <span
-                            key={pack.id}
-                            className={cn("num rounded bg-tone-teal-soft px-1.5 py-0.5 font-medium text-tone-teal", font.badge)}
-                          >
-                            {pack.name} isi {formatQty(pack.isi)}
-                          </span>
-                        ))}
-                        {packs.length > visiblePacks.length ? (
-                          <span className={cn("num text-muted-foreground", font.meta)}>
-                            +{packs.length - visiblePacks.length}
-                          </span>
-                        ) : null}
-                      </span>
-                    ) : null}
-                    <span className="mt-1 flex flex-wrap items-end justify-between gap-1">
+                    <span className="mt-1 flex shrink-0 flex-wrap items-end justify-between gap-1">
                       {display.showPrice ? (
-                        <span className={cn("num font-bold text-foreground", font.price)}>{formatIDR(product.salePrice)}</span>
+                        <span className={cn("num font-extrabold text-foreground", font.price)}>{formatIDR(product.salePrice)}</span>
                       ) : (
                         <span />
                       )}
