@@ -883,3 +883,11 @@
     max-height: 300px;
   }
 }
+
+/* Layar 1080p punya ruang untuk menampilkan 4 baris sekaligus; jangan
+   biarkan panel kanan menyisakan area kosong sementara item tersembunyi. */
+@media (min-width: 1024px) and (min-height: 950px) {
+  .pos-cart-lines {
+    max-height: 480px;
+  }
+}

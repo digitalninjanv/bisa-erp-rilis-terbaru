@@ -33,6 +33,7 @@ P0 dan sebagian besar P1 sudah diperbaiki di kode dan diverifikasi ulang.
 | Aksesibilitas | axe **0 violations** di 1920/1536/1366 full/1366 non-full/390 mobile, termasuk dialog opsi dan rincian terbuka |
 | Regresi | **146 file / 1.257 test** lulus; build + typecheck lulus; lint 0 error |
 | Checkout nyata | 5 scan → Bayar → Uang Pas → “Transaksi berhasil”, **327ms**, 0 console error, 0 long task |
+| 1080p | daftar keranjang 480px, 4 baris terlihat; grid 6 kolom, 24 produk tanpa scroll halaman |
 
 **Masih tersisa (bukan blocker layout):** belum ada numpad nominal on-screen; input masih mengandalkan keyboard/OS. Uji printer fisik, Windows/Electron, dan kasir sungguhan belum diulang setelah perubahan ini. Smoke test membuat transaksi uji `INV-2026-00005` (Rp69.500) di DB lokal.
 
@@ -356,6 +357,6 @@ Opsi B paling sesuai dengan keluhan “sulit dibaca dan dipakai” karena member
 
 ## Lampiran metrik
 
-File mentah baseline: `audit/checks/pos-ux-audit.json`. Screenshot baseline: `pos-ux-desktop-1920.png`, `pos-ux-1536-user.png`, `pos-ux-laptop-1366.png`, `pos-ux-mobile-sheet.png`. Screenshot setelah perbaikan: `pos-final9-1920.png`, `pos-final9-1536.png`, `pos-final9-1366-full.png`, `pos-final9-1366-nofull.png`, `pos-final9-mobile-sheet.png`, `pos-final9-options.png`, `pos-final9-summary.png`, `pos-final10-1536-summary.png`.
+File mentah baseline: `audit/checks/pos-ux-audit.json`. Screenshot baseline: `pos-ux-desktop-1920.png`, `pos-ux-1536-user.png`, `pos-ux-laptop-1366.png`, `pos-ux-mobile-sheet.png`. Screenshot setelah perbaikan: `pos-final9-1920.png`, `pos-final9-1536.png`, `pos-final9-1366-full.png`, `pos-final9-1366-nofull.png`, `pos-final9-mobile-sheet.png`, `pos-final9-options.png`, `pos-final9-summary.png`, `pos-final10-1536-summary.png`, `pos-final12-1920.png`.
 
 Catatan: temuan di atas adalah baseline audit sebelum implementasi; status implementasi dan verifikasi ulang ada di bagian atas.
