@@ -137,7 +137,7 @@ async function main() {
   await page.waitForFunction(
     () => {
       const buttons = [...document.querySelectorAll("button")];
-      return buttons.some((b) => /^Bayar Rp/.test(b.textContent ?? "") && !b.disabled);
+      return buttons.some((b) => /^Bayar Rp/.test(b.textContent ?? "") && !b.disabled && b.getClientRects().length > 0);
     },
     undefined,
     { timeout: 20000 },
@@ -147,12 +147,13 @@ async function main() {
   // Checkout: click Bayar, fill exact cash if needed, click again, wait for success.
   currentOp = "checkout";
   const tCheckout = performance.now();
-  const payButton = page.locator("button", { hasText: /^Bayar Rp/ }).first();
+  const payButton = page.locator("button:visible", { hasText: /^Bayar Rp/ }).first();
   await payButton.click();
-  const tendered = page.getByLabel("Uang diterima");
+  const dialog = page.locator("[role=dialog]");
+  const tendered = page.locator("#pos-tendered-input");
   if (await tendered.isVisible().catch(() => false)) {
     await page.getByRole("button", { name: "Uang Pas" }).click();
-    await page.locator("button", { hasText: /^Bayar Rp/ }).first().click();
+    await dialog.locator("button", { hasText: /^Bayar Rp/ }).first().click();
   }
   await page.getByRole("heading", { name: "Transaksi berhasil" }).waitFor({ state: "visible", timeout: 30000 });
   result.operations.checkout_until_success_ms = Math.round(performance.now() - tCheckout);

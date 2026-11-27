@@ -36,7 +36,7 @@ await win.waitForFunction(
   { timeout: 20000 },
 );
 await win.locator("button", { hasText: /^Bayar Rp/ }).first().click();
-const tendered = win.getByLabel("Uang diterima");
+const tendered = win.locator("#pos-tendered-input");
 if (await tendered.isVisible().catch(() => false)) {
   await win.getByRole("button", { name: "Uang Pas" }).click();
   await win.locator("button", { hasText: /^Bayar Rp/ }).first().click();

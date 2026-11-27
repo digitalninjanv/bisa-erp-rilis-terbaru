@@ -14,6 +14,8 @@ for (const code of ["8991000000001", "8991000000062"]) {
   await page.waitForTimeout(300);
 }
 await page.waitForTimeout(500);
+await page.locator("button:visible", { hasText: /^Bayar Rp/ }).first().click();
+await page.waitForTimeout(500);
 const results = await new AxeBuilder({ page })
   .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
   .analyze();

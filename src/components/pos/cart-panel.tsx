@@ -501,7 +501,7 @@ export function CartPanel(props: {
           </div>
 
           <Dialog open={summaryOpen} onOpenChange={setSummaryOpen}>
-            <DialogContent className="max-w-sm">
+            <DialogContent className="max-w-[calc(100%-2rem)] sm:max-w-sm">
               <DialogHeader>
                 <DialogTitle>Rincian transaksi</DialogTitle>
                 <DialogDescription>

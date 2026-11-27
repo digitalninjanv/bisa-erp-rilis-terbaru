@@ -89,6 +89,18 @@ describe("POS visual/UX — panel pembayaran", () => {
     expect(catalog).toContain("posAutoColumnCount");
   });
 
+  it("membuka panel pembayaran hanya setelah Bayar ditekan", () => {
+    const terminal = source("components/pos/pos-terminal.tsx");
+    const workspace = source("components/pos/terminal/pos-checkout-workspace.tsx");
+    const dialog = source("components/pos/terminal/payment-dialog.tsx");
+    expect(terminal).toContain("usePosPaymentDialog");
+    expect(terminal).toContain("<PaymentDialog");
+    expect(dialog).toContain("<PaymentPanel");
+    expect(dialog).toContain("embedded");
+    expect(workspace).toContain("PaymentLaunchBar");
+    expect(workspace).not.toContain("<PaymentPanel");
+  });
+
   it("sheet mobile memakai bottom sheet native dan bar menampilkan item terakhir", () => {
     const terminal = source("components/pos/pos-terminal.tsx");
     const bar = source("components/pos/terminal/mobile-pay-bar.tsx");

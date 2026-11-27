@@ -353,6 +353,15 @@ describe("PaymentPanel — tender terformat & label sisa (UX-B04/B07)", () => {
     expect(html).toContain('value="50.000"');
   });
 
+  it("panel embedded menyediakan tombol tutup sendiri tanpa close bawaan dialog", () => {
+    const html = renderPanel({
+      mode: "single",
+      embedded: true,
+      onClose: () => undefined,
+    });
+    expect(html).toContain('aria-label="Tutup pembayaran"');
+  });
+
   it("aksi nota terakhir pada panel pembayaran memakai printToken tanpa memaksa salinan=1", () => {
     const html = renderPanel({
       mode: "single",

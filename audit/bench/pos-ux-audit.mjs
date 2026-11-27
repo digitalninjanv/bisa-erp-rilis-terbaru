@@ -64,6 +64,11 @@ async function runDesktop(name, viewport, fullscreen, prefs = PREFS) {
     }
   }
   await page.waitForTimeout(1000);
+  const launch = page.locator("button:visible", { hasText: /^Bayar Rp/ }).first();
+  if (await launch.count()) {
+    await launch.click();
+    await page.waitForTimeout(600);
+  }
   const axe = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
     .analyze();
@@ -329,7 +334,7 @@ async function runMobile() {
     };
     const pay = $$("button").find((b) => /^Bayar\b/.test(text(b)));
     const exact = $$("button").find((b) => text(b) === "Uang Pas");
-    const input = document.querySelector("#pos-tendered-input-mobile") ?? document.querySelector("#pos-tendered-input");
+    const input = document.querySelector("#pos-tendered-input");
     return {
       viewport: { w: innerWidth, h: innerHeight },
       sheet: rect(document.querySelector('[data-slot="sheet-content"]')),

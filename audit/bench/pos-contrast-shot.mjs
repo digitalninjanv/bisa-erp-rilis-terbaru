@@ -12,13 +12,14 @@ for (const code of ["8991000000001", "8991000000062"]) {
   await search.press("Enter");
   await page.waitForTimeout(300);
 }
-await page.waitForFunction(() => [...document.querySelectorAll("button")].some((b) => /^Bayar Rp/.test(b.textContent ?? "") && !b.disabled), undefined, { timeout: 20000 });
+await page.waitForFunction(() => [...document.querySelectorAll("button")].some((b) => /^Bayar Rp/.test(b.textContent ?? "") && !b.disabled && b.getClientRects().length > 0), undefined, { timeout: 20000 });
+await page.locator("button:visible", { hasText: /^Bayar Rp/ }).first().click();
 await page.waitForTimeout(500);
 await page.screenshot({ path: "audit/checks/pos-contrast-after.png", fullPage: false });
 console.log(JSON.stringify({
   url: page.url(),
   title: await page.title(),
   cards: await page.locator("[data-catalog-index]").count(),
-  pay: await page.locator("button", { hasText: /^Bayar Rp/ }).first().textContent(),
+  pay: await page.locator("[role=dialog] button", { hasText: /^Bayar Rp/ }).first().textContent(),
 }, null, 2));
 await browser.close();

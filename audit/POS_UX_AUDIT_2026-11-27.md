@@ -27,15 +27,26 @@ P0 dan sebagian besar P1 sudah diperbaiki di kode dan diverifikasi ulang.
 | Placeholder nominal netral & kontras | placeholder `0`, warna `rgb(87,83,78)` pada `#fffdf8` = **7.50:1** (sebelumnya 2.33:1) |
 | Kartu produk lebih padat, harga dominan | kartu **126px**, harga **22px/800**, nama 16px; tidak ada nama/stok terpotong di 1366/1536 |
 | Kolom mengikuti lebar katalog | 3 kolom area 530px, 4 kolom 1366/cart 360, 5 kolom 1536, 6 kolom 1920 |
-| Pembayaran lebih ringkas | hanya **Tunai + QRIS** di panel; Transfer/Utang, split, kredit retur, MDR masuk dialog “Opsi pembayaran lain”; total keranjang tidak lagi diulang |
+| Pembayaran lebih ringkas | kolom kanan hanya keranjang + satu tombol Bayar; panel pembayaran **baru muncul sebagai dialog** setelah Bayar. Hanya **Tunai + QRIS** di panel; Transfer/Utang, split, kredit retur, MDR masuk dialog “Opsi pembayaran lain”; total keranjang tidak lagi diulang |
 | Metode aktif tidak warna-saja | checkmark pada tile aktif |
 | Kembalian lebih kontras | `#065f46` pada `#d1fae5` = **7.32:1** |
 | Aksesibilitas | axe **0 violations** di 1920/1536/1366 full/1366 non-full/390 mobile, termasuk dialog opsi dan rincian terbuka |
-| Regresi | **146 file / 1.257 test** lulus; build + typecheck lulus; lint 0 error |
-| Checkout nyata | 5 scan → Bayar → Uang Pas → “Transaksi berhasil”, **327ms**, 0 console error, 0 long task |
+| Regresi | **146 file / 1.259 test** lulus; build + typecheck lulus; lint 0 error |
+| Checkout nyata | 5 scan → Bayar → Uang Pas → “Transaksi berhasil”, commit server **101ms**, 0 console error; benchmark 5 scan→dialog→sukses **700ms**; dialog 448×397 (desktop) / 358×397 (mobile, margin 16px) |
 | 1080p | daftar keranjang 480px, 4 baris terlihat; grid 6 kolom, 24 produk tanpa scroll halaman |
 
-**Masih tersisa (bukan blocker layout):** belum ada numpad nominal on-screen; input masih mengandalkan keyboard/OS. Uji printer fisik, Windows/Electron, dan kasir sungguhan belum diulang setelah perubahan ini. Smoke test membuat transaksi uji `INV-2026-00005` (Rp69.500) di DB lokal.
+**Masih tersisa (bukan blocker layout):** belum ada numpad nominal on-screen; input masih mengandalkan keyboard/OS. Uji printer fisik, Windows/Electron, dan kasir sungguhan belum diulang setelah perubahan ini. Smoke test membuat transaksi uji `INV-2026-00011` (Rp69.500) di DB lokal.
+
+### Pembayaran fokus ala Accurate — 27 November 2026
+
+Kolom kanan kini hanya berisi keranjang dan satu tombol **Bayar Rp …**. Panel pembayaran tidak lagi menetap di layar; ia muncul sebagai dialog setelah tombol ditekan. Dialognya:
+
+- Desktop **448×397px**, mobile **358×397px** dengan margin 16px.
+- Header total + metode Tunai/QRIS; Transfer/Utang dan opsi lain ada di tombol “…”.
+- Input uang, kembalian, empat chip cepat, lalu **Bayar 56px** dan Tahan.
+- Token warna POS dikirim eksplisit ke dialog portal (`pos-terminal-surface` + `themeStyle`) sehingga tile Tunai tetap hijau, bukan transparan.
+- `Rincian transaksi` dibuka dari badge jumlah item; tidak ada bar total tambahan di keranjang.
+- Verifikasi: axe **0 violations** pada halaman sebelum Bayar, dialog terbuka, dialog opsi, dan mobile; checkout nyata `INV-2026-00011` commit server **101ms**, benchmark 5 scan→dialog→sukses **700ms**, tanpa console error.
 
 ---
 
@@ -357,6 +368,6 @@ Opsi B paling sesuai dengan keluhan “sulit dibaca dan dipakai” karena member
 
 ## Lampiran metrik
 
-File mentah baseline: `audit/checks/pos-ux-audit.json`. Screenshot baseline: `pos-ux-desktop-1920.png`, `pos-ux-1536-user.png`, `pos-ux-laptop-1366.png`, `pos-ux-mobile-sheet.png`. Screenshot setelah perbaikan: `pos-final9-1920.png`, `pos-final9-1536.png`, `pos-final9-1366-full.png`, `pos-final9-1366-nofull.png`, `pos-final9-mobile-sheet.png`, `pos-final9-options.png`, `pos-final9-summary.png`, `pos-final10-1536-summary.png`, `pos-final12-1920.png`.
+File mentah baseline: `audit/checks/pos-ux-audit.json`. Screenshot baseline: `pos-ux-desktop-1920.png`, `pos-ux-1536-user.png`, `pos-ux-laptop-1366.png`, `pos-ux-mobile-sheet.png`. Screenshot setelah perbaikan: `pos-final9-1920.png`, `pos-final9-1536.png`, `pos-final9-1366-full.png`, `pos-final9-1366-nofull.png`, `pos-final9-mobile-sheet.png`, `pos-final9-options.png`, `pos-final9-summary.png`, `pos-final10-1536-summary.png`, `pos-final12-1920.png`, `pos-accurate-before.png`, `pos-accurate-dialog.png`, `pos-accurate-mobile-dialog.png`, `pos-accurate-options.png`, `pos-payment-dialog-success-final.png`, `pos-accurate-before.png`, `pos-accurate-dialog.png`, `pos-accurate-mobile-dialog.png`, `pos-accurate-options.png`.
 
 Catatan: temuan di atas adalah baseline audit sebelum implementasi; status implementasi dan verifikasi ulang ada di bagian atas.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState, useSyncExternalStore } from "react";
+import { useCallback, useState, useSyncExternalStore, type CSSProperties } from "react";
 import { Maximize2, Minimize2, RotateCcw, SlidersHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -17,6 +17,18 @@ export type PosView = "grid" | "list";
 export type PosFontScale = "normal" | "large" | "xl";
 export type PosCardShape = "rounded" | "square";
 export type PosActionTheme = "odoo" | "teal" | "accurate" | "graphite";
+
+export function posActionStyle(
+  theme: (typeof POS_ACTION_THEMES)[PosActionTheme],
+): CSSProperties {
+  return {
+    "--pos-action": theme.primary,
+    "--pos-action-deep": theme.deep,
+    "--pos-action-soft": theme.soft,
+    "--pos-action-text": theme.softText,
+    "--pos-action-fg": theme.foreground,
+  } as CSSProperties;
+}
 
 export const POS_ACTION_THEMES: Record<
   PosActionTheme,

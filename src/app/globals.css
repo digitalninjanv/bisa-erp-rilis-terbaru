@@ -850,11 +850,16 @@
   }
 }
 
-/* POS: batasi daftar baris agar panel pembayaran tetap terlihat pada
-   laptop 1366x768/1280x720. Hanya berlaku di desktop (mobile memakai
-   scrollMode="page" di dalam sheet). */
+/* POS: keranjang mendapat tinggi yang tersedia; pembayaran kini
+   muncul sebagai dialog sehingga daftar tidak perlu dikorbankan. */
 .pos-cart-lines {
-  max-height: 320px;
+  max-height: min(480px, 62dvh);
+}
+
+@media (max-width: 1023px) {
+  .pos-cart-lines {
+    max-height: min(420px, 55dvh);
+  }
 }
 
 /* Tepi atas daftar yang sedang digulir dibuat memudar agar baris
@@ -862,32 +867,4 @@
 .pos-cart-lines-scrolled {
   -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 100%);
   mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 100%);
-}
-
-@media (max-width: 1023px) {
-  .pos-cart-lines {
-    max-height: 200px;
-  }
-}
-
-@media (min-width: 1024px) and (max-height: 850px) {
-  .pos-cart-lines {
-    max-height: 180px;
-  }
-}
-
-/* 1536x864 (1920x1080 @125%) masih menyisakan 14px untuk chip tunai;
-   kurangi daftar 20px agar Uang Pas tidak tertutup footer sticky. */
-@media (min-width: 1024px) and (min-height: 851px) and (max-height: 900px) {
-  .pos-cart-lines {
-    max-height: 300px;
-  }
-}
-
-/* Layar 1080p punya ruang untuk menampilkan 4 baris sekaligus; jangan
-   biarkan panel kanan menyisakan area kosong sementara item tersembunyi. */
-@media (min-width: 1024px) and (min-height: 950px) {
-  .pos-cart-lines {
-    max-height: 480px;
-  }
 }

@@ -12,6 +12,7 @@ import {
   QrCode,
   Split,
   Wallet,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatIDR } from "@/lib/money";
@@ -126,6 +127,11 @@ export function PaymentPanel(props: {
   lastSale: { id: string; number: string; receiptToken?: string } | null;
   canReprint?: boolean;
   onReopenLastSale?: () => void;
+  /** true saat panel dirender di dalam dialog pembayaran fokus. */
+  embedded?: boolean;
+  onClose?: () => void;
+  /** Token warna aksi POS untuk dialog yang di-portal ke body. */
+  themeStyle?: React.CSSProperties;
 }) {
   const {
     tenderedInputId = "pos-tendered-input",
@@ -182,6 +188,9 @@ export function PaymentPanel(props: {
     lastSale,
     canReprint = false,
     onReopenLastSale,
+    embedded = false,
+    onClose,
+    themeStyle,
   } = props;
   const tenderedAmount = Number(entries[singleMethod]?.tendered ?? 0);
   const [optionsOpen, setOptionsOpen] = useState(false);
@@ -198,7 +207,12 @@ export function PaymentPanel(props: {
   const hasOptions = mode === "single" || extraCount > 0 || Boolean(creditMethod);
   return (
       <>
-        <div className="overflow-hidden rounded-xl border border-[var(--pos-border-strong)] bg-[var(--pos-panel)] shadow-[var(--shadow-card)]">
+        <div
+          className={cn(
+            "overflow-hidden bg-[var(--pos-panel)]",
+            !embedded && "rounded-xl border border-[var(--pos-border-strong)] shadow-[var(--shadow-card)]",
+          )}
+        >
           <div className="flex min-h-[56px] items-center justify-between gap-3 bg-[var(--pos-command)] px-4 py-2 text-[var(--pos-command-fg)]">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--pos-command-muted)]">
@@ -224,6 +238,17 @@ export function PaymentPanel(props: {
               <span className="max-w-[120px] truncate rounded-full bg-white/12 px-2.5 py-1 text-[11px] font-semibold text-[var(--pos-command-fg)]">
                 {mode === "mixed" ? "Campuran" : activeMethodName}
               </span>
+              {embedded && onClose ? (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  aria-label="Tutup pembayaran"
+                  title="Tutup pembayaran"
+                  className="grid size-11 shrink-0 place-items-center rounded-md border border-white/20 bg-white/10 text-[var(--pos-command-fg)] transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pos-gold)]"
+                >
+                  <X className="size-5" />
+                </button>
+              ) : null}
             </div>
           </div>
 
@@ -464,7 +489,10 @@ export function PaymentPanel(props: {
 
             {hasOptions ? (
               <Dialog open={optionsOpen} onOpenChange={setOptionsOpen}>
-                <DialogContent className="max-h-[85dvh] max-w-md overflow-y-auto">
+                <DialogContent
+                  className="pos-terminal-surface max-h-[85dvh] max-w-[calc(100%-2rem)] overflow-y-auto sm:max-w-md"
+                  style={themeStyle}
+                >
                   <DialogHeader>
                     <DialogTitle>Opsi pembayaran lain</DialogTitle>
                     <DialogDescription>
@@ -675,7 +703,14 @@ export function PaymentPanel(props: {
             panel kanan, sehingga tombol Bayar tetap terlihat walau
             daftar baris atau detail pembayaran panjang. */}
         {/* Footer berada di bawah panel pembayaran tanpa menumpuk konten di atasnya */}
-        <div className="sticky bottom-0 z-10 grid grid-cols-[1fr_auto] gap-2 rounded-xl border border-[var(--pos-border-strong)] bg-[var(--pos-panel)] px-3 py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] shadow-[0_-8px_24px_-18px_rgb(28_25_23/0.45)]">
+        <div
+          className={cn(
+            "sticky bottom-0 z-10 grid grid-cols-[1fr_auto] gap-2 bg-[var(--pos-panel)] px-3 py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]",
+            embedded
+              ? "border-t border-[var(--pos-border-strong)]"
+              : "rounded-xl border border-[var(--pos-border-strong)] shadow-[0_-8px_24px_-18px_rgb(28_25_23/0.45)]",
+          )}
+        >
           <button
             type="button"
             onClick={checkout}
