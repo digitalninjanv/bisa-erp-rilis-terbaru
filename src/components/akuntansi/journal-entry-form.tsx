@@ -41,6 +41,9 @@ export function JournalEntryForm({
   currentYear,
   customers = [],
   suppliers = [],
+  copyFrom,
+  initialDescription = "",
+  initialLines,
 }: {
   accounts: Account[];
   today: string;
@@ -52,11 +55,19 @@ export function JournalEntryForm({
   /** A-21 (R3-09): daftar pihak untuk tag baris akun kontrol. */
   customers?: { id: string; name: string }[];
   suppliers?: { id: string; name: string }[];
+  /** Nomor jurnal sumber saat pengguna menekan Duplikat. */
+  copyFrom?: string;
+  initialDescription?: string;
+  initialLines?: Line[];
 }) {
   const router = useRouter();
   const [date, setDate] = useState(today);
-  const [description, setDescription] = useState("");
-  const [lines, setLines] = useState<Line[]>(initialJournalLines);
+  const [description, setDescription] = useState(initialDescription);
+  const [lines, setLines] = useState<Line[]>(() =>
+    initialLines && initialLines.length > 0
+      ? initialLines.map((line) => ({ ...line }))
+      : initialJournalLines(),
+  );
   const [invalidAmounts, setInvalidAmounts] = useState<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
@@ -243,6 +254,7 @@ export function JournalEntryForm({
         debit: d(line.debit || "0").gt(0) ? line.debit : undefined,
         credit: d(line.credit || "0").gt(0) ? line.credit : undefined,
         // R3-09: tag hanya dikirim bila pihak benar-benar dipilih.
+        description: line.description?.trim() || undefined,
         partyType: line.partyId ? line.partyType : undefined,
         partyId: line.partyId || undefined,
       })),
@@ -287,6 +299,7 @@ export function JournalEntryForm({
         accountId: line.accountId,
         debit: d(line.debit || "0").gt(0) ? line.debit : undefined,
         credit: d(line.credit || "0").gt(0) ? line.credit : undefined,
+        description: line.description?.trim() || undefined,
         partyType: line.partyId ? line.partyType : undefined,
         partyId: line.partyId || undefined,
       })),
@@ -301,6 +314,26 @@ export function JournalEntryForm({
     router.push(`/app/akuntansi/jurnal/${result.data.id}`);
     router.refresh();
   }
+
+  // Pintasan enterprise: Ctrl/Cmd+Enter memposting, Ctrl/Cmd+S menyimpan
+  // draf. Keduanya tetap melewati validasi form & server yang sama.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (cancelOpen) return;
+      if (!(event.metaKey || event.ctrlKey)) return;
+      if (event.key === "Enter") {
+        event.preventDefault();
+        if (!busy && !savingDraft) void submit();
+        return;
+      }
+      if (event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        if (!busy && !savingDraft) void saveDraft();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [busy, savingDraft, cancelOpen, lines, date, description, invalidAmounts]);
 
   // A-25 U2: form memakai DocumentForm bersama — slot ringkasan,
   // panduan terlipat, dan bilah aksi terpaku disusun di sini lalu
@@ -393,6 +426,9 @@ export function JournalEntryForm({
         {blockReason && !busy ? (
           <p className="text-[11px] text-muted-foreground" role="status">{blockReason}</p>
         ) : null}
+        <p className="hidden text-[11px] text-muted-foreground sm:block">
+          Ctrl/⌘+Enter posting · Ctrl/⌘+S draf
+        </p>
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -411,6 +447,7 @@ export function JournalEntryForm({
             className="inline-flex h-11 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] font-medium transition-colors hover:bg-muted disabled:opacity-50 lg:h-8"
           >
             <Save className="size-3.5" /> {savingDraft ? "Menyimpan…" : "Simpan draf"}
+            <span className="sr-only">(Ctrl atau Command + S)</span>
           </button>
           <button
             type="button"
@@ -419,6 +456,7 @@ export function JournalEntryForm({
             className="inline-flex h-11 items-center gap-1.5 rounded-md bg-primary px-4 text-[12px] font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50 lg:h-8"
           >
             <Save className="size-3.5" /> {busy ? "Memposting…" : "Posting jurnal"}
+            <span className="sr-only">(Ctrl atau Command + Enter)</span>
           </button>
         </div>
       </div>
@@ -427,6 +465,12 @@ export function JournalEntryForm({
 
   return (
     <>
+    {copyFrom ? (
+      <div className="mb-3 rounded-md border border-tone-teal/30 bg-tone-teal-soft px-3 py-2 text-[11px] leading-4 text-tone-teal">
+        Menyalin baris dari jurnal <span className="num font-semibold">{copyFrom}</span>. Tanggal diisi hari ini;
+        ubah bila perlu. Tidak ada yang tersimpan sampai Anda memposting atau menyimpan draf.
+      </div>
+    ) : null}
     <DocumentForm
       header={
         <>
@@ -479,14 +523,16 @@ export function JournalEntryForm({
             {/* Lebar kolom dikunci agar Akun tidak mendominasi dan
                 Debit/Kredit simetris — input memenuhi selnya sendiri. */}
             <colgroup>
-              <col className="w-[50%]" />
-              <col className="w-[22%]" />
-              <col className="w-[22%]" />
-              <col className="w-[6%]" />
+              <col className="w-[36%]" />
+              <col className="w-[30%]" />
+              <col className="w-[16%]" />
+              <col className="w-[14%]" />
+              <col className="w-[4%]" />
             </colgroup>
             <thead>
               <tr>
                 <th scope="col" className="text-left">Akun</th>
+                <th scope="col" className="text-left">Memo baris</th>
                 <th scope="col" className="text-right">Debit</th>
                 <th scope="col" className="text-right">Kredit</th>
                 <th scope="col">
@@ -524,6 +570,15 @@ export function JournalEntryForm({
                         ))}
                       </select>
                     ) : null}
+                  </td>
+                  <td className="align-middle">
+                    <input
+                      value={line.description ?? ""}
+                      onChange={(event) => update(index, { description: event.target.value })}
+                      aria-label={`Memo baris ${index + 1}`}
+                      placeholder="Opsional"
+                      className="h-9 w-full rounded border border-input bg-background px-2 text-[11px]"
+                    />
                   </td>
                   <td className="align-middle">
                     <MoneyInput
@@ -564,6 +619,7 @@ export function JournalEntryForm({
             <tfoot>
               <tr className="border-t border-border bg-muted/40 text-[11px]">
                 <td className="pl-5 text-left text-[11px] uppercase tracking-wide text-muted-foreground">Total</td>
+                <td />
                 <td className="num text-right font-semibold">{formatIDR(totals.debit)}</td>
                 <td className={`num text-right font-semibold ${balanceState === "unbalanced" ? "text-destructive" : ""}`}>{formatIDR(totals.credit)}</td>
                 <td />
@@ -622,6 +678,16 @@ export function JournalEntryForm({
                     ))}
                   </select>
                 ) : null}
+                <label className="mt-2 block space-y-1">
+                  <span className={labelClass}>Memo baris</span>
+                  <input
+                    value={line.description ?? ""}
+                    onChange={(event) => update(index, { description: event.target.value })}
+                    aria-label={`Memo baris ${index + 1}`}
+                    placeholder="Opsional"
+                    className="h-9 w-full rounded border border-input bg-background px-2 text-[11px]"
+                  />
+                </label>
                 <div className="mt-2 grid grid-cols-2 gap-2">
                   <label className="space-y-1">
                     <span className={labelClass}>Debit</span>

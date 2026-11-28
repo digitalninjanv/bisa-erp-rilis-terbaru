@@ -59,8 +59,8 @@ describe("draf jurnal manual", () => {
       description: "Draf uji review",
       idempotencyKey: `draft-test-${crypto.randomUUID()}`,
       lines: [
-        { accountId: CASH, debit: "1000", credit: undefined },
-        { accountId: EQUITY, debit: undefined, credit: "1000" },
+        { accountId: CASH, debit: "1000", credit: undefined, description: "Kas masuk uji" },
+        { accountId: EQUITY, debit: undefined, credit: "1000", description: "Modal uji" },
       ],
     });
     expect(saved.ok).toBe(true);
@@ -100,6 +100,9 @@ describe("draf jurnal manual", () => {
       .from(journalLines)
       .where(eq(journalLines.entryId, posted.data.id));
     expect(lines).toHaveLength(2);
+    expect(lines.map((line) => line.description)).toEqual(
+      expect.arrayContaining(["Kas masuk uji", "Modal uji"]),
+    );
     const balancesAfter = await adminDb
       .select()
       .from(accountMonthlyBalances)

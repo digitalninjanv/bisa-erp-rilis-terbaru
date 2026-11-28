@@ -57,6 +57,7 @@ function JournalActions({ row }: { row: JournalHistoryRow }) {
         label={`Aksi untuk jurnal ${row.number}`}
         items={[
           { key: "detail", label: "Lihat detail", href: `/app/akuntansi/jurnal/${row.id}` },
+          { key: "copy", label: "Duplikat", href: `/app/akuntansi/jurnal/baru?from=${row.id}` },
           { key: "print", label: "Cetak", href: `/app/akuntansi/jurnal/${row.id}/cetak` },
         ]}
       />

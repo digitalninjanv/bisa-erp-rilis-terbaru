@@ -14,11 +14,41 @@ export type JournalLineDraft = {
   accountId: string;
   debit: string;
   credit: string;
+  /** Memo baris opsional — tersimpan di journal_lines.description. */
+  description?: string;
   /** A-21 (R3-09): tag pihak opsional — ditawarkan formulir hanya
    * untuk akun kontrol piutang/utang terpetakan. */
   partyType?: "customer" | "supplier";
   partyId?: string;
 };
+
+export type JournalCopyLine = {
+  accountId: string;
+  debit: string;
+  credit: string;
+  description?: string | null;
+  partyType?: string | null;
+  partyId?: string | null;
+};
+
+/**
+ * Menyalin baris jurnal lama ke draft form baru tanpa membawa status
+ * posted/draft. Batas 50 baris sama dengan batas schema aksi; baris
+ * kosong ditambahkan sampai tiga agar form tetap memenuhi kontrak awal.
+ */
+export function copyJournalLines(source: JournalCopyLine[]): JournalLineDraft[] {
+  const lines: JournalLineDraft[] = source.slice(0, 50).map((line) => ({
+    accountId: line.accountId,
+    debit: d(line.debit).gt(0) ? line.debit : "",
+    credit: d(line.credit).gt(0) ? line.credit : "",
+    description: line.description ?? "",
+    ...(line.partyType === "customer" || line.partyType === "supplier"
+      ? { partyType: line.partyType, partyId: line.partyId ?? undefined }
+      : {}),
+  }));
+  while (lines.length < 3) lines.push({ ...EMPTY_JOURNAL_LINE });
+  return lines;
+}
 
 export const EMPTY_JOURNAL_LINE: JournalLineDraft = {
   accountId: "",

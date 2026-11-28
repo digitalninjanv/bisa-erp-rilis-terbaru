@@ -62,6 +62,21 @@ test.describe("Akuntansi", () => {
     await expect(page.getByLabel("Sampai", { exact: true })).toHaveValue("31/12/2030");
   });
 
+  test("duplikat jurnal membuka form baru dengan baris dan memo tersalin", async ({ page }) => {
+    await page.goto("/app/akuntansi/jurnal/riwayat?from=2020-01-01&to=2030-12-31");
+    const firstRow = page.locator("tbody tr").first();
+    await expect(firstRow).toBeVisible();
+    await firstRow.locator("a").first().click();
+    await expect(page.getByRole("link", { name: "Duplikat" })).toBeVisible();
+    await page.getByRole("link", { name: "Duplikat" }).click();
+
+    await expect(page).toHaveURL(/\/app\/akuntansi\/jurnal\/baru\?from=/);
+    await expect(page.getByText(/Menyalin baris dari jurnal/)).toBeVisible();
+    const memo = page.locator("table").getByLabel("Memo baris 1");
+    await expect(memo).toBeVisible();
+    await expect(memo).toHaveValue(/.+/);
+  });
+
   test("halaman rekonsiliasi bank tampil", async ({ page }) => {
     await page.goto("/app/akuntansi/rekonsiliasi");
     await expect(page.getByRole("heading", { name: "Rekonsiliasi bank" })).toBeVisible();

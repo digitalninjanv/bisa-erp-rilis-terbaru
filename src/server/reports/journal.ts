@@ -413,6 +413,7 @@ export async function getJournalDetail(tx: Tx, companyId: string, entryId: strin
   const rawLines = await tx
     .select({
       id: journalLines.id,
+      accountId: journalLines.accountId,
       debit: journalLines.debit,
       credit: journalLines.credit,
       description: journalLines.description,

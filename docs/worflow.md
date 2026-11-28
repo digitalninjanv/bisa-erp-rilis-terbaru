@@ -467,10 +467,11 @@ Semua modul memanggil `postJournal`:
 ### 6.2 Jurnal manual
 
 1. Buka `/app/akuntansi/jurnal/baru`.
-2. Isi tanggal, keterangan opsional, minimal dua baris akun + debit/kredit.
+2. Isi tanggal, keterangan opsional, minimal dua baris akun + debit/kredit. Setiap baris dapat diberi memo sendiri; memo ikut tersimpan, tampil di detail/cetak, dan terbaca di buku besar.
 3. Sistem menampilkan total, selisih, dan alasan posting nonaktif.
-4. Simpan draf atau posting.
+4. Simpan draf atau posting. `Ctrl/⌘+S` menyimpan draf; `Ctrl/⌘+Enter` memposting dengan validasi yang sama.
 5. Posting: nomor jurnal, audit, buku besar, laporan.
+6. Untuk jurnal berulang, buka **Duplikat** dari detail atau menu riwayat. Baris, memo, dan tag pihak tersalin ke form baru dengan tanggal hari ini; tidak ada yang tersimpan sampai draf/posting ditekan.
 
 **Penjaga:** wajib seimbang; akun kontrol tidak boleh dijurnal manual tanpa tag subledger; periode tertutup ditolak; koreksi lewat reversal.
 
@@ -508,18 +509,17 @@ Semua modul memanggil `postJournal`:
 
 | Gap | Dampak |
 |---|---|
-| Reversal tutup buku tidak di UI | Salah tutup buku tidak bisa dikoreksi dari UI meski copy menjanjikan reversal |
-| Void pembayaran gaji tidak ada | Salah akun/tanggal bayar gaji tidak bisa dikoreksi end-to-end |
-| Beban tanpa daftar/void UI | Koreksi beban hanya lewat jurnal manual |
-| Checklist periode tidak menegakkan | Periode bisa ditutup saat kontrol belum selesai |
-| Rekonsiliasi bank tanpa audit/ending/unimport | Salah impor permanen; tidak ada jejak match |
-| Impor COA tanpa kelas kas/bank | Akun bank hasil impor tidak muncul di Kas & bank |
+| Approval/maker-checker jurnal, beban, transfer, AP/AR payment | Satu pengguna masih dapat membuat dan memposting/membayar sendiri |
+| Lampiran bukti dokumen | Audit tidak dapat menelusuri invoice/kuitansi dari jurnal |
+| Recurring journal/template | Jurnal akrual/prepaid bulanan masih diketik ulang |
+| Payment run, bank file, remittance | Pembayaran pemasok massal masih per dokumen |
+| Rekonsiliasi bank tanpa saldo akhir, unimport, sign-off | Rekonsiliasi belum punya titik selesai dan koreksi impor |
+| PPh 23/4(2) recap, e-Faktur/SPT | Kepatuhan pajak Indonesia belum lengkap |
+| Budget vs actual, cost center/project | Belum ada laba rugi per unit/departemen |
+| Multi-currency/FX dan konsolidasi | Belum ada valas, revaluasi, atau laporan grup |
+| Aset: metode selain garis lurus, pajak, scheduler | Penyusutan fiskal dan otomasi belum lengkap |
 | Form saldo awal AR/AP orphan | Migrasi saldo awal lewat impor/API saja |
-| e-Faktur / integrasi pajak | Belum ada ekspor/impor e-Faktur |
-| Budget vs actual | Belum ada anggaran |
-| Multi-currency | Belum ada kurs/valas |
-| Consolidation multi-company | Belum ada laporan konsolidasi |
-| Observability/period close load test | Belum diuji volume produksi |
+| Observability/load test | Belum diuji volume produksi |
 
 ---
 
@@ -1055,7 +1055,8 @@ Gelombang perbaikan yang sudah masuk ke kode dan test:
 | POS | G-40 harga grup offline; G-42 izin AR akuntansi; G-43 void pembayaran; G-45 kepemilikan hold; G-46 uang tunai eksplisit | `pos-permissions-tahap3`, `pos-hold-ownership`, `pos-cash-tender`, `pos-offline-local-quote`, `workflow-remediation-ui` |
 | Akuntansi | G-30 audit QRIS; G-36 audit ekspor payroll; G-55 void pembayaran gaji; G-56 reversal tutup buku; G-57 daftar/void beban; G-58 checklist periode; G-59 audit rekonsiliasi; G-60 kelas kas/bank impor COA | `settings-audit`, `payroll-reverse`, `period-*`, `bank-reconciliation`, `import-account-cash-bank` |
 | HR | G-48 `joinedAt`; G-49 field statutori; G-50 opsi wizard payroll | `sim2/hr-org-history`, `workflow-remediation-ui`, `payroll-reverse` |
-| Bukti global | Unit 151 file / 1.292 test; integration 144 file / 1.134 test; sim2 29 file / 281 test; build + typecheck; e2e `table-form-guard`, `ui-neatness-guard`, `pengaturan` 10/10 | snapshot 28 Nov 2026 |
+| UX jurnal | Memo per baris, duplikat jurnal, Ctrl/⌘+Enter & Ctrl/⌘+S | `journal-copy`, `accounting-journal-ux`, e2e `akuntansi` |
+| Bukti global | Unit 153 file / 1.297 test; integration 144 file / 1.134 test; sim2 29 file / 281 test; build + typecheck; e2e `akuntansi` 6/6, `table-form-guard` 4/4, `ui-neatness-guard` 4/4, `pengaturan` 3/3 | snapshot 28 Nov 2026 |
 
 **Masih terbuka dan sengaja tidak dipaksakan:** 2FA belum diuji e2e; export payroll belum diaudit; saldo akhir/unimport rekonsiliasi belum ada; preview payroll masih belum sama dengan posting; prorata karyawan masuk tengah bulan, komponen kehadiran, pesangon/UPMK/UPH, vendor bill/3-way, PO edit/approval, scoping gudang, opname freeze/approval, serial surplus, Electron offline, dan exchange satu langkah. Ini membutuhkan keputusan produk, kontrak PSP, atau uji perangkat — bukan sekadar wiring.
 
@@ -1105,10 +1106,10 @@ Gelombang perbaikan yang sudah masuk ke kode dan test:
 | Akuntansi | `journal-validation`, `reports-p2`, `payments-void-p2`, `bank-reconciliation`, `fixed-assets`, `period-integrity`, `opening-balances`, `quick-entry`, `a27-*` |
 | HR | `payroll-indonesia`, `payroll-reverse`, `sim2/hr-org-history`, `sim2/hr-attendance`, `sim2/hr-leave`, `sim2/hr-overtime-thr`, `sim2/hr-loans-reimbursement`, `final-pay` |
 | Platform | `pos-device-api`, `print-settings`, `a28-ui2-print-surfaces`, `user-management`, `cross-tenant-password-reset`, `bootstrap-company`, `receipt-token-once`, `settings-audit`, `sim2/rbac-matrix`, `company-switch`, `backup-status` |
-| UI/UX | 151 file / 1.292 unit test, 144 file / 1.134 integration, 29 file / 281 sim2, e2e `table-form-guard`, `ui-neatness-guard`, `pengaturan` 10/10 |
+| UI/UX | 153 file / 1.297 unit test, 144 file / 1.134 integration, 29 file / 281 sim2, e2e `akuntansi` 6/6, `table-form-guard` 4/4, `ui-neatness-guard` 4/4, `pengaturan` 3/3 |
 | Cross-module | `audit-a2-chains`, `consistency`, `erp-concurrency-remediation` |
 
-**Celah bukti yang terlihat:** belum ada e2e HR/payroll; 2FA belum diuji e2e; preview payroll vs posting belum setara; export payroll belum diaudit; saldo akhir/unimport rekonsiliasi belum ada. `joinedAt`, izin AR, reversal tutup buku, void beban, dan void pembayaran gaji kini sudah punya test regresi.
+**Celah bukti yang terlihat:** belum ada e2e HR/payroll; 2FA belum diuji e2e; preview payroll vs posting belum setara; saldo akhir/unimport rekonsiliasi belum ada. Audit ekspor payroll sudah ditambahkan. `joinedAt`, izin AR, reversal tutup buku, void beban, dan void pembayaran gaji kini sudah punya test regresi.
 
 **Batasan bukti:** count test berubah seiring pekerjaan; angka di dokumen ini adalah snapshot 28 November 2026. Test bukan bukti perangkat keras, beban produksi, atau semua jalur dinamis.
 

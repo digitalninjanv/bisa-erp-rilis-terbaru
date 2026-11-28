@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Loader2, ShieldCheck } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { authClient } from "@/lib/auth-client";
 
 export function TwoFactorForm() {
+  const router = useRouter();
   const [mode, setMode] = useState<"totp" | "backup">("totp");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +29,8 @@ export function TwoFactorForm() {
       setPending(false);
       return;
     }
-    window.location.href = "/app";
+    router.push("/app");
+    router.refresh();
   }
 
   return (

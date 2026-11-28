@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { bootstrapSetupAction } from "@/server/actions/setup";
 
 export function SetupForm() {
+  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [form, setForm] = useState({
@@ -37,7 +39,8 @@ export function SetupForm() {
       setPending(false);
       return;
     }
-    window.location.href = "/login?setup=done";
+    router.push("/login?setup=done");
+    router.refresh();
   }
 
   return (

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Download, Printer } from "lucide-react";
+import { Copy, Download, Printer } from "lucide-react";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { getJournalDetail } from "@/server/reports";
 import { requirePermissionPage } from "@/lib/session";
@@ -86,6 +86,14 @@ export default async function JournalDetailPage({ params }: { params: Promise<{ 
           {/* CT-08: the old single "Cetak / CSV" button only downloaded
               a CSV. The two actions are now separate and honestly
               labelled: Unduh Excel downloads, Cetak opens the print view. */}
+          {can(ctx, "accounting.post") ? (
+            <Link
+              href={`/app/akuntansi/jurnal/baru?from=${entry.id}`}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] transition-colors hover:bg-muted"
+            >
+              <Copy className="size-3.5" /> Duplikat
+            </Link>
+          ) : null}
           {!isDraft ? (
           <>
           <Link
