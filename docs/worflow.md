@@ -183,31 +183,31 @@ Peran kustom dapat dibuat; izin baru harus didefinisikan di `src/lib/permissions
 | Buku besar | Per akun, running balance, cetak/ekspor | `/app/akuntansi/buku-besar` | `reports/ledger` | `journal_lines` | IMPLEMENTED |
 | Laporan | Laba rugi, neraca, arus kas, ekuitas, neraca saldo | `/app/akuntansi/laporan` | `reports/financial` | `account_monthly_balances` | IMPLEMENTED |
 | Kas & bank | Saldo, mutasi, transfer, biaya admin | `/app/akuntansi/bank` | `bank-transfers.ts` | `bank_transfers` | IMPLEMENTED |
-| Rekonsiliasi bank | Impor mutasi, auto/manual match, write-off | `/app/akuntansi/rekonsiliasi` | `bank-reconciliation.ts` | `bank_statement_*` | IMPLEMENTED |
-| Piutang/utang | Aging, pembayaran FIFO/per dokumen, write-off, kredit pihak | `/app/akuntansi/piutang-utang` | `payables`, `receivables` | `party_payments` | IMPLEMENTED |
-| Beban | Beban tunai/terutang, PPN masukan | `/app/akuntansi/beban` | `expenses.ts` | `expenses` | IMPLEMENTED |
+| Rekonsiliasi bank | Impor mutasi, auto/manual match, write-off; belum ada saldo akhir/unimport/audit match | `/app/akuntansi/rekonsiliasi` | `bank-reconciliation.ts` | `bank_statement_*` | PARTIAL |
+| Piutang/utang | Aging, pembayaran FIFO/per dokumen, write-off, kredit pihak; AR memakai izin POS | `/app/akuntansi/piutang-utang` | `payables`, `receivables` | `party_payments` | PARTIAL |
+| Beban | Beban tunai/terutang, PPN masukan; halaman lama redirect, daftar/void belum UI | `/app/akuntansi/beban` | `expenses.ts` | `expenses` | PARTIAL |
 | Aset tetap | Daftar aset, penyusutan garis lurus | `/app/akuntansi/aset` | `fixed-assets.ts` | `fixed_assets` | IMPLEMENTED |
 | Pajak | Buku PPN, rekap pajak | `/app/akuntansi/pajak` | reports | `journal_lines` | IMPLEMENTED |
-| Periode | Buka/tutup/kunci, checklist, tutup tahun | `/app/akuntansi/periode` | `fiscal-periods.ts` | `fiscal_periods` | IMPLEMENTED |
+| Periode | Buka/tutup/kunci, checklist, tutup tahun; checklist belum menegakkan, reversal tahunan belum UI | `/app/akuntansi/periode` | `fiscal-periods.ts` | `fiscal_periods` | PARTIAL |
 | Audit trail | Riwayat aksi & dokumen | `/app/akuntansi/riwayat` | `audit.ts` | `audit_log` | IMPLEMENTED |
 | Catat transaksi | Quick entry 5 jenis + draf | modal/beranda | `quick-entry.ts` | `quick_entry_*` | IMPLEMENTED |
-| Saldo awal | Akun, stok, piutang/utang awal | pengaturan/akuntansi | `opening-balances` | `party_opening_balances` | IMPLEMENTED |
+| Saldo awal | Akun, stok, piutang/utang awal; form AR/AP orphan | pengaturan/akuntansi | `opening-balances` | `party_opening_balances` | PARTIAL |
 
 ### 3.4 HR & Payroll
 
 | Fitur | Fungsi | UI | Domain/Server | Data utama | Status |
 |---|---|---|---|---|---|
-| Karyawan | Data pribadi, kontrak, PTKP, gaji, riwayat | `/app/akuntansi/payroll`, `/karyawan/[id]` | `hr/employees` | `employees` | IMPLEMENTED |
+| Karyawan | Data pribadi, kontrak, PTKP, gaji, riwayat; field statutori & joinedAt belum lengkap di UI | `/app/akuntansi/payroll`, `/karyawan/[id]` | `hr/employees` | `employees` | PARTIAL |
 | Organisasi | Departemen, jabatan, atasan, shift | `/app/akuntansi/hr` | `hr/org` | `departments`, `job_positions` | IMPLEMENTED |
-| Presensi | Check-in/out, terlambat, koreksi | `/app/akuntansi/hr/absensi` | `hr/attendance` | `attendance_records` | IMPLEMENTED |
+| Presensi | Check-in/out, terlambat, koreksi; payroll hanya memakai cuti tak berbayar | `/app/akuntansi/hr/absensi` | `hr/attendance` | `attendance_records` | PARTIAL |
 | Cuti | Pengajuan, persetujuan, saldo | `/app/akuntansi/hr/cuti` | `hr/leave` | `leave_requests` | IMPLEMENTED |
 | Lembur & THR | Pengajuan, aturan, komponen THR | `/app/akuntansi/hr/lembur` | `hr/overtime` | `overtime_requests` | IMPLEMENTED |
 | Persetujuan HR | Inbox cuti/lembur/klaim | `/app/akuntansi/hr/persetujuan` | HR actions | approvals | IMPLEMENTED |
-| Payroll | Run periode, PPh 21 TER, BPJS, slip, jurnal | `/app/akuntansi/payroll` | `payroll-indonesia.ts` | `payroll_runs` | IMPLEMENTED; TER harian/DTP GAP |
+| Payroll | Run periode, PPh 21 TER, BPJS, slip, jurnal; konfigurasi UI mati, preview tidak akurat | `/app/akuntansi/payroll` | `payroll-indonesia.ts` | `payroll_runs` | PARTIAL |
 | Kasbon | Pinjaman karyawan, potong gaji | `/app/akuntansi/kasbon` | `employee-advances.ts` | `employee_advances` | IMPLEMENTED |
 | Pinjaman | Pinjaman terpisah, cicilan | `/app/akuntansi/pinjaman` | `employee-loans.ts` | `employee_loans` | IMPLEMENTED |
 | Klaim | Reimbursement + approval + PPN | `/app/akuntansi/klaim` | `reimbursements.ts` | `reimbursement_claims` | IMPLEMENTED |
-| Final pay | Terminasi, pesangon, prorata | karyawan | `hr/final-pay` | `employees` | PARTIAL; pencabutan akses belum otomatis |
+| Final pay | Terminasi, prorata, PPh, kasbon/pinjaman, pencabutan akses; pesangon/UPMK/UPH belum | karyawan | `hr/final-pay` | `employees`, `member`, `session` | PARTIAL |
 
 ### 3.5 Pengaturan & Platform
 
@@ -508,6 +508,13 @@ Semua modul memanggil `postJournal`:
 
 | Gap | Dampak |
 |---|---|
+| Reversal tutup buku tidak di UI | Salah tutup buku tidak bisa dikoreksi dari UI meski copy menjanjikan reversal |
+| Void pembayaran gaji tidak ada | Salah akun/tanggal bayar gaji tidak bisa dikoreksi end-to-end |
+| Beban tanpa daftar/void UI | Koreksi beban hanya lewat jurnal manual |
+| Checklist periode tidak menegakkan | Periode bisa ditutup saat kontrol belum selesai |
+| Rekonsiliasi bank tanpa audit/ending/unimport | Salah impor permanen; tidak ada jejak match |
+| Impor COA tanpa kelas kas/bank | Akun bank hasil impor tidak muncul di Kas & bank |
+| Form saldo awal AR/AP orphan | Migrasi saldo awal lewat impor/API saja |
 | e-Faktur / integrasi pajak | Belum ada ekspor/impor e-Faktur |
 | Budget vs actual | Belum ada anggaran |
 | Multi-currency | Belum ada kurs/valas |
@@ -562,6 +569,13 @@ Semua modul memanggil `postJournal`:
 
 | Gap | Dampak |
 |---|---|
+| `joinedAt` hilang saat edit karyawan | THR/prorata/final pay salah; riwayat masa kerja hilang |
+| Field statutori karyawan tidak di UI | NIK/NPWP/PTKP/kontrak/BPJS/wilayah tidak dapat diisi; PPh/BPJS fallback |
+| Wizard payroll tidak mengirim acknowledge/final period/override | Gagal di bawah UMP; koreksi potongan tidak bisa |
+| Preview payroll ≠ posting | PPh/BPJS/lembur/THR/pinjaman tidak tampil di preview |
+| Absensi tidak memengaruhi payroll selain cuti tak berbayar | Alpha/terlambat/insentif kehadiran belum dihitung |
+| Karyawan masuk tengah bulan dibayar penuh | Kelebihan bayar pada run reguler |
+| Final pay tanpa pesangon/UPMK/UPH/sisa cuti | Kepatuhan & perhitungan akhir masa kerja belum lengkap |
 | ESS/portal karyawan | Slip & pengajuan masih lewat HR |
 | TER harian / DTP 2026 | Sengaja belum disemai sampai angka resmi |
 | Payroll mingguan | Belum didukung |
@@ -1015,6 +1029,19 @@ Prioritas: **P0** = integritas uang/stok/akses; **P1** = menghambat operasi hari
 | G-45 | P2 | Resume hold lintas kasir | Semua `pos.sell` dapat melanjutkan hold kasir lain | Batasi pemilik atau izin supervisor | GAP |
 | G-46 | P3 | Input tunai kosong = uang pas | Risiko kasir mengira nominal belum diisi | Wajibkan nominal atau konfirmasi eksplisit | PARTIAL |
 | G-47 | P2 | Opname tidak membekukan transaksi | Stok bisa bergerak antara hitung dan posting | Snapshot/freeze per gudang atau rekonsiliasi selisih | GAP |
+| G-48 | P1 | `joinedAt` terhapus saat edit karyawan | THR/prorata/final pay salah | Kirim joinedAt di form edit + audit perubahan | GAP |
+| G-49 | P1 | Field statutori karyawan tidak ada di UI | PPh/BPJS/PTKP/kontrak memakai fallback | Lengkapi form karyawan + validasi | GAP |
+| G-50 | P1 | Wizard payroll tidak mengirim acknowledge/final period/override | Run di bawah UMP selalu gagal; koreksi tidak bisa | Kirim opsi server yang sudah ada + UI review | GAP |
+| G-51 | P2 | Preview payroll ≠ posting | Persetujuan atas angka berbeda | Preview memakai fungsi hitung yang sama | GAP |
+| G-52 | P2 | Absensi tidak memengaruhi payroll selain cuti tak berbayar | Potongan alpha/insentif belum ada | Definisikan komponen kehadiran | GAP |
+| G-53 | P2 | Karyawan masuk tengah bulan dibayar penuh | Kelebihan bayar | Prorata run reguler | GAP |
+| G-54 | P1 | Final pay tanpa pesangon/UPMK/UPH/sisa cuti | Kepatuhan akhir masa kerja | Tambah komponen + konfigurasi | GAP |
+| G-55 | P2 | Void pembayaran gaji tidak ada | Koreksi pembayaran tidak end-to-end | Tambah void/reversal payment | GAP |
+| G-56 | P2 | Reversal tutup buku tidak di UI | Salah tutup buku tidak bisa dikoreksi | Expose action yang sudah ada | GAP |
+| G-57 | P2 | Beban tanpa daftar/void UI | Koreksi hanya lewat jurnal | Kembalikan daftar + void | GAP |
+| G-58 | P2 | Checklist periode tidak menegakkan | Tutup periode saat kontrol belum selesai | Gate/peringatan wajib | GAP |
+| G-59 | P2 | Rekonsiliasi bank tanpa audit/ending/unimport | Salah impor permanen | Audit match/import + saldo akhir | PARTIAL |
+| G-60 | P2 | Impor COA tanpa kelas kas/bank | Akun bank tidak dikenali | Isi cashBankKind + rincian bank | GAP |
 
 ### 14.1 Ditahan by design (bukan lupa)
 
@@ -1042,13 +1069,15 @@ Prioritas: **P0** = integritas uang/stok/akses; **P1** = menghambat operasi hari
 
 ### 14.3 Urutan eksekusi yang disarankan
 
-1. **Stabilkan operasi:** G-02, G-03, G-04 (printer, HTTPS/Electron, observability).
-2. **Tutup integrasi pembayaran:** G-01.
-3. **Skala & ketahanan:** G-05, G-16, G-15.
-4. **Kepatuhan & keuangan lanjutan:** G-09, G-10, G-11.
-5. **Poles UX:** G-06, G-07, G-08.
-6. **HR lanjutan:** G-12.
-7. **Analitik:** G-14.
+1. **Blocker rollout (P0):** G-28 (bootstrap owner/perusahaan), G-29 (reset lintas tenant). Jangan instal toko baru sebelum keduanya tertutup.
+2. **Wiring regresi & kepatuhan dasar:** G-48 (`joinedAt`), G-49 (field statutori), G-50 (opsi payroll), G-54 (final pay), G-35 (UI payroll Indonesia), G-42/G-43 (AR), G-30 (audit QRIS), G-31 (2FA web).
+3. **Operasi kasir nyata:** G-02 (printer/Windows/signing), G-03 (HTTPS/PWA), G-04 (observability), G-39 (Electron offline), G-40 (harga grup offline).
+4. **Integrasi pembayaran:** G-01 (QRIS gateway).
+5. **Skala & ketahanan:** G-05 (background jobs), G-16 (load test), G-15 (`sales.branchId`), G-25 (read-only search).
+6. **Keuangan lanjutan:** G-18 (vendor bill/3-way), G-56 (reversal tutup buku), G-57 (beban), G-59 (rekonsiliasi), G-09/G-10/G-11 (pajak, valas, purchasing lanjutan).
+7. **Gudang:** G-19–G-24 dan G-47 (approval, scoping, ekspor, serial, freeze opname).
+8. **Poles UX:** G-06, G-07, G-08, G-37.
+9. **HR & analitik lanjutan:** G-51–G-53, G-55, G-58, G-60, G-12, G-14.
 
 ---
 
@@ -1063,6 +1092,8 @@ Prioritas: **P0** = integritas uang/stok/akses; **P1** = menghambat operasi hari
 | Platform | `pos-device-api`, `print-settings`, `a28-ui2-print-surfaces`, `user-management`, `sim2/rbac-matrix`, `company-switch`, `backup-status` |
 | UI/UX | 147 file / 1.270 unit test, e2e `table-form-guard`, `ui-neatness-guard`, axe 0 pada sampel desktop/mobile, 77/77 route smoke |
 | Cross-module | `audit-a2-chains`, `consistency`, `erp-concurrency-remediation` |
+
+**Celah bukti yang terlihat:** belum ada e2e HR/payroll; belum ada test untuk `joinedAt` yang terhapus saat edit, mismatch izin AR, reversal tutup buku dari UI, void beban dari UI, void pembayaran gaji, dan kesamaan preview vs posting payroll. Celah ini sejalan dengan gap G-48–G-57 dan harus ditutup bersama perbaikannya, bukan setelahnya.
 
 **Batasan bukti:** count test berubah seiring pekerjaan; angka di dokumen ini adalah snapshot 28 November 2026. Test bukan bukti perangkat keras, beban produksi, atau semua jalur dinamis.
 
