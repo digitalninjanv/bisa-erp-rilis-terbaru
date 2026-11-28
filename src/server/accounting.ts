@@ -313,6 +313,7 @@ export async function postJournal(
     createdBy?: string | null;
     idempotencyKey?: string | null;
     reversalOfId?: string | null;
+    approval?: { status: string; by?: string | null; at?: Date | null; note?: string | null };
     lines: JournalLineInput[];
   },
 ): Promise<{ id: string; number: string; warnings: string[] }> {
@@ -424,6 +425,7 @@ export async function postJournal(
       sourceType: input.sourceType,
       sourceId: input.sourceId ?? null,
       status: "posted",
+      ...(input.approval ? { approvalStatus: input.approval.status, approvedBy: input.approval.by ?? null, approvedAt: input.approval.at ?? null, approvalNote: input.approval.note ?? null } : {}),
       reversalOfId: input.reversalOfId ?? null,
       idempotencyKey: input.idempotencyKey ?? null,
       createdBy: input.createdBy ?? null,

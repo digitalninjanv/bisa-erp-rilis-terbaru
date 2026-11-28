@@ -130,7 +130,7 @@ async function resetCompanyData() {
     // dan submissions adalah penyimpanan idempotensi paralel:
     // keduanya satu kelas dengan idempotency_keys di atas.
     "quick_entry_drafts",
-    "quick_entry_submissions", "pos_pairing_codes", "pos_terminal_session_reviews", "pos_terminals", "pos_desktop_release_settings", "pos_promotions", // terakhir: Langkah 6–7 (0060–0061) + promo POS — anak FK dulu, induk terakhir, sebelum warehouses
+    "quick_entry_submissions", "attachments", "pos_pairing_codes", "pos_terminal_session_reviews", "pos_terminals", "pos_desktop_release_settings", "pos_promotions", // terakhir: Langkah 6–7 (0060–0061) + promo POS — anak FK dulu, induk terakhir, sebelum warehouses
     // FIX-R2 Tahap 3 (RV2-02): party_opening_balances WAJIB ikut
     // dibersihkan — tanpa baris ini reseed menumpuk dokumen saldo awal
     // yatim/duplikat (nomor dokumennya unik per perusahaan).

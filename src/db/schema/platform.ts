@@ -167,6 +167,10 @@ export const companySettings = pgTable("company_settings", {
   // konfigurasi di Pengaturan & halaman Penyesuaian sampai pemilik
   // mengisi atau membiarkannya dengan sadar. Pemilik tetap bebas
   // menaikkan/menurunkan/mengosongkan ambang di Pengaturan.
+  journalApprovalThreshold: numeric("journal_approval_threshold", {
+    precision: 19,
+    scale: 4,
+  }),
   adjustmentApprovalThreshold: numeric("adjustment_approval_threshold", {
     precision: 19,
     scale: 4,

@@ -11,6 +11,8 @@ import { DocumentMetaRows, DocumentPage } from "@/components/blocks/document-pag
 import { journalFlowSteps } from "@/lib/document-flow";
 import { JournalReverseButton } from "@/components/akuntansi/journal-reverse";
 import { JournalDraftActions } from "@/components/akuntansi/journal-draft-actions";
+import { DocumentAttachments } from "@/components/akuntansi/document-attachments";
+import { listAttachments } from "@/server/attachments";
 
 export const dynamic = "force-dynamic";
 
@@ -36,9 +38,14 @@ const SOURCE_MODULE_LABEL: Record<string, string> = {
 export default async function JournalDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const ctx = await requirePermissionPage("accounting.view");
-  const data = await withCompanyReadOnly(ctx.company.id, (tx) => getJournalDetail(tx, ctx.company.id, id));
+  const data = await withCompanyReadOnly(ctx.company.id, async (tx) => {
+    const detail = await getJournalDetail(tx, ctx.company.id, id);
+    if (!detail) return null;
+    const attachments = await listAttachments(tx, ctx.company.id, "journal_entry", id);
+    return { ...detail, attachments };
+  });
   if (!data) notFound();
-  const { entry, lines, reversal, original, source } = data;
+  const { entry, lines, reversal, original, source, attachments } = data;
   const isManualJournal = entry.sourceType === "manual";
   const isDraft = entry.status === "draft";
   const originLabel = SOURCE_MODULE_LABEL[entry.sourceType] ?? "modul asalnya";
@@ -63,7 +70,14 @@ export default async function JournalDetailPage({ params }: { params: Promise<{ 
         <>
           {isDraft ? (
             can(ctx, "accounting.post") ? (
-              <JournalDraftActions entryId={entry.id} number={entry.number} />
+              <JournalDraftActions
+                entryId={entry.id}
+                number={entry.number}
+                approvalStatus={entry.approvalStatus}
+                canApprove={can(ctx, "accounting.manage")}
+                isMaker={entry.createdBy === ctx.user.id}
+                approvalNote={entry.approvalNote}
+              />
             ) : (
               <span className="inline-flex h-8 items-center rounded-md border border-border bg-muted px-3 text-[12px] text-muted-foreground">
                 Draf — menunggu pemegang izin posting
@@ -114,7 +128,17 @@ export default async function JournalDetailPage({ params }: { params: Promise<{ 
       }
       banners={
         <>
-          {isDraft ? (
+          {isDraft && entry.approvalStatus === "pending" ? (
+            <div className="border-t border-border bg-tone-amber-soft px-5 py-2 text-[11px] text-tone-amber">
+              Draf ini menunggu persetujuan pengguna lain. Belum memengaruhi buku besar, saldo
+              akun, atau laporan. Pembuat tidak dapat menyetujui sendiri.
+            </div>
+          ) : isDraft && entry.approvalStatus === "rejected" ? (
+            <div className="border-t border-border bg-destructive/5 px-5 py-2 text-[11px] text-destructive">
+              Draf ini ditolak{entry.approvalNote ? `: ${entry.approvalNote}` : ""}. Hapus dan buat
+              draf baru bila ingin mengajukan ulang.
+            </div>
+          ) : isDraft ? (
             <div className="border-t border-border bg-tone-amber-soft px-5 py-2 text-[11px] text-tone-amber">
               Draf belum memengaruhi buku besar, saldo akun, atau laporan. Review baris di
               bawah, lalu <strong>Posting draf</strong> untuk membentuk jurnal resmi.
@@ -223,6 +247,15 @@ export default async function JournalDetailPage({ params }: { params: Promise<{ 
         </table>
         </div>
       </section>
+      <div className="mt-3">
+        <DocumentAttachments
+          entityType="journal_entry"
+          entityId={entry.id}
+          attachments={attachments}
+          currentUserId={ctx.user.id}
+          canDelete={can(ctx, "accounting.manage")}
+        />
+      </div>
     </DocumentPage>
   );
 }

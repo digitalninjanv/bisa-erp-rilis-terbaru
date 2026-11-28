@@ -2,35 +2,22 @@
 
 "use server";
 
-import {
-  and,
-  asc,
-  eq,
-  inArray,
-  sql,
-} from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import type { Tx } from "@/db";
 import { withCompany, withCompanyReadOnly } from "@/db/tenant";
-import {
-  accounts,
-  customers,
-  journalEntries,
-  journalLines,
-  suppliers,
-} from "@/db/schema";
-import {
-  getAccountMap,
-  postJournal,
-  reverseJournalEntry,
-} from "@/server/accounting";
+import { accounts, journalEntries, journalLines } from "@/db/schema";
+import { postJournal, reverseJournalEntry } from "@/server/accounting";
+import { getCompanySettingsRow } from "@/server/settings";
+import { assertManualJournalLines, postDraftEntry } from "@/server/journal-drafts";
 
 import { writeAudit } from "@/server/audit";
 import {
   requirePermission,
   requirePermissionInModule,
 } from "@/lib/session";
+import { can } from "@/lib/permissions";
 
 import {
   AppError,
@@ -163,67 +150,74 @@ export async function reverseJournalAction(input: {
 
 
 /**
- * Validasi bersama jalur jurnal manual: tag pihak harus nyata di
- * perusahaan, akun Persediaan tidak boleh dimutasi manual, dan akun
- * kontrol Piutang/Utang wajib bertag pihak. Dipakai saat posting dan
- * saat memposting draf agar aturannya tidak bercabang.
+ * Menyimpan jurnal manual sebagai draf yang menunggu persetujuan.
+ * Dipakai saat total debit melewati ambang `journal_approval_threshold`.
+ * Idempotensi memakai awalan `approval:` agar retry form tidak
+ * menggandakan draf.
  */
-async function assertManualJournalLines(
+async function insertPendingJournal(
   tx: Tx,
-  companyId: string,
-  lines: Array<{
-    accountId: string;
-    debit?: string | null;
-    credit?: string | null;
-    description?: string | null;
-    partyType?: string | null;
-    partyId?: string | null;
-  }>,
+  input: {
+    companyId: string;
+    userId: string;
+    date: string;
+    description: string;
+    lines: z.input<typeof journalLineSchema>[];
+    idempotencyKey?: string;
+  },
 ) {
-  const tagged = lines.filter((line) => line.partyId && line.partyType);
-  if (tagged.length > 0) {
-    const customerIds = [...new Set(tagged.filter((l) => l.partyType === "customer").map((l) => l.partyId!))];
-    const supplierIds = [...new Set(tagged.filter((l) => l.partyType === "supplier").map((l) => l.partyId!))];
-    const found = new Set<string>();
-    if (customerIds.length > 0) {
-      const rows = await tx
-        .select({ id: customers.id })
-        .from(customers)
-        .where(and(eq(customers.companyId, companyId), inArray(customers.id, customerIds)));
-      for (const row of rows) found.add(`customer:${row.id}`);
-    }
-    if (supplierIds.length > 0) {
-      const rows = await tx
-        .select({ id: suppliers.id })
-        .from(suppliers)
-        .where(and(eq(suppliers.companyId, companyId), inArray(suppliers.id, supplierIds)));
-      for (const row of rows) found.add(`supplier:${row.id}`);
-    }
-    for (const line of tagged) {
-      if (!found.has(`${line.partyType}:${line.partyId}`)) {
-        throw new AppError(
-          "VALIDATION",
-          `Pihak bertag pada baris jurnal (${line.partyType === "customer" ? "pelanggan" : "pemasok"}) tidak ditemukan di perusahaan ini.`,
-        );
-      }
-    }
+  const key = input.idempotencyKey ? `approval:${input.idempotencyKey}` : null;
+  if (key) {
+    const [existing] = await tx
+      .select({ id: journalEntries.id, number: journalEntries.number })
+      .from(journalEntries)
+      .where(
+        and(
+          eq(journalEntries.companyId, input.companyId),
+          eq(journalEntries.idempotencyKey, key),
+        ),
+      )
+      .limit(1);
+    if (existing) return existing;
   }
-
-  const map = await getAccountMap(tx, companyId);
-  const invalidLine = lines.find((l) => {
-    if (l.accountId === map.inventory) return true;
-    if (l.accountId === map.receivable && (!l.partyType || !l.partyId)) return true;
-    if (l.accountId === map.payable && (!l.partyType || !l.partyId)) return true;
-    return false;
+  const number = `DRAFT-${input.date.replaceAll("-", "")}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+  const [created] = await tx
+    .insert(journalEntries)
+    .values({
+      companyId: input.companyId,
+      number,
+      date: input.date,
+      description: input.description,
+      sourceType: "manual",
+      status: "draft",
+      approvalStatus: "pending",
+      approvalRequestedAt: new Date(),
+      idempotencyKey: key,
+      createdBy: input.userId,
+    })
+    .returning({ id: journalEntries.id });
+  await tx.insert(journalLines).values(
+    input.lines.map((line, index) => ({
+      companyId: input.companyId,
+      entryId: created.id,
+      accountId: line.accountId,
+      debit: d(line.debit || "0").toFixed(4),
+      credit: d(line.credit || "0").toFixed(4),
+      description: line.description ?? null,
+      partyType: line.partyType ?? null,
+      partyId: line.partyId ?? null,
+      lineNo: index + 1,
+    })),
+  );
+  await writeAudit(tx, {
+    companyId: input.companyId,
+    userId: input.userId,
+    action: "journal.approval.request",
+    entityType: "journal_entry",
+    entityId: created.id,
+    after: { number, date: input.date, lines: input.lines.length },
   });
-  if (invalidLine) {
-    throw new AppError(
-      "VALIDATION",
-      invalidLine.accountId === map.inventory
-        ? "Akun kontrol Persediaan Barang tidak boleh dimutasi lewat jurnal umum manual. Gunakan dokumen transaksi terkait (Penerimaan Barang atau Penyesuaian Stok)."
-        : "Akun kontrol Piutang Usaha dan Hutang Usaha wajib menyertakan tag pihak (pelanggan/pemasok) bila disesuaikan lewat jurnal manual agar sinkron dengan buku pembantu.",
-    );
-  }
+  return { id: created.id, number };
 }
 
 export async function postManualJournalAction(input: {
@@ -251,6 +245,20 @@ export async function postManualJournalAction(input: {
 
     const result = await withCompany(ctx.company.id, async (tx) => {
       await assertManualJournalLines(tx, ctx.company.id, data.lines);
+      const settings = await getCompanySettingsRow(tx, ctx.company.id);
+      const threshold = d(settings?.journalApprovalThreshold ?? 0);
+      const totalDebit = data.lines.reduce((acc, line) => acc.plus(d(line.debit || "0")), d(0));
+      if (threshold.gt(0) && totalDebit.gte(threshold)) {
+        const pending = await insertPendingJournal(tx, {
+          companyId: ctx.company.id,
+          userId: ctx.user.id,
+          date: data.date,
+          description: data.description?.trim() || "Jurnal umum (menunggu persetujuan)",
+          lines: data.lines,
+          idempotencyKey: data.idempotencyKey,
+        });
+        return { ...pending, warnings: [] as string[], pendingApproval: true };
+      }
 
       return postJournal(tx, {
         companyId: ctx.company.id,
@@ -317,7 +325,13 @@ export async function saveJournalDraftAction(input: z.input<typeof journalDraftS
       let number: string;
       if (data.draftId) {
         const [draft] = await tx
-          .select({ id: journalEntries.id, number: journalEntries.number })
+          .select({
+            id: journalEntries.id,
+            number: journalEntries.number,
+            status: journalEntries.status,
+            approvalStatus: journalEntries.approvalStatus,
+            createdBy: journalEntries.createdBy,
+          })
           .from(journalEntries)
           .where(
             and(
@@ -328,13 +342,20 @@ export async function saveJournalDraftAction(input: z.input<typeof journalDraftS
           .limit(1)
           .for("update");
         if (!draft) throw new AppError("NOT_FOUND", "Draf jurnal tidak ditemukan.");
-        const [fresh] = await tx
-          .select({ status: journalEntries.status })
-          .from(journalEntries)
-          .where(eq(journalEntries.id, draft.id))
-          .limit(1);
-        if (fresh?.status !== "draft") {
+        if (draft.status !== "draft") {
           throw new AppError("INVALID_STATE", "Jurnal ini bukan draf dan tidak dapat disimpan sebagai draf.");
+        }
+        if (draft.approvalStatus === "pending" || draft.approvalStatus === "rejected") {
+          throw new AppError(
+            "INVALID_STATE",
+            "Draf yang menunggu/ditolak tidak dapat diubah. Hapus dan buat draf baru.",
+          );
+        }
+        if (draft.createdBy !== ctx.user.id && !can(ctx, "accounting.manage")) {
+          throw new AppError(
+            "FORBIDDEN",
+            "Draf milik pengguna lain hanya dapat diubah oleh pembuat atau pengelola akuntansi.",
+          );
         }
         entryId = draft.id;
         number = draft.number;
@@ -397,7 +418,6 @@ export async function saveJournalDraftAction(input: z.input<typeof journalDraftS
   });
 }
 
-/** Posting draf: validasi yang sama dengan jurnal manual, lalu draf diganti jurnal posted. */
 export async function postJournalDraftAction(input: { entryId: string }) {
   return guard(async () => {
     const ctx = await requirePermissionInModule("accounting.post", "akuntansi");
@@ -405,7 +425,7 @@ export async function postJournalDraftAction(input: { entryId: string }) {
 
     const result = await withCompany(ctx.company.id, async (tx) => {
       const [draft] = await tx
-        .select()
+        .select({ approvalStatus: journalEntries.approvalStatus })
         .from(journalEntries)
         .where(
           and(
@@ -413,55 +433,23 @@ export async function postJournalDraftAction(input: { entryId: string }) {
             eq(journalEntries.id, data.entryId),
           ),
         )
-        .limit(1)
-        .for("update");
-      if (!draft) throw new AppError("NOT_FOUND", "Draf jurnal tidak ditemukan.");
-      if (draft.status !== "draft") {
-        throw new AppError("INVALID_STATE", "Jurnal ini sudah diposting atau dibatalkan.");
+        .limit(1);
+      if (draft?.approvalStatus === "pending") {
+        throw new AppError(
+          "INVALID_STATE",
+          "Draf ini menunggu persetujuan pengguna lain. Posting hanya melalui aksi Setujui.",
+        );
       }
-      const lines = await tx
-        .select({
-          accountId: journalLines.accountId,
-          debit: journalLines.debit,
-          credit: journalLines.credit,
-          description: journalLines.description,
-          partyType: journalLines.partyType,
-          partyId: journalLines.partyId,
-        })
-        .from(journalLines)
-        .where(eq(journalLines.entryId, draft.id))
-        .orderBy(asc(journalLines.lineNo));
-      if (lines.length < 2) {
-        throw new AppError("VALIDATION", "Draf jurnal minimal memiliki dua baris.");
+      if (draft?.approvalStatus === "rejected") {
+        throw new AppError(
+          "INVALID_STATE",
+          "Draf ini ditolak. Hapus dan buat draf baru, atau minta persetujuan ulang.",
+        );
       }
-      await assertManualJournalLines(tx, ctx.company.id, lines);
-
-      const posted = await postJournal(tx, {
-        companyId: ctx.company.id,
-        date: draft.date,
-        description: draft.description,
-        sourceType: "manual",
-        createdBy: ctx.user.id,
-        idempotencyKey: `journal-draft-post:${draft.id}`,
-        lines: lines.map((line) => ({
-          accountId: line.accountId,
-          debit: line.debit,
-          credit: line.credit,
-          description: line.description ?? undefined,
-          partyType: (line.partyType as "customer" | "supplier" | null) ?? undefined,
-          partyId: line.partyId ?? undefined,
-        })),
-      });
-
-      await tx.delete(journalLines).where(eq(journalLines.entryId, draft.id));
-      await tx.delete(journalEntries).where(eq(journalEntries.id, draft.id));
-      await writeAudit(tx, {
+      const { posted } = await postDraftEntry(tx, {
         companyId: ctx.company.id,
         userId: ctx.user.id,
-        action: "journal.draft.post",
-        entityType: "journal_entry",
-        entityId: posted.id,
-        after: { number: posted.number, fromDraft: draft.number },
+        entryId: data.entryId,
       });
       return posted;
     });
@@ -473,6 +461,138 @@ export async function postJournalDraftAction(input: { entryId: string }) {
   });
 }
 
+export async function approveJournalDraftAction(input: { entryId: string; note?: string }) {
+  return guard(async () => {
+    const ctx = await requirePermissionInModule("accounting.manage", "akuntansi");
+    const data = parseInput(
+      z.object({
+        entryId: z.string().uuid(),
+        note: z.string().trim().max(200).optional(),
+      }),
+      input,
+    );
+    const result = await withCompany(ctx.company.id, async (tx) => {
+      const [draft] = await tx
+        .select({
+          id: journalEntries.id,
+          number: journalEntries.number,
+          status: journalEntries.status,
+          approvalStatus: journalEntries.approvalStatus,
+          createdBy: journalEntries.createdBy,
+        })
+        .from(journalEntries)
+        .where(
+          and(
+            eq(journalEntries.companyId, ctx.company.id),
+            eq(journalEntries.id, data.entryId),
+          ),
+        )
+        .limit(1)
+        .for("update");
+      if (!draft) throw new AppError("NOT_FOUND", "Draf jurnal tidak ditemukan.");
+      if (draft.status !== "draft" || draft.approvalStatus !== "pending") {
+        throw new AppError("INVALID_STATE", "Draf ini tidak sedang menunggu persetujuan.");
+      }
+      if (draft.createdBy === ctx.user.id) {
+        throw new AppError(
+          "FORBIDDEN",
+          "Pembuat jurnal tidak dapat menyetujui jurnalnya sendiri. Minta pengguna lain yang berizin mengelola akuntansi.",
+        );
+      }
+      const { posted } = await postDraftEntry(tx, {
+        companyId: ctx.company.id,
+        userId: ctx.user.id,
+        entryId: draft.id,
+        approval: {
+          status: "approved",
+          by: ctx.user.id,
+          at: new Date(),
+          note: data.note ?? null,
+        },
+      });
+      await writeAudit(tx, {
+        companyId: ctx.company.id,
+        userId: ctx.user.id,
+        action: "journal.approve",
+        entityType: "journal_entry",
+        entityId: posted.id,
+        before: { draftNumber: draft.number, maker: draft.createdBy },
+        after: { number: posted.number, note: data.note ?? null },
+      });
+      return posted;
+    });
+    revalidatePath("/app/akuntansi/jurnal");
+    revalidatePath("/app/akuntansi/jurnal/riwayat");
+    revalidatePath("/app/akuntansi");
+    return result;
+  });
+}
+
+export async function rejectJournalDraftAction(input: { entryId: string; note: string }) {
+  return guard(async () => {
+    const ctx = await requirePermissionInModule("accounting.manage", "akuntansi");
+    const data = parseInput(
+      z.object({
+        entryId: z.string().uuid(),
+        note: z.string().trim().min(3, "Alasan penolakan minimal 3 karakter.").max(200),
+      }),
+      input,
+    );
+    await withCompany(ctx.company.id, async (tx) => {
+      const [draft] = await tx
+        .select({
+          id: journalEntries.id,
+          number: journalEntries.number,
+          status: journalEntries.status,
+          approvalStatus: journalEntries.approvalStatus,
+          createdBy: journalEntries.createdBy,
+        })
+        .from(journalEntries)
+        .where(
+          and(
+            eq(journalEntries.companyId, ctx.company.id),
+            eq(journalEntries.id, data.entryId),
+          ),
+        )
+        .limit(1)
+        .for("update");
+      if (!draft) throw new AppError("NOT_FOUND", "Draf jurnal tidak ditemukan.");
+      if (draft.status !== "draft" || draft.approvalStatus !== "pending") {
+        throw new AppError("INVALID_STATE", "Draf ini tidak sedang menunggu persetujuan.");
+      }
+      if (draft.createdBy === ctx.user.id) {
+        throw new AppError("FORBIDDEN", "Pembuat jurnal tidak dapat menolak jurnalnya sendiri.");
+      }
+      await tx
+        .update(journalEntries)
+        .set({
+          approvalStatus: "rejected",
+          approvedBy: ctx.user.id,
+          approvedAt: new Date(),
+          approvalNote: data.note,
+        })
+        .where(
+          and(
+            eq(journalEntries.companyId, ctx.company.id),
+            eq(journalEntries.id, draft.id),
+          ),
+        );
+      await writeAudit(tx, {
+        companyId: ctx.company.id,
+        userId: ctx.user.id,
+        action: "journal.reject",
+        entityType: "journal_entry",
+        entityId: draft.id,
+        before: { draftNumber: draft.number, maker: draft.createdBy },
+        after: { note: data.note },
+      });
+    });
+    revalidatePath("/app/akuntansi/jurnal");
+    revalidatePath("/app/akuntansi/jurnal/riwayat");
+    revalidatePath("/app/akuntansi");
+  });
+}
+
 /** Hapus draf yang tidak jadi dipakai. Jurnal posted tidak dapat dihapus. */
 export async function deleteJournalDraftAction(input: { entryId: string }) {
   return guard(async () => {
@@ -480,7 +600,12 @@ export async function deleteJournalDraftAction(input: { entryId: string }) {
     const data = parseInput(z.object({ entryId: z.string().uuid() }), input);
     await withCompany(ctx.company.id, async (tx) => {
       const [draft] = await tx
-        .select({ id: journalEntries.id, number: journalEntries.number, status: journalEntries.status })
+        .select({
+          id: journalEntries.id,
+          number: journalEntries.number,
+          status: journalEntries.status,
+          createdBy: journalEntries.createdBy,
+        })
         .from(journalEntries)
         .where(
           and(
@@ -493,6 +618,12 @@ export async function deleteJournalDraftAction(input: { entryId: string }) {
       if (!draft) throw new AppError("NOT_FOUND", "Draf jurnal tidak ditemukan.");
       if (draft.status !== "draft") {
         throw new AppError("INVALID_STATE", "Hanya draf yang dapat dihapus. Jurnal posted memakai pembalik.");
+      }
+      if (draft.createdBy !== ctx.user.id && !can(ctx, "accounting.manage")) {
+        throw new AppError(
+          "FORBIDDEN",
+          "Draf milik pengguna lain hanya dapat dihapus oleh pembuat atau pengelola akuntansi.",
+        );
       }
       await tx.delete(journalLines).where(eq(journalLines.entryId, draft.id));
       await tx.delete(journalEntries).where(eq(journalEntries.id, draft.id));

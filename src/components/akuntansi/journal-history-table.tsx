@@ -22,6 +22,7 @@ export type JournalHistoryRow = {
   description: string;
   sourceType: string;
   status: string;
+  approvalStatus: string;
   amount: number | string;
   lines: { accountCode: string; accountName: string; debit: number; credit: number }[];
 };
@@ -112,7 +113,18 @@ export function JournalHistoryTable({ rows }: { rows: JournalHistoryRow[] }) {
       id: "status",
       accessorKey: "status",
       header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
-      cell: ({ row }) => <StatusBadge status={row.original.status} />,
+      cell: ({ row }) => (
+        <StatusBadge
+          status={row.original.approvalStatus === "pending" ? "pending" : row.original.status}
+          label={
+            row.original.approvalStatus === "pending"
+              ? "Menunggu approval"
+              : row.original.approvalStatus === "rejected"
+                ? "Ditolak"
+                : undefined
+          }
+        />
+      ),
     },
     {
       id: "amount",

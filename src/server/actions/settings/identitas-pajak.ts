@@ -131,6 +131,22 @@ const settingsSchema = z.object({
     }, "Ambang diskon harus antara 0 dan 100 persen."),
   // T5-3 (D-17): ambang persetujuan penyesuaian stok (maker-checker).
   // Kosong/null = nonaktif; selain itu nominal Rupiah ≥ 0 yang terbaca.
+  journalApprovalThreshold: z
+    .union([z.string(), z.number()])
+    .nullable()
+    .optional()
+    .refine(
+      (value) => {
+        if (value === undefined || value === null || value === "") return true;
+        try {
+          const amount = d(value);
+          return amount.isFinite() && amount.gte(0);
+        } catch {
+          return false;
+        }
+      },
+      { message: "Ambang approval jurnal harus berupa nominal 0 atau lebih." },
+    ),
   adjustmentApprovalThreshold: z
     .union([z.string(), z.number()])
     .nullable()
@@ -237,6 +253,15 @@ export async function saveSettingsAction(input: z.input<typeof settingsSchema>) 
               }
             : {}),
           posDiscountThresholdPercent: toDb(data.posDiscountThresholdPercent),
+          ...(data.journalApprovalThreshold !== undefined
+            ? {
+                journalApprovalThreshold:
+                  data.journalApprovalThreshold === null ||
+                  data.journalApprovalThreshold === ""
+                    ? null
+                    : toDb(data.journalApprovalThreshold),
+              }
+            : {}),
           adjustmentApprovalThreshold:
             data.adjustmentApprovalThreshold === undefined ||
             data.adjustmentApprovalThreshold === null ||

@@ -15,6 +15,7 @@ import {
   getIncomeStatement,
   getReceivablePayableQueues,
   getSalesByDay,
+  countPendingJournalApprovals,
   listPayablesPage,
   listReceivablesPage,
 } from "@/server/reports";
@@ -185,6 +186,7 @@ export default async function AccountingDashboard({
       credits,
       pendingClaims,
       onboarding,
+      pendingJournals,
     ] = await Promise.all([
       getAccountingSummary(tx, ctx.company.id, range),
       getIncomeStatement(tx, ctx.company.id, {
@@ -212,6 +214,7 @@ export default async function AccountingDashboard({
       getPartyCreditQueueSummary(tx, ctx.company.id),
       countPendingReimbursementClaims(tx, ctx.company.id),
       getAccountingOnboardingState(tx, ctx.company.id),
+      countPendingJournalApprovals(tx, ctx.company.id),
     ]);
     const queues = await getReceivablePayableQueues(tx, ctx.company.id, today, undefined, {
       receivables: receivablesPage,
@@ -232,6 +235,7 @@ export default async function AccountingDashboard({
       credits,
       pendingClaims,
       onboarding,
+      pendingJournals,
     };
   });
 
@@ -489,6 +493,17 @@ export default async function AccountingDashboard({
             actionLabel: "Rekonsiliasi sekarang",
             tone: "teal",
             icon: <ArrowLeftRight className="size-4" />,
+          },
+          {
+            key: "jurnal-approval",
+            label: "Jurnal menunggu persetujuan",
+            count: data.pendingJournals,
+            headline: `${data.pendingJournals} draf`,
+            detail: "Jurnal manual di atas ambang approval yang belum disetujui pengguna lain",
+            href: "/app/akuntansi/jurnal/riwayat?status=pending-approval",
+            actionLabel: "Tinjau jurnal",
+            tone: "amber",
+            icon: <ClipboardCheck className="size-4" />,
           },
           {
             key: "klaim",

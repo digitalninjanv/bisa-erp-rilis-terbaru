@@ -265,6 +265,14 @@ export function JournalEntryForm({
       toast.error(result.message);
       return;
     }
+    if ("pendingApproval" in result.data && result.data.pendingApproval) {
+      toast.info(
+        `Jurnal ${result.data.number} menunggu persetujuan pengguna lain sebelum masuk buku besar.`,
+      );
+      router.push(`/app/akuntansi/jurnal/${result.data.id}`);
+      router.refresh();
+      return;
+    }
     toast.success(`Jurnal ${result.data.number} diposting.`);
     showPostingWarnings(result.data.warnings);
     // Spesifikasi UX: sesudah simpan langsung masuk ke histori jurnal

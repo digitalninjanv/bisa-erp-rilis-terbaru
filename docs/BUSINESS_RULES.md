@@ -74,6 +74,19 @@ diedit/dihapus diam-diam.**
 14. **Rekonsiliasi bank** (D-11): pencocokan hanya menautkan, tidak
     mengubah jurnal; auto-match hanya kandidat tunggal ±3 hari nominal
     sama persis; impor ulang tidak menggandakan (sidik jari baris).
+    Impor dapat menyimpan saldo akhir rekening koran + tanggal cut-off;
+    sign-off hanya bila semua baris tertaut; impor yang sudah selesai
+    atau masih tertaut tidak dapat dihapus.
+15. **Approval jurnal manual** (bila ambang perusahaan diisi): jurnal
+    dengan total debit ≥ ambang disimpan sebagai draf `pending`, bukan
+    diposting. Pembuat tidak dapat menyetujui sendiri; penyetuju wajib
+    memegang `accounting.manage`. Setujui = posting + audit; tolak =
+    draf tetap tersimpan dengan alasan. Ambang kosong = approval mati.
+16. **Lampiran bukti** disimpan per dokumen (jurnal/beban) sebagai
+    PNG/JPEG/WebP/PDF maksimal 5 MB. Unggah/hapus memerlukan izin tulis
+    akuntansi; penghapusan oleh selain pengunggah memerlukan
+    `accounting.manage`; semua aksi masuk audit. Lampiran bukan
+    pengganti jurnal — dokumen tetap menjadi sumber kebenaran.
 
 ## 3. Persediaan & pembelian
 
@@ -92,8 +105,8 @@ diedit/dihapus diam-diam.**
    sampai tahap peninjauan; selisih bernilai Rp ditinjau sebelum posting.
 5. **Penyesuaian beralasan & berotorisasi:** alasan berkategori wajib;
    di atas ambang nilai per perusahaan wajib disetujui orang lain
-   (bukan pembuat) — satu-satunya approval maker-checker yang dibangun
-   (sempit & nyata, D-17).
+   (bukan pembuat) — approval maker-checker untuk penyesuaian stok
+   (sempit & nyata, D-17), sejajar dengan approval jurnal manual.
 6. **Retur pembelian berplafon asal-usul:** nilai retur tidak boleh
    melebihi dokumen asal; kelebihannya di atas utang terbuka menjadi
    aset Kredit Pemasok (1210) dengan penyelesaian terlacak (ganti

@@ -68,6 +68,7 @@ test.describe("Akuntansi", () => {
     await expect(firstRow).toBeVisible();
     await firstRow.locator("a").first().click();
     await expect(page.getByRole("link", { name: "Duplikat" })).toBeVisible();
+    await expect(page.getByText("Lampiran bukti")).toBeVisible();
     await page.getByRole("link", { name: "Duplikat" }).click();
 
     await expect(page).toHaveURL(/\/app\/akuntansi\/jurnal\/baru\?from=/);
@@ -75,6 +76,28 @@ test.describe("Akuntansi", () => {
     const memo = page.locator("table").getByLabel("Memo baris 1");
     await expect(memo).toBeVisible();
     await expect(memo).toHaveValue(/.+/);
+  });
+
+  test("lampiran bukti jurnal dapat diunggah dan dihapus", async ({ page }) => {
+    await page.goto("/app/akuntansi/jurnal/riwayat?from=2020-01-01&to=2030-12-31");
+    await page.locator("tbody tr").first().locator("a").first().click();
+    await expect(page.getByText("Lampiran bukti")).toBeVisible();
+
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
+      "base64",
+    );
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "bukti-uji.png",
+      mimeType: "image/png",
+      buffer: png,
+    });
+    await page.getByRole("button", { name: "Unggah", exact: true }).click();
+    await expect(page.getByText("bukti-uji.png")).toBeVisible();
+
+    await page.getByRole("button", { name: "Hapus", exact: true }).first().click();
+    await page.getByRole("button", { name: "Hapus lampiran" }).click();
+    await expect(page.getByText("bukti-uji.png")).toHaveCount(0);
   });
 
   test("halaman rekonsiliasi bank tampil", async ({ page }) => {

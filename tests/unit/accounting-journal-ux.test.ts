@@ -33,6 +33,24 @@ describe("UX jurnal manual", () => {
     expect(source("server/reports/journal.ts")).toContain("accountId: journalLines.accountId");
   });
 
+  it("menampilkan approval dan lampiran bukti di detail jurnal", () => {
+    const detail = source("app/app/akuntansi/(akuntansi)/jurnal/[id]/page.tsx");
+    const actions = source("components/akuntansi/journal-draft-actions.tsx");
+    const attachments = source("components/akuntansi/document-attachments.tsx");
+    expect(detail).toContain("DocumentAttachments");
+    expect(detail).toContain("approvalStatus");
+    expect(actions).toContain("approveJournalDraftAction");
+    expect(actions).toContain("rejectJournalDraftAction");
+    expect(attachments).toContain("deleteAttachmentAction");
+    expect(attachments).toContain("Lampiran bukti");
+  });
+
+  it("pengaturan menyediakan ambang approval jurnal", () => {
+    expect(source("components/pengaturan/forms/identitas-pajak.tsx")).toContain(
+      "journalApprovalThreshold",
+    );
+  });
+
   it("mendukung Ctrl/Cmd+Enter untuk posting dan Ctrl/Cmd+S untuk draf", () => {
     expect(form).toContain("metaKey");
     expect(form).toContain("ctrlKey");

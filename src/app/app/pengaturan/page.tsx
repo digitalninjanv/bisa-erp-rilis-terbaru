@@ -142,6 +142,7 @@ export default async function SettingsPage({
               cashNegativePolicy: settings.cashNegativePolicy as "allow" | "warn" | "block",
               posSessionDifferenceTolerance: settings.posSessionDifferenceTolerance ?? "0",
               posDiscountThresholdPercent: String(Number(settings.posDiscountThresholdPercent)),
+              journalApprovalThreshold: settings.journalApprovalThreshold ?? "",
               adjustmentApprovalThreshold: settings.adjustmentApprovalThreshold ?? "",
               posOfflineEnabled: settings.posOfflineEnabled,
               transferTwoStepEnabled: settings.transferTwoStepEnabled,

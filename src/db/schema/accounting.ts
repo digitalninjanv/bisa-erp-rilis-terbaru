@@ -113,6 +113,14 @@ export const journalEntries = pgTable(
     sourceType: text("source_type").notNull().default("manual"), // manual | sale | sale_return | purchase | adjustment | expense | bank_transfer | payroll | payment | opening
     sourceId: uuid("source_id"),
     status: text("status").notNull().default("posted"), // draft | posted | void
+    // Manual-journal approval: not_required (default), pending,
+    // approved, rejected. Pending/rejected drafts never post through
+    // the normal draft action.
+    approvalStatus: text("approval_status").notNull().default("not_required"),
+    approvalRequestedAt: timestamp("approval_requested_at", { withTimezone: true }),
+    approvedBy: text("approved_by"),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    approvalNote: text("approval_note"),
     reversalOfId: uuid("reversal_of_id"),
     idempotencyKey: text("idempotency_key"),
     createdBy: text("created_by"),
@@ -626,5 +634,31 @@ export const partyCredits = pgTable(
   (t) => [
     uniqueIndex("party_credits_company_number_uq").on(t.companyId, t.number),
     index("party_credits_company_party_status_idx").on(t.companyId, t.partyType, t.partyId, t.status),
+  ],
+);
+
+
+/**
+ * Lampiran bukti dokumen (invoice, kuitansi, transfer). Polymorphic
+ * entityType/entityId; isi disimpan base64 agar backup/restore DB tetap
+ * satu paket. Ukuran dan MIME divalidasi di server (maks 5 MB).
+ */
+export const attachments = pgTable(
+  "attachments",
+  {
+    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    companyId: text("company_id").notNull(),
+    entityType: text("entity_type").notNull(), // journal_entry | expense
+    entityId: uuid("entity_id").notNull(),
+    fileName: text("file_name").notNull(),
+    mimeType: text("mime_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    contentBase64: text("content_base64").notNull(),
+    uploadedBy: text("uploaded_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("attachments_company_entity_idx").on(t.companyId, t.entityType, t.entityId),
+    index("attachments_company_created_idx").on(t.companyId, t.createdAt),
   ],
 );

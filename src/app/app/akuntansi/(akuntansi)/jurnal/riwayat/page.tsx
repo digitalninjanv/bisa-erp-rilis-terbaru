@@ -42,6 +42,8 @@ export default async function JournalPage({
   const ctx = await requirePermissionPage("accounting.view");
   const from = params.from || monthStartISO();
   const to = params.to || todayISO();
+  const pendingApprovalFilter = params.status === "pending-approval";
+  const statusFilter = pendingApprovalFilter ? "draft" : params.status;
 
   const data = await withCompanyReadOnly(ctx.company.id, async (tx) => {
     const [list, summary, accounts, sourceTypes, actors] = await Promise.all([
@@ -52,7 +54,8 @@ export default async function JournalPage({
         to,
         sourceType: params.source,
         accountId: params.account,
-        status: params.status,
+        status: statusFilter,
+        approvalStatus: pendingApprovalFilter ? "pending" : undefined,
         createdBy: params.user,
         page: Number(params.page ?? 1),
         // G3 (TBL-01): ukuran halaman baku repo (sebelumnya 30).
@@ -168,6 +171,7 @@ export default async function JournalPage({
               <option value="posted">Terposting</option>
               <option value="void">Dibatalkan</option>
               <option value="draft">Draf</option>
+              <option value="pending-approval">Menunggu approval</option>
             </select>
             <select name="user" defaultValue={params.user ?? ""} className={dataListFilterWideClass} aria-label="User">
               <option value="">Semua user</option>

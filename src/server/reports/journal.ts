@@ -85,6 +85,7 @@ export async function listJournalEntries(tx: Tx, input: {
   sourceType?: string;
   accountId?: string;
   status?: string;
+  approvalStatus?: string;
   /** Filter pembuat jurnal — kebutuhan audit "siapa memposting apa". */
   createdBy?: string;
   page?: number;
@@ -100,6 +101,7 @@ export async function listJournalEntries(tx: Tx, input: {
   // menyentuh akun X" dan "hanya yang posted/void" adalah pertanyaan
   // harian akuntan yang sebelumnya mustahil dijawab dari daftar ini.
   if (input.status) conditions.push(eq(journalEntries.status, input.status));
+  if (input.approvalStatus) conditions.push(eq(journalEntries.approvalStatus, input.approvalStatus));
   if (input.createdBy) conditions.push(eq(journalEntries.createdBy, input.createdBy));
   if (input.accountId) {
     conditions.push(
@@ -131,6 +133,7 @@ export async function listJournalEntries(tx: Tx, input: {
       description: journalEntries.description,
       sourceType: journalEntries.sourceType,
       status: journalEntries.status,
+      approvalStatus: journalEntries.approvalStatus,
     })
     .from(journalEntries)
     .where(where)
@@ -484,4 +487,20 @@ export async function getJournalDetail(tx: Tx, companyId: string, entryId: strin
   };
 
   return { entry, lines, reversal: reversal ?? null, original, source };
+}
+
+
+/** Jumlah draf jurnal yang menunggu persetujuan — untuk work queue. */
+export async function countPendingJournalApprovals(tx: Tx, companyId: string): Promise<number> {
+  const [row] = await tx
+    .select({ value: count() })
+    .from(journalEntries)
+    .where(
+      and(
+        eq(journalEntries.companyId, companyId),
+        eq(journalEntries.status, "draft"),
+        eq(journalEntries.approvalStatus, "pending"),
+      ),
+    );
+  return row?.value ?? 0;
 }

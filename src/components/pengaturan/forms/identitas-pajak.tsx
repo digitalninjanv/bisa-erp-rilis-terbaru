@@ -55,6 +55,7 @@ export type SettingsValues = {
   // dengan alasan yang sama; bawaan skema "warn".
   cashNegativePolicy?: "allow" | "warn" | "block";
   // T5-3 (D-17): "" = approval for stock adjustments disabled.
+  journalApprovalThreshold?: string;
   adjustmentApprovalThreshold: string;
   // SIM-2 S7B-2 (D-25): saklar fitur & ambang PR per perusahaan.
   posOfflineEnabled?: boolean;
@@ -106,6 +107,7 @@ export function SettingsForm({
       cashNegativePolicy: form.cashNegativePolicy ?? "warn",
       posSessionDifferenceTolerance: form.posSessionDifferenceTolerance || "0",
       posDiscountThresholdPercent: form.posDiscountThresholdPercent || "10",
+      journalApprovalThreshold: form.journalApprovalThreshold || null,
       adjustmentApprovalThreshold: form.adjustmentApprovalThreshold || null,
       posOfflineEnabled: form.posOfflineEnabled ?? false,
       transferTwoStepEnabled: form.transferTwoStepEnabled ?? false,
@@ -313,6 +315,18 @@ export function SettingsForm({
           <span className="block text-[10px] leading-4 text-muted-foreground">
             Selisih antara kas seharusnya dan hitungan fisik kasir saat tutup sesi sampai nominal ini tidak wajib disertai alasan; selisih di atasnya ditolak server sampai kasir mengisi alasan selisih. 0 = semua selisih wajib alasan.
           </span>
+        </label>
+        <label className="space-y-1">
+          <span className={labelClass}>Ambang approval jurnal manual (Rp)</span>
+          <MoneyInput value={form.journalApprovalThreshold ?? ""} onChange={(value) => setForm({ ...form, journalApprovalThreshold: value })} className="h-9 px-2.5 text-[12px]" placeholder="Kosong = nonaktif" />
+          <span className="block text-[10px] leading-4 text-muted-foreground">
+            Jurnal manual dengan total debit di atas nominal ini tidak langsung diposting: jurnal disimpan sebagai draf menunggu persetujuan pengguna lain yang berizin mengelola akuntansi. Pembuat tidak dapat menyetujui sendiri. Kosongkan untuk menonaktifkan.
+          </span>
+          {form.journalApprovalThreshold?.trim() === "" ? (
+            <span className="block rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] leading-4 text-amber-900">
+              Peringatan: approval jurnal NONAKTIF — jurnal manual bernilai berapa pun langsung diposting oleh pembuatnya.
+            </span>
+          ) : null}
         </label>
         <label className="space-y-1">
           <span className={labelClass}>Ambang persetujuan penyesuaian stok (Rp)</span>

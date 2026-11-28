@@ -11,7 +11,7 @@ export { getInventoryValuation, getStockCard, listInventoryValuationExportPage }
 export type { InventoryValuationExportCursor } from "./inventory";
 export { getCashSessionSummary, listCashSessionHistory, listCashSessionCashiers, getCashSessionHistoryDetail } from "./cash-sessions";
 export type { CashSessionTotals } from "./cash-sessions";
-export { getJournalSummary, listJournalActors, listJournalEntries, listJournalSourceTypes, resolveJournalSourceNumber, resolveJournalSourceHref, getJournalDetail } from "./journal";
+export { countPendingJournalApprovals, getJournalSummary, listJournalActors, listJournalEntries, listJournalSourceTypes, resolveJournalSourceNumber, resolveJournalSourceHref, getJournalDetail } from "./journal";
 export { getLedger, listAccounts, resolveDefaultLedgerAccountId } from "./ledger";
 export {
   listReceivables,
