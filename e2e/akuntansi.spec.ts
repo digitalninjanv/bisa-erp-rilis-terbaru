@@ -80,5 +80,10 @@ test.describe("Akuntansi", () => {
   test("halaman rekonsiliasi bank tampil", async ({ page }) => {
     await page.goto("/app/akuntansi/rekonsiliasi");
     await expect(page.getByRole("heading", { name: "Rekonsiliasi bank" })).toBeVisible();
+    await page.getByRole("button", { name: "Impor mutasi" }).click();
+    await expect(page.getByRole("heading", { name: "Impor mutasi bank (CSV)" })).toBeVisible();
+    await expect(
+      page.getByRole("textbox", { name: "Saldo akhir rekening koran", exact: true }),
+    ).toBeVisible();
   });
 });

@@ -12,7 +12,13 @@
 export type { ReconciliationAccount } from "./accounts";
 export type { ReconciliationFormData } from "./reads";
 export { listReconciliationAccounts } from "./accounts";
-export { importStatement, listStatementLines, listStatementImports } from "./statements";
+export {
+  deleteStatementImport,
+  importStatement,
+  listStatementImports,
+  listStatementLines,
+  markStatementImportReconciled,
+} from "./statements";
 export {
   autoMatch,
   createJournalFromLine,
@@ -21,6 +27,7 @@ export {
 } from "./matching";
 export {
   countUnmatchedStatementLines,
+  getBookBalanceAsOf,
   getReconciliationFormData,
   getReconciliationSummary,
   listBookLines,

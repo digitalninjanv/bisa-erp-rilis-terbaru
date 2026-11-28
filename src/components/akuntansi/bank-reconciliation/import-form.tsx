@@ -8,6 +8,9 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Download, FileUp } from "lucide-react";
+import { MoneyInput } from "@/components/money-input";
+import { DateField } from "@/components/date-field";
+import { todayISO } from "@/lib/format";
 import { importStatementAction } from "@/server/actions/bank-reconciliation";
 import {
   STATEMENT_CSV_EXAMPLE,
@@ -43,6 +46,9 @@ export function ImportStatementForm({
   const fileRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState("mutasi.csv");
   const [csvText, setCsvText] = useState("");
+  const [endingBalance, setEndingBalance] = useState("");
+  const [endingBalanceValid, setEndingBalanceValid] = useState(true);
+  const [endingDate, setEndingDate] = useState(todayISO());
   const [busy, setBusy] = useState(false);
   const [report, setReport] = useState<ImportReport | null>(null);
   // A-22 K3 (UX-05): kegagalan impor menetap di panel ini sampai
@@ -71,10 +77,24 @@ export function ImportStatementForm({
       setFailure("Pilih berkas CSV atau tempel isi mutasi terlebih dahulu.");
       return;
     }
+    if (endingBalance.trim() && !endingBalanceValid) {
+      setFailure("Saldo akhir rekening koran belum terbaca. Periksa nominalnya.");
+      return;
+    }
+    if (endingBalance.trim() && !/^\d{4}-\d{2}-\d{2}$/.test(endingDate)) {
+      setFailure("Isi tanggal cut-off saldo akhir rekening koran.");
+      return;
+    }
     setBusy(true);
     setFailure(null);
     setReport(null);
-    const result = await importStatementAction({ accountId, fileName, csvText });
+    const result = await importStatementAction({
+      accountId,
+      fileName,
+      csvText,
+      statementEndingBalance: endingBalance.trim() || undefined,
+      statementEndDate: endingBalance.trim() ? endingDate : undefined,
+    });
     setBusy(false);
     if (!result.ok) {
       setFailure(result.message);
@@ -82,6 +102,7 @@ export function ImportStatementForm({
     }
     setReport(result.data);
     setCsvText("");
+    setEndingBalance("");
     if (fileRef.current) fileRef.current.value = "";
     router.refresh();
   }
@@ -142,6 +163,28 @@ export function ImportStatementForm({
           rows={5}
           className="w-full rounded-md border border-input bg-background px-2 py-2 font-mono text-[11px] outline-none focus:ring-2 focus:ring-ring/40"
         />
+        <div className="grid gap-2 sm:grid-cols-2">
+          <label className="space-y-1">
+            <span className="text-[11px] font-medium text-muted-foreground">
+              Saldo akhir rekening koran (opsional)
+            </span>
+            <MoneyInput
+              value={endingBalance}
+              onChange={setEndingBalance}
+              onValidityChange={setEndingBalanceValid}
+              aria-label="Saldo akhir rekening koran"
+              className="h-9 px-2.5 text-[12px]"
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="text-[11px] font-medium text-muted-foreground">Saldo per tanggal</span>
+            <DateField value={endingDate} onChange={setEndingDate} aria-label="Tanggal saldo akhir rekening koran" />
+          </label>
+        </div>
+        <p className="text-[11px] leading-4 text-muted-foreground">
+          Isi saldo akhir dari rekening koran agar halaman rekonsiliasi dapat membandingkan saldo buku
+          per tanggal yang sama dan menandai berkas impor sebagai selesai.
+        </p>
         <button
           type="button"
           onClick={() => void submit()}
@@ -207,7 +250,8 @@ export function ImportStatementDialog({ accountId }: { accountId: string }) {
           <DialogDescription>
             Kolom Tanggal;Keterangan;Debit;Kredit (pemisah ; atau ,). Tanggal DD/MM/YYYY atau
             YYYY-MM-DD; nominal format Indonesia diterima. Berkas yang sama boleh diimpor ulang —
-            baris yang sudah ada dilewati.
+            baris yang sudah ada dilewati. Saldo akhir koran opsional, tetapi diperlukan untuk
+            membandingkan dengan saldo buku dan menandai rekonsiliasi selesai.
           </DialogDescription>
         </DialogHeader>
         <ImportStatementForm accountId={accountId} bare />

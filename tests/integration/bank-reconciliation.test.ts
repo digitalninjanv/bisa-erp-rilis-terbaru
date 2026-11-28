@@ -6,16 +6,21 @@ import { postJournal } from "@/server/accounting";
 import {
   autoMatch,
   createJournalFromLine,
+  deleteStatementImport,
+  getBookBalanceAsOf,
   getReconciliationFormData,
   getReconciliationSummary,
   importStatement,
   listBookLines,
   listReconciliationAccounts,
+  listStatementImports,
   listStatementLines,
+  markStatementImportReconciled,
   matchLine,
   unmatchLine,
 } from "@/server/bank-reconciliation";
 import { d } from "@/lib/money";
+import { addDaysISO } from "@/lib/due-date";
 import { todayISO } from "@/lib/format";
 import { makeRollbackTransaction } from "../helpers/rollback-transaction";
 
@@ -107,6 +112,137 @@ describe("rekonsiliasi bank (D-11)", () => {
       return first;
     });
     expect(result.importId).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it("impor menyimpan saldo akhir rekening koran dan status rekonsiliasi", async () => {
+    await rollbackTransaction(async (tx) => {
+      const bank = await accountByCode(tx, "11010201");
+      const csv = `Tanggal;Keterangan;Debit;Kredit\n${idDate(today)};Saldo akhir uji;12.345;`;
+      const imported = await importStatement(tx, {
+        companyId: ORG_ID,
+        userId: USER_ID,
+        accountId: bank.id,
+        fileName: "mutasi-saldo-uji.csv",
+        csvText: csv,
+        statementEndingBalance: "12345",
+        statementEndDate: today,
+      });
+
+      const imports = await listStatementImports(tx, ORG_ID, bank.id);
+      const row = imports.find((item) => item.id === imported.importId);
+      expect(row).toBeDefined();
+      expect(Number(row!.statementEndingBalance)).toBe(12345);
+      expect(row!.statementEndDate).toBe(today);
+      expect(row!.unmatchedCount).toBe(1);
+      expect(row!.matchedCount).toBe(0);
+    });
+  });
+
+  it("tanda selesai menolak mutasi yang belum tertaut, lalu berhasil setelah semua tertaut", async () => {
+    await rollbackTransaction(async (tx) => {
+      const bank = await accountByCode(tx, "11010201");
+      const revenue = await accountByCode(tx, "400001");
+      const amount = "77.770,01";
+      const csv = `Tanggal;Keterangan;Debit;Kredit\n${idDate(today)};Setoran tanda selesai;${amount};`;
+      const imported = await importStatement(tx, {
+        companyId: ORG_ID,
+        userId: USER_ID,
+        accountId: bank.id,
+        fileName: "mutasi-selesai-uji.csv",
+        csvText: csv,
+        statementEndingBalance: "77770.01",
+        statementEndDate: today,
+      });
+
+      await expect(
+        markStatementImportReconciled(tx, {
+          companyId: ORG_ID,
+          userId: USER_ID,
+          importId: imported.importId,
+        }),
+      ).rejects.toMatchObject({ code: "INVALID_STATE" });
+
+      const statement = (await listStatementLines(tx, ORG_ID, bank.id, { status: "unmatched" }))
+        .rows.find((row) => row.description === "Setoran tanda selesai");
+      expect(statement).toBeDefined();
+
+      const entry = await postJournal(tx, {
+        companyId: ORG_ID,
+        date: today,
+        description: "Lawan mutasi tanda selesai",
+        sourceType: "manual",
+        createdBy: USER_ID,
+        lines: [
+          { accountId: bank.id, debit: "77770.01", description: "Bank" },
+          { accountId: revenue.id, credit: "77770.01", description: "Pendapatan" },
+        ],
+      });
+      const [bookLine] = await tx
+        .select({ id: journalLines.id })
+        .from(journalLines)
+        .where(and(eq(journalLines.entryId, entry.id), eq(journalLines.accountId, bank.id)))
+        .limit(1);
+      expect(bookLine).toBeDefined();
+
+      await matchLine(tx, {
+        companyId: ORG_ID,
+        statementLineId: statement!.id,
+        journalLineId: bookLine!.id,
+      });
+      await markStatementImportReconciled(tx, {
+        companyId: ORG_ID,
+        userId: USER_ID,
+        importId: imported.importId,
+      });
+
+      const imports = await listStatementImports(tx, ORG_ID, bank.id);
+      const row = imports.find((item) => item.id === imported.importId);
+      expect(row!.reconciledAt).not.toBeNull();
+      expect(row!.reconciledBy).toBe(USER_ID);
+    });
+  });
+
+  it("impor bersih bisa dihapus", async () => {
+    await rollbackTransaction(async (tx) => {
+      const bank = await accountByCode(tx, "11010201");
+      const csv = `Tanggal;Keterangan;Debit;Kredit\n${idDate(today)};Baris hapus impor;1.234;`;
+      const imported = await importStatement(tx, {
+        companyId: ORG_ID,
+        userId: USER_ID,
+        accountId: bank.id,
+        fileName: "mutasi-hapus-uji.csv",
+        csvText: csv,
+      });
+
+      await deleteStatementImport(tx, {
+        companyId: ORG_ID,
+        userId: USER_ID,
+        importId: imported.importId,
+      });
+      const imports = await listStatementImports(tx, ORG_ID, bank.id);
+      expect(imports.some((item) => item.id === imported.importId)).toBe(false);
+    });
+  });
+
+  it("saldo buku per tanggal koran dapat dihitung", async () => {
+    await rollbackTransaction(async (tx) => {
+      const bank = await accountByCode(tx, "11010201");
+      const revenue = await accountByCode(tx, "400001");
+      await postJournal(tx, {
+        companyId: ORG_ID,
+        date: today,
+        description: "Saldo buku per tanggal uji",
+        sourceType: "manual",
+        createdBy: USER_ID,
+        lines: [
+          { accountId: bank.id, debit: "4321.09", description: "Bank" },
+          { accountId: revenue.id, credit: "4321.09", description: "Pendapatan" },
+        ],
+      });
+      const before = await getBookBalanceAsOf(tx, ORG_ID, bank.id, addDaysISO(today, -1));
+      const after = await getBookBalanceAsOf(tx, ORG_ID, bank.id, today);
+      expect(Number(after) - Number(before)).toBeCloseTo(4321.09, 2);
+    });
   });
 
   it("impor ke akun non-bank ditolak", async () => {

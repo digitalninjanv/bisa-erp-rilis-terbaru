@@ -9,6 +9,8 @@ import type { Tx } from "@/db";
 import { bankStatementImports, bankStatementLines, journalEntries, journalLines } from "@/db/schema";
 import { normalizePageParams, pageOffset, pageResult } from "@/lib/pagination";
 import { toDb } from "@/lib/money";
+import { AppError } from "@/lib/errors";
+import { writeAudit } from "@/server/audit";
 import {
   parseStatementCsv,
   type ParsedStatementRow,
@@ -36,6 +38,10 @@ export async function importStatement(
     accountId: string;
     fileName: string;
     csvText: string;
+    /** Saldo akhir pada rekening koran (opsional, untuk sign-off). */
+    statementEndingBalance?: string | null;
+    /** Tanggal cut-off saldo akhir koran (wajib bila saldo diisi). */
+    statementEndDate?: string | null;
   },
 ): Promise<{
   importId: string;
@@ -57,6 +63,10 @@ export async function importStatement(
       totalRows: parsed.totalRows,
       insertedRows: 0,
       skippedRows: 0,
+      statementEndingBalance: input.statementEndingBalance
+        ? toDb(input.statementEndingBalance)
+        : null,
+      statementEndDate: input.statementEndDate || null,
     })
     .returning({ id: bankStatementImports.id });
 
@@ -159,11 +169,160 @@ export async function listStatementLines(
 
 export async function listStatementImports(tx: Tx, companyId: string, accountId: string) {
   return tx
-    .select()
+    .select({
+      id: bankStatementImports.id,
+      companyId: bankStatementImports.companyId,
+      accountId: bankStatementImports.accountId,
+      fileName: bankStatementImports.fileName,
+      importedBy: bankStatementImports.importedBy,
+      totalRows: bankStatementImports.totalRows,
+      insertedRows: bankStatementImports.insertedRows,
+      skippedRows: bankStatementImports.skippedRows,
+      statementEndingBalance: bankStatementImports.statementEndingBalance,
+      statementEndDate: bankStatementImports.statementEndDate,
+      reconciledAt: bankStatementImports.reconciledAt,
+      reconciledBy: bankStatementImports.reconciledBy,
+      createdAt: bankStatementImports.createdAt,
+      matchedCount: sql<number>`count(${bankStatementLines.matchedJournalLineId})::int`,
+      unmatchedCount: sql<number>`(count(${bankStatementLines.id}) - count(${bankStatementLines.matchedJournalLineId}))::int`,
+    })
     .from(bankStatementImports)
+    .leftJoin(
+      bankStatementLines,
+      and(
+        eq(bankStatementLines.companyId, bankStatementImports.companyId),
+        eq(bankStatementLines.importId, bankStatementImports.id),
+      ),
+    )
     .where(
       and(eq(bankStatementImports.companyId, companyId), eq(bankStatementImports.accountId, accountId)),
     )
+    .groupBy(bankStatementImports.id)
     .orderBy(desc(bankStatementImports.createdAt))
     .limit(10);
+}
+
+/**
+ * Menandai satu berkas impor sebagai selesai direkonsiliasi. Semua
+ * barisnya wajib sudah tertaut ke jurnal; kalau masih ada yang belum,
+ * pengguna harus menyelesaikannya (match atau buat jurnal) lebih dulu.
+ */
+export async function markStatementImportReconciled(
+  tx: Tx,
+  input: { companyId: string; userId: string; importId: string },
+) {
+  const [batch] = await tx
+    .select()
+    .from(bankStatementImports)
+    .where(
+      and(
+        eq(bankStatementImports.companyId, input.companyId),
+        eq(bankStatementImports.id, input.importId),
+      ),
+    )
+    .limit(1)
+    .for("update");
+  if (!batch) throw new AppError("NOT_FOUND", "Berkas impor mutasi tidak ditemukan.");
+  if (batch.reconciledAt) {
+    throw new AppError("INVALID_STATE", "Berkas impor ini sudah ditandai selesai.");
+  }
+  const [stats] = await tx
+    .select({
+      total: count(),
+      matched: sql<number>`count(*) filter (where ${bankStatementLines.matchedJournalLineId} is not null)::int`,
+    })
+    .from(bankStatementLines)
+    .where(
+      and(
+        eq(bankStatementLines.companyId, input.companyId),
+        eq(bankStatementLines.importId, input.importId),
+      ),
+    );
+  const unmatched = (stats?.total ?? 0) - Number(stats?.matched ?? 0);
+  if (unmatched > 0) {
+    throw new AppError(
+      "INVALID_STATE",
+      `Masih ada ${unmatched} baris mutasi yang belum tertaut. Tautkan atau buat jurnal untuk baris tersebut sebelum menandai rekonsiliasi selesai.`,
+    );
+  }
+  await tx
+    .update(bankStatementImports)
+    .set({ reconciledAt: new Date(), reconciledBy: input.userId })
+    .where(
+      and(
+        eq(bankStatementImports.companyId, input.companyId),
+        eq(bankStatementImports.id, input.importId),
+      ),
+    );
+  await writeAudit(tx, {
+    companyId: input.companyId,
+    userId: input.userId,
+    action: "bank_reconciliation.complete",
+    entityType: "bank_statement_import",
+    entityId: input.importId,
+    after: { fileName: batch.fileName, reconciled: true },
+  });
+  return { id: input.importId };
+}
+
+/**
+ * Menghapus berkas impor beserta barisnya. Ditolak bila sudah
+ * direkonsiliasi atau salah satu barisnya sudah tertaut ke jurnal —
+ * hapus tautan lebih dulu agar jurnal tidak kehilangan pasangan.
+ */
+export async function deleteStatementImport(
+  tx: Tx,
+  input: { companyId: string; userId: string; importId: string },
+) {
+  const [batch] = await tx
+    .select()
+    .from(bankStatementImports)
+    .where(
+      and(
+        eq(bankStatementImports.companyId, input.companyId),
+        eq(bankStatementImports.id, input.importId),
+      ),
+    )
+    .limit(1)
+    .for("update");
+  if (!batch) throw new AppError("NOT_FOUND", "Berkas impor mutasi tidak ditemukan.");
+  if (batch.reconciledAt) {
+    throw new AppError(
+      "INVALID_STATE",
+      "Berkas impor ini sudah ditandai selesai dan tidak dapat dihapus.",
+    );
+  }
+  const [matched] = await tx
+    .select({ value: count() })
+    .from(bankStatementLines)
+    .where(
+      and(
+        eq(bankStatementLines.companyId, input.companyId),
+        eq(bankStatementLines.importId, input.importId),
+        isNotNull(bankStatementLines.matchedJournalLineId),
+      ),
+    );
+  if ((matched?.value ?? 0) > 0) {
+    throw new AppError(
+      "INVALID_STATE",
+      `Masih ada ${matched.value} baris yang tertaut ke jurnal. Lepas tautannya sebelum menghapus berkas impor.`,
+    );
+  }
+  await tx
+    .delete(bankStatementImports)
+    .where(
+      and(
+        eq(bankStatementImports.companyId, input.companyId),
+        eq(bankStatementImports.id, input.importId),
+      ),
+    );
+  await writeAudit(tx, {
+    companyId: input.companyId,
+    userId: input.userId,
+    action: "bank_reconciliation.delete_import",
+    entityType: "bank_statement_import",
+    entityId: input.importId,
+    before: { fileName: batch.fileName, insertedRows: batch.insertedRows },
+  });
+  return { id: input.importId };
 }

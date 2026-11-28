@@ -97,6 +97,33 @@ export async function getReconciliationSummary(
   };
 }
 
+/** Saldo buku satu akun per tanggal tertentu — pembanding saldo akhir koran. */
+export async function getBookBalanceAsOf(
+  tx: Tx,
+  companyId: string,
+  accountId: string,
+  asOf: string,
+): Promise<string> {
+  const account = await requireReconciliationAccount(tx, companyId, accountId);
+  const sign = account.normalBalance === "debit" ? 1 : -1;
+  const [book] = await tx
+    .select({
+      debit: sql<string>`coalesce(sum(${journalLines.debit}), 0)`,
+      credit: sql<string>`coalesce(sum(${journalLines.credit}), 0)`,
+    })
+    .from(journalLines)
+    .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
+    .where(
+      and(
+        eq(journalLines.companyId, companyId),
+        eq(journalLines.accountId, accountId),
+        eq(journalEntries.status, "posted"),
+        lte(journalEntries.date, asOf),
+      ),
+    );
+  return toDb(d(book?.debit).minus(book?.credit).mul(sign));
+}
+
 /**
  * A-22 Tahap K5: antrean rekonsiliasi untuk kartu dashboard — jumlah
  * baris mutasi yang belum terpasangkan di SEMUA rekening rekonsiliasi

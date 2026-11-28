@@ -56,7 +56,7 @@ Verifikasi tambahan: pembacaan source, codegraph, route inventory, dan pemeriksa
 | Route API | 32 |
 | Berkas server action | 61 |
 | Tabel database | 109 `pgTable` |
-| Migrasi | 90 |
+| Migrasi | 91 |
 | Unit test | 147 file / 1.270 test |
 | E2E penjaga | tabel/form 4/4, POS, akuntansi, PWA, impor |
 | Modul pengguna | POS, Gudang, Akuntansi, HR, Analisa |
@@ -479,6 +479,8 @@ Semua modul memanggil `postJournal`:
 
 - Transfer antar rekening dengan biaya admin; jurnal dua kaki + beban.
 - Rekonsiliasi bank: impor CSV, auto-match nominal/tanggal, manual match, write-off.
+- Saat impor, operator dapat mengisi saldo akhir rekening koran + tanggal cut-off. Halaman membandingkan saldo buku per tanggal itu, menampilkan selisih, dan menandai berkas selesai hanya bila semua baris sudah tertaut.
+- Berkas impor yang belum selesai bisa dihapus; berkas yang sudah selesai atau masih memiliki tautan ditolak. Semua aksi masuk audit.
 - Match hanya menautkan, tidak mengubah jurnal; impor ulang tidak menggandakan.
 
 ### 6.4 Piutang, utang, dan pembayaran pihak
@@ -513,7 +515,7 @@ Semua modul memanggil `postJournal`:
 | Lampiran bukti dokumen | Audit tidak dapat menelusuri invoice/kuitansi dari jurnal |
 | Recurring journal/template | Jurnal akrual/prepaid bulanan masih diketik ulang |
 | Payment run, bank file, remittance | Pembayaran pemasok massal masih per dokumen |
-| Rekonsiliasi bank tanpa saldo akhir, unimport, sign-off | Rekonsiliasi belum punya titik selesai dan koreksi impor |
+| Rekonsiliasi bank tanpa bank feed/API dan auto-match fuzzy | Rekonsiliasi masih manual untuk narasi/partial; saldo akhir, unimport, dan sign-off sudah ada |
 | PPh 23/4(2) recap, e-Faktur/SPT | Kepatuhan pajak Indonesia belum lengkap |
 | Budget vs actual, cost center/project | Belum ada laba rugi per unit/departemen |
 | Multi-currency/FX dan konsolidasi | Belum ada valas, revaluasi, atau laporan grup |
@@ -980,7 +982,7 @@ Kontrak rinci ada di `docs/DESIGN-STANDARD-TABLE-FORM.md`. Ringkasnya:
 
 Prioritas: **P0** = integritas uang/stok/akses; **P1** = menghambat operasi harian; **P2** = skala/efisiensi; **P3** = kenyamanan.
 
-Snapshot 28 November 2026: **22 IMPLEMENTED**, **12 PARTIAL**, **22 GAP**, **3 NOT TESTED**, **1 BY DESIGN**. Status tidak dinaikkan tanpa bukti test; lihat §14.0.
+Snapshot 28 November 2026: **23 IMPLEMENTED**, **12 PARTIAL**, **23 GAP**, **3 NOT TESTED**, **1 BY DESIGN**. Status tidak dinaikkan tanpa bukti test; lihat §14.0.
 
 | ID | Prioritas | Gap | Dampak | Rekomendasi | Status |
 |---|---|---|---|---|---|
@@ -1042,7 +1044,8 @@ Snapshot 28 November 2026: **22 IMPLEMENTED**, **12 PARTIAL**, **22 GAP**, **3 N
 | G-56 | P2 | Reversal tutup buku | Tombol “Balik jurnal penutup” + alasan tersedia di panel | — | IMPLEMENTED |
 | G-57 | P2 | Beban tanpa daftar/void | Halaman daftar + void berjurnal dikembalikan | — | IMPLEMENTED |
 | G-58 | P2 | Checklist periode | Tutup/kunci ditolak bila penyusutan/kontrol tertunda; acknowledge eksplisit tersedia | — | IMPLEMENTED |
-| G-59 | P2 | Rekonsiliasi bank | Audit import/match/unmatch/jurnal ditambahkan; saldo akhir & unimport belum | Tambah ending balance + hapus impor | PARTIAL |
+| G-59 | P2 | Rekonsiliasi bank | Audit, saldo akhir koran, perbandingan saldo buku, sign-off, dan hapus impor tersedia | — | IMPLEMENTED |
+| G-61 | P2 | Bank feed/API & auto-match fuzzy | Masih impor CSV/manual; narasi dan partial payment belum disarankan model | Integrasi bank + aturan pencocokan | GAP |
 | G-60 | P2 | Impor COA kelas kas/bank | Nama akun aset lancar menginferensikan cash/bank/clearing; diuji unit | — | IMPLEMENTED |
 
 ### 14.0 Remediasi 28 November 2026
@@ -1053,10 +1056,10 @@ Gelombang perbaikan yang sudah masuk ke kode dan test:
 |---|---|---|
 | Platform & akses | G-28 bootstrap CLI + `/setup`; G-29 reset lintas tenant; G-32 scope PWA; G-33 token cetak sekali pakai; G-35 halaman payroll; G-37 switcher mobile; G-38 gate tab akun | `bootstrap-company`, `cross-tenant-password-reset`, `receipt-token-once`, `pos-pwa-manifest`, `settings-nav`, `a28-v2-uiux` |
 | POS | G-40 harga grup offline; G-42 izin AR akuntansi; G-43 void pembayaran; G-45 kepemilikan hold; G-46 uang tunai eksplisit | `pos-permissions-tahap3`, `pos-hold-ownership`, `pos-cash-tender`, `pos-offline-local-quote`, `workflow-remediation-ui` |
-| Akuntansi | G-30 audit QRIS; G-36 audit ekspor payroll; G-55 void pembayaran gaji; G-56 reversal tutup buku; G-57 daftar/void beban; G-58 checklist periode; G-59 audit rekonsiliasi; G-60 kelas kas/bank impor COA | `settings-audit`, `payroll-reverse`, `period-*`, `bank-reconciliation`, `import-account-cash-bank` |
+| Akuntansi | G-30 audit QRIS; G-36 audit ekspor payroll; G-55 void pembayaran gaji; G-56 reversal tutup buku; G-57 daftar/void beban; G-58 checklist periode; G-59 rekonsiliasi (audit + saldo akhir + unimport + sign-off); G-60 kelas kas/bank impor COA | `settings-audit`, `payroll-reverse`, `period-*`, `bank-reconciliation`, `bank-reconciliation-ux`, `import-account-cash-bank` |
 | HR | G-48 `joinedAt`; G-49 field statutori; G-50 opsi wizard payroll | `sim2/hr-org-history`, `workflow-remediation-ui`, `payroll-reverse` |
 | UX jurnal | Memo per baris, duplikat jurnal, Ctrl/⌘+Enter & Ctrl/⌘+S | `journal-copy`, `accounting-journal-ux`, e2e `akuntansi` |
-| Bukti global | Unit 153 file / 1.297 test; integration 144 file / 1.134 test; sim2 29 file / 281 test; build + typecheck; e2e `akuntansi` 6/6, `table-form-guard` 4/4, `ui-neatness-guard` 4/4, `pengaturan` 3/3 | snapshot 28 Nov 2026 |
+| Bukti global | Unit 154 file / 1.299 test; integration 144 file / 1.134 test; sim2 29 file / 281 test; build + typecheck; e2e `akuntansi` 6/6, `table-form-guard` 4/4, `ui-neatness-guard` 4/4, `pengaturan` 3/3 | snapshot 28 Nov 2026 |
 
 **Masih terbuka dan sengaja tidak dipaksakan:** 2FA belum diuji e2e; export payroll belum diaudit; saldo akhir/unimport rekonsiliasi belum ada; preview payroll masih belum sama dengan posting; prorata karyawan masuk tengah bulan, komponen kehadiran, pesangon/UPMK/UPH, vendor bill/3-way, PO edit/approval, scoping gudang, opname freeze/approval, serial surplus, Electron offline, dan exchange satu langkah. Ini membutuhkan keputusan produk, kontrak PSP, atau uji perangkat — bukan sekadar wiring.
 
@@ -1090,7 +1093,7 @@ Gelombang perbaikan yang sudah masuk ke kode dan test:
 2. **Operasi kasir nyata:** G-02 (printer/Windows/signing), G-03 (HTTPS/PWA), G-04 (observability), G-39 (Electron offline), G-44 (audit promo).
 3. **Integrasi pembayaran:** G-01 (QRIS gateway).
 4. **Skala & ketahanan:** G-05 (background jobs), G-15 (`sales.branchId`), G-25 (read-only search).
-5. **Keuangan lanjutan:** G-18 (vendor bill/3-way), G-59 (ending/unimport rekonsiliasi), G-09/G-10/G-11 (pajak, valas, purchasing lanjutan).
+5. **Keuangan lanjutan:** G-18 (vendor bill/3-way), G-61 (bank feed/auto-match fuzzy), G-09/G-10/G-11 (pajak, valas, purchasing lanjutan).
 6. **Gudang:** G-19–G-24 dan G-47 (approval, scoping, ekspor, serial, freeze opname).
 7. **HR lanjutan:** G-49 (enrollment BPJS), G-51–G-54 (preview, absensi, prorata, pesangon), G-12.
 8. **Poles UX & analitik:** G-06, G-07, G-08, G-14, G-27.
@@ -1106,10 +1109,10 @@ Gelombang perbaikan yang sudah masuk ke kode dan test:
 | Akuntansi | `journal-validation`, `reports-p2`, `payments-void-p2`, `bank-reconciliation`, `fixed-assets`, `period-integrity`, `opening-balances`, `quick-entry`, `a27-*` |
 | HR | `payroll-indonesia`, `payroll-reverse`, `sim2/hr-org-history`, `sim2/hr-attendance`, `sim2/hr-leave`, `sim2/hr-overtime-thr`, `sim2/hr-loans-reimbursement`, `final-pay` |
 | Platform | `pos-device-api`, `print-settings`, `a28-ui2-print-surfaces`, `user-management`, `cross-tenant-password-reset`, `bootstrap-company`, `receipt-token-once`, `settings-audit`, `sim2/rbac-matrix`, `company-switch`, `backup-status` |
-| UI/UX | 153 file / 1.297 unit test, 144 file / 1.134 integration, 29 file / 281 sim2, e2e `akuntansi` 6/6, `table-form-guard` 4/4, `ui-neatness-guard` 4/4, `pengaturan` 3/3 |
+| UI/UX | 154 file / 1.299 unit test, 144 file / 1.134 integration, 29 file / 281 sim2, e2e `akuntansi` 6/6, `table-form-guard` 4/4, `ui-neatness-guard` 4/4, `pengaturan` 3/3 |
 | Cross-module | `audit-a2-chains`, `consistency`, `erp-concurrency-remediation` |
 
-**Celah bukti yang terlihat:** belum ada e2e HR/payroll; 2FA belum diuji e2e; preview payroll vs posting belum setara; saldo akhir/unimport rekonsiliasi belum ada. Audit ekspor payroll sudah ditambahkan. `joinedAt`, izin AR, reversal tutup buku, void beban, dan void pembayaran gaji kini sudah punya test regresi.
+**Celah bukti yang terlihat:** belum ada e2e HR/payroll; 2FA belum diuji e2e; preview payroll vs posting belum setara. Saldo akhir, unimport, dan sign-off rekonsiliasi kini punya test domain/UX; bank feed/API dan auto-match fuzzy belum ada. `joinedAt`, izin AR, reversal tutup buku, void beban, dan void pembayaran gaji kini sudah punya test regresi.
 
 **Batasan bukti:** count test berubah seiring pekerjaan; angka di dokumen ini adalah snapshot 28 November 2026. Test bukan bukti perangkat keras, beban produksi, atau semua jalur dinamis.
 

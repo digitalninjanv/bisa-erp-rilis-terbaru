@@ -295,6 +295,15 @@ export const bankStatementImports = pgTable(
     totalRows: integer("total_rows").notNull().default(0),
     insertedRows: integer("inserted_rows").notNull().default(0),
     skippedRows: integer("skipped_rows").notNull().default(0),
+    // Saldo akhir pada rekening koran + tanggal cut-off-nya. Diisi
+    // operator saat impor agar rekonsiliasi punya titik selesai yang
+    // bisa dibandingkan dengan saldo buku per tanggal yang sama.
+    statementEndingBalance: numeric("statement_ending_balance", { precision: 19, scale: 4 }),
+    statementEndDate: date("statement_end_date"),
+    // Sign-off rekonsiliasi per berkas impor. Hanya boleh diisi bila
+    // semua baris impor sudah tertaut ke jurnal.
+    reconciledAt: timestamp("reconciled_at", { withTimezone: true }),
+    reconciledBy: text("reconciled_by"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("bank_statement_imports_company_account_idx").on(t.companyId, t.accountId)],

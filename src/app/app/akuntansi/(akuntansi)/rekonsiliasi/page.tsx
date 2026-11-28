@@ -3,6 +3,7 @@ import { AutoFilterForm } from "@/components/blocks/auto-filter-form";
 import { BookOpen, Landmark } from "lucide-react";
 import { withCompanyReadOnly, withCompanyReadOnlySnapshot } from "@/db/tenant";
 import {
+  getBookBalanceAsOf,
   getReconciliationFormData,
   getReconciliationSummary,
   listBookLines,
@@ -13,11 +14,12 @@ import {
 import { requirePermissionPage } from "@/lib/session";
 import { can } from "@/lib/permissions";
 import { LIST_PAGE_SIZE } from "@/lib/pagination";
-import { formatIDR } from "@/lib/money";
+import { d, formatIDR } from "@/lib/money";
 import { formatDate } from "@/lib/format";
 import { PageHeader } from "@/components/blocks/page-header";
 import { SummaryStrip } from "@/components/blocks/summary-strip";
 import { EmptyState } from "@/components/blocks/empty-state";
+import { StatusBadge } from "@/components/blocks/status-badge";
 import { labelClass } from "@/components/akuntansi/field-classes";
 import { Pagination } from "@/components/blocks/pagination";
 import {
@@ -25,6 +27,7 @@ import {
   ImportStatementDialog,
   StatementLinesTable,
 } from "@/components/akuntansi/bank-reconciliation-panel";
+import { ImportStatementActions } from "@/components/akuntansi/bank-reconciliation/import-actions";
 import { cn } from "@/lib/utils";
 
 export const metadata = { title: "Rekonsiliasi bank" };
@@ -169,7 +172,12 @@ export default async function RekonsiliasiPage({
       listStatementImports(tx, ctx.company.id, accountId),
       getReconciliationFormData(tx, ctx.company.id, accountId),
     ]);
-    return { summary, statements, books, candidates, imports, formData };
+    const latestImport = imports[0] ?? null;
+    const bookAtStatement =
+      latestImport?.statementEndingBalance && latestImport.statementEndDate
+        ? await getBookBalanceAsOf(tx, ctx.company.id, accountId, latestImport.statementEndDate)
+        : null;
+    return { summary, statements, books, candidates, imports, formData, latestImport, bookAtStatement };
   });
 
   const sharedParams = {
@@ -240,6 +248,76 @@ export default async function RekonsiliasiPage({
         ]}
         className="mb-3"
       />
+
+      {data.latestImport ? (
+        <section className="mb-3 rounded-lg border border-border bg-card">
+          <div className="flex flex-wrap items-start justify-between gap-2 border-b border-border px-4 py-3">
+            <div>
+              <h2 className="text-[13px] font-semibold">Status rekonsiliasi terakhir</h2>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                {data.latestImport.fileName} · {formatDate(data.latestImport.createdAt.toISOString().slice(0, 10))}
+              </p>
+            </div>
+            <StatusBadge
+              status={data.latestImport.reconciledAt ? "completed" : "pending"}
+              label={data.latestImport.reconciledAt ? "Selesai" : "Belum selesai"}
+            />
+          </div>
+          {data.latestImport.statementEndingBalance && data.latestImport.statementEndDate ? (
+            (() => {
+              const difference = d(data.bookAtStatement ?? 0).minus(
+                data.latestImport.statementEndingBalance,
+              );
+              const ready =
+                difference.abs().lte("0.005") &&
+                Number(data.latestImport.unmatchedCount) === 0 &&
+                !data.latestImport.reconciledAt;
+              return (
+                <div className="grid gap-px bg-border sm:grid-cols-3">
+                  <div className="bg-card px-4 py-3">
+                    <p className="text-[11px] font-medium text-muted-foreground">
+                      Saldo buku per {formatDate(data.latestImport.statementEndDate)}
+                    </p>
+                    <p className="num mt-0.5 text-[14px] font-semibold">
+                      {formatIDR(data.bookAtStatement ?? 0)}
+                    </p>
+                  </div>
+                  <div className="bg-card px-4 py-3">
+                    <p className="text-[11px] font-medium text-muted-foreground">Saldo akhir koran</p>
+                    <p className="num mt-0.5 text-[14px] font-semibold">
+                      {formatIDR(data.latestImport.statementEndingBalance)}
+                    </p>
+                  </div>
+                  <div className="bg-card px-4 py-3">
+                    <p className="text-[11px] font-medium text-muted-foreground">Selisih</p>
+                    <p
+                      className={`num mt-0.5 text-[14px] font-semibold ${
+                        difference.abs().lte("0.005") ? "text-tone-green" : "text-destructive"
+                      }`}
+                    >
+                      {formatIDR(difference)}
+                    </p>
+                  </div>
+                  <p className="bg-card px-4 pb-3 text-[11px] leading-4 text-muted-foreground sm:col-span-3">
+                    {ready
+                      ? "Saldo cocok dan semua baris sudah tertaut. Tandai berkas ini selesai dari riwayat impor di bawah."
+                      : data.latestImport.reconciledAt
+                        ? "Berkas sudah ditandai selesai."
+                        : Number(data.latestImport.unmatchedCount) > 0
+                          ? `Masih ada ${data.latestImport.unmatchedCount} baris mutasi yang belum tertaut.`
+                          : "Saldo buku dan saldo koran belum sama — buat jurnal penyesuaian atau periksa mutasi yang belum tercatat."}
+                  </p>
+                </div>
+              );
+            })()
+          ) : (
+            <p className="px-4 py-3 text-[11px] text-muted-foreground">
+              Saldo akhir koran belum diisi untuk berkas ini. Impor ulang dengan saldo akhir, atau gunakan
+              selisih saldo buku vs mutasi untuk menyelesaikan rekonsiliasi.
+            </p>
+          )}
+        </section>
+      ) : null}
 
       {/* A-25 U4 (AKT-01): pencocokan BERDAMPINGAN — mutasi bank di
           kiri, buku besar di kanan, dalam satu pandangan (menggantikan
@@ -374,6 +452,71 @@ export default async function RekonsiliasiPage({
           </div>
         </section>
       </div>
+
+      <details className="mt-3 rounded-lg border border-border bg-card">
+        <summary className="cursor-pointer list-none px-4 py-3 text-[13px] font-semibold [&::-webkit-details-marker]:hidden">
+          Riwayat impor mutasi ({data.imports.length})
+        </summary>
+        <div className="border-t border-border">
+          {data.imports.length === 0 ? (
+            <p className="px-4 py-3 text-[11px] text-muted-foreground">Belum ada berkas impor.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Berkas</th>
+                    <th>Diimpor</th>
+                    <th className="text-right">Baris</th>
+                    <th className="text-right">Tertaut</th>
+                    <th>Saldo akhir</th>
+                    <th>Status</th>
+                    <th className="text-right">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.imports.map((row) => (
+                    <tr key={row.id}>
+                      <td className="text-[11px] font-medium">{row.fileName}</td>
+                      <td className="text-[11px] text-muted-foreground">
+                        {formatDate(row.createdAt.toISOString().slice(0, 10))}
+                      </td>
+                      <td className="num text-right text-[11px]">
+                        {row.insertedRows}
+                        <span className="text-muted-foreground"> / {row.totalRows}</span>
+                      </td>
+                      <td className="num text-right text-[11px]">
+                        {row.matchedCount}
+                        <span className="text-muted-foreground"> / {row.insertedRows}</span>
+                      </td>
+                      <td className="num text-[11px]">
+                        {row.statementEndingBalance
+                          ? `${formatIDR(row.statementEndingBalance)}${row.statementEndDate ? ` · ${formatDate(row.statementEndDate)}` : ""}`
+                          : "—"}
+                      </td>
+                      <td>
+                        <StatusBadge
+                          status={row.reconciledAt ? "completed" : "pending"}
+                          label={row.reconciledAt ? "Selesai" : "Belum selesai"}
+                        />
+                      </td>
+                      <td>
+                        <ImportStatementActions
+                          importId={row.id}
+                          fileName={row.fileName}
+                          reconciled={Boolean(row.reconciledAt)}
+                          matchedCount={Number(row.matchedCount)}
+                          unmatchedCount={Number(row.unmatchedCount)}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </details>
     </div>
   );
 }
