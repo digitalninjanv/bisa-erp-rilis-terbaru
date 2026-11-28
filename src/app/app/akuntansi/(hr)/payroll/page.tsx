@@ -212,6 +212,7 @@ export default async function PayrollPage() {
                             branchId: row.branchId,
                             contractStart: row.contractStart,
                             contractEnd: row.contractEnd,
+                            statutoryEnrollments: data.enrollmentsByEmployee.get(row.id) ?? {},
                           }}
                           orgOptions={data.orgOptions}
                         />

@@ -11,6 +11,7 @@ import { withCompany } from "@/db/tenant";
 import { companySettings, warehouses } from "@/db/schema";
 import { writeAudit } from "@/server/audit";
 import { requirePermission } from "@/lib/session";
+import { requireFreshSession } from "@/lib/session-freshness";
 import { AppError, guard } from "@/lib/errors";
 import { parseInput } from "@/lib/action-validation";
 import { qrisImageSchema } from "@/lib/qris-image";
@@ -160,6 +161,10 @@ export async function saveSettingsAction(input: z.input<typeof settingsSchema>) 
         .from(companySettings)
         .where(eq(companySettings.companyId, ctx.company.id))
         .limit(1);
+      const sensitiveChange =
+        (data.taxId !== undefined && (before?.taxId ?? null) !== (data.taxId ?? null)) ||
+        (data.qrisImage !== undefined && (before?.qrisImage ?? null) !== (data.qrisImage ?? null));
+      if (sensitiveChange) requireFreshSession(ctx);
       // MD-008: validasi gudang default milik perusahaan yang aktif
       if (data.defaultWarehouseId) {
         const [wh] = await tx

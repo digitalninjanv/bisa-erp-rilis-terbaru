@@ -1,12 +1,13 @@
 import { withApiError } from "@/lib/api-error";
 import { NextRequest } from "next/server";
 import { and, eq } from "drizzle-orm";
-import { withCompanyReadOnly } from "@/db/tenant";
+import { withCompany, withCompanyReadOnly } from "@/db/tenant";
 import { payrollRuns } from "@/db/schema";
 import { csvResponse, toCsv } from "@/lib/csv";
 import { xlsxResponse, type XlsxCell } from "@/lib/xlsx";
 import { d, toDb } from "@/lib/money";
 import { getPayrollRecap } from "@/server/payroll-indonesia";
+import { writeAudit } from "@/server/audit";
 import { requirePermission } from "@/lib/session";
 import { requireFreshSession } from "@/lib/session-freshness";
 import { assertModuleEnabled } from "@/lib/modules";
@@ -106,6 +107,18 @@ async function GETHandler(request: NextRequest) {
       totalDeposit,
     ];
   });
+  // Ekspor gaji adalah peristiwa sensitif: catat siapa, run mana,
+  // format apa, dan berapa baris yang keluar sebelum respons dikirim.
+  await withCompany(ctx.company.id, (tx) =>
+    writeAudit(tx, {
+      companyId: ctx.company.id,
+      userId: ctx.user.id,
+      action: "payroll.export",
+      entityType: "payroll_run",
+      entityId: runId,
+      after: { period: data.run.period, format, rows: rows.length },
+    }),
+  );
   const today = new Date().toISOString().slice(0, 10);
   const filename = `rekap-payroll-${data.run.period}-${today}`;
   if (format === "xlsx") {

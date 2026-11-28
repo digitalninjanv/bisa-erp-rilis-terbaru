@@ -35,6 +35,7 @@ export type Employee = {
   branchId?: string | null;
   contractStart?: string | null;
   contractEnd?: string | null;
+  statutoryEnrollments?: Record<string, boolean>;
 };
 
 export type EmployeeOrgOptions = {
@@ -73,6 +74,9 @@ export function EmployeeForm({
   const [branchId, setBranchId] = useState(employee?.branchId ?? "");
   const [contractStart, setContractStart] = useState(employee?.contractStart ?? "");
   const [contractEnd, setContractEnd] = useState(employee?.contractEnd ?? "");
+  const [enrollments, setEnrollments] = useState<Record<string, boolean>>(
+    employee?.statutoryEnrollments ?? {},
+  );
   const [busy, setBusy] = useState(false);
   // A-28 Tahap 4 (H-PGT-01): komponen gaji memakai MoneyInput
   // bersama; ketikan yang belum terbaca menahan kirim.
@@ -118,6 +122,7 @@ export function EmployeeForm({
       branchId: branchId || undefined,
       contractStart: contractStart || undefined,
       contractEnd: contractEnd || undefined,
+      statutoryEnrollments: enrollments,
     });
     setBusy(false);
     if (!result.ok) {
@@ -282,6 +287,33 @@ export function EmployeeForm({
                   <span className={labelClass}>Akhir kontrak</span>
                   <DateField value={contractEnd} onChange={setContractEnd} aria-label="Akhir kontrak" />
                 </label>
+              </div>
+              <div className="mt-3 border-t border-border pt-2">
+                <p className="text-[11px] font-semibold">Kepesertaan program statutory</p>
+                <p className="text-[11px] text-muted-foreground">
+                  Tidak dicentang = mengikuti bawaan perusahaan. Centang untuk memaksa ikut, kosongkan untuk mengecualikan.
+                </p>
+                <div className="mt-1.5 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                  {[
+                    ["bpjs_kes", "BPJS Kesehatan"],
+                    ["jht", "JHT"],
+                    ["jkk", "JKK"],
+                    ["jkm", "JKM"],
+                    ["jp", "JP"],
+                    ["jkp", "JKP"],
+                  ].map(([code, label]) => (
+                    <label key={code} className="flex items-center gap-1.5 text-[11px]">
+                      <input
+                        type="checkbox"
+                        checked={enrollments[code] ?? false}
+                        onChange={(event) =>
+                          setEnrollments((current) => ({ ...current, [code]: event.target.checked }))
+                        }
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
               </div>
             </details>
         </Modal>

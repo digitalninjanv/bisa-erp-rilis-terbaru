@@ -34,7 +34,7 @@ export async function persistSaleDocument(
   tx: Tx,
   input: CreateSaleInput,
   quote: QuoteResult,
-  session: { id: string },
+  session: { id: string; branchId: string | null },
   applied: AppliedPayment[],
   paid: Decimal,
   receivable: Decimal,
@@ -61,6 +61,9 @@ export async function persistSaleDocument(
       dueDate: receivable.gt(0) ? (input.dueDate ?? null) : null,
       cashierId: input.userId,
       sessionId: session.id,
+      // Cabang historis diambil dari sesi kas saat transaksi dibuat;
+      // laporan berbasis branchId tidak lagi kosong untuk penjualan baru.
+      branchId: session.branchId,
       customerId: input.customerId ?? null,
       customerGroupId: quote.customerGroupId ?? null,
       status: "completed",
@@ -243,7 +246,7 @@ export async function applySaleStockMovements(
 export async function recordSaleCashMovements(
   tx: Tx,
   input: CreateSaleInput,
-  session: { id: string },
+  session: { id: string; branchId: string | null },
   sale: { id: string },
   applied: AppliedPayment[],
   settlementClosedSession: boolean,

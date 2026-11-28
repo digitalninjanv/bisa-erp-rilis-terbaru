@@ -14,6 +14,7 @@ import { getAccountMap } from "@/server/accounting";
 import { getCompanySettingsRow } from "@/server/settings";
 import { writeAudit } from "@/server/audit";
 import { requirePermission } from "@/lib/session";
+import { requireFreshSession } from "@/lib/session-freshness";
 import { AppError, guard } from "@/lib/errors";
 import { parseInput } from "@/lib/action-validation";
 import { qrisImageSchema } from "@/lib/qris-image";
@@ -414,6 +415,9 @@ export async function deletePaymentMethodAction(id: string) {
 export async function uploadQrisAction(input: { dataUrl: string }) {
   return guard(async () => {
     const ctx = await requirePermission("settings.manage");
+    // QRIS adalah tujuan pembayaran; perubahan dari sesi lama harus
+    // melakukan autentikasi ulang.
+    requireFreshSession(ctx);
     const data = parseInput(z.object({ dataUrl: qrisImageSchema }), input);
     await withCompany(ctx.company.id, async (tx) => {
       const before = await getCompanySettingsRow(tx, ctx.company.id);
