@@ -1,5 +1,7 @@
 # Workflow ERP Minimarket — Bisa ERP
 
+> **Diperbarui 28 November 2026:** peta fitur/workflow per modul yang lebih lengkap ada di [`docs/worflow.md`](worflow.md). Dokumen ini dipertahankan sebagai catatan historis program A-24.
+
 **Dokumen resmi program A-24 (ditulis di T8, 2026-11-06).** Isi dikonsolidasikan
 dari `docs/rombak/RISET-DOMAIN.md` (riset workflow minimarket nyata + acuan
 Accurate/Odoo, 2026-11-05) dan keadaan sistem terverifikasi di
