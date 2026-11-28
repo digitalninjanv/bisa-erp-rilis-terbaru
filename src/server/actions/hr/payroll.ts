@@ -65,6 +65,7 @@ import {
   markComponentDraftsConsumed,
   peekComponentDrafts,
   payPayrollRun,
+  voidPayrollPayment,
   voidPayrollRun,
 } from "@/server/hr";
 
@@ -661,6 +662,31 @@ export async function payPayrollAction(input: { runId: string; accountId: string
       return { entry: paid.entry, amount: paid.amount.toNumber() };
     });
 
+    revalidatePath("/app/akuntansi/payroll");
+    revalidatePath(`/app/akuntansi/payroll/${data.runId}`);
+    revalidatePath("/app/akuntansi");
+    return result;
+  });
+}
+
+export async function voidPayrollPaymentAction(input: { runId: string; reason: string }) {
+  return guard(async () => {
+    const ctx = await requirePermissionInModule("payroll.manage", "hr");
+    const data = parseInput(
+      z.object({
+        runId: z.string().uuid(),
+        reason: z.string().trim().min(3, "Alasan pembatalan minimal 3 karakter.").max(200),
+      }),
+      input,
+    );
+    const result = await withCompany(ctx.company.id, (tx) =>
+      voidPayrollPayment(tx, {
+        companyId: ctx.company.id,
+        userId: ctx.user.id,
+        runId: data.runId,
+        reason: data.reason,
+      }),
+    );
     revalidatePath("/app/akuntansi/payroll");
     revalidatePath(`/app/akuntansi/payroll/${data.runId}`);
     revalidatePath("/app/akuntansi");

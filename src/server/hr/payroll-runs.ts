@@ -99,6 +99,72 @@ export async function payPayrollRun(
   return { entry, amount };
 }
 
+/**
+ * Membatalkan pembayaran gaji (bukan run-nya). Jurnal pembayaran
+ * `payroll_payment:<runId>` dibalik dan status run kembali `posted`,
+ * sehingga run dapat dibayar ulang dengan akun/tanggal yang benar.
+ */
+export async function voidPayrollPayment(
+  tx: Tx,
+  input: { companyId: string; userId: string; runId: string; reason: string },
+) {
+  const [run] = await tx
+    .select()
+    .from(payrollRuns)
+    .where(and(eq(payrollRuns.companyId, input.companyId), eq(payrollRuns.id, input.runId)))
+    .limit(1);
+  if (!run) throw new AppError("NOT_FOUND", "Payroll tidak ditemukan.");
+  if (run.status !== "paid") {
+    throw new AppError("INVALID_STATE", "Hanya pembayaran gaji berstatus paid yang dapat dibatalkan.");
+  }
+  const [paymentEntry] = await tx
+    .select({ id: journalEntries.id, number: journalEntries.number, date: journalEntries.date })
+    .from(journalEntries)
+    .where(
+      and(
+        eq(journalEntries.companyId, input.companyId),
+        eq(journalEntries.sourceType, "payroll_payment"),
+        eq(journalEntries.sourceId, run.id),
+        eq(journalEntries.status, "posted"),
+      ),
+    )
+    .limit(1);
+  if (!paymentEntry) {
+    throw new AppError(
+      "INVALID_STATE",
+      `Jurnal pembayaran gaji ${run.number} tidak ditemukan; status run tidak dapat dikembalikan dengan aman.`,
+    );
+  }
+  const reversal = await reverseSourceJournalPreferringDate(tx, {
+    companyId: input.companyId,
+    sourceType: "payroll_payment",
+    sourceId: run.id,
+    originalDate: paymentEntry.date,
+    description: `Pembatalan pembayaran gaji ${run.number} — ${input.reason}`,
+    createdBy: input.userId,
+  });
+  if (!reversal) {
+    throw new AppError(
+      "VALIDATION",
+      `Jurnal pembayaran gaji ${run.number} tidak dapat dibalik. Periksa jurnal ${paymentEntry.number} terlebih dahulu.`,
+    );
+  }
+  await tx
+    .update(payrollRuns)
+    .set({ status: "posted" })
+    .where(and(eq(payrollRuns.companyId, input.companyId), eq(payrollRuns.id, run.id)));
+  await writeAudit(tx, {
+    companyId: input.companyId,
+    userId: input.userId,
+    action: "payroll.payment.void",
+    entityType: "payroll_run",
+    entityId: run.id,
+    before: { status: "paid", paymentJournal: paymentEntry.number },
+    after: { status: "posted", reversalJournal: reversal.number, reason: input.reason },
+  });
+  return { id: run.id, reversalNumber: reversal.number };
+}
+
 export async function voidPayrollRun(
   tx: Tx,
   input: { companyId: string; userId: string; userRole?: string | null; id: string; reason: string },

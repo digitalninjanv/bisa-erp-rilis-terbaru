@@ -13,7 +13,7 @@ export default function manifest(): MetadataRoute.Manifest {
     description:
       "Terminal kasir Bisa ERP. Dengan mode offline POS aktif, terminal tetap bisa dibuka saat server tak terjangkau dan penjualan mengantre untuk disinkronkan.",
     start_url: "/app/pos",
-    scope: "/app/pos/",
+    scope: "/app/pos",
     display: "standalone",
     background_color: "#f7f5f2",
     theme_color: "#714b67",

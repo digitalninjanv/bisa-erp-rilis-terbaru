@@ -189,7 +189,7 @@ export function PosTerminal({
             roundCashTotal: g.roundCashTotal,
           }
         : null,
-      taxRate: offlineTaxRate,
+      priceRules: g?.priceRules, taxRate: offlineTaxRate,
       companyRoundingMode: offlineRoundingMode,
     };
   }, [posOfflineEnabled, groups, groupId, cache, offlineTaxRate, offlineRoundingMode]);

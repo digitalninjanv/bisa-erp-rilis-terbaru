@@ -391,6 +391,18 @@ describe("POS3-11 void penerimaan piutang berpagar pos.void", () => {
     // Piutang kembali utuh 10.000 — tidak ada penerimaan yang menggantung.
     expect(await glNet("1200")).toBeCloseTo(10000, 2);
   });
+
+  it("akuntan dengan accounting.post dapat menerima piutang lewat jalur accounting", async () => {
+    setActor(COSTVIEW, ["accounting.post"]);
+    const result = await payReceivableAction({
+      saleId,
+      amount: "1000",
+      accountId: acc["1000"],
+      source: "accounting",
+      idempotencyKey: "t3-ar-accounting-path-1",
+    });
+    expect(result.ok).toBe(true);
+  });
 });
 
 // =====================================================================

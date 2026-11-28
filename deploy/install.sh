@@ -26,8 +26,8 @@
 # BISA_AUTH_URL (default http://<IP LAN>:<port>), BISA_PG_BIN.
 # Demo seeding is intentionally NOT part of this installer: the seed
 # script imports the full source tree and runs from a source checkout
-# (see the runbook). Production stores start empty and register their
-# first owner in the app.
+# (see the runbook). Production stores start empty; the operator creates
+# the first owner/company once at /setup using BISA_SETUP_TOKEN.
 set -euo pipefail
 
 TARBALL="${1:-}"
@@ -155,6 +155,7 @@ DATABASE_URL=postgres://app_user:${app_pw}@127.0.0.1:${PG_PORT}/${PG_DB}
 DIRECT_URL=postgres://erp:${erp_pw}@127.0.0.1:${PG_PORT}/${PG_DB}
 BETTER_AUTH_SECRET=$secret
 BETTER_AUTH_URL=$auth_url
+BISA_SETUP_TOKEN=$(openssl rand -hex 24)
 NEXT_PUBLIC_APP_NAME="Bisa ERP"
 EOF
   if [[ "$HTTPS_ENABLED" == "1" ]]; then
@@ -172,6 +173,10 @@ EOF
     say "CATATAN: BISA_ALLOW_LOCALHOST_AUTH_URL=1 ditulis ke env (mode uji lokal)."
   fi
   say "env produksi dibuat: $ENV_FILE (BETTER_AUTH_URL=$auth_url)"
+fi
+if ! grep -q '^BISA_SETUP_TOKEN=' "$ENV_FILE"; then
+  echo "BISA_SETUP_TOKEN=$(openssl rand -hex 24)" >> "$ENV_FILE"
+  say "token setup dibuat dan ditambahkan ke $ENV_FILE."
 fi
 chmod 600 "$ENV_FILE"
 if [[ "$HTTPS_ENABLED" == "1" ]]; then
@@ -438,6 +443,8 @@ if [[ "$ok" == "1" ]]; then
     say "SELESAI. Bisa ERP versi $VERSION melayani di port $APP_PORT (HTTP, uji lokal)."
   fi
   say "Buka dari kasir: $(grep '^BETTER_AUTH_URL=' "$ENV_FILE" | cut -d= -f2-)"
+  say "Setup pertama: $(grep '^BETTER_AUTH_URL=' "$ENV_FILE" | cut -d= -f2-)/setup"
+  say "Token setup: grep '^BISA_SETUP_TOKEN=' $ENV_FILE (mode 600 — jangan dibagikan)."
   say "Kesehatan: systemctl status bisa-erp · Backup: systemctl list-timers bisa-erp-backup"
 else
   echo "[install] GAGAL: /api/health tidak menjawab 200 dalam 60 detik." >&2

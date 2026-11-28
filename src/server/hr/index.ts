@@ -27,7 +27,7 @@ export type { AttendanceStatus, ShiftAssignmentView, AttendanceImportResult, Att
 export { submitOvertimeRequest, decideOvertimeRequest, getApprovedOvertimeForPeriod, computeApprovedOvertimePay } from "./overtime";
 export type { ApprovedOvertime } from "./overtime";
 export { computeThrDrafts, peekComponentDrafts, markComponentDraftsConsumed, restoreComponentDrafts, voidComponentDraft } from "./drafts";
-export { payPayrollRun, voidPayrollRun } from "./payroll-runs";
+export { payPayrollRun, voidPayrollPayment, voidPayrollRun } from "./payroll-runs";
 export type { ThrComputation, ComponentDraftView } from "./drafts";
 export { DEFAULT_LEAVE_TYPES, ensureDefaultLeaveTypes, saveLeaveType, setLeaveTypeActive, getEmployeeWorkDays, getLeaveBalance, submitLeaveRequest, decideLeaveRequest, getApprovedUnpaidLeaveDays } from "./leave";
 export type { LeaveBalance } from "./leave";

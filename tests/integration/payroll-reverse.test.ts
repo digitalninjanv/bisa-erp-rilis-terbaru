@@ -7,6 +7,7 @@ import { reverseJournalAction } from "@/server/actions/accounting/jurnal";
 import {
   payPayrollAction,
   runPayrollAction,
+  voidPayrollPaymentAction,
 } from "@/server/actions/hr/payroll";
 import { todayISO } from "@/lib/format";
 
@@ -167,6 +168,46 @@ describe("payroll journal (AK-P1-03)", () => {
       };
     });
     expect(remaining.balance).toBeCloseTo(remaining.deductions, 2);
+  });
+
+  it("membatalkan pembayaran gaji mengembalikan run ke posted dan membuat jurnal pembalik", async () => {
+    const result = await voidPayrollPaymentAction({
+      runId: runId!,
+      reason: "Salah akun pembayaran uji",
+    });
+    expect(result.ok).toBe(true);
+
+    const data = await withCompanyReadOnly(ORG_ID, async (tx) => {
+      const [run] = await tx
+        .select({ status: payrollRuns.status, number: payrollRuns.number })
+        .from(payrollRuns)
+        .where(and(eq(payrollRuns.companyId, ORG_ID), eq(payrollRuns.id, runId!)));
+      const paymentEntries = await tx
+        .select({ id: journalEntries.id, status: journalEntries.status })
+        .from(journalEntries)
+        .where(
+          and(
+            eq(journalEntries.companyId, ORG_ID),
+            eq(journalEntries.sourceType, "payroll_payment"),
+            eq(journalEntries.sourceId, runId!),
+          ),
+        );
+      const reversalRows = await tx
+        .select({ id: journalEntries.id })
+        .from(journalEntries)
+        .where(
+          and(
+            eq(journalEntries.companyId, ORG_ID),
+            inArray(
+              journalEntries.reversalOfId,
+              paymentEntries.map((row) => row.id),
+            ),
+          ),
+        );
+      return { run, paymentEntries, reversalRows };
+    });
+    expect(data.run.status).toBe("posted");
+    expect(data.reversalRows.length).toBeGreaterThan(0);
   });
 
   it("rejects a run when an employee's deductions exceed their gross pay", async () => {

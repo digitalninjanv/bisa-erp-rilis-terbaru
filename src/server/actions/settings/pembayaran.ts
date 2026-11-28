@@ -3,6 +3,7 @@
 // A-26 Q8b: pecahan actions/settings.ts per topik (pola Q4) — metode pembayaran (termasuk fee/MDR & akun kredit) dan unggah QRIS.
 // Perilaku & nama aksi identik; pemanggil berpindah mekanis ke berkas ini.
 
+import { createHash } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -10,6 +11,7 @@ import { withCompany } from "@/db/tenant";
 import type { Tx } from "@/db";
 import { accountMappings, accounts, companySettings, paymentMethods, salePayments } from "@/db/schema";
 import { getAccountMap } from "@/server/accounting";
+import { getCompanySettingsRow } from "@/server/settings";
 import { writeAudit } from "@/server/audit";
 import { requirePermission } from "@/lib/session";
 import { AppError, guard } from "@/lib/errors";
@@ -414,10 +416,26 @@ export async function uploadQrisAction(input: { dataUrl: string }) {
     const ctx = await requirePermission("settings.manage");
     const data = parseInput(z.object({ dataUrl: qrisImageSchema }), input);
     await withCompany(ctx.company.id, async (tx) => {
+      const before = await getCompanySettingsRow(tx, ctx.company.id);
       await tx
         .update(companySettings)
         .set({ qrisImage: data.dataUrl, updatedAt: new Date() })
         .where(eq(companySettings.companyId, ctx.company.id));
+      // QRIS adalah tujuan pembayaran: setiap perubahan harus punya jejak
+      // before/after. Simpan hash + ukuran, bukan data URL penuh.
+      await writeAudit(tx, {
+        companyId: ctx.company.id,
+        userId: ctx.user.id,
+        action: "settings.qris.update",
+        entityType: "company_settings",
+        entityId: ctx.company.id,
+        before: { hasImage: Boolean(before?.qrisImage) },
+        after: {
+          hasImage: true,
+          bytes: data.dataUrl.length,
+          sha256: createHash("sha256").update(data.dataUrl).digest("hex"),
+        },
+      });
     });
     revalidatePath("/app/pengaturan");
     revalidatePath("/app/pos");

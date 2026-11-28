@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import { withCompany } from "@/db/tenant";
 import { importJobs, importRows } from "@/db/schema";
-import { requirePermission } from "@/lib/session";
+import { requirePermissionInModule } from "@/lib/session";
 import { ENTITY_FIELDS, isImportEntity, suggestMappingFor } from "@/lib/import-parse";
 import { customFieldDefinitionsFor } from "@/lib/custom-fields";
 import { customFieldImportField } from "@/lib/import/import-custom-fields";
@@ -45,7 +45,7 @@ function isRedirectError(error: unknown): boolean {
 
 export async function POST(request: Request) {
   try {
-    const ctx = await requirePermission("import.manage");
+    const ctx = await requirePermissionInModule("import.manage", "gudang");
     const contentLength = Number(request.headers.get("content-length") ?? 0);
     if (Number.isFinite(contentLength) && contentLength > MAX_IMPORT_BYTES) {
       return NextResponse.json({ error: "Ukuran file maksimum 20MB." }, { status: 413 });

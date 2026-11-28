@@ -147,3 +147,23 @@ export function computePaymentPlan(input: PaymentPlanInput): PaymentPlan {
     nonCashNeedsConfirm,
   };
 }
+
+/**
+ * Validasi nominal tunai yang eksplisit. Kolom kosong tidak boleh
+ * diam-diam diperlakukan sebagai uang pas: kasir harus mengetik nominal
+ * atau menekan chip "Uang Pas" yang mengisi total.
+ */
+export function cashTenderError(input: {
+  total: number;
+  tendered: number;
+  isCash: boolean;
+}): string | null {
+  if (!input.isCash || input.total <= 0) return null;
+  if (!Number.isFinite(input.tendered) || input.tendered <= 0) {
+    return "Isi uang diterima atau tekan Uang Pas sebelum memproses pembayaran.";
+  }
+  if (input.tendered < input.total) {
+    return `Uang diterima kurang ${Math.round(input.total - input.tendered)}.`;
+  }
+  return null;
+}

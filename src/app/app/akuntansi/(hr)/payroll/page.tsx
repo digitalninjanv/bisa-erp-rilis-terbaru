@@ -58,7 +58,7 @@ export default async function PayrollPage() {
             >
               <HandCoins className="size-3.5" /> Kasbon karyawan
             </Link>
-            {manageable ? <EmployeeForm /> : null}
+            {manageable ? <EmployeeForm orgOptions={data.orgOptions} /> : null}
           </div>
         }
       />
@@ -198,8 +198,22 @@ export default async function PayrollPage() {
                             baseSalary: row.baseSalary,
                             allowances: row.allowances,
                             deductions: row.deductions,
+                            joinedAt: row.joinedAt,
                             isActive: row.isActive,
+                            nik: row.nik,
+                            npwp: row.npwp,
+                            ptkpStatus: row.ptkpStatus,
+                            contractType: row.contractType,
+                            jkkRiskClass: row.jkkRiskClass,
+                            workRegionCode: row.workRegionCode,
+                            departmentId: row.departmentId,
+                            positionId: row.positionId,
+                            managerEmployeeId: row.managerEmployeeId,
+                            branchId: row.branchId,
+                            contractStart: row.contractStart,
+                            contractEnd: row.contractEnd,
                           }}
+                          orgOptions={data.orgOptions}
                         />
                       </td>
                     ) : null}

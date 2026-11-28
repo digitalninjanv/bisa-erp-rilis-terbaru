@@ -34,6 +34,7 @@ export function useQuote(params: {
       roundingDirection: RoundDirection;
       roundCashTotal: boolean;
     } | null;
+    priceRules?: Record<string, { type: "percent" | "fixed"; value: string | number }>;
     taxRate: number;
     companyRoundingMode: string;
   } | null;
@@ -139,6 +140,7 @@ export function useQuote(params: {
                   ]),
                 ),
                 group: offlineQuote.group,
+                priceRules: offlineQuote.priceRules,
                 taxRate: offlineQuote.taxRate,
                 companyRoundingMode: offlineQuote.companyRoundingMode,
               })

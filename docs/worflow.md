@@ -52,9 +52,9 @@ Verifikasi tambahan: pembacaan source, codegraph, route inventory, dan pemeriksa
 |---|---|
 | Bentuk aplikasi | Monolit modular Next.js 16 App Router + React 19 + TypeScript |
 | Database | PostgreSQL 18, Drizzle ORM, RLS per `company_id` |
-| Halaman aplikasi | 102 `page.tsx` |
+| Halaman aplikasi | 103 `page.tsx` di `/app` (plus `/login`, `/two-factor`, `/setup`) |
 | Route API | 32 |
-| Berkas server action | 60 |
+| Berkas server action | 61 |
 | Tabel database | 109 `pgTable` |
 | Migrasi | 90 |
 | Unit test | 147 file / 1.270 test |
@@ -64,7 +64,7 @@ Verifikasi tambahan: pembacaan source, codegraph, route inventory, dan pemeriksa
 | Cetak | Nota thermal HTML/ESC-POS, faktur A4/A5, dokumen gudang, laporan, slip payroll, Z-report |
 | Desktop | Electron (`pos-electron/`), PWA offline POS |
 
-> **P0 sebelum instalasi toko baru:** (1) bootstrap owner/perusahaan belum tersedia di produksi — installer berakhir dengan database kosong dan sign-up dimatikan; (2) reset password memakai kredensial global sehingga admin satu perusahaan dapat mereset user yang owner di perusahaan lain. Keduanya harus ditutup sebelum rollout, bukan sekadar dicatat.
+> **Status P0 (28 Nov 2026):** bootstrap owner/perusahaan kini tersedia lewat CLI `pnpm bootstrap` dan route `/setup` bertoken, sedangkan reset kata sandi lintas tenant sudah ditolak kecuali pemanggil adalah owner di semua perusahaan target. Keduanya sudah diuji; lihat §14.0. P0 yang tersisa bersifat non-kode: uji perangkat keras, load test, dan jalur desktop Electron.
 
 ### 1.1 Prinsip sistem
 
@@ -183,12 +183,12 @@ Peran kustom dapat dibuat; izin baru harus didefinisikan di `src/lib/permissions
 | Buku besar | Per akun, running balance, cetak/ekspor | `/app/akuntansi/buku-besar` | `reports/ledger` | `journal_lines` | IMPLEMENTED |
 | Laporan | Laba rugi, neraca, arus kas, ekuitas, neraca saldo | `/app/akuntansi/laporan` | `reports/financial` | `account_monthly_balances` | IMPLEMENTED |
 | Kas & bank | Saldo, mutasi, transfer, biaya admin | `/app/akuntansi/bank` | `bank-transfers.ts` | `bank_transfers` | IMPLEMENTED |
-| Rekonsiliasi bank | Impor mutasi, auto/manual match, write-off; belum ada saldo akhir/unimport/audit match | `/app/akuntansi/rekonsiliasi` | `bank-reconciliation.ts` | `bank_statement_*` | PARTIAL |
-| Piutang/utang | Aging, pembayaran FIFO/per dokumen, write-off, kredit pihak; AR memakai izin POS | `/app/akuntansi/piutang-utang` | `payables`, `receivables` | `party_payments` | PARTIAL |
-| Beban | Beban tunai/terutang, PPN masukan; halaman lama redirect, daftar/void belum UI | `/app/akuntansi/beban` | `expenses.ts` | `expenses` | PARTIAL |
+| Rekonsiliasi bank | Impor mutasi, auto/manual match, audit match; saldo akhir & unimport belum | `/app/akuntansi/rekonsiliasi` | `bank-reconciliation.ts` | `bank_statement_*` | PARTIAL |
+| Piutang/utang | Aging, pembayaran FIFO/per dokumen, write-off, kredit pihak, void pembayaran | `/app/akuntansi/piutang-utang` | `payables`, `receivables` | `party_payments` | IMPLEMENTED |
+| Beban | Beban tunai/terutang, PPN masukan, daftar + void berjurnal | `/app/akuntansi/beban` | `expenses.ts` | `expenses` | IMPLEMENTED |
 | Aset tetap | Daftar aset, penyusutan garis lurus | `/app/akuntansi/aset` | `fixed-assets.ts` | `fixed_assets` | IMPLEMENTED |
 | Pajak | Buku PPN, rekap pajak | `/app/akuntansi/pajak` | reports | `journal_lines` | IMPLEMENTED |
-| Periode | Buka/tutup/kunci, checklist, tutup tahun; checklist belum menegakkan, reversal tahunan belum UI | `/app/akuntansi/periode` | `fiscal-periods.ts` | `fiscal_periods` | PARTIAL |
+| Periode | Buka/tutup/kunci, checklist ditegakkan, tutup tahun + pembalikannya | `/app/akuntansi/periode` | `fiscal-periods.ts` | `fiscal_periods` | IMPLEMENTED |
 | Audit trail | Riwayat aksi & dokumen | `/app/akuntansi/riwayat` | `audit.ts` | `audit_log` | IMPLEMENTED |
 | Catat transaksi | Quick entry 5 jenis + draf | modal/beranda | `quick-entry.ts` | `quick_entry_*` | IMPLEMENTED |
 | Saldo awal | Akun, stok, piutang/utang awal; form AR/AP orphan | pengaturan/akuntansi | `opening-balances` | `party_opening_balances` | PARTIAL |
@@ -222,7 +222,7 @@ Peran kustom dapat dibuat; izin baru harus didefinisikan di `src/lib/permissions
 | Penomoran | Seri dokumen | `?tab=penomoran` | `sequences.ts` | `document_sequences` | IMPLEMENTED |
 | Pemetaan akun | 36 kunci akun otomatis | `?tab=akun` | `system-accounts` | `account_mappings` | IMPLEMENTED |
 | Pengguna & peran | Undang/buat, role, izin, reset, cabut | `/app/pengaturan/pengguna` | `actions/users.ts` | `member`, `company_roles` | IMPLEMENTED |
-| Payroll Indonesia | PTKP, TER, BPJS, upah minimum; halaman lama redirect, konfigurasi UI tidak tersedia | `/app/pengaturan/payroll-indonesia` → redirect | `payroll-indonesia.ts` | payroll config tables | GAP/UI |
+| Payroll Indonesia | PTKP, TER, BPJS, upah minimum; halaman konfigurasi aktif | `/app/pengaturan/payroll-indonesia` | `payroll-indonesia.ts` | payroll config tables | IMPLEMENTED |
 | Status sistem | Health, backup, migrasi | `/app/pengaturan/status` | health/backup | `audit_log` | IMPLEMENTED |
 | Direktori data master | Indeks pemilik & pemakai data master lintas modul | `/app/data-master` | `master-data-directory` | semua master | IMPLEMENTED |
 | Auth & tenant | Login, sesi, RLS, 2FA | `/login` | Better Auth, `withCompany` | `user`, `session`, `member` | IMPLEMENTED |
@@ -649,17 +649,17 @@ Semua modul memanggil `postJournal`:
 | Background jobs | Ekspor/sinkron/payroll request-time |
 | Multi-currency/consolidation | Belum ada |
 
-### 8.7 Temuan kritis platform (harus ditutup sebelum produksi)
+### 8.7 Temuan kritis platform dan statusnya (28 Nov 2026)
 
-1. **Bootstrap kosong:** installer tidak membuat owner/perusahaan; sign-up dimatikan dan runbook menyebut halaman yang tidak ada. Perlu CLI/route setup satu kali.
-2. **Reset lintas tenant:** kredensial global + hapus semua sesi; admin A dapat mereset user yang owner di B. Perlu batas per organisasi/owner.
-3. **QRIS/identitas tanpa audit penuh:** perubahan QRIS tidak diaudit; setting sensitif tidak mewajibkan sesi segar.
-4. **2FA web:** plugin ada, tetapi login web belum menangani TOTP/enrollment/recovery.
-5. **Token cetak pertama reusable:** 10 menit, tanpa konsumsi/audit per pemakaian.
-6. **Desktop terbelah:** pairing/updater/snapshot Tauri; Electron resmi tidak memakainya. Pilih satu jalur.
-7. **Payroll Indonesia UI:** halaman redirect; form/action yatim. Kembalikan atau hapus dengan bersih.
-8. **PWA scope:** `scope: "/app/pos/"` tidak konsisten dengan `start_url: "/app/pos"`.
-9. **Import/export audit:** import belum menegakkan saklar modul; ekspor gaji belum diaudit.
+1. **Bootstrap kosong — SELESAI.** CLI `pnpm bootstrap` dan route `/setup` bertoken membuat owner, perusahaan, cabang, gudang, pengaturan, bagan akun, periode, payroll defaults, dan metode pembayaran. Diuji di `bootstrap-company.test.ts`.
+2. **Reset lintas tenant — SELESAI.** Reset ditolak bila target juga anggota perusahaan lain dan pemanggil bukan owner di semua perusahaan itu. Sesi hanya diputus total ketika target tidak lagi menjadi anggota perusahaan mana pun. Diuji di `cross-tenant-password-reset.test.ts`.
+3. **QRIS/identitas — SEBAGIAN.** QRIS kini diaudit dengan hash before/after; setting sensitif belum mewajibkan sesi segar.
+4. **2FA web — SEBAGIAN.** Login memproses `twoFactorRedirect`; halaman `/two-factor`, enrollment TOTP, kode cadangan, dan nonaktifkan tersedia di `/app/keamanan`. Jalur runtime 2FA belum diuji end-to-end di browser.
+5. **Token cetak pertama — SELESAI.** Token dikonsumsi atomik; pemakaian kedua ditolak. Diuji di `receipt-token-once.test.ts`.
+6. **Desktop terbelah — BELUM.** Pairing/updater/snapshot masih jalur Tauri; Electron resmi belum memakainya.
+7. **Payroll Indonesia UI — SELESAI.** Halaman dan form dipulihkan; tautan dari Pengaturan HR ditambahkan.
+8. **PWA scope — SELESAI.** `start_url` dan `scope` sama-sama `/app/pos`; kontrak SW tetap `/app/pos`.
+9. **Import/export audit — SEBAGIAN.** Impor memakai `requirePermissionInModule("import.manage","gudang")`; audit ekspor payroll belum ditambahkan.
 
 ---
 
@@ -980,6 +980,8 @@ Kontrak rinci ada di `docs/DESIGN-STANDARD-TABLE-FORM.md`. Ringkasnya:
 
 Prioritas: **P0** = integritas uang/stok/akses; **P1** = menghambat operasi harian; **P2** = skala/efisiensi; **P3** = kenyamanan.
 
+Snapshot 28 November 2026: **19 IMPLEMENTED**, **15 PARTIAL**, **22 GAP**, **3 NOT TESTED**, **1 BY DESIGN**. Status tidak dinaikkan tanpa bukti test; lihat §14.0.
+
 | ID | Prioritas | Gap | Dampak | Rekomendasi | Status |
 |---|---|---|---|---|---|
 | G-01 | P1 | QRIS dinamis via PSP | QRIS hanya statis + konfirmasi manual; tidak ada webhook | Integrasi MPAN/NMID + webhook + rekonsiliasi otomatis | GAP |
@@ -1009,39 +1011,53 @@ Prioritas: **P0** = integritas uang/stok/akses; **P1** = menghambat operasi hari
 | G-25 | P1 | Read-only search via Server Actions | Pencarian POS/palette bisa antre di belakang mutasi | Pindahkan ke GET route handler/Server Component | GAP |
 | G-26 | P2 | Drawer-centric cash model | Sesi per kasir, belum per laci fisik bersama | Pisahkan drawer/session/device bila multi-terminal | GAP |
 | G-27 | P3 | Command palette belum punya recents/shortcut hints | Expert users kurang cepat menemukan aksi berulang | Tambah recents, hint shortcut, empty state | PARTIAL |
-| G-28 | P0 | Bootstrap owner/perusahaan tidak ada di produksi | Instalasi kosong tidak bisa dipakai; runbook menyesatkan | CLI/route setup one-time saat DB kosong | GAP |
-| G-29 | P0 | Reset password lintas tenant | Admin A bisa mereset kredensial user yang owner di B | Batasi reset per organisasi / owner-only; audit semua tenant | GAP |
-| G-30 | P1 | QRIS & setting sensitif belum teraudit penuh | Jalur fraud pembayaran tanpa jejak | Audit before/after + fresh session | GAP |
-| G-31 | P1 | 2FA web tidak lengkap | Keamanan akun tidak dapat diaktifkan dari web | TOTP enrollment/recovery + login step | GAP |
-| G-32 | P1 | PWA manifest scope | PWA bisa gagal install/keluar scope | Samakan scope `/app/pos` | GAP |
-| G-33 | P2 | Token cetak pertama reusable | Cetak “asli” berulang tanpa audit | Token sekali pakai / audit setiap pemakaian | GAP |
+| G-28 | P0 | Bootstrap owner/perusahaan | Dulu instalasi kosong tidak bisa dipakai | CLI + `/setup` bertoken; diuji `bootstrap-company.test.ts` | IMPLEMENTED |
+| G-29 | P0 | Reset password lintas tenant | Dulu admin A bisa mereset kredensial user yang owner di B | Wajib owner di semua perusahaan target; sesi hanya diputus bila target tidak lagi anggota mana pun. Diuji `cross-tenant-password-reset.test.ts` | IMPLEMENTED |
+| G-30 | P1 | QRIS & setting sensitif | QRIS sudah diaudit hash before/after; setting sensitif belum mewajibkan sesi segar | Tambah `requireFreshSession` untuk identitas pajak/QRIS bila diperlukan | PARTIAL |
+| G-31 | P1 | 2FA web | Login, enrollment TOTP, kode cadangan, dan nonaktifkan tersedia; belum diuji e2e | Uji browser dengan akun 2FA aktif | PARTIAL |
+| G-32 | P1 | PWA manifest scope | `start_url`/`scope` kini sama `/app/pos` | — | IMPLEMENTED |
+| G-33 | P2 | Token cetak pertama | Dulu bisa dipakai ulang 10 menit | Dikonsumsi atomik; pemakaian kedua ditolak. Diuji `receipt-token-once.test.ts` | IMPLEMENTED |
 | G-34 | P1 | Electron vs Tauri pairing/updater | Menu terminal/rilis tidak mengendalikan Electron | Satukan jalur desktop | GAP |
-| G-35 | P1 | Payroll Indonesia settings UI redirect | PPh 21/BPJS/PTKP tidak dapat dipelihara dari UI | Kembalikan halaman/form atau hapus action yatim | GAP |
-| G-36 | P2 | Import module gate & export audit | Import bisa melewati saklar modul; ekspor gaji tidak diaudit | `requirePermissionInModule`, audit ekspor | GAP |
-| G-37 | P2 | Company switcher hidden di mobile | User multi-perusahaan terjebak | Tampilkan di drawer/topbar mobile | GAP |
-| G-38 | P2 | Izin tab Pemetaan akun vs aksi | Tab terlihat untuk `settings.manage` tetapi simpan butuh `accounting.manage` + modul akuntansi | Samakan gate atau sembunyikan tab | GAP |
+| G-35 | P1 | Payroll Indonesia settings UI | Halaman & form dipulihkan; tautan dari Pengaturan HR ditambahkan | — | IMPLEMENTED |
+| G-36 | P2 | Import module gate & export audit | Impor kini bergerbang modul gudang; audit ekspor payroll belum | Tambah audit ekspor payroll/keuangan | PARTIAL |
+| G-37 | P2 | Company switcher hidden di mobile | Kini tampil di topbar mobile | — | IMPLEMENTED |
+| G-38 | P2 | Izin tab Pemetaan akun vs aksi | Tab disaring dengan `accounting.manage` di halaman | — | IMPLEMENTED |
 | G-39 | P1 | Electron bukan POS offline penuh | Server mati + halaman belum cache → `offline.html`, bukan terminal | Sediakan mesin katalog lokal atau cache shell penuh | GAP |
-| G-40 | P1 | Quote offline tanpa harga grup per produk | Penjualan offline berkelompok memakai harga normal lalu konflik | Kirim `priceRules` ke payload offline | GAP |
+| G-40 | P1 | Quote offline harga grup | `priceRules` per kelompok kini dikirim ke payload quote offline | — | IMPLEMENTED |
 | G-41 | P2 | Exchange bukan satu langkah | Voucher + penjualan pengganti terpisah | Alur tukar satu transaksi atau panduan jelas | PARTIAL |
-| G-42 | P2 | Izin bayar piutang lintas modul | Form tampil untuk `accounting.post`, action butuh `pos.sell` | Samakan gate atau pisahkan action akuntansi | GAP |
-| G-43 | P2 | Void penerimaan piutang tanpa UI | Koreksi pembayaran tidak bisa dari UI | Render tombol void yang sudah ada | GAP |
+| G-42 | P2 | Izin bayar piutang lintas modul | Jalur `source=accounting` memakai `accounting.post`; jalur POS tetap `pos.sell` | — | IMPLEMENTED |
+| G-43 | P2 | Void penerimaan piutang | Daftar “Pembayaran terakhir” merender tombol void | — | IMPLEMENTED |
 | G-44 | P2 | Promo tidak punya audit redemption/prioritas | Promo = diskon baris; sulit memisahkan promo vs diskon kasir | Audit promo, prioritas, stacking | PARTIAL |
-| G-45 | P2 | Resume hold lintas kasir | Semua `pos.sell` dapat melanjutkan hold kasir lain | Batasi pemilik atau izin supervisor | GAP |
-| G-46 | P3 | Input tunai kosong = uang pas | Risiko kasir mengira nominal belum diisi | Wajibkan nominal atau konfirmasi eksplisit | PARTIAL |
+| G-45 | P2 | Resume hold lintas kasir | Checkout menolak hold kasir lain kecuali pemegang `pos.void` | — | IMPLEMENTED |
+| G-46 | P3 | Input tunai kosong | Kolom kosong ditolak; chip “Uang Pas” mengisi total | — | IMPLEMENTED |
 | G-47 | P2 | Opname tidak membekukan transaksi | Stok bisa bergerak antara hitung dan posting | Snapshot/freeze per gudang atau rekonsiliasi selisih | GAP |
-| G-48 | P1 | `joinedAt` terhapus saat edit karyawan | THR/prorata/final pay salah | Kirim joinedAt di form edit + audit perubahan | GAP |
-| G-49 | P1 | Field statutori karyawan tidak ada di UI | PPh/BPJS/PTKP/kontrak memakai fallback | Lengkapi form karyawan + validasi | GAP |
-| G-50 | P1 | Wizard payroll tidak mengirim acknowledge/final period/override | Run di bawah UMP selalu gagal; koreksi tidak bisa | Kirim opsi server yang sudah ada + UI review | GAP |
+| G-48 | P1 | `joinedAt` terhapus saat edit | Edit tanpa field tidak lagi mengosongkan; form edit mengirim nilai | — | IMPLEMENTED |
+| G-49 | P1 | Field statutori karyawan | NIK/NPWP/PTKP/kontrak/JKK/wilayah/departemen/jabatan/atasan/cabang ditambahkan; kepesertaan BPJS per program belum di form | Lengkapi enrollment BPJS | PARTIAL |
+| G-50 | P1 | Wizard payroll opsi server | Acknowledge UMP, masa pajak terakhir, dan override kasbon dikirim dari UI | — | IMPLEMENTED |
 | G-51 | P2 | Preview payroll ≠ posting | Persetujuan atas angka berbeda | Preview memakai fungsi hitung yang sama | GAP |
 | G-52 | P2 | Absensi tidak memengaruhi payroll selain cuti tak berbayar | Potongan alpha/insentif belum ada | Definisikan komponen kehadiran | GAP |
 | G-53 | P2 | Karyawan masuk tengah bulan dibayar penuh | Kelebihan bayar | Prorata run reguler | GAP |
 | G-54 | P1 | Final pay tanpa pesangon/UPMK/UPH/sisa cuti | Kepatuhan akhir masa kerja | Tambah komponen + konfigurasi | GAP |
-| G-55 | P2 | Void pembayaran gaji tidak ada | Koreksi pembayaran tidak end-to-end | Tambah void/reversal payment | GAP |
-| G-56 | P2 | Reversal tutup buku tidak di UI | Salah tutup buku tidak bisa dikoreksi | Expose action yang sudah ada | GAP |
-| G-57 | P2 | Beban tanpa daftar/void UI | Koreksi hanya lewat jurnal | Kembalikan daftar + void | GAP |
-| G-58 | P2 | Checklist periode tidak menegakkan | Tutup periode saat kontrol belum selesai | Gate/peringatan wajib | GAP |
-| G-59 | P2 | Rekonsiliasi bank tanpa audit/ending/unimport | Salah impor permanen | Audit match/import + saldo akhir | PARTIAL |
-| G-60 | P2 | Impor COA tanpa kelas kas/bank | Akun bank tidak dikenali | Isi cashBankKind + rincian bank | GAP |
+| G-55 | P2 | Void pembayaran gaji | Jurnal pembayaran dibalik dan run kembali `posted`; diuji `payroll-reverse` | — | IMPLEMENTED |
+| G-56 | P2 | Reversal tutup buku | Tombol “Balik jurnal penutup” + alasan tersedia di panel | — | IMPLEMENTED |
+| G-57 | P2 | Beban tanpa daftar/void | Halaman daftar + void berjurnal dikembalikan | — | IMPLEMENTED |
+| G-58 | P2 | Checklist periode | Tutup/kunci ditolak bila penyusutan/kontrol tertunda; acknowledge eksplisit tersedia | — | IMPLEMENTED |
+| G-59 | P2 | Rekonsiliasi bank | Audit import/match/unmatch/jurnal ditambahkan; saldo akhir & unimport belum | Tambah ending balance + hapus impor | PARTIAL |
+| G-60 | P2 | Impor COA kelas kas/bank | Nama akun aset lancar menginferensikan cash/bank/clearing; diuji unit | — | IMPLEMENTED |
+
+### 14.0 Remediasi 28 November 2026
+
+Gelombang perbaikan yang sudah masuk ke kode dan test:
+
+| Kelompok | Gap yang ditutup | Bukti |
+|---|---|---|
+| Platform & akses | G-28 bootstrap CLI + `/setup`; G-29 reset lintas tenant; G-32 scope PWA; G-33 token cetak sekali pakai; G-35 halaman payroll; G-37 switcher mobile; G-38 gate tab akun | `bootstrap-company`, `cross-tenant-password-reset`, `receipt-token-once`, `pos-pwa-manifest`, `settings-nav`, `a28-v2-uiux` |
+| POS | G-40 harga grup offline; G-42 izin AR akuntansi; G-43 void pembayaran; G-45 kepemilikan hold; G-46 uang tunai eksplisit | `pos-permissions-tahap3`, `pos-hold-ownership`, `pos-cash-tender`, `pos-offline-local-quote`, `workflow-remediation-ui` |
+| Akuntansi | G-30 audit QRIS; G-55 void pembayaran gaji; G-56 reversal tutup buku; G-57 daftar/void beban; G-58 checklist periode; G-59 audit rekonsiliasi; G-60 kelas kas/bank impor COA | `settings-audit`, `payroll-reverse`, `period-*`, `bank-reconciliation`, `import-account-cash-bank` |
+| HR | G-48 `joinedAt`; G-49 field statutori; G-50 opsi wizard payroll | `sim2/hr-org-history`, `workflow-remediation-ui`, `payroll-reverse` |
+| Bukti global | Unit 151 file / 1.292 test; integration 144 file / 1.134 test; sim2 29 file / 281 test; build + typecheck; e2e `table-form-guard`, `ui-neatness-guard`, `pengaturan` 10/10 | snapshot 28 Nov 2026 |
+
+**Masih terbuka dan sengaja tidak dipaksakan:** 2FA belum diuji e2e; export payroll belum diaudit; saldo akhir/unimport rekonsiliasi belum ada; preview payroll masih belum sama dengan posting; prorata karyawan masuk tengah bulan, komponen kehadiran, pesangon/UPMK/UPH, vendor bill/3-way, PO edit/approval, scoping gudang, opname freeze/approval, serial surplus, Electron offline, dan exchange satu langkah. Ini membutuhkan keputusan produk, kontrak PSP, atau uji perangkat — bukan sekadar wiring.
 
 ### 14.1 Ditahan by design (bukan lupa)
 
@@ -1069,15 +1085,14 @@ Prioritas: **P0** = integritas uang/stok/akses; **P1** = menghambat operasi hari
 
 ### 14.3 Urutan eksekusi yang disarankan
 
-1. **Blocker rollout (P0):** G-28 (bootstrap owner/perusahaan), G-29 (reset lintas tenant). Jangan instal toko baru sebelum keduanya tertutup.
-2. **Wiring regresi & kepatuhan dasar:** G-48 (`joinedAt`), G-49 (field statutori), G-50 (opsi payroll), G-54 (final pay), G-35 (UI payroll Indonesia), G-42/G-43 (AR), G-30 (audit QRIS), G-31 (2FA web).
-3. **Operasi kasir nyata:** G-02 (printer/Windows/signing), G-03 (HTTPS/PWA), G-04 (observability), G-39 (Electron offline), G-40 (harga grup offline).
-4. **Integrasi pembayaran:** G-01 (QRIS gateway).
-5. **Skala & ketahanan:** G-05 (background jobs), G-16 (load test), G-15 (`sales.branchId`), G-25 (read-only search).
-6. **Keuangan lanjutan:** G-18 (vendor bill/3-way), G-56 (reversal tutup buku), G-57 (beban), G-59 (rekonsiliasi), G-09/G-10/G-11 (pajak, valas, purchasing lanjutan).
-7. **Gudang:** G-19–G-24 dan G-47 (approval, scoping, ekspor, serial, freeze opname).
-8. **Poles UX:** G-06, G-07, G-08, G-37.
-9. **HR & analitik lanjutan:** G-51–G-53, G-55, G-58, G-60, G-12, G-14.
+1. **Verifikasi rollout:** ulangi bootstrap di instalasi bersih, uji 2FA end-to-end, dan jalankan load test G-16. G-28/G-29 sudah tertutup di kode.
+2. **Operasi kasir nyata:** G-02 (printer/Windows/signing), G-03 (HTTPS/PWA), G-04 (observability), G-39 (Electron offline), G-44 (audit promo).
+3. **Integrasi pembayaran:** G-01 (QRIS gateway).
+4. **Skala & ketahanan:** G-05 (background jobs), G-15 (`sales.branchId`), G-25 (read-only search).
+5. **Keuangan lanjutan:** G-18 (vendor bill/3-way), G-59 (ending/unimport rekonsiliasi), G-09/G-10/G-11 (pajak, valas, purchasing lanjutan).
+6. **Gudang:** G-19–G-24 dan G-47 (approval, scoping, ekspor, serial, freeze opname).
+7. **HR lanjutan:** G-49 (enrollment BPJS), G-51–G-54 (preview, absensi, prorata, pesangon), G-12.
+8. **Poles UX & analitik:** G-06, G-07, G-08, G-14, G-27.
 
 ---
 
@@ -1089,11 +1104,11 @@ Prioritas: **P0** = integritas uang/stok/akses; **P1** = menghambat operasi hari
 | Gudang | `goods-receipt`, `purchase-order`, `inventory-adjustment`, `feature-matrix-gudang`, `stock-batches`, `sim2/reservations-transfers`, `opname-tasks`, `import-hardening`, `packaging-warehouse` |
 | Akuntansi | `journal-validation`, `reports-p2`, `payments-void-p2`, `bank-reconciliation`, `fixed-assets`, `period-integrity`, `opening-balances`, `quick-entry`, `a27-*` |
 | HR | `payroll-indonesia`, `payroll-reverse`, `sim2/hr-org-history`, `sim2/hr-attendance`, `sim2/hr-leave`, `sim2/hr-overtime-thr`, `sim2/hr-loans-reimbursement`, `final-pay` |
-| Platform | `pos-device-api`, `print-settings`, `a28-ui2-print-surfaces`, `user-management`, `sim2/rbac-matrix`, `company-switch`, `backup-status` |
-| UI/UX | 147 file / 1.270 unit test, e2e `table-form-guard`, `ui-neatness-guard`, axe 0 pada sampel desktop/mobile, 77/77 route smoke |
+| Platform | `pos-device-api`, `print-settings`, `a28-ui2-print-surfaces`, `user-management`, `cross-tenant-password-reset`, `bootstrap-company`, `receipt-token-once`, `settings-audit`, `sim2/rbac-matrix`, `company-switch`, `backup-status` |
+| UI/UX | 151 file / 1.292 unit test, 144 file / 1.134 integration, 29 file / 281 sim2, e2e `table-form-guard`, `ui-neatness-guard`, `pengaturan` 10/10 |
 | Cross-module | `audit-a2-chains`, `consistency`, `erp-concurrency-remediation` |
 
-**Celah bukti yang terlihat:** belum ada e2e HR/payroll; belum ada test untuk `joinedAt` yang terhapus saat edit, mismatch izin AR, reversal tutup buku dari UI, void beban dari UI, void pembayaran gaji, dan kesamaan preview vs posting payroll. Celah ini sejalan dengan gap G-48–G-57 dan harus ditutup bersama perbaikannya, bukan setelahnya.
+**Celah bukti yang terlihat:** belum ada e2e HR/payroll; 2FA belum diuji e2e; preview payroll vs posting belum setara; export payroll belum diaudit; saldo akhir/unimport rekonsiliasi belum ada. `joinedAt`, izin AR, reversal tutup buku, void beban, dan void pembayaran gaji kini sudah punya test regresi.
 
 **Batasan bukti:** count test berubah seiring pekerjaan; angka di dokumen ini adalah snapshot 28 November 2026. Test bukan bukti perangkat keras, beban produksi, atau semua jalur dinamis.
 
@@ -1110,6 +1125,8 @@ Prioritas: **P0** = integritas uang/stok/akses; **P1** = menghambat operasi hari
 | Data Master | 1 | `/app/data-master` |
 | Pengaturan | 4 | `/app/pengaturan`, `/pengguna`, `/payroll-indonesia`, `/status` |
 | Analisa | 1 | `/app/analisa` |
+| Akun | 1 | `/app/keamanan` (2FA) |
+| Publik | 3 | `/login`, `/two-factor`, `/setup` |
 | API | 32 route | `/api/pos/*`, `/api/export/*`, `/api/import/*`, `/api/health` |
 
 Daftar rute lengkap dapat dihasilkan dari `find src/app/app -name page.tsx`; route group `(akuntansi)`, `(cetak)`, dan `(hr)` tidak mengubah URL publik.

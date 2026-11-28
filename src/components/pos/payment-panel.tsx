@@ -320,7 +320,7 @@ export function PaymentPanel(props: {
                             Id tetap menjadi target pintasan F4. */}
                         <MoneyInput
                           id={tenderedInputId}
-                          aria-label="Uang diterima; kosongkan untuk uang pas"
+                          aria-label="Uang diterima; isi nominal atau tekan Uang Pas"
                           value={entries[singleMethod]?.tendered ?? ""}
                           onChange={(canonical) =>
                             setEntries((current) => ({

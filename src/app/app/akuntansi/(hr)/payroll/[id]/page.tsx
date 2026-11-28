@@ -107,6 +107,7 @@ export default async function PayrollDetailPage({ params }: { params: Promise<{ 
               accounts={cashAccounts.map((row) => ({ id: row.id, code: row.code, name: row.name }))}
               today={todayISO()}
               paid={run.status === "paid"}
+              canVoid={can(ctx, "payroll.manage")}
             />
           ) : null}
         </>

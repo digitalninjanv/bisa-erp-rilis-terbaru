@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { hashPassword } from "better-auth/crypto";
 import { z } from "zod";
@@ -387,6 +387,44 @@ export async function resetUserPasswordAction(input: { userId: string; password:
         "mereset kata sandi",
       );
 
+      // Kredensial login bersifat global per user, bukan per perusahaan.
+      // Admin satu perusahaan tidak boleh mengubah sandi akun yang juga
+      // menjadi anggota perusahaan lain; hanya owner di SEMUA perusahaan
+      // tempat target menjadi anggota yang boleh melakukannya.
+      const targetMemberships = await tx
+        .select({ organizationId: member.organizationId, role: member.role })
+        .from(member)
+        .where(eq(member.userId, data.userId));
+      const otherMemberships = targetMemberships.filter(
+        (row) => row.organizationId !== ctx.company.id,
+      );
+      if (otherMemberships.length > 0) {
+        const callerMemberships = await tx
+          .select({ organizationId: member.organizationId, role: member.role })
+          .from(member)
+          .where(
+            and(
+              eq(member.userId, ctx.user.id),
+              inArray(
+                member.organizationId,
+                otherMemberships.map((row) => row.organizationId),
+              ),
+            ),
+          );
+        const callerRoleByOrg = new Map(
+          callerMemberships.map((row) => [row.organizationId, row.role]),
+        );
+        const notOwnerEverywhere = otherMemberships.some(
+          (row) => callerRoleByOrg.get(row.organizationId) !== "owner",
+        );
+        if (notOwnerEverywhere) {
+          throw new AppError(
+            "FORBIDDEN",
+            "Kata sandi akun ini dipakai di perusahaan lain. Reset hanya dapat dilakukan owner yang juga menjadi owner di semua perusahaan tersebut.",
+          );
+        }
+      }
+
       const [credential] = await tx
         .select({ id: account.id })
         .from(account)
@@ -456,13 +494,17 @@ export async function removeCompanyUserAction(userId: string) {
         .delete(member)
         .where(and(eq(member.organizationId, ctx.company.id), eq(member.userId, targetUserId)));
 
-      await tx.delete(session).where(eq(session.userId, targetUserId));
-
       const [remaining] = await tx
         .select({ value: sql<number>`count(*)::int` })
         .from(member)
         .where(eq(member.userId, targetUserId));
       if ((remaining?.value ?? 0) === 0) {
+        // Sesi bersifat global; hanya putuskan semua sesi ketika user
+        // tidak lagi menjadi anggota perusahaan mana pun. Bila masih
+        // anggota perusahaan lain, sesi itu tetap sah di sana dan
+        // requireAuth sudah menolak akses ke perusahaan ini karena baris
+        // member telah dihapus.
+        await tx.delete(session).where(eq(session.userId, targetUserId));
         await tx
           .update(user)
           .set({ banned: true, banReason: "Keanggotaan perusahaan dicabut" })

@@ -1,6 +1,7 @@
 import {
   Activity,
   Calculator,
+  Coins,
   FileText,
   Layers,
   Printer,
@@ -37,6 +38,7 @@ export const SETTINGS_NAV: (NavItem & { icon: LucideIcon })[] = [
   { label: "Metode pembayaran", href: "/app/pengaturan?tab=pembayaran", icon: Wallet, permission: "settings.manage", group: "Transaksi & Dokumen" },
   { label: "Kelompok harga", href: "/app/pengaturan?tab=grup", icon: Tags, permission: "settings.manage", group: "Transaksi & Dokumen" },
   { label: "Pemetaan akun", href: "/app/pengaturan?tab=akun", icon: Calculator, permission: "settings.manage", group: "Keuangan & Payroll" },
+  { label: "Payroll Indonesia", href: "/app/pengaturan/payroll-indonesia", icon: Coins, permission: "settings.manage", group: "Keuangan & Payroll" },
   { label: "Kolom kustom", href: "/app/pengaturan?tab=kolom", icon: SlidersHorizontal, permission: "settings.manage", group: "Sistem" },
   { label: "Status sistem", href: "/app/pengaturan/status", icon: Activity, permission: "settings.manage", group: "Sistem" },
 ];

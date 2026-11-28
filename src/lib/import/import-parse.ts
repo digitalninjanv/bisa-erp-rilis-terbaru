@@ -443,7 +443,28 @@ export type MappedAccount = {
   normalBalance: "debit" | "credit";
   section: AccountSection | null;
   description: string | null;
+  /** Kelas kas/bank/kliring yang diinferensikan dari nama akun aset lancar. */
+  cashBankKind: "cash" | "bank" | "clearing" | null;
 };
+
+/**
+ * Impor COA dari Accurate/Excel umumnya tidak membawa kolom kelas
+ * kas/bank. Tanpa inferensi, akun "Bank BCA" hasil impor tidak muncul di
+ * halaman Kas & bank, rekonsiliasi, atau pemilih akun metode pembayaran.
+ */
+function inferCashBankKind(input: {
+  type: string;
+  section: AccountSection | null;
+  name: string;
+}): MappedAccount["cashBankKind"] {
+  if (input.type !== "asset") return null;
+  if (input.section !== null && input.section !== "current_asset") return null;
+  const name = input.name.toLowerCase();
+  if (/(^|\s)(kas|cash)(\s|$)/.test(name) || /kas kecil|petty cash/.test(name)) return "cash";
+  if (/kliring|clearing/.test(name)) return "clearing";
+  if (/\bbank\b/.test(name)) return "bank";
+  return null;
+}
 
 export function mapAccountRow(
   row: Record<string, unknown>,
@@ -500,6 +521,7 @@ export function mapAccountRow(
       normalBalance,
       section,
       description: cellText(row, mapping, "description", 300),
+      cashBankKind: inferCashBankKind({ type, section, name }),
     },
   };
 }

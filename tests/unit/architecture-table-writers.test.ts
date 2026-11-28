@@ -71,9 +71,14 @@ const FROZEN: Record<string, string[]> = {
     "server/actions/inventory/taksonomi.ts",
     "server/import/commit.ts",
   ],
-  branches: ["server/actions/settings/lokasi.ts", "server/import/commit-locations.ts"],
+  branches: [
+    "server/actions/settings/lokasi.ts",
+    "server/bootstrap.ts",
+    "server/import/commit-locations.ts",
+  ],
   customerGroups: [
     "server/actions/settings/kelompok-harga.ts",
+    "server/bootstrap.ts",
     "server/import/commit-commerce.ts",
   ],
   employees: [
@@ -83,15 +88,34 @@ const FROZEN: Record<string, string[]> = {
   ],
   paymentMethods: [
     "server/actions/settings/pembayaran.ts",
+    "server/bootstrap.ts",
     "server/import/commit-commerce.ts",
   ],
-  warehouses: ["server/actions/settings/lokasi.ts", "server/import/commit-locations.ts"],
+  warehouses: [
+    "server/actions/settings/lokasi.ts",
+    "server/bootstrap.ts",
+    "server/import/commit-locations.ts",
+  ],
   customers: [
     "server/actions/inventory/pihak.ts",
     "server/actions/pos.ts",
     "server/actions/settings/kelompok-harga.ts",
+    "server/bootstrap.ts",
     "server/import/commit.ts",
   ],
+  companySettings: [
+    "server/actions/settings/cetak.ts",
+    "server/actions/settings/identitas-pajak.ts",
+    "server/actions/settings/kolom-kustom.ts",
+    "server/actions/settings/modul.ts",
+    "server/actions/settings/operasi-gudang.ts",
+    "server/actions/settings/pembayaran.ts",
+    "server/actions/settings/penomoran.ts",
+    "server/bootstrap.ts",
+  ],
+  user: ["server/actions/users.ts", "server/bootstrap.ts"],
+  account: ["server/actions/users.ts", "server/bootstrap.ts"],
+  member: ["server/actions/users.ts", "server/bootstrap.ts", "server/member-permissions.ts"],
   expenses: [
     "server/expenses.ts",
     "server/master-data/merge.ts",

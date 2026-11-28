@@ -19,6 +19,7 @@
     "db:seed:bulk": "tsx --env-file=.env.local src/db/seed.ts --force --bulk",
     "db:reset": "tsx --env-file=.env.local src/db/seed.ts --force",
     "db:seed:pl": "tsx --env-file=.env.local scripts/seed-demo-pl.ts",
+    "bootstrap": "tsx --env-file-if-exists=.env.local scripts/bootstrap.ts",
     "db:studio": "node --env-file-if-exists=.env.local node_modules/drizzle-kit/bin.cjs studio",
     "db:backup": "bash scripts/backup.sh",
     "db:restore": "bash scripts/restore.sh",

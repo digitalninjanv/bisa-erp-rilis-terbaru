@@ -6,6 +6,7 @@ import {
 } from "@/server/idempotency";
 
 const RECEIPT_TOKEN_SCOPE = "pos.receipt.fresh";
+const RECEIPT_TOKEN_CONSUMED_SCOPE = "pos.receipt.consumed";
 const RECEIPT_TOKEN_TTL_MS = 10 * 60 * 1000;
 
 type ReceiptTokenPayload = {
@@ -61,13 +62,22 @@ export async function verifyReceiptPrintToken(
   if (!stored) return false;
   try {
     const payload = JSON.parse(stored) as ReceiptTokenPayload;
-    return (
-      payload.type === "pos.receipt.fresh" &&
-      payload.companyId === input.companyId &&
-      payload.userId === input.userId &&
-      payload.saleId === input.saleId &&
-      payload.expiresAt > Date.now()
-    );
+    if (
+      payload.type !== "pos.receipt.fresh" ||
+      payload.companyId !== input.companyId ||
+      payload.userId !== input.userId ||
+      payload.saleId !== input.saleId ||
+      payload.expiresAt <= Date.now()
+    ) {
+      return false;
+    }
+    // Token cetak pertama adalah sekali pakai. Klaim ini atomik: dua
+    // tab/percobaan yang membaca token bersamaan hanya satu yang menang.
+    return claimIdempotencyKey(tx, {
+      companyId: input.companyId,
+      key: input.token,
+      scope: RECEIPT_TOKEN_CONSUMED_SCOPE,
+    });
   } catch {
     return false;
   }

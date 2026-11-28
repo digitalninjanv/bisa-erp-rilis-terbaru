@@ -39,12 +39,22 @@ export default async function HrSettingsPage() {
         title="Pengaturan HR"
         description="Master departemen dan jabatan, parameter HR perusahaan, serta peringatan kontrak yang akan berakhir."
         actions={
-          <Link
-            href="/app/akuntansi/hr"
-            className="inline-flex h-8 items-center rounded-md border border-border bg-card px-3 text-[12px] font-medium transition-colors hover:bg-muted"
-          >
-            Kembali ke ringkasan
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            {can(ctx, "settings.manage") ? (
+              <Link
+                href="/app/pengaturan/payroll-indonesia"
+                className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                Pengaturan PPh 21 & BPJS
+              </Link>
+            ) : null}
+            <Link
+              href="/app/akuntansi/hr"
+              className="inline-flex h-8 items-center rounded-md border border-border bg-card px-3 text-[12px] font-medium transition-colors hover:bg-muted"
+            >
+              Kembali ke ringkasan
+            </Link>
+          </div>
         }
       />
 

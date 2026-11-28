@@ -56,6 +56,12 @@ export function UserMenu({
           </p>
         </div>
         <div className="p-1">
+          <a
+            href="/app/keamanan"
+            className="flex min-h-11 items-center gap-2 rounded px-2 text-xs hover:bg-muted"
+          >
+            <ShieldCheck className="size-3.5" /> Keamanan akun
+          </a>
           {showSettings ? (
             <a
               href="/app/pengaturan"

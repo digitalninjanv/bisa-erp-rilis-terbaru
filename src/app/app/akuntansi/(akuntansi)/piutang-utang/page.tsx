@@ -11,6 +11,7 @@ import {
   countOpenReceivables,
   listPayablesPage,
   listReceivablesPage,
+  listRecentPartyPayments,
 } from "@/server/reports";
 import type { ReceivablePayablePageRow } from "@/server/reports";
 import { formatIDR } from "@/lib/money";
@@ -23,7 +24,7 @@ import { Pagination } from "@/components/blocks/pagination";
 import { FilterChips } from "@/components/blocks/search-form";
 import { EmptyState } from "@/components/blocks/empty-state";
 import { StatusBadge } from "@/components/blocks/status-badge";
-import { PaymentForm } from "@/components/akuntansi/payment-form";
+import { PartyPaymentVoidButton, PaymentForm } from "@/components/akuntansi/payment-form";
 import { PartyRowSecondaryActions } from "@/components/akuntansi/party-row-actions";
 
 export const metadata = { title: "Piutang & utang" };
@@ -92,7 +93,7 @@ export default async function ReceivablePayablePage({
   const canPay = can(ctx, "accounting.post") || can(ctx, "pos.sell");
 
   const data = await withCompanyReadOnlySnapshot(ctx.company.id, async (tx) => {
-    const [receivablesPage, payablesPage, accounts, credits, settings, inactiveTabCount] = await Promise.all([
+    const [receivablesPage, payablesPage, accounts, credits, settings, recentPayments, inactiveTabCount] = await Promise.all([
       tab === "piutang"
         ? listReceivablesPage(tx, ctx.company.id, { page, pageSize, status, q, today })
         : Promise.resolve(null),
@@ -105,6 +106,7 @@ export default async function ReceivablePayablePage({
         status: "open",
       }),
       getSettings(tx, ctx.company.id),
+      listRecentPartyPayments(tx, ctx.company.id, 20),
       tab === "piutang"
         ? countOpenPayables(tx, ctx.company.id)
         : countOpenReceivables(tx, ctx.company.id),
@@ -115,6 +117,7 @@ export default async function ReceivablePayablePage({
       accounts,
       credits,
       settings,
+      recentPayments,
       receivableCount: tab === "piutang" ? receivablesPage!.summary.openCount : inactiveTabCount,
       payableCount: tab === "utang" ? payablesPage!.summary.openCount : inactiveTabCount,
     };
@@ -438,6 +441,39 @@ export default async function ReceivablePayablePage({
           </div>
         </details>
       ) : null}
+
+      <section className="mt-5 rounded-lg border border-border bg-card">
+        <div className="border-b border-border px-4 py-3">
+          <h2 className="text-[13px] font-semibold">Pembayaran terakhir</h2>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
+            20 pembayaran terbaru. Pembatalan membuat jurnal pembalik dan mengembalikan status dokumen.
+          </p>
+        </div>
+        {data.recentPayments.length === 0 ? (
+          <p className="px-4 py-4 text-[12px] text-muted-foreground">Belum ada pembayaran.</p>
+        ) : (
+          <div className="divide-y divide-border/70">
+            {data.recentPayments.map((row) => (
+              <div key={row.id} className="flex flex-wrap items-center gap-2 px-4 py-2.5">
+                <span className="num text-[11px] font-medium">{row.number}</span>
+                <span className="text-[11px] text-muted-foreground">
+                  {row.type === "receivable" ? "Penerimaan piutang" : "Pembayaran utang"} · {formatDate(row.date)}
+                </span>
+                <span className="num ml-auto text-[12px] font-semibold">{formatIDR(row.amount)}</span>
+                <StatusBadge status={row.status} />
+                {canWriteOff && row.status !== "void" ? (
+                  <PartyPaymentVoidButton
+                    paymentId={row.id}
+                    number={row.number}
+                    kind={row.type === "receivable" ? "receivable" : "payable"}
+                    opening={Boolean(row.openingId)}
+                  />
+                ) : null}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

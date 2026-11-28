@@ -18,7 +18,7 @@ export { createSale } from "./sales-create";
 export { issueReceiptPrintToken, verifyReceiptPrintToken } from "./receipt-token";
 export { issueSessionCloseToken, verifySessionCloseToken } from "./session-close-token";
 export type { PaymentInput } from "./sales-types";
-export { consumeHeldSale, deleteHeldSale, holdSale } from "./sales-hold";
+export { assertHeldSaleOwner, consumeHeldSale, deleteHeldSale, holdSale } from "./sales-hold";
 export { voidSale } from "./sales-void";
 export {
   openCashSession,

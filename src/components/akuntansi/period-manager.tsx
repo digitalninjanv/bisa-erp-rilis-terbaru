@@ -42,6 +42,7 @@ export function PeriodManager({
   const [busy, setBusy] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<{ month: number; status: "closed" | "locked" } | null>(null);
   const [reopening, setReopening] = useState<number | null>(null);
+  const [checklistAcknowledged, setChecklistAcknowledged] = useState(false);
 
   function requestStatus(month: number, status: "open" | "closed" | "locked", currentStatus?: string) {
     if (status === "open") {
@@ -53,12 +54,18 @@ export function PeriodManager({
       void setStatus(month, status);
       return;
     }
+    setChecklistAcknowledged(false);
     setConfirming({ month, status });
   }
 
-  async function setStatus(month: number, status: "open" | "closed" | "locked", reason?: string) {
+  async function setStatus(
+    month: number,
+    status: "open" | "closed" | "locked",
+    reason?: string,
+    acknowledgeChecklist = false,
+  ) {
     setBusy(`${month}:${status}`);
-    const result = await setPeriodStatusAction({ year, month, status, reason });
+    const result = await setPeriodStatusAction({ year, month, status, reason, acknowledgeChecklist });
     setBusy(null);
     setConfirming(null);
     setReopening(null);
@@ -124,11 +131,26 @@ export function PeriodManager({
             Sesudah {confirming.status === "closed" ? "ditutup" : "dikunci"}, semua posting ke bulan ini
             ditolak{confirming.status === "locked" ? " dan membukanya kembali hanya dapat dilakukan owner dengan alasan tertulis" : ""}.
           </p>
+          <label className="mt-2 flex items-center gap-2 text-[11px]">
+            <input
+              type="checkbox"
+              checked={checklistAcknowledged}
+              onChange={(event) => setChecklistAcknowledged(event.target.checked)}
+            />
+            Saya sudah meninjau checklist akhir bulan dan memahami risiko menutup dengan langkah yang masih tertunda.
+          </label>
           <div className="mt-2 flex items-center gap-1.5">
             <button
               type="button"
-              onClick={() => void setStatus(confirming.month, confirming.status)}
-              disabled={busy !== null}
+              onClick={() =>
+                void setStatus(
+                  confirming.month,
+                  confirming.status,
+                  undefined,
+                  checklistAcknowledged,
+                )
+              }
+              disabled={busy !== null || !checklistAcknowledged}
               className="inline-flex h-8 items-center rounded-md bg-tone-amber px-3 text-[12px] font-medium text-white transition-colors hover:opacity-90 disabled:opacity-50"
             >
               {busy ? "Memproses…" : confirming.status === "closed" ? "Ya, tutup periode" : "Ya, kunci periode"}

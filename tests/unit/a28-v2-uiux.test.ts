@@ -116,7 +116,7 @@ describe("V-01 — sidebar mode ciut", () => {
 });
 
 describe("V-02 — navigasi pengaturan satu pintu", () => {
-  it("SETTINGS_NAV berisi 11 pintu pengaturan aktif tanpa payroll Indonesia", () => {
+  it("SETTINGS_NAV berisi 12 pintu pengaturan aktif termasuk payroll Indonesia", () => {
     expect(SETTINGS_NAV.map((item) => item.label)).toEqual([
       "Umum",
       "Pengguna & peran",
@@ -127,6 +127,7 @@ describe("V-02 — navigasi pengaturan satu pintu", () => {
       "Metode pembayaran",
       "Kelompok harga",
       "Pemetaan akun",
+      "Payroll Indonesia",
       "Kolom kustom",
       "Status sistem",
     ]);
@@ -140,14 +141,15 @@ describe("V-02 — navigasi pengaturan satu pintu", () => {
       "/app/pengaturan?tab=pembayaran",
       "/app/pengaturan?tab=grup",
       "/app/pengaturan?tab=akun",
+      "/app/pengaturan/payroll-indonesia",
       "/app/pengaturan?tab=kolom",
       "/app/pengaturan/status",
     ]);
-    expect(SETTINGS_NAV.some((item) => item.href.includes("payroll-indonesia"))).toBe(false);
+    expect(SETTINGS_NAV.some((item) => item.href.includes("payroll-indonesia"))).toBe(true);
     // Penanda aktif sidebar untuk rute & tab lama tetap sampai.
     expect(settingsActiveHref("/app/pengaturan/status", null)).toBe("/app/pengaturan/status");
     expect(settingsActiveHref("/app/pengaturan/pengguna", null)).toBe("/app/pengaturan/pengguna");
-    expect(settingsActiveHref("/app/pengaturan/payroll-indonesia", null)).toBeNull();
+    expect(settingsActiveHref("/app/pengaturan/payroll-indonesia", null)).toBe("/app/pengaturan/payroll-indonesia");
     expect(settingsActiveHref("/app/pengaturan", "cetak")).toBe("/app/pengaturan?tab=cetak");
     expect(settingsActiveHref("/app/pengaturan", "nota")).toBe("/app/pengaturan?tab=cetak");
     expect(settingsActiveHref("/app/pengaturan", null)).toBe("/app/pengaturan?tab=umum");

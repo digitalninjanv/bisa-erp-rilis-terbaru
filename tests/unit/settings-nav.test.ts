@@ -16,7 +16,7 @@ describe("SETTINGS_NAV (SIS-11)", () => {
     expect(hrefs).toContain("/app/pengaturan?tab=cetak");
     expect(hrefs).toContain("/app/pengaturan?tab=modul");
     expect(hrefs).toContain("/app/pengaturan/pengguna");
-    expect(hrefs).not.toContain("/app/pengaturan/payroll-indonesia");
+    expect(hrefs).toContain("/app/pengaturan/payroll-indonesia");
     expect(new Set(hrefs).size).toBe(hrefs.length);
   });
 
@@ -29,6 +29,10 @@ describe("SETTINGS_NAV (SIS-11)", () => {
     expect(SETTINGS_NAV.find((item) => item.href === "/app/pengaturan/pengguna")?.permission).toBe(
       "users.manage",
     );
+    expect(SETTINGS_NAV.find((item) => item.href === "/app/pengaturan/payroll-indonesia")?.permission).toBe(
+      "settings.manage",
+    );
+
   });
 
   it("berkelompok (kepala grup tampil di sidebar)", () => {
@@ -56,7 +60,9 @@ describe("settingsActiveHref (SIS-11)", () => {
     expect(settingsActiveHref("/app/pengaturan/pengguna", null)).toBe(
       "/app/pengaturan/pengguna",
     );
-    expect(settingsActiveHref("/app/pengaturan/payroll-indonesia", null)).toBeNull();
+    expect(settingsActiveHref("/app/pengaturan/payroll-indonesia", null)).toBe(
+      "/app/pengaturan/payroll-indonesia",
+    );
   });
 
   it("di luar pengaturan → tidak ada yang aktif", () => {

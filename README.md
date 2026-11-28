@@ -6,9 +6,9 @@ Minimarket ERP modular untuk POS, gudang, dan akuntansi. Satu aplikasi Next.js d
 
 - **POS** — barcode/pencarian, keranjang, harga khusus per kelompok dengan aturan per produk, pembayaran tunai/QRIS/transfer, pembayaran campuran, kembalian, pembulatan harga kelompok, pesanan ditahan, retur/tukar, void dengan alasan, cetak ulang nota, sesi kas dan setoran/penarikan.
 - **Gudang** — master produk/SKU/barcode/kategori/satuan/pemasok, multi-gudang, penerimaan barang, penyesuaian (rusak, kedaluwarsa, hilang, karantina), retur pembelian, transfer, opname, kartu stok, pergerakan stok, nilai persediaan, impor Accurate.id.
-- **Akuntansi** — bagan akun berhierarki dengan kelompok laporan fleksibel (aset lancar/tidak lancar, liabilitas jangka pendek/panjang, pendapatan lain-lain, beban operasional/lain-lain), halaman jurnal baru yang lengkap, jurnal pembalik, buku besar, periode fiskal (buka/tutup/kunci), neraca saldo, laba rugi dan neraca berkelompok dengan pembanding tahun sebelumnya, arus kas, perubahan ekuitas, beban (batalkan via jurnal pembalik), setoran modal, transfer bank dengan biaya, piutang/utang dengan aging 0–30/31–60/61–90/>90 hari, payroll hingga pembayaran gaji, laporan penjualan, ekspor CSV dan cetak.
+- **Akuntansi** — bagan akun berhierarki dengan kelompok laporan fleksibel (aset lancar/tidak lancar, liabilitas jangka pendek/panjang, pendapatan lain-lain, beban operasional/lain-lain), halaman jurnal baru yang lengkap, jurnal pembalik, buku besar, periode fiskal (buka/tutup/kunci) dengan checklist akhir bulan yang ditegakkan, neraca saldo, laba rugi dan neraca berkelompok dengan pembanding tahun sebelumnya, arus kas, perubahan ekuitas, daftar beban dengan void berjurnal, setoran modal, transfer bank dengan biaya, piutang/utang dengan aging 0–30/31–60/61–90/>90 hari, payroll hingga pembayaran gaji + void pembayaran, laporan penjualan, ekspor CSV dan cetak.
 - **Pengaturan** — identitas perusahaan, NPWP, tarif pajak, nota/printer, gambar QRIS, metode pembayaran, kelompok harga (aturan produk + pembulatan), gudang, cabang, pemetaan akun otomatis.
-- **Pengguna & peran** — admin/owner dapat membuat akun login, memilih peran bawaan atau peran kustom, serta mengatur modul dan izin yang bisa diakses.
+- **Pengguna & peran** — admin/owner dapat membuat akun login, memilih peran bawaan atau peran kustom, mengatur modul dan izin, serta mengaktifkan verifikasi dua langkah (TOTP + kode cadangan) di `/app/keamanan`.
 
 ## Stack
 
@@ -38,6 +38,20 @@ Untuk data demo besar (10.000+ produk, untuk menguji impor/kinerja):
 ```bash
 pnpm db:seed:bulk
 ```
+
+### Instalasi produksi (database kosong)
+
+Jangan memakai seed demo di produksi. Setelah `pnpm db:migrate`, buat perusahaan pertama dengan salah satu jalur:
+
+```bash
+BISA_BOOTSTRAP_COMPANY="Toko Maju" \
+BISA_BOOTSTRAP_OWNER_NAME="Nama Owner" \
+BISA_BOOTSTRAP_OWNER_EMAIL="owner@tokomaju.id" \
+BISA_BOOTSTRAP_OWNER_PASSWORD="kata-sandi-kuat-minimal-12" \
+pnpm bootstrap
+```
+
+atau buka `/setup` dan masukkan `BISA_SETUP_TOKEN` dari file env server. Kedua jalur menolak database yang sudah berisi organisasi. Bootstrap membuat owner, cabang, gudang, pengaturan, bagan akun, pemetaan, periode fiskal, konfigurasi payroll, dan metode pembayaran dasar. Kata sandi tidak pernah dicetak.
 
 ## Peran database
 

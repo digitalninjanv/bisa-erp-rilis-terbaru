@@ -593,6 +593,7 @@ export async function commitMasterBatch(
           type: account.type,
           normalBalance: account.normalBalance,
           section: account.section ?? defaultSection(account.type),
+          cashBankKind: account.cashBankKind,
           description: account.description,
           isPostable: true,
           isActive: true,

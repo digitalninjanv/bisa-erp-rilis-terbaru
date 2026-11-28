@@ -2,6 +2,7 @@ import Link from "next/link";
 import { withCompanyReadOnly } from "@/db/tenant";
 import { getSettingsPageData, listCategories, listGroupProductPrices } from "@/server/catalog";
 import { requirePermissionPage } from "@/lib/session";
+import { can } from "@/lib/permissions";
 import { parsePageParam } from "@/lib/pagination";
 import { buttonVariants } from "@/components/ui/button";
 import { PageHeader } from "@/components/blocks/page-header";
@@ -52,9 +53,15 @@ export default async function SettingsPage({
   searchParams: Promise<{ tab?: string; group?: string; q?: string; page?: string }>;
 }) {
   const params = await searchParams;
-  const requestedTab = params.tab === "nota" ? "cetak" : params.tab;
-  const tab = TABS.some((row) => row.key === requestedTab) ? requestedTab! : "umum";
   const ctx = await requirePermissionPage("settings.manage");
+  // Tab Pemetaan akun menyimpan lewat aksi yang mensyaratkan
+  // accounting.manage pada modul akuntansi. Jangan tampilkan/terima tab
+  // yang aksinya pasti ditolak.
+  const allowedTabs = TABS.filter(
+    (row) => row.key !== "akun" || can(ctx, "accounting.manage"),
+  );
+  const requestedTab = params.tab === "nota" ? "cetak" : params.tab;
+  const tab = allowedTabs.some((row) => row.key === requestedTab) ? requestedTab! : "umum";
 
   const data = await withCompanyReadOnly(ctx.company.id, async (tx) => {
     const base = await getSettingsPageData(tx, ctx.company.id);

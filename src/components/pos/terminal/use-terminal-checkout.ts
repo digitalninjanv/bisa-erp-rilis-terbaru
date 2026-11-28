@@ -15,6 +15,7 @@ import { clearCheckoutAttempt, readCheckoutAttempt, storeCheckoutAttempt, type C
 import { isDefinitiveCheckoutError, isHeldSaleUnavailableMessage } from "@/lib/pos/checkout-recovery";
 import { todayISO } from "@/lib/format";
 import { receiptHref } from "@/lib/pos/receipt-links";
+import { cashTenderError } from "@/lib/pos/payment-plan";
 import { buildTerminalReceiptData } from "@/lib/pos/build-receipt-data";
 import type { CompletedSaleInfo } from "./checkout-success-modal";
 import type { ReceiptData } from "@/lib/escpos/types";
@@ -404,13 +405,26 @@ export function useTerminalCheckout(params: {
       }
     }
 
+    const tenderError =
+      mode === "single"
+        ? cashTenderError({
+            total,
+            tendered: cashTendered,
+            isCash: single?.type === "cash",
+          })
+        : null;
+    if (tenderError) {
+      toast.error(tenderError);
+      return;
+    }
+
     const payments =
       mode === "single"
         ? [
             {
               methodId: singleMethod,
               amount: total,
-              tendered: single?.type === "cash" ? cashTendered || total : total,
+              tendered: single?.type === "cash" ? cashTendered : total,
               reference: entries[singleMethod]?.reference || undefined,
               // A-21 Tahap R3-A (R3-01): fee final dari panel; kosong
               // berarti kasir menerima bawaan konfigurasi metode.

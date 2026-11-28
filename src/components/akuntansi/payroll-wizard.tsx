@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/blocks/confirm-dialog";
+import { MoneyInput } from "@/components/money-input";
 import { d, formatIDR } from "@/lib/money";
 import { formatMonth } from "@/lib/format";
 import { runPayrollAction } from "@/server/actions/hr/payroll";
@@ -85,16 +86,23 @@ export function PayrollWizard({
 }) {
   const router = useRouter();
   const [period, setPeriod] = useState(defaultPeriod);
+  const [finalPeriod, setFinalPeriod] = useState(false);
+  const [acknowledgeMinWage, setAcknowledgeMinWage] = useState(false);
+  const [advanceDraft, setAdvanceDraft] = useState<Record<string, string>>(() =>
+    Object.fromEntries((advanceProposals ?? []).map((row) => [row.employeeId, row.proposed])),
+  );
   const [busy, setBusy] = useState(false);
   const [confirmPosting, setConfirmPosting] = useState(false);
   const [posted, setPosted] = useState<{ id: string; number: string; totalNet: number; employees: number } | null>(null);
   const active = staff.filter((person) => person.isActive);
   const proposalByEmployee = new Map(advanceProposals?.map((row) => [row.employeeId, row]) ?? []);
+  const advanceFor = (employeeId: string) =>
+    d(advanceDraft[employeeId] ?? proposalByEmployee.get(employeeId)?.proposed ?? 0);
   const totals = active.reduce(
     (sum, person) => {
       const gross = d(person.baseSalary).plus(d(person.allowances));
       const deductions = d(person.deductions);
-      const advance = d(proposalByEmployee.get(person.id)?.proposed ?? 0);
+      const advance = advanceFor(person.id);
       return {
         gross: sum.gross.plus(gross),
         deductions: sum.deductions.plus(deductions),
@@ -108,7 +116,15 @@ export function PayrollWizard({
 
   async function submit() {
     setBusy(true);
-    const result = await runPayrollAction({ period });
+    const result = await runPayrollAction({
+      period,
+      finalPeriod,
+      acknowledgeMinWage,
+      advanceDeductions: active.map((person) => ({
+        employeeId: person.id,
+        amount: advanceFor(person.id).toFixed(2),
+      })),
+    });
     setBusy(false);
     if (!result.ok) {
       toast.error(result.message);
@@ -130,10 +146,28 @@ export function PayrollWizard({
             Gaji bersih dihitung dari gaji pokok + tunjangan − potongan tetap.
           </p>
         </div>
-        <label className="space-y-1">
-          <span className={labelClass}>Periode gaji</span>
-          <input type="month" value={period} onChange={(event) => setPeriod(event.target.value)} className={fieldClass} />
-        </label>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="space-y-1">
+            <span className={labelClass}>Periode gaji</span>
+            <input type="month" value={period} onChange={(event) => setPeriod(event.target.value)} className={fieldClass} />
+          </label>
+          <label className="flex min-h-9 items-center gap-2 text-[11px]">
+            <input
+              type="checkbox"
+              checked={finalPeriod}
+              onChange={(event) => setFinalPeriod(event.target.checked)}
+            />
+            Masa pajak terakhir (Pasal 17)
+          </label>
+          <label className="flex min-h-9 items-center gap-2 text-[11px]">
+            <input
+              type="checkbox"
+              checked={acknowledgeMinWage}
+              onChange={(event) => setAcknowledgeMinWage(event.target.checked)}
+            />
+            Saya sadar ada upah di bawah minimum
+          </label>
+        </div>
       </div>
 
       {processedRun ? (
@@ -174,7 +208,7 @@ export function PayrollWizard({
               <tbody>
                 {active.map((person) => {
                   const gross = d(person.baseSalary).plus(d(person.allowances));
-                  const advance = d(proposalByEmployee.get(person.id)?.proposed ?? 0);
+                  const advance = advanceFor(person.id);
                   const net = gross.minus(d(person.deductions)).minus(advance);
                   return (
                     <tr key={person.id}>
@@ -184,7 +218,16 @@ export function PayrollWizard({
                       <td className="num text-right text-[12px]">{formatIDR(person.baseSalary)}</td>
                       <td className="num text-right text-[12px]">{formatIDR(person.allowances)}</td>
                       <td className="num text-right text-[12px]">{formatIDR(person.deductions)}</td>
-                      <td className="num text-right text-[12px]">{formatIDR(advance.toFixed(0))}</td>
+                      <td className="text-right">
+                        <MoneyInput
+                          value={advanceDraft[person.id] ?? advance.toFixed(2)}
+                          onChange={(value) =>
+                            setAdvanceDraft((current) => ({ ...current, [person.id]: value }))
+                          }
+                          aria-label={`Cicilan kasbon ${person.name}`}
+                          className="h-8 w-28 px-2 text-right text-[11px]"
+                        />
+                      </td>
                       <td className="num text-right text-[12px] font-medium">{formatIDR(net.toFixed(0))}</td>
                     </tr>
                   );

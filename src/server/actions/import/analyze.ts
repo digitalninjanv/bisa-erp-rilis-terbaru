@@ -10,7 +10,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { withCompany } from "@/db/tenant";
 import { importJobs } from "@/db/schema";
-import { requirePermission } from "@/lib/session";
+import { requirePermissionInModule } from "@/lib/session";
 import { assertModuleEnabled } from "@/lib/modules";
 import { importEntityModule } from "@/lib/import/import-module";
 import { AppError, guard } from "@/lib/errors";
@@ -26,7 +26,7 @@ const mappingSchema = z.record(z.string(), z.string().optional()).optional();
 
 export async function analyzeImportAction(input: { jobId: string; mapping?: Record<string, string | undefined>; warehouseId?: string; date?: string; allowZeroCost?: boolean }) {
   return guard(async () => {
-    const ctx = await requirePermission("import.manage");
+    const ctx = await requirePermissionInModule("import.manage", "gudang");
     const data = parseInput(z.object({
       jobId: z.string().uuid(),
       mapping: mappingSchema,

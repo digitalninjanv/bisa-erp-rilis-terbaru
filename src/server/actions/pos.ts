@@ -8,6 +8,7 @@ import { customers, idempotencyKeys, sales, warehouses } from "@/db/schema";
 import { writeAudit } from "@/server/audit";
 import type { QuoteResultPublic } from "@/server/pos";
 import {
+  assertHeldSaleOwner,
   consumeHeldSale,
   createSale,
   createSaleReturn,
@@ -328,7 +329,7 @@ export async function checkoutAction(input: z.input<typeof checkoutSchema>) {
         // sudah terhapus dan ditolak, bukan menghasilkan penjualan
         // kedua dari satu pesanan tahanan.
         const [held] = await tx
-          .select({ status: sales.status })
+          .select({ status: sales.status, cashierId: sales.cashierId })
           .from(sales)
           .where(and(eq(sales.companyId, ctx.company.id), eq(sales.id, data.heldSaleId)))
           .limit(1)
@@ -341,6 +342,11 @@ export async function checkoutAction(input: z.input<typeof checkoutSchema>) {
             "Pesanan tahanan sudah diselesaikan atau tidak tersedia.",
           );
         }
+        assertHeldSaleOwner({
+          heldCashierId: held.cashierId,
+          userId: ctx.user.id,
+          canVoid: can(ctx, "pos.void"),
+        });
       }
       const sale = await createSale(
         tx,
@@ -611,7 +617,11 @@ export async function payReceivableAction(input: {
   source?: "pos" | "accounting";
 }) {
   return guard(async () => {
-    const ctx = await requirePermissionInModule("pos.sell", "pos");
+    const permission =
+      input.source === "accounting"
+        ? requirePermissionInModule("accounting.post", "akuntansi")
+        : requirePermissionInModule("pos.sell", "pos");
+    const ctx = await permission;
     const data = parseInput(
       z.object({
         saleId: z.string().uuid(),
@@ -661,7 +671,11 @@ export async function voidReceivablePaymentAction(input: {
   source?: "pos" | "accounting";
 }) {
   return guard(async () => {
-    const ctx = await requirePermissionInModule("pos.void", "pos");
+    const permission =
+      input.source === "accounting"
+        ? requirePermissionInModule("accounting.manage", "akuntansi")
+        : requirePermissionInModule("pos.void", "pos");
+    const ctx = await permission;
     const data = parseInput(
       z.object({
         paymentId: z.string().uuid(),

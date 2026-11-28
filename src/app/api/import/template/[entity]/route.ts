@@ -22,7 +22,7 @@ import {
   IMPORT_SAMPLES,
   isImportEntity,
 } from "@/lib/import-parse";
-import { requirePermission } from "@/lib/session";
+import { requirePermissionInModule } from "@/lib/session";
 import { csvResponse, toCsv } from "@/lib/csv";
 import { buildImportTemplate, type XlsxCell } from "@/lib/xlsx";
 import { customFieldDefinitionsFor } from "@/lib/custom-fields";
@@ -199,7 +199,7 @@ export async function GET(
   if (!isImportEntity(entity)) {
     return NextResponse.json({ error: "Jenis impor tidak dikenal." }, { status: 404 });
   }
-  const ctx = await requirePermission("import.manage");
+  const ctx = await requirePermissionInModule("import.manage", "gudang");
   const format = new URL(request.url).searchParams.get("format") === "xlsx" ? "xlsx" : "csv";
   const sample = IMPORT_SAMPLES[entity];
   const customEntity = entity === "suppliers" ? "supplier" : entity === "customers" ? "customer" : null;

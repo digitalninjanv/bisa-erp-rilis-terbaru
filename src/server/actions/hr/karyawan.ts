@@ -168,7 +168,9 @@ export async function saveEmployeeAction(input: z.input<typeof employeeSchema>) 
       baseSalary: toDb(data.baseSalary),
       allowances: toDb(data.allowances ?? 0),
       deductions: toDb(data.deductions ?? 0),
-      joinedAt: data.joinedAt || null,
+      // Edit dari formulir lama tidak mengirim joinedAt; jangan pernah
+      // menafsirkan "tidak dikirim" sebagai "kosongkan tanggal masuk".
+      ...(data.joinedAt !== undefined ? { joinedAt: data.joinedAt || null } : {}),
       isActive: data.isActive ?? true,
       // Field S2 hanya ditulis bila pemanggil memang mengirimnya —
       // pemanggil lama tidak boleh menghapus data statutory yang sudah

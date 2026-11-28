@@ -19,6 +19,23 @@ import { nextDocumentNumber } from "@/server/sequences";
 import { quoteCart } from "./quote";
 import type { CartLineInput } from "./quote";
 
+/**
+ * Pesanan ditahan melekat pada kasir yang membuatnya. Kasir lain hanya
+ * boleh menyelesaikannya bila memegang pos.void (supervisor), sehingga
+ * penjualan tidak berpindah tangan tanpa otorisasi.
+ */
+export function assertHeldSaleOwner(input: {
+  heldCashierId: string | null;
+  userId: string;
+  canVoid: boolean;
+}) {
+  if (input.canVoid || input.heldCashierId === input.userId) return;
+  throw new AppError(
+    "FORBIDDEN",
+    "Pesanan ini ditahan oleh kasir lain. Minta kasir tersebut melanjutkan, atau gunakan peran supervisor dengan izin pos.void.",
+  );
+}
+
 export async function holdSale(
   tx: Tx,
   input: {

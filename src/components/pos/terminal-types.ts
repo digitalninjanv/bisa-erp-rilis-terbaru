@@ -153,7 +153,15 @@ export type PosTerminalProps = {
   debtMethod: { id: string; name: string } | null;
   initialProducts: ProductOption[];
   qrisImage: string | null;
-  groups: { id: string; name: string; roundingStep: number; roundingDirection: string; roundCashTotal: boolean }[];
+  groups: {
+    id: string;
+    name: string;
+    roundingStep: number;
+    roundingDirection: string;
+    roundCashTotal: boolean;
+    /** Aturan harga per produk untuk quote offline; dikirim server. */
+    priceRules: Record<string, { type: "percent" | "fixed"; value: string }>;
+  }[];
   sessionOpen: boolean;
   sessionId?: string | null;
   heldCount: number;

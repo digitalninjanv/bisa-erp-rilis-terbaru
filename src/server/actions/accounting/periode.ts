@@ -11,6 +11,7 @@ import { z } from "zod";
 import { withCompany } from "@/db/tenant";
 import { fiscalPeriods } from "@/db/schema";
 import { ensureFiscalPeriods } from "@/server/accounting";
+import { getMonthEndChecklist } from "@/server/reports";
 import {
   lockYearPeriods,
   postYearEndClosing,
@@ -32,6 +33,7 @@ export async function setPeriodStatusAction(input: {
   month: number;
   status: "open" | "closed" | "locked";
   reason?: string;
+  acknowledgeChecklist?: boolean;
 }) {
   return guard(async () => {
     const ctx = await requirePermissionInModule("accounting.manage", "akuntansi");
@@ -42,6 +44,7 @@ export async function setPeriodStatusAction(input: {
         month: z.number().int().min(1).max(12),
         status: z.enum(["open", "closed", "locked"]),
         reason: z.string().trim().min(3).max(200).optional(),
+        acknowledgeChecklist: z.boolean().optional(),
       }),
       input,
     );
@@ -64,6 +67,31 @@ export async function setPeriodStatusAction(input: {
         .limit(1)
         .for("update");
       if (!current) throw new AppError("NOT_FOUND", "Periode fiskal tidak ditemukan.");
+
+      // Checklist akhir bulan bukan hiasan: tutup/kunci ditolak bila
+      // penyusutan belum dijalankan atau akun kontrol masih berselisih.
+      // Pengguna dapat meninjau checklist di halaman Periode; flag
+      // acknowledge hanya untuk langkah yang memang tidak dapat
+      // diselesaikan otomatis (mis. kontrol yang disengaja).
+      if (data.status !== "open" && !data.acknowledgeChecklist) {
+        const checklist = await getMonthEndChecklist(
+          tx,
+          ctx.company.id,
+          data.year,
+          data.month,
+        );
+        const blockers = checklist.steps.filter(
+          (step) => step.status === "pending" && step.key !== "period" && step.key !== "year_end",
+        );
+        if (blockers.length > 0) {
+          throw new AppError(
+            "VALIDATION",
+            `Checklist akhir bulan belum selesai: ${blockers
+              .map((step) => step.title)
+              .join("; ")}. Selesaikan langkah tersebut, atau konfirmasi eksplisit bahwa Anda sudah meninjaunya.`,
+          );
+        }
+      }
 
       // AK-P2-01: membuka kembali periode yang sudah DIKUNCI bukan transisi
       // biasa. Hanya owner yang boleh, wajib dengan alasan, dan alasannya

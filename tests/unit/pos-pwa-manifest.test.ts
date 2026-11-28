@@ -14,9 +14,11 @@ const ROOT = path.join(__dirname, "..", "..");
 describe("manifest PWA terminal POS (T6B)", () => {
   const m = manifest();
 
-  it("menunjuk terminal sebagai start_url dalam scope /app/pos/", () => {
+  it("menunjuk terminal sebagai start_url dalam scope /app/pos", () => {
     expect(m.start_url).toBe("/app/pos");
-    expect(m.scope).toBe("/app/pos/");
+    // Scope tanpa garis miring akhir: start_url harus berada di dalam
+    // scope, dan registrasi SW memakai "/app/pos" yang sama.
+    expect(m.scope).toBe("/app/pos");
     expect(m.display).toBe("standalone");
     expect(m.name).toBeTruthy();
     expect(m.short_name).toBeTruthy();

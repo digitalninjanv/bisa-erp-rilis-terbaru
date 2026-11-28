@@ -11,6 +11,7 @@ import {
   unmatchLine,
 } from "@/server/bank-reconciliation";
 import { requirePermissionInModule } from "@/lib/session";
+import { writeAudit } from "@/server/audit";
 import { AppError, guard } from "@/lib/errors";
 import { parseInput } from "@/lib/action-validation";
 
@@ -26,15 +27,24 @@ export async function importStatementAction(input: z.input<typeof importSchema>)
   return guard(async () => {
     const ctx = await requirePermissionInModule("accounting.manage", "akuntansi");
     const data = parseInput(importSchema, input);
-    const result = await withCompany(ctx.company.id, (tx) =>
-      importStatement(tx, {
+    const result = await withCompany(ctx.company.id, async (tx) => {
+      const imported = await importStatement(tx, {
         companyId: ctx.company.id,
         userId: ctx.user.id,
         accountId: data.accountId,
         fileName: data.fileName ?? "mutasi.csv",
         csvText: data.csvText,
-      }),
-    );
+      });
+      await writeAudit(tx, {
+        companyId: ctx.company.id,
+        userId: ctx.user.id,
+        action: "bank_reconciliation.import",
+        entityType: "bank_statement_import",
+        entityId: imported.importId,
+        after: { accountId: data.accountId, fileName: data.fileName ?? "mutasi.csv" },
+      });
+      return imported;
+    });
     revalidatePath(PAGE_PATH);
     return result;
   });
@@ -48,9 +58,18 @@ export async function autoMatchAction(input: z.input<typeof accountSchema>) {
   return guard(async () => {
     const ctx = await requirePermissionInModule("accounting.manage", "akuntansi");
     const data = parseInput(accountSchema, input);
-    const result = await withCompany(ctx.company.id, (tx) =>
-      autoMatch(tx, { companyId: ctx.company.id, accountId: data.accountId }),
-    );
+    const result = await withCompany(ctx.company.id, async (tx) => {
+      const matched = await autoMatch(tx, { companyId: ctx.company.id, accountId: data.accountId });
+      await writeAudit(tx, {
+        companyId: ctx.company.id,
+        userId: ctx.user.id,
+        action: "bank_reconciliation.auto_match",
+        entityType: "account",
+        entityId: data.accountId,
+        after: { ...matched },
+      });
+      return matched;
+    });
     revalidatePath(PAGE_PATH);
     return result;
   });
@@ -65,13 +84,21 @@ export async function matchLineAction(input: z.input<typeof matchSchema>) {
   return guard(async () => {
     const ctx = await requirePermissionInModule("accounting.manage", "akuntansi");
     const data = parseInput(matchSchema, input);
-    await withCompany(ctx.company.id, (tx) =>
-      matchLine(tx, {
+    await withCompany(ctx.company.id, async (tx) => {
+      await matchLine(tx, {
         companyId: ctx.company.id,
         statementLineId: data.statementLineId,
         journalLineId: data.journalLineId,
-      }),
-    );
+      });
+      await writeAudit(tx, {
+        companyId: ctx.company.id,
+        userId: ctx.user.id,
+        action: "bank_reconciliation.match",
+        entityType: "bank_statement_line",
+        entityId: data.statementLineId,
+        after: { journalLineId: data.journalLineId },
+      });
+    });
     revalidatePath(PAGE_PATH);
     return { matched: true };
   });
@@ -85,9 +112,16 @@ export async function unmatchLineAction(input: z.input<typeof statementLineSchem
   return guard(async () => {
     const ctx = await requirePermissionInModule("accounting.manage", "akuntansi");
     const data = parseInput(statementLineSchema, input);
-    await withCompany(ctx.company.id, (tx) =>
-      unmatchLine(tx, { companyId: ctx.company.id, statementLineId: data.statementLineId }),
-    );
+    await withCompany(ctx.company.id, async (tx) => {
+      await unmatchLine(tx, { companyId: ctx.company.id, statementLineId: data.statementLineId });
+      await writeAudit(tx, {
+        companyId: ctx.company.id,
+        userId: ctx.user.id,
+        action: "bank_reconciliation.unmatch",
+        entityType: "bank_statement_line",
+        entityId: data.statementLineId,
+      });
+    });
     revalidatePath(PAGE_PATH);
     return { unmatched: true };
   });
@@ -115,8 +149,8 @@ export async function createJournalFromLineAction(input: z.input<typeof createJo
         "Baris lawan kedua memerlukan akun dan nominal sekaligus — isi keduanya atau kosongkan keduanya.",
       );
     }
-    const result = await withCompany(ctx.company.id, (tx) =>
-      createJournalFromLine(tx, {
+    const result = await withCompany(ctx.company.id, async (tx) => {
+      const created = await createJournalFromLine(tx, {
         companyId: ctx.company.id,
         userId: ctx.user.id,
         statementLineId: data.statementLineId,
@@ -127,8 +161,17 @@ export async function createJournalFromLineAction(input: z.input<typeof createJo
             : undefined,
         date: data.date,
         description: data.description,
-      }),
-    );
+      });
+      await writeAudit(tx, {
+        companyId: ctx.company.id,
+        userId: ctx.user.id,
+        action: "bank_reconciliation.create_journal",
+        entityType: "bank_statement_line",
+        entityId: data.statementLineId,
+        after: { journalId: created.id ?? null, contraAccountId: data.contraAccountId },
+      });
+      return created;
+    });
     revalidatePath(PAGE_PATH);
     return result;
   });

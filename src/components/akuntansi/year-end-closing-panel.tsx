@@ -9,7 +9,9 @@ import { formatIDR, formatIDRSigned } from "@/lib/money";
 import {
   lockYearPeriodsAction,
   postYearEndClosingAction,
+  reverseYearEndClosingAction,
 } from "@/server/actions/accounting/periode";
+import { ConfirmDialog } from "@/components/blocks/confirm-dialog";
 
 type ClosingPreview = {
   totalRevenue: number;
@@ -48,6 +50,7 @@ export function YearEndClosingPanel({
   );
   const [confirming, setConfirming] = useState(false);
   const [confirmingLock, setConfirmingLock] = useState(false);
+  const [confirmingReverse, setConfirmingReverse] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const retained = equityAccounts.find((row) => row.id === retainedId);
@@ -67,6 +70,19 @@ export function YearEndClosingPanel({
     }
     toast.success(`Tutup buku ${year} terposting sebagai jurnal ${result.data.number}.`);
     setConfirming(false);
+    router.refresh();
+  }
+
+  async function reverseClosing(reason: string) {
+    setBusy(true);
+    const result = await reverseYearEndClosingAction({ year, reason });
+    setBusy(false);
+    setConfirmingReverse(false);
+    if (!result.ok) {
+      toast.error(result.message);
+      return;
+    }
+    toast.success(`Jurnal penutup ${year} dibalik. Buku tahun ${year} dapat ditutup ulang.`);
     router.refresh();
   }
 
@@ -119,18 +135,29 @@ export function YearEndClosingPanel({
 
       <div className="border-t border-border px-4 py-3">
         {preview.alreadyClosed ? (
-          <p className="text-[12px]">
-            Buku tahun {year} sudah ditutup
-            {preview.closingJournal ? (
-              <>
-                {" "}oleh jurnal{" "}
-                <Link href={`/app/akuntansi/jurnal/${preview.closingJournal.id}`} className="num font-medium underline">
-                  {preview.closingJournal.number}
-                </Link>
-              </>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="min-w-0 flex-1 text-[12px]">
+              Buku tahun {year} sudah ditutup
+              {preview.closingJournal ? (
+                <>
+                  {" "}oleh jurnal{" "}
+                  <Link href={`/app/akuntansi/jurnal/${preview.closingJournal.id}`} className="num font-medium underline">
+                    {preview.closingJournal.number}
+                  </Link>
+                </>
+              ) : null}
+              . Untuk menutup ulang, balik jurnal penutup itu terlebih dahulu.
+            </p>
+            {canManage && preview.closingJournal ? (
+              <button
+                type="button"
+                onClick={() => setConfirmingReverse(true)}
+                className="inline-flex h-8 items-center rounded-md border border-border bg-card px-3 text-[12px] font-medium transition-colors hover:bg-muted"
+              >
+                Balik jurnal penutup
+              </button>
             ) : null}
-            . Untuk menutup ulang, balik jurnal penutup itu terlebih dahulu.
-          </p>
+          </div>
         ) : !hasActivity ? (
           <p className="text-[12px] text-muted-foreground">
             Tidak ada saldo pendapatan atau beban pada tahun {year} — tidak ada yang perlu ditutup.

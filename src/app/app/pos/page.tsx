@@ -1,4 +1,6 @@
+import { and, eq, inArray } from "drizzle-orm";
 import { withCompany } from "@/db/tenant";
+import { customerGroupPrices } from "@/db/schema";
 import { PosTerminal } from "@/components/pos/pos-terminal";
 import { PosServiceWorker } from "@/components/pwa/pos-service-worker";
 import {
@@ -46,6 +48,41 @@ export default async function PosPage({
       warehouses[0]?.id ??
       "";
 
+    const groupIds = groups.map((group) => group.id);
+    const groupPriceRows =
+      groupIds.length > 0
+        ? await tx
+            .select({
+              groupId: customerGroupPrices.groupId,
+              productId: customerGroupPrices.productId,
+              ruleType: customerGroupPrices.ruleType,
+              value: customerGroupPrices.value,
+            })
+            .from(customerGroupPrices)
+            .where(
+              and(
+                eq(customerGroupPrices.companyId, ctx.company.id),
+                inArray(customerGroupPrices.groupId, groupIds),
+              ),
+            )
+        : [];
+    const priceRulesByGroup = new Map<
+      string,
+      Record<string, { type: "percent" | "fixed"; value: string }>
+    >();
+    for (const row of groupPriceRows) {
+      const current = priceRulesByGroup.get(row.groupId) ?? {};
+      current[row.productId] = {
+        type: row.ruleType === "fixed" ? "fixed" : "percent",
+        value: row.value,
+      };
+      priceRulesByGroup.set(row.groupId, current);
+    }
+    const groupsWithPrices = groups.map((group) => ({
+      ...group,
+      priceRules: priceRulesByGroup.get(group.id) ?? {},
+    }));
+
     const [initialProducts, session, heldCount, reservationRows, promotions] = await Promise.all([
       searchProducts(tx, {
         companyId: ctx.company.id,
@@ -91,7 +128,7 @@ export default async function PosPage({
       // mengembalikan metode aktif terurut sortOrder, jadi metode
       // kredit pertama itulah yang dipakai terminal.
       debtMethod: methods.find((method) => method.type === "credit") ?? null,
-      groups,
+      groups: groupsWithPrices,
       warehouseId,
       initialProducts,
       session,
@@ -183,6 +220,7 @@ export default async function PosPage({
         roundingStep: g.roundingStep,
         roundingDirection: g.roundingDirection,
         roundCashTotal: g.roundCashTotal,
+        priceRules: g.priceRules,
       }))}
       initialProducts={data.initialProducts.map((p) => ({
         id: p.id,

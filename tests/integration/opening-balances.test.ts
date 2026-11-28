@@ -36,7 +36,8 @@ import { makeRollbackTransaction } from "../helpers/rollback-transaction";
 // Sesi & cache Next diganti agar kode action impor asli berjalan
 // terhadap database dev asli (pola import-expansion.test.ts).
 vi.mock("next/cache", () => ({ revalidatePath: () => undefined }));
-vi.mock("@/lib/session", () => ({
+vi.mock("@/lib/session", () => {
+  const mod = {
   requirePermission: async () => ({
     company: { id: "01900000-0000-7000-8000-000000000001" },
     user: { id: "01900000-0000-7000-8000-000000000010" },
@@ -45,7 +46,9 @@ vi.mock("@/lib/session", () => ({
     company: { id: "01900000-0000-7000-8000-000000000001" },
     user: { id: "01900000-0000-7000-8000-000000000010" },
   }),
-}));
+  };
+  return { ...mod, requirePermissionInModule: mod.requirePermission };
+});
 
 const ORG_ID = "01900000-0000-7000-8000-000000000001";
 const USER_ID = "01900000-0000-7000-8000-000000000010";

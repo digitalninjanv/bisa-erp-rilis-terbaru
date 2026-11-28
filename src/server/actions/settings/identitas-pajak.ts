@@ -3,6 +3,7 @@
 // A-26 Q8b: pecahan actions/settings.ts per topik (pola Q4) — identitas perusahaan, pajak & ambang, saklar fitur, dan kesiapan pengaturan.
 // Perilaku & nama aksi identik; pemanggil berpindah mekanis ke berkas ini.
 
+import { createHash } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -154,6 +155,11 @@ export async function saveSettingsAction(input: z.input<typeof settingsSchema>) 
     const ctx = await requirePermission("settings.manage");
     const data = parseInput(settingsSchema, input);
     await withCompany(ctx.company.id, async (tx) => {
+      const [before] = await tx
+        .select({ taxId: companySettings.taxId, qrisImage: companySettings.qrisImage })
+        .from(companySettings)
+        .where(eq(companySettings.companyId, ctx.company.id))
+        .limit(1);
       // MD-008: validasi gudang default milik perusahaan yang aktif
       if (data.defaultWarehouseId) {
         const [wh] = await tx
@@ -244,7 +250,17 @@ export async function saveSettingsAction(input: z.input<typeof settingsSchema>) 
         action: "settings.update",
         entityType: "company_settings",
         entityId: ctx.company.id,
-        after: { legalName: data.legalName, roundingMode: data.roundingMode, taxRate: data.taxRate, posDiscountThresholdPercent: data.posDiscountThresholdPercent },
+        after: {
+          legalName: data.legalName,
+          taxId: data.taxId ?? null,
+          roundingMode: data.roundingMode,
+          taxRate: data.taxRate,
+          posDiscountThresholdPercent: data.posDiscountThresholdPercent,
+          qrisChanged: (before?.qrisImage ?? null) !== (data.qrisImage ?? null),
+          qrisSha256: data.qrisImage
+            ? createHash("sha256").update(data.qrisImage).digest("hex")
+            : null,
+        },
       });
     });
     revalidatePath("/app/pengaturan");

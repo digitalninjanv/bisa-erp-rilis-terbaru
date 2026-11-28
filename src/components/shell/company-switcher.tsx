@@ -24,9 +24,9 @@ export function CompanySwitcher({
 
   if (companies.length < 2) {
     return (
-      <div className="hidden items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 sm:flex">
+      <div className="flex min-w-0 items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1">
         <Building2 className="size-3.5 text-muted-foreground" />
-        <span className="max-w-[180px] truncate text-[11px] font-medium">
+        <span className="max-w-[120px] truncate text-[11px] font-medium sm:max-w-[180px]">
           {active?.name ?? "—"}
         </span>
       </div>
@@ -48,14 +48,14 @@ export function CompanySwitcher({
   }
 
   return (
-    <div className="relative hidden items-center sm:flex">
+    <div className="relative flex min-w-0 items-center">
       <Building2 className="pointer-events-none absolute left-2 size-3.5 text-muted-foreground" />
       <select
         aria-label="Ganti perusahaan"
         value={activeId}
         disabled={busy}
         onChange={(event) => void onChange(event.target.value)}
-        className="max-w-[200px] appearance-none truncate rounded-md border border-border bg-background py-1 pl-7 pr-6 text-[11px] font-medium outline-none focus:border-ring disabled:opacity-50"
+        className="max-w-[120px] appearance-none truncate rounded-md border border-border bg-background py-1 pl-7 pr-6 text-[11px] font-medium outline-none focus:border-ring disabled:opacity-50 sm:max-w-[200px]"
       >
         {companies.map((row) => (
           <option key={row.id} value={row.id}>

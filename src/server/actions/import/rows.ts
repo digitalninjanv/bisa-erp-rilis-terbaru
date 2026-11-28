@@ -11,7 +11,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { withCompany } from "@/db/tenant";
 import { importJobs, importRows } from "@/db/schema";
-import { requirePermission } from "@/lib/session";
+import { requirePermissionInModule } from "@/lib/session";
 import { AppError, guard } from "@/lib/errors";
 import { parseInput } from "@/lib/action-validation";
 import { writeAudit } from "@/server/audit";
@@ -27,7 +27,7 @@ export async function listImportRowsAction(input: {
   filter?: ProductImportFilter;
 }) {
   return guard(async () => {
-    const ctx = await requirePermission("import.manage");
+    const ctx = await requirePermissionInModule("import.manage", "gudang");
     const data = parseInput(
       z.object({
         jobId: z.string().uuid(),
@@ -207,7 +207,7 @@ const editRowSchema = z.object({
  */
 export async function updateImportRowAction(input: z.input<typeof editRowSchema>) {
   return guard(async () => {
-    const ctx = await requirePermission("import.manage");
+    const ctx = await requirePermissionInModule("import.manage", "gudang");
     const data = parseInput(editRowSchema, input);
 
     const result = await withCompany(ctx.company.id, async (tx) => {
@@ -275,7 +275,7 @@ export async function updateImportRowAction(input: z.input<typeof editRowSchema>
 
 export async function cancelImportAction(jobId: string) {
   return guard(async () => {
-    const ctx = await requirePermission("import.manage");
+    const ctx = await requirePermissionInModule("import.manage", "gudang");
     const data = parseInput(z.string().uuid(), jobId);
     const result = await withCompany(ctx.company.id, async (tx) => {
       const [job] = await tx
@@ -361,7 +361,7 @@ export async function skipImportRowsAction(input: {
   reason?: string;
 }) {
   return guard(async () => {
-    const ctx = await requirePermission("import.manage");
+    const ctx = await requirePermissionInModule("import.manage", "gudang");
     const data = parseInput(
       z.object({
         jobId: z.string().uuid(),

@@ -7,5 +7,13 @@ import { twoFactorClient } from "better-auth/client/plugins";
 // plugin servernya di src/lib/auth.ts — klien tidak pernah memanggil
 // satu pun metode keduanya (hanya signIn.email & signOut yang dipakai).
 export const authClient = createAuthClient({
-  plugins: [twoFactorClient()],
+  plugins: [
+    twoFactorClient({
+      onTwoFactorRedirect() {
+        // Login email/password berhasil tahap pertama; sesi penuh belum
+        // dibuat sampai kode TOTP/kode cadangan diverifikasi.
+        window.location.assign(new URL("/two-factor", window.location.origin).toString());
+      },
+    }),
+  ],
 });

@@ -205,6 +205,29 @@ describe("S7B-1 Batch 1 — organisasi & riwayat karyawan", () => {
     expect((dept?.after as { department: string }).department).toBe("Penjualan");
   });
 
+  it("edit tanpa field joinedAt tidak menghapus tanggal masuk karyawan", async () => {
+    const created = await saveEmployeeAction({
+      code: "JOIN-1", name: "Karyawan Bergabung", position: "Kasir",
+      baseSalary: "4000000", allowances: "0", deductions: "0",
+      joinedAt: "2024-03-01",
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) throw new Error(created.message);
+
+    const updated = await saveEmployeeAction({
+      id: created.data.id, code: "JOIN-1", name: "Karyawan Bergabung",
+      position: "Kasir Senior", baseSalary: "4500000", allowances: "0", deductions: "0",
+    });
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) throw new Error(updated.message);
+
+    const [row] = await adminDb
+      .select({ joinedAt: employees.joinedAt })
+      .from(employees)
+      .where(eq(employees.id, created.data.id));
+    expect(row.joinedAt).toBe("2024-03-01");
+  });
+
   it("simpan ulang tanpa perubahan tidak menambah riwayat", async () => {
     const before = await historyOf(F.staff);
     const again = await saveEmployeeAction({
